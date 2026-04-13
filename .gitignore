@@ -1,0 +1,10 @@
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+Packaged/
+.vs/
+.vscode/
+.idea/
+*.VC.db
+*.sln

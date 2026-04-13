@@ -1,0 +1,62 @@
+{
+  "fixed": [
+    {
+      "asset": "/Game/GameAssets/Grid_Materials/Materials/Instances/MI_BlockOut_Grass_Neon_2",
+      "parent": "/Game/GameAssets/Grid_Materials/Materials/Master/MM_Grid"
+    },
+    {
+      "asset": "/Game/GameAssets/Vefects/Stylized_Galaxy_Shader/Demo/Scene/Materials/MI_Vefects_Grid_01",
+      "parent": "/Game/GameAssets/Vefects/Stylized_Galaxy_Shader/Demo/Scene/Materials/MM_Vefects_Grid"
+    },
+    {
+      "asset": "/Game/GameAssets/Vefects/Stylized_Galaxy_Shader/Demo/Scene/Materials/MI_Vefects_Grid_02",
+      "parent": "/Game/GameAssets/Vefects/Stylized_Galaxy_Shader/Demo/Scene/Materials/MM_Vefects_Grid"
+    },
+    {
+      "asset": "/Game/GameAssets/Vefects/Stylized_Galaxy_Shader/Galaxy/Materials/MI_VFX_Lush_Galaxy_Shader_01",
+      "parent": "/Game/GameAssets/Vefects/Stylized_Galaxy_Shader/Galaxy/Materials/M_VFX_Lush_Galaxy_Shader"
+    },
+    {
+      "asset": "/Game/GameAssets/Vefects/Stylized_Galaxy_Shader/Galaxy/Materials/MI_VFX_Lush_Galaxy_Shader_01_Inverted",
+      "parent": "/Game/GameAssets/Vefects/Stylized_Galaxy_Shader/Galaxy/Materials/M_VFX_Lush_Galaxy_Shader"
+    },
+    {
+      "asset": "/Game/GameAssets/Vefects/Stylized_Galaxy_Shader/Galaxy/Materials/MI_VFX_Lush_Galaxy_Shader_02",
+      "parent": "/Game/GameAssets/Vefects/Stylized_Galaxy_Shader/Galaxy/Materials/M_VFX_Lush_Galaxy_Shader"
+    },
+    {
+      "asset": "/Game/GameAssets/Vefects/Stylized_Galaxy_Shader/Galaxy/Materials/MI_VFX_Lush_Galaxy_Shader_03",
+      "parent": "/Game/GameAssets/Vefects/Stylized_Galaxy_Shader/Galaxy/Materials/M_VFX_Lush_Galaxy_Shader"
+    },
+    {
+      "asset": "/Game/GameAssets/HologramShader/Materials/HologramShader/MI/MI_Hologram_3",
+      "parent": "/Game/GameAssets/HologramShader/Materials/HologramShader/M_Hologram"
+    },
+    {
+      "asset": "/Game/GameAssets/HologramShader/Materials/HologramShader/MI/MI_Hologram_5",
+      "parent": "/Game/GameAssets/HologramShader/Materials/HologramShader/M_Hologram"
+    },
+    {
+      "asset": "/Game/GameAssets/HologramShader/Materials/HologramShader/MI/MI_Hologram_8",
+      "parent": "/Game/GameAssets/HologramShader/Materials/HologramShader/M_Hologram"
+    },
+    {
+      "asset": "/Game/GameAssets/HologramShader/Materials/HologramShader/MI/MI_Hologram_10",
+      "parent": "/Game/GameAssets/HologramShader/Materials/HologramShader/M_Hologram"
+    },
+    {
+      "asset": "/Game/GameAssets/HologramShader/Materials/HologramShader/MI/MI_Hologram_12",
+      "parent": "/Game/GameAssets/HologramShader/Materials/HologramShader/M_Hologram"
+    },
+    {
+      "asset": "/Game/GameAssets/HologramShader/Materials/HologramShader/MI/MI_Hologram_18",
+      "parent": "/Game/GameAssets/HologramShader/Materials/HologramShader/M_Hologram"
+    },
+    {
+      "asset": "/Game/GameAssets/HologramShader/Materials/HologramShader/MI/MI_Hologram_21",
+      "parent": "/Game/GameAssets/HologramShader/Materials/HologramShader/M_Hologram"
+    }
+  ],
+  "skipped": [],
+  "failed": []
+}

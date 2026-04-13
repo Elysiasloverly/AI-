@@ -1,0 +1,20 @@
+{
+  "deleted": [
+    "/Game/Fab",
+    "/Game/Grid_Materials",
+    "/Game/HologramShader",
+    "/Game/KTP_Effect",
+    "/Game/LightVortexShader",
+    "/Game/Portals",
+    "/Game/Realistic_Starter_VFX_Pack_Vol2",
+    "/Game/StarterContent",
+    "/Game/UIEffectLab",
+    "/Game/Vefects",
+    "/Game/_SplineVFX",
+    "/Game/wyf"
+  ],
+  "skipped": [],
+  "failed": [
+    "/Game/NeonGlowMaterials"
+  ]
+}

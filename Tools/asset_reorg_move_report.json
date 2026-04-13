@@ -1,0 +1,559 @@
+{
+  "moved_count": 1,
+  "skipped_count": 120,
+  "failed_count": 0,
+  "moved": [
+    {
+      "source": "/Game/StarterContent/Maps/Minimal_Default",
+      "destination": "/Game/GameAssets/StarterContent/Maps/Minimal_Default"
+    }
+  ],
+  "skipped": [
+    {
+      "source": "/Game/Grid_Materials/Materials/Instances/MI_BlockOut_Grass_Neon_2",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/Grid_Materials/Materials/Master/MM_Grid",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/Grid_Materials/Textures/T_BlockOut_Mask",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/Grid_Materials/Textures/T_BlockOut_Mask"
+    },
+    {
+      "source": "/Game/Grid_Materials/Textures/T_Flat_Normal",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/Grid_Materials/Textures/T_Flat_Normal"
+    },
+    {
+      "source": "/Game/Grid_Materials/Textures/T_White",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/Grid_Materials/Textures/T_White"
+    },
+    {
+      "source": "/Game/HologramShader/Materials/HologramShader/MI/MI_Hologram_10",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/HologramShader/Materials/HologramShader/MI/MI_Hologram_10"
+    },
+    {
+      "source": "/Game/HologramShader/Materials/HologramShader/MI/MI_Hologram_12",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/HologramShader/Materials/HologramShader/MI/MI_Hologram_18",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/HologramShader/Materials/HologramShader/MI/MI_Hologram_21",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/HologramShader/Materials/HologramShader/MI/MI_Hologram_3",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/HologramShader/Materials/HologramShader/MI/MI_Hologram_3"
+    },
+    {
+      "source": "/Game/HologramShader/Materials/HologramShader/MI/MI_Hologram_5",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/HologramShader/Materials/HologramShader/MI/MI_Hologram_8",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/HologramShader/Materials/HologramShader/M_Hologram",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/HologramShader/Textures/Greyscale/T_Noise_01",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/HologramShader/Textures/Greyscale/T_Noise_01"
+    },
+    {
+      "source": "/Game/HologramShader/Textures/Greyscale/T_Noise_02",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/HologramShader/Textures/Greyscale/T_Noise_02"
+    },
+    {
+      "source": "/Game/HologramShader/Textures/Greyscale/T_Noise_03",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/HologramShader/Textures/Greyscale/T_Noise_03"
+    },
+    {
+      "source": "/Game/HologramShader/Textures/Greyscale/T_Noise_04",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/HologramShader/Textures/Greyscale/T_Noise_04"
+    },
+    {
+      "source": "/Game/HologramShader/Textures/Greyscale/T_Smoke",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/HologramShader/Textures/Greyscale/T_Smoke"
+    },
+    {
+      "source": "/Game/HologramShader/Textures/Normal/T_Water_01_N",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/HologramShader/Textures/Normal/T_Water_01_N"
+    },
+    {
+      "source": "/Game/HologramShader/Textures/Normal/T_Water_02_N",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/HologramShader/Textures/Normal/T_Water_02_N"
+    },
+    {
+      "source": "/Game/HologramShader/Textures/Pattern/T_Pattern_01",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/HologramShader/Textures/Pattern/T_Pattern_01"
+    },
+    {
+      "source": "/Game/HologramShader/Textures/Pattern/T_Pattern_04",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/HologramShader/Textures/Pattern/T_Pattern_04"
+    },
+    {
+      "source": "/Game/HologramShader/Textures/Pattern/T_Pattern_05",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/HologramShader/Textures/Pattern/T_Pattern_05"
+    },
+    {
+      "source": "/Game/HologramShader/Textures/Pattern/T_Pattern_17",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/HologramShader/Textures/Pattern/T_Pattern_17"
+    },
+    {
+      "source": "/Game/HologramShader/Textures/Pattern/T_Pattern_18",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/HologramShader/Textures/Pattern/T_Pattern_18"
+    },
+    {
+      "source": "/Game/HologramShader/Textures/Pattern/T_Pattern_19",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/HologramShader/Textures/Pattern/T_Pattern_19"
+    },
+    {
+      "source": "/Game/HologramShader/Textures/Pattern/T_Pattern_20",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/HologramShader/Textures/Pattern/T_Pattern_20"
+    },
+    {
+      "source": "/Game/HologramShader/Textures/T_Fire",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/HologramShader/Textures/T_Fire"
+    },
+    {
+      "source": "/Game/HologramShader/Textures/T_White",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/HologramShader/Textures/T_White"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Materials/M_Distortion",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Materials/M_Explosion_B",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Materials/M_Explosion_i",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Materials/M_Glow_A",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Materials/M_Glow_B",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/Realistic_Starter_VFX_Pack_Vol2/Materials/M_Glow_B"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Materials/M_Glow_C",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Materials/M_Glow_C_Inst",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Materials/M_Glow_D",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Materials/M_Impact_B",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Materials/M_Impact_C",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Materials/M_Rock_B",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Materials/M_Smoke_A",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Materials/M_Smoke_C",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Materials/M_Smoke_Ground",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Materials/M_Smoke_Puff_A",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Materials/M_Smoke_Wisp",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Materials/M_Spark_A",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Particles/Explosion/P_Explosion_Big_A",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Particles/Explosion/P_Explosion_Side",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/Realistic_Starter_VFX_Pack_Vol2/Particles/Explosion/P_Explosion_Side"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Particles/Smoke/P_Smoke_F",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/Realistic_Starter_VFX_Pack_Vol2/Particles/Smoke/P_Smoke_F"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Particles/Sparks/P_Embers_A",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/Realistic_Starter_VFX_Pack_Vol2/Particles/Sparks/P_Embers_A"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Particles/Sparks/P_Sparks_B",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/Realistic_Starter_VFX_Pack_Vol2/Particles/Sparks/P_Sparks_B"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Particles/Sparks/P_Sparks_E",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/Realistic_Starter_VFX_Pack_Vol2/Particles/Sparks/P_Sparks_E"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Textures/T_Epxlosion_B_color",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/Realistic_Starter_VFX_Pack_Vol2/Textures/T_Epxlosion_B_color"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Textures/T_Epxlosion_B_packed",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/Realistic_Starter_VFX_Pack_Vol2/Textures/T_Epxlosion_B_packed"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Textures/T_Explosion_Air",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/Realistic_Starter_VFX_Pack_Vol2/Textures/T_Explosion_Air"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Textures/T_Flare_A",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/Realistic_Starter_VFX_Pack_Vol2/Textures/T_Flare_A"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Textures/T_Flare_D",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/Realistic_Starter_VFX_Pack_Vol2/Textures/T_Flare_D"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Textures/T_Impact",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Textures/T_Impact_Flare",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/Realistic_Starter_VFX_Pack_Vol2/Textures/T_Impact_Flare"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Textures/T_NoiseNormal_B",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/Realistic_Starter_VFX_Pack_Vol2/Textures/T_NoiseNormal_B"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Textures/T_Rocks",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/Realistic_Starter_VFX_Pack_Vol2/Textures/T_Rocks"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Textures/T_Rocks_NM",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/Realistic_Starter_VFX_Pack_Vol2/Textures/T_Rocks_NM"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Textures/T_Smoke_A",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/Realistic_Starter_VFX_Pack_Vol2/Textures/T_Smoke_A"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Textures/T_Smoke_B",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/Realistic_Starter_VFX_Pack_Vol2/Textures/T_Smoke_B"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Textures/T_Smoke_Ground",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/Realistic_Starter_VFX_Pack_Vol2/Textures/T_Smoke_Ground"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Textures/T_Smoke_Puff_color",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/Realistic_Starter_VFX_Pack_Vol2/Textures/T_Smoke_Puff_color"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Textures/T_Smoke_Wisp",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Textures/T_Spark_B",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/Realistic_Starter_VFX_Pack_Vol2/Textures/T_Spark_B"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Vectorfields/VectorField_A",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/Realistic_Starter_VFX_Pack_Vol2/Vectorfields/VectorField_A"
+    },
+    {
+      "source": "/Game/Realistic_Starter_VFX_Pack_Vol2/Vectorfields/VectorField_B",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/Realistic_Starter_VFX_Pack_Vol2/Vectorfields/VectorField_B"
+    },
+    {
+      "source": "/Game/StarterContent/Architecture/Floor_400x400",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/StarterContent/Audio/Starter_Background_Cue",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/StarterContent/Audio/Starter_Birds01",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/StarterContent/Audio/Starter_Wind05",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/StarterContent/Audio/Starter_Wind06",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/StarterContent/Maps/Minimal_Default_BuiltData",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/StarterContent/Materials/M_Basic_Floor",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/StarterContent/Materials/M_Basic_Wall",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/StarterContent/Materials/M_Basic_Wall"
+    },
+    {
+      "source": "/Game/StarterContent/Materials/M_Ceramic_Tile_Checker",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/StarterContent/Materials/M_Metal_Copper",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/StarterContent/Materials/M_Metal_Copper"
+    },
+    {
+      "source": "/Game/StarterContent/Materials/M_Metal_Rust",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/StarterContent/Materials/M_Tech_Hex_Tile",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/StarterContent/Materials/M_Tech_Hex_Tile_Pulse",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/StarterContent/Shapes/Shape_Cone",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/StarterContent/Shapes/Shape_Cone"
+    },
+    {
+      "source": "/Game/StarterContent/Shapes/Shape_Cube",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/StarterContent/Shapes/Shape_Cylinder",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/StarterContent/Shapes/Shape_Sphere",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/StarterContent/Shapes/Shape_Sphere"
+    },
+    {
+      "source": "/Game/StarterContent/Shapes/Shape_Torus",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/StarterContent/Shapes/Shape_Wedge_A",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/StarterContent/Shapes/Shape_Wedge_A"
+    },
+    {
+      "source": "/Game/StarterContent/Shapes/Shape_Wedge_B",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/StarterContent/Shapes/Shape_Wedge_B"
+    },
+    {
+      "source": "/Game/StarterContent/Textures/T_Ceramic_Tile_M",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/StarterContent/Textures/T_Ceramic_Tile_N",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/StarterContent/Textures/T_MacroVariation",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/StarterContent/Textures/T_MacroVariation"
+    },
+    {
+      "source": "/Game/StarterContent/Textures/T_Metal_Copper_D",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/StarterContent/Textures/T_Metal_Copper_D"
+    },
+    {
+      "source": "/Game/StarterContent/Textures/T_Metal_Gold_N",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/StarterContent/Textures/T_Metal_Gold_N"
+    },
+    {
+      "source": "/Game/StarterContent/Textures/T_Metal_Rust_D",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/StarterContent/Textures/T_Metal_Rust_N",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/StarterContent/Textures/T_Perlin_Noise_M",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/StarterContent/Textures/T_Rock_Marble_Polished_D",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/StarterContent/Textures/T_Tech_Hex_Tile_M",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/StarterContent/Textures/T_Tech_Hex_Tile_M"
+    },
+    {
+      "source": "/Game/StarterContent/Textures/T_Tech_Hex_Tile_N",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/StarterContent/Textures/T_Tech_Hex_Tile_N"
+    },
+    {
+      "source": "/Game/Vefects/Stylized_Galaxy_Shader/Demo/Scene/Materials/MI_Vefects_Grid_01",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/Vefects/Stylized_Galaxy_Shader/Demo/Scene/Materials/MI_Vefects_Grid_02",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/Vefects/Stylized_Galaxy_Shader/Demo/Scene/Materials/MM_Vefects_Grid",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/Vefects/Stylized_Galaxy_Shader/Demo/Scene/Textures/Grid/T_VFX_Grid_01_Masks",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/Vefects/Stylized_Galaxy_Shader/Demo/Scene/Textures/Grid/T_VFX_Grid_01_Masks"
+    },
+    {
+      "source": "/Game/Vefects/Stylized_Galaxy_Shader/Demo/Scene/Textures/Grid/T_VFX_Grid_01_Normal",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/Vefects/Stylized_Galaxy_Shader/Demo/Scene/Textures/Grid/T_VFX_Grid_01_Normal"
+    },
+    {
+      "source": "/Game/Vefects/Stylized_Galaxy_Shader/Demo/Scene/Textures/Grid/T_VFX_Grid_01_Texture",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/Vefects/Stylized_Galaxy_Shader/Demo/Scene/Textures/Grid/T_VFX_Grid_01_Texture"
+    },
+    {
+      "source": "/Game/Vefects/Stylized_Galaxy_Shader/Demo/Shared/Materials/MI_Opaque_Dark_01",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/Vefects/Stylized_Galaxy_Shader/Demo/Shared/Materials/MM_Opaque",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/Vefects/Stylized_Galaxy_Shader/Demo/Shared/Materials/MM_Opaque"
+    },
+    {
+      "source": "/Game/Vefects/Stylized_Galaxy_Shader/Galaxy/Materials/MI_VFX_Lush_Galaxy_Shader_01",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/Vefects/Stylized_Galaxy_Shader/Galaxy/Materials/MI_VFX_Lush_Galaxy_Shader_01_Inverted",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/Vefects/Stylized_Galaxy_Shader/Galaxy/Materials/MI_VFX_Lush_Galaxy_Shader_01_Inverted"
+    },
+    {
+      "source": "/Game/Vefects/Stylized_Galaxy_Shader/Galaxy/Materials/MI_VFX_Lush_Galaxy_Shader_02",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/Vefects/Stylized_Galaxy_Shader/Galaxy/Materials/MI_VFX_Lush_Galaxy_Shader_03",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/Vefects/Stylized_Galaxy_Shader/Galaxy/Materials/M_VFX_Lush_Galaxy_Shader",
+      "reason": "source_missing"
+    },
+    {
+      "source": "/Game/Vefects/Stylized_Galaxy_Shader/Galaxy/Textures/T_VFX_Lush_Galaxy_Clouds_01_Contrast",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/Vefects/Stylized_Galaxy_Shader/Galaxy/Textures/T_VFX_Lush_Galaxy_Clouds_01_Contrast"
+    },
+    {
+      "source": "/Game/Vefects/Stylized_Galaxy_Shader/Galaxy/Textures/T_VFX_Lush_Galaxy_Clouds_04_Contrast",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/Vefects/Stylized_Galaxy_Shader/Galaxy/Textures/T_VFX_Lush_Galaxy_Clouds_04_Contrast"
+    },
+    {
+      "source": "/Game/Vefects/Stylized_Galaxy_Shader/Galaxy/Textures/T_VFX_Lush_Galaxy_Space_Panorama_Cube_01",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/Vefects/Stylized_Galaxy_Shader/Galaxy/Textures/T_VFX_Lush_Galaxy_Space_Panorama_Cube_01"
+    },
+    {
+      "source": "/Game/Vefects/Stylized_Galaxy_Shader/Galaxy/Textures/T_VFX_Lush_Galaxy_Space_Panorama_Cube_04",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/Vefects/Stylized_Galaxy_Shader/Galaxy/Textures/T_VFX_Lush_Galaxy_Space_Panorama_Cube_04"
+    },
+    {
+      "source": "/Game/Vefects/Stylized_Galaxy_Shader/Galaxy/Textures/T_VFX_Lush_Galaxy_Space_Panorama_Stars_01",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/Vefects/Stylized_Galaxy_Shader/Galaxy/Textures/T_VFX_Lush_Galaxy_Space_Panorama_Stars_01"
+    },
+    {
+      "source": "/Game/Vefects/Stylized_Galaxy_Shader/Galaxy/Textures/T_VFX_Lush_Galaxy_Space_Panorama_Stars_03",
+      "reason": "destination_exists",
+      "destination": "/Game/GameAssets/Vefects/Stylized_Galaxy_Shader/Galaxy/Textures/T_VFX_Lush_Galaxy_Space_Panorama_Stars_03"
+    }
+  ],
+  "failed": []
+}
