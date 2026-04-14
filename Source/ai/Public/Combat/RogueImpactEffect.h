@@ -1,5 +1,11 @@
 #pragma once
 
+#include "Engine/World.h"
+#include "Engine/EngineTypes.h"
+#include "GameFramework/Actor.h"
+#include "GameFramework/DamageType.h"
+#include "Kismet/GameplayStatics.h"
+
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "RogueImpactEffect.generated.h"
