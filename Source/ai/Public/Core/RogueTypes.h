@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "RogueTypes.generated.h"
 
-UENUM()
+UENUM(BlueprintType)
 enum class ERogueUpgradeType : uint8
 {
 	MaxHealth,

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/GameUserSettings.h"
@@ -9,6 +9,7 @@ class ARogueGameMode;
 class ARogueCharacter;
 class ARogueEnemy;
 class APlayerController;
+class URogueEnemyTrackerSubsystem;
 
 enum class ERoguePauseMenuPage : uint8
 {
@@ -54,8 +55,8 @@ private:
 	bool GetUpgradeCardRect(int32 UpgradeIndex, FVector2D& OutPosition, FVector2D& OutSize) const;
 	bool GetShopCardRect(int32 ShopIndex, FVector2D& OutPosition, FVector2D& OutSize) const;
 	bool GetShopButtonRect(FName ButtonName, FVector2D& OutPosition, FVector2D& OutSize) const;
-	void RefreshEnemyHealthBarCache(const ARogueGameMode* RogueGameMode);
-	void RefreshDamageNumberProjectionCache(APlayerController* PlayerController, const ARogueGameMode* RogueGameMode);
+	void RefreshEnemyHealthBarCache(const URogueEnemyTrackerSubsystem* Tracker);
+	void RefreshDamageNumberProjectionCache(APlayerController* PlayerController, const URogueEnemyTrackerSubsystem* Tracker);
 	void DrawEnemyHealthBars(UFont* Font);
 	void DrawDamageNumbers(UFont* Font);
 	void DrawShopMenu(UFont* Font, float MouseX, float MouseY, const ARogueGameMode* RogueGameMode, const ARogueCharacter* PlayerCharacter);

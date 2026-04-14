@@ -10,6 +10,7 @@ URogueCharacterVisualComponent::URogueCharacterVisualComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
 
+	/*
 	BodyMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BodyMesh"));
 	BodyMesh->SetupAttachment(this);
 	BodyMesh->SetRelativeLocation(FVector(0.0f, 0.0f, -24.0f));
@@ -129,7 +130,7 @@ URogueCharacterVisualComponent::URogueCharacterVisualComponent()
 	BodyLight->SetLightColor(FLinearColor(0.22f, 0.68f, 1.0f));
 	BodyLight->SetUseInverseSquaredFalloff(false);
 	BodyLight->SetCastShadows(false);
-
+	
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeMesh(TEXT("/Game/GameAssets/StarterContent/Shapes/Shape_Cube.Shape_Cube"));
 	if (CubeMesh.Succeeded())
 	{
@@ -216,17 +217,20 @@ URogueCharacterVisualComponent::URogueCharacterVisualComponent()
 	WingLeftMesh->SetVisibility(false, true);
 	WingRightMesh->SetVisibility(false, true);
 	TailFinMesh->SetVisibility(false, true);
+	*/
 }
 
 void URogueCharacterVisualComponent::TickVisuals(float DeltaSeconds, float HorizontalSpeed, bool bDashActive, float DashDuration, float DashTimeRemaining)
 {
+	//不要在tick修改模型
+	/*
 	VisualPulseTime += DeltaSeconds * (2.0f + HorizontalSpeed / 320.0f);
 	const float PulseAlpha = 0.5f + 0.5f * FMath::Sin(VisualPulseTime * 2.8f);
 	const float DashAlpha = bDashActive ? (0.55f + 0.45f * (DashDuration > 0.0f ? DashTimeRemaining / DashDuration : 0.0f)) : 0.0f;
 	const float CoreScaleAlpha = 0.92f + PulseAlpha * 0.18f + DashAlpha * 0.18f;
 	const float BodyScaleAlpha = 0.96f + PulseAlpha * 0.08f + DashAlpha * 0.12f;
 	const float HaloScaleAlpha = 0.94f + PulseAlpha * 0.12f + DashAlpha * 0.14f;
-
+	
 	if (BodyMesh != nullptr)
 	{
 		BodyMesh->SetRelativeScale3D(BodyBaseScale * BodyScaleAlpha);
@@ -254,4 +258,5 @@ void URogueCharacterVisualComponent::TickVisuals(float DeltaSeconds, float Horiz
 	{
 		BodyLight->SetIntensity(520.0f + PulseAlpha * 260.0f + DashAlpha * 540.0f);
 	}
+	*/
 }

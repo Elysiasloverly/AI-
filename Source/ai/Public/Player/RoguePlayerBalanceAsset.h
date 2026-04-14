@@ -2,7 +2,6 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
-#include "Player/RogueWeaponConfig.h"
 #include "RoguePlayerBalanceAsset.generated.h"
 
 USTRUCT(BlueprintType)
@@ -62,18 +61,5 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Stats")
 	FRoguePlayerBaseStatConfig BaseStats;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapons")
-	FRogueProjectileWeaponConfig ProjectileWeapon;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapons")
-	FRogueScytheWeaponConfig ScytheWeapon;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapons")
-	FRogueRocketWeaponConfig RocketWeapon;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapons")
-	FRogueLaserWeaponConfig LaserWeapon;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapons")
-	FRogueHellTowerWeaponConfig HellTowerWeapon;
+	// 武器配置已迁移到 DataTable（DT_WeaponConfig），此处不再包含武器字段
 };

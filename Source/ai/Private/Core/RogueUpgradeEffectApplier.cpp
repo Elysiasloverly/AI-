@@ -40,11 +40,8 @@ void FRogueUpgradeEffectApplier::ApplyToCharacter(ARogueCharacter& Character, co
 		Character.ApplySharedWeaponRangeBonus(Upgrade.Magnitude);
 		break;
 	case ERogueUpgradeType::ProjectileSpeed:
-		Character.ProjectileWeapon.Speed += Upgrade.Magnitude;
-		Character.RocketWeapon.Speed += Upgrade.Magnitude * 0.75f;
-		break;
-	case ERogueUpgradeType::ProjectileCount:
-		Character.ProjectileWeapon.Count = FMath::Max(1, Character.ProjectileWeapon.Count + FMath::RoundToInt(Upgrade.Magnitude));
+		// 弹速升级：分发给武器自行处理
+		Character.DispatchWeaponUpgrade(Upgrade.Type, Upgrade.Magnitude);
 		break;
 	case ERogueUpgradeType::Armor:
 		Character.DamageReductionPercent = FMath::Clamp(Character.DamageReductionPercent + Upgrade.Magnitude, 0.0f, 0.65f);
@@ -52,20 +49,14 @@ void FRogueUpgradeEffectApplier::ApplyToCharacter(ARogueCharacter& Character, co
 	case ERogueUpgradeType::ExperienceGain:
 		Character.ExperienceMultiplier += Upgrade.Magnitude;
 		break;
+	// 所有武器专属升级统一分发
+	case ERogueUpgradeType::ProjectileCount:
 	case ERogueUpgradeType::ScytheCount:
-		Character.ScytheWeapon.Count = FMath::Max(1, Character.ScytheWeapon.Count + FMath::RoundToInt(Upgrade.Magnitude));
-		break;
 	case ERogueUpgradeType::RocketCount:
-		Character.RocketWeapon.Count = FMath::Max(1, Character.RocketWeapon.Count + FMath::RoundToInt(Upgrade.Magnitude));
-		break;
 	case ERogueUpgradeType::LaserCount:
-		Character.LaserWeapon.Count = FMath::Max(1, Character.LaserWeapon.Count + FMath::RoundToInt(Upgrade.Magnitude));
-		break;
 	case ERogueUpgradeType::HellTowerCount:
-		Character.HellTowerWeapon.Count = FMath::Max(1, Character.HellTowerWeapon.Count + FMath::RoundToInt(Upgrade.Magnitude));
-		break;
 	case ERogueUpgradeType::LaserRefraction:
-		Character.LaserWeapon.RefractionCount = FMath::Clamp(Character.LaserWeapon.RefractionCount + FMath::RoundToInt(Upgrade.Magnitude), 0, 8);
+		Character.DispatchWeaponUpgrade(Upgrade.Type, Upgrade.Magnitude);
 		break;
 	default:
 		break;

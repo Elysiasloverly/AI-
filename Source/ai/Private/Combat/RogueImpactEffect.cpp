@@ -1,6 +1,7 @@
 #include "Combat/RogueImpactEffect.h"
 
-#include "Core/RogueGameMode.h"
+#include "Subsystems/RogueCombatPoolSubsystem.h"
+#include "Subsystems/RogueEnemyTrackerSubsystem.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
@@ -255,9 +256,9 @@ ARogueImpactEffect* ARogueImpactEffect::SpawnImpactEffect(UWorld* World, const F
 		return nullptr;
 	}
 
-	if (const ARogueGameMode* RogueGameMode = World->GetAuthGameMode<ARogueGameMode>())
+	if (const URogueEnemyTrackerSubsystem* Tracker = World->GetSubsystem<URogueEnemyTrackerSubsystem>())
 	{
-		if (RogueGameMode->ShouldCullCombatEffects())
+		if (Tracker->ShouldCullCombatEffects())
 		{
 			return nullptr;
 		}
@@ -274,9 +275,9 @@ ARogueImpactEffect* ARogueImpactEffect::SpawnImpactEffect(UWorld* World, const F
 	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
 	ARogueImpactEffect* ImpactEffect = nullptr;
-	if (ARogueGameMode* RogueGameMode = World->GetAuthGameMode<ARogueGameMode>())
+	if (URogueCombatPoolSubsystem* Pools = World->GetSubsystem<URogueCombatPoolSubsystem>())
 	{
-		ImpactEffect = RogueGameMode->AcquireImpactEffect(Location, Rotation, Owner);
+		ImpactEffect = Pools->AcquireImpactEffect(Location, Rotation, Owner);
 	}
 	else
 	{

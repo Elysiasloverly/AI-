@@ -1,7 +1,7 @@
 #include "Enemies/RogueEnemyProjectile.h"
 
 #include "Player/RogueCharacter.h"
-#include "Core/RogueGameMode.h"
+#include "Subsystems/RogueEnemyTrackerSubsystem.h"
 #include "Combat/RogueImpactEffect.h"
 #include "Components/PointLightComponent.h"
 #include "Components/SphereComponent.h"
@@ -308,8 +308,8 @@ void ARogueEnemyProjectile::Tick(float DeltaSeconds)
 		return;
 	}
 
-	ARogueGameMode* RogueGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ARogueGameMode>() : nullptr;
-	const bool bCullCombatEffects = RogueGameMode != nullptr && RogueGameMode->ShouldCullCombatEffects();
+	URogueEnemyTrackerSubsystem* Tracker = GetWorld() ? GetWorld()->GetSubsystem<URogueEnemyTrackerSubsystem>() : nullptr;
+	const bool bCullCombatEffects = Tracker != nullptr && Tracker->ShouldCullCombatEffects();
 	if (bCullCombatEffects)
 	{
 		if (!bVisualsSimplified)

@@ -2,7 +2,7 @@
 
 #include "Combat/RogueImpactEffect.h"
 #include "Enemies/RogueEnemy.h"
-#include "Core/RogueGameMode.h"
+#include "Subsystems/RogueEnemyTrackerSubsystem.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
@@ -82,8 +82,8 @@ void ARogueOrbitingBlade::Tick(float DeltaSeconds)
 		return;
 	}
 
-	ARogueGameMode* RogueGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ARogueGameMode>() : nullptr;
-	const bool bCullCombatEffects = RogueGameMode != nullptr && RogueGameMode->ShouldCullCombatEffects();
+	URogueEnemyTrackerSubsystem* Tracker = GetWorld() ? GetWorld()->GetSubsystem<URogueEnemyTrackerSubsystem>() : nullptr;
+	const bool bCullCombatEffects = Tracker != nullptr && Tracker->ShouldCullCombatEffects();
 	if (bCullCombatEffects)
 	{
 		if (!bVisualsSimplified && GlowMesh != nullptr)

@@ -157,37 +157,4 @@ void RogueUpgradeSystemRules::BuildUpgradePool(TArray<ERogueUpgradeType>& OutTyp
 	AppendCharacterSpecificUpgradeTypes(OutTypes, *Character, RuleAsset);
 }
 
-const FRogueUpgradeOptionDefinition* RogueUpgradeSystemRules::FindUpgradeOptionDefinition(ERogueUpgradeType Type)
-{
-	static const FRogueUpgradeOptionDefinition Definitions[] =
-	{
-		{ ERogueUpgradeType::MaxHealth, TEXT("强化外壳"), TEXT("最大生命 +25，并立即回复 25 点生命。"), 25.0f },
-		{ ERogueUpgradeType::MoveSpeed, TEXT("疾行伺服"), TEXT("移动速度 +90。"), 90.0f },
-		{ ERogueUpgradeType::ArmorCapacity, TEXT("装甲扩容"), TEXT("最大护甲 +25，并立即恢复 25 点护甲。5 秒不受伤后会快速恢复。"), 25.0f },
-		{ ERogueUpgradeType::DashCooldown, TEXT("相位推进"), TEXT("冲刺冷却 -0.5 秒，最低缩短到 0.5 秒。"), 0.5f },
-		{ ERogueUpgradeType::AttackPower, TEXT("全武器增伤"), TEXT("子弹、镰刀、火箭、激光、地狱塔伤害全部 +8。"), 8.0f },
-		{ ERogueUpgradeType::AttackSpeed, TEXT("联动加速"), TEXT("所有武器攻速同步提升。"), 0.12f },
-		{ ERogueUpgradeType::PickupRadius, TEXT("磁吸核心"), TEXT("经验吸附半径 +180。"), 180.0f },
-		{ ERogueUpgradeType::Recovery, TEXT("纳米修复"), TEXT("每秒生命恢复 +1.5。"), 1.5f },
-		{ ERogueUpgradeType::AttackRange, TEXT("范围扩张"), TEXT("索敌、激光射程和爆炸范围同步扩大。"), 260.0f },
-		{ ERogueUpgradeType::ProjectileSpeed, TEXT("弹道强化"), TEXT("子弹与火箭飞行速度提升。"), 450.0f },
-		{ ERogueUpgradeType::ProjectileCount, TEXT("弹幕扩容"), TEXT("普通子弹数量 +1。"), 1.0f },
-		{ ERogueUpgradeType::Armor, TEXT("偏转护甲"), TEXT("减伤 +8%。"), 0.08f },
-		{ ERogueUpgradeType::ExperienceGain, TEXT("战斗心得"), TEXT("获得经验 +25%。"), 0.25f },
-		{ ERogueUpgradeType::ScytheCount, TEXT("回旋镰刀"), TEXT("未持有时解锁回旋镰刀，已持有时镰刀数量 +1。"), 1.0f },
-		{ ERogueUpgradeType::RocketCount, TEXT("火箭吊舱"), TEXT("未持有时解锁火箭炮，已持有时火箭数量 +1。"), 1.0f },
-		{ ERogueUpgradeType::LaserCount, TEXT("激光阵列"), TEXT("未持有时解锁激光炮，已持有时激光数量 +1。"), 1.0f },
-		{ ERogueUpgradeType::HellTowerCount, TEXT("地狱塔"), TEXT("未持有时解锁地狱塔，已持有时地狱塔数量 +1。"), 1.0f },
-		{ ERogueUpgradeType::LaserRefraction, TEXT("棱镜折射"), TEXT("激光命中后会继续折射到最近敌人，每跳伤害减半，折射次数 +1。"), 1.0f }
-	};
 
-	for (const FRogueUpgradeOptionDefinition& Definition : Definitions)
-	{
-		if (Definition.Type == Type)
-		{
-			return &Definition;
-		}
-	}
-
-	return nullptr;
-}

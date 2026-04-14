@@ -1,7 +1,7 @@
 #include "World/RogueExperiencePickup.h"
 
 #include "Player/RogueCharacter.h"
-#include "Core/RogueGameMode.h"
+#include "Subsystems/RogueEnemyTrackerSubsystem.h"
 #include "Components/PointLightComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -76,9 +76,9 @@ void ARogueExperiencePickup::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	if (UWorld* World = GetWorld())
 	{
-		if (ARogueGameMode* RogueGameMode = World->GetAuthGameMode<ARogueGameMode>())
+		if (URogueEnemyTrackerSubsystem* Tracker = World->GetSubsystem<URogueEnemyTrackerSubsystem>())
 		{
-			RogueGameMode->UnregisterExperiencePickup(this);
+			Tracker->UnregisterExperiencePickup(this);
 		}
 	}
 
@@ -101,8 +101,8 @@ void ARogueExperiencePickup::Tick(float DeltaSeconds)
 		return;
 	}
 
-	ARogueGameMode* RogueGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ARogueGameMode>() : nullptr;
-	const bool bCullCombatEffects = RogueGameMode != nullptr && RogueGameMode->ShouldCullCombatEffects();
+	URogueEnemyTrackerSubsystem* Tracker = GetWorld() ? GetWorld()->GetSubsystem<URogueEnemyTrackerSubsystem>() : nullptr;
+	const bool bCullCombatEffects = Tracker != nullptr && Tracker->ShouldCullCombatEffects();
 	float HoverAlpha = 0.5f;
 	if (bCullCombatEffects)
 	{
@@ -193,9 +193,9 @@ void ARogueExperiencePickup::DeactivateToPool()
 	{
 		if (UWorld* World = GetWorld())
 		{
-			if (ARogueGameMode* RogueGameMode = World->GetAuthGameMode<ARogueGameMode>())
+			if (URogueEnemyTrackerSubsystem* Tracker = World->GetSubsystem<URogueEnemyTrackerSubsystem>())
 			{
-				RogueGameMode->UnregisterExperiencePickup(this);
+				Tracker->UnregisterExperiencePickup(this);
 			}
 		}
 	}

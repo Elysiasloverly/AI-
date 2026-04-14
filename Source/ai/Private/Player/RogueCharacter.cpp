@@ -1,5 +1,11 @@
 #include "Player/RogueCharacter.h"
 
+#include "Combat/RogueWeaponBase.h"
+#include "Combat/RogueWeapon_Projectile.h"
+#include "Combat/RogueWeapon_Scythe.h"
+#include "Combat/RogueWeapon_Rocket.h"
+#include "Combat/RogueWeapon_Laser.h"
+#include "Combat/RogueWeapon_HellTower.h"
 #include "Enemies/RogueEnemy.h"
 #include "Core/RogueUpgradeEffectApplier.h"
 #include "Core/RogueGameMode.h"
@@ -7,13 +13,10 @@
 #include "World/RogueShopTerminal.h"
 #include "UI/RogueHUD.h"
 #include "Combat/RogueImpactEffect.h"
-#include "Combat/RogueLaserBeam.h"
-#include "Combat/RogueOrbitingBlade.h"
-#include "Combat/RogueProjectile.h"
-#include "Combat/RogueRocketProjectile.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/InputComponent.h"
+#include "Engine/DataTable.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Controller.h"
 #include "GameFramework/PlayerController.h"
@@ -45,10 +48,6 @@ ARogueCharacter::ARogueCharacter()
 	GetCharacterMovement()->bOrientRotationToMovement = true;
 	GetCharacterMovement()->RotationRate = FRotator(0.0f, 720.0f, 0.0f);
 	GetCharacterMovement()->MaxWalkSpeed = MoveSpeed;
-	ProjectileWeapon.ProjectileClass = ARogueProjectile::StaticClass();
-	RocketWeapon.ProjectileClass = ARogueRocketProjectile::StaticClass();
-	LaserWeapon.BeamClass = ARogueLaserBeam::StaticClass();
-	ScytheWeapon.BladeClass = ARogueOrbitingBlade::StaticClass();
 
 	AutoPossessPlayer = EAutoReceiveInput::Player0;
 }
@@ -68,6 +67,8 @@ void ARogueCharacter::BeginPlay()
 		PlayerController->bEnableClickEvents = false;
 		PlayerController->bEnableMouseOverEvents = false;
 	}
+
+	InitializeWeapons();
 }
 
 void ARogueCharacter::ApplyBalanceAsset()
@@ -79,11 +80,6 @@ void ARogueCharacter::ApplyBalanceAsset()
 	}
 
 	const FRoguePlayerBaseStatConfig& BaseStats = LoadedPlayerBalanceAsset->BaseStats;
-	ProjectileWeapon = LoadedPlayerBalanceAsset->ProjectileWeapon;
-	ScytheWeapon = LoadedPlayerBalanceAsset->ScytheWeapon;
-	RocketWeapon = LoadedPlayerBalanceAsset->RocketWeapon;
-	LaserWeapon = LoadedPlayerBalanceAsset->LaserWeapon;
-	HellTowerWeapon = LoadedPlayerBalanceAsset->HellTowerWeapon;
 	ExperienceToNextLevel = BaseStats.ExperienceToNextLevel;
 	MaxHealth = BaseStats.MaxHealth;
 	MaxArmor = BaseStats.MaxArmor;
@@ -100,6 +96,47 @@ void ARogueCharacter::ApplyBalanceAsset()
 	DashSpeed = BaseStats.DashSpeed;
 }
 
+void ARogueCharacter::InitializeWeapons()
+{
+	// 从 DataTable 读取配置，生成武器 Actor
+	if (WeaponDataTable == nullptr || WeaponClasses.Num() == 0)
+	{
+		return;
+	}
+
+	const TArray<FName> RowNames = WeaponDataTable->GetRowNames();
+	for (int32 Index = 0; Index < RowNames.Num() && Index < WeaponClasses.Num(); ++Index)
+	{
+		const FRogueWeaponTableRow* Row = WeaponDataTable->FindRow<FRogueWeaponTableRow>(RowNames[Index], TEXT("InitializeWeapons"));
+		if (Row == nullptr || WeaponClasses[Index] == nullptr)
+		{
+			continue;
+		}
+
+		FActorSpawnParameters SpawnParams;
+		SpawnParams.Owner = this;
+		SpawnParams.Instigator = this;
+
+		ARogueWeaponBase* Weapon = GetWorld()->SpawnActor<ARogueWeaponBase>(WeaponClasses[Index], GetActorLocation(), FRotator::ZeroRotator, SpawnParams);
+		if (Weapon != nullptr)
+		{
+			Weapon->InitializeWeapon(this, *Row);
+			Weapons.Add(Weapon);
+		}
+	}
+}
+
+void ARogueCharacter::TickWeapons(float DeltaSeconds)
+{
+	for (ARogueWeaponBase* Weapon : Weapons)
+	{
+		if (IsValid(Weapon))
+		{
+			Weapon->WeaponTick(DeltaSeconds);
+		}
+	}
+}
+
 void ARogueCharacter::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
@@ -113,21 +150,7 @@ void ARogueCharacter::Tick(float DeltaSeconds)
 	HandleArmorRecharge(DeltaSeconds);
 	UpdateVisualPresentation(DeltaSeconds);
 	HandleRecovery(DeltaSeconds);
-
-	if (GetEffectiveScytheCount() > 0)
-	{
-		SharedScytheOrbitAngle = FMath::Fmod(SharedScytheOrbitAngle + ScytheWeapon.RotationSpeed * DeltaSeconds, 360.0f);
-		if (SharedScytheOrbitAngle < 0.0f)
-		{
-			SharedScytheOrbitAngle += 360.0f;
-		}
-	}
-
-	SyncOrbitingBlades();
-	HandleAutoAttack(DeltaSeconds);
-	HandleRocketLaunchers(DeltaSeconds);
-	HandleLaserCannons(DeltaSeconds);
-	HandleHellTowers(DeltaSeconds);
+	TickWeapons(DeltaSeconds);
 }
 
 void ARogueCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -270,59 +293,134 @@ float ARogueCharacter::GetExperiencePercent() const
 	return ExperienceToNextLevel > 0 ? static_cast<float>(CurrentExperience) / static_cast<float>(ExperienceToNextLevel) : 0.0f;
 }
 
-int32 ARogueCharacter::GetEffectiveProjectileCount() const
-{
-	return FMath::Max(1, ProjectileWeapon.Count);
-}
-
-int32 ARogueCharacter::GetEffectiveScytheCount() const
-{
-	return FMath::Max(0, ScytheWeapon.Count);
-}
-
-int32 ARogueCharacter::GetEffectiveRocketLauncherCount() const
-{
-	return FMath::Max(0, RocketWeapon.Count);
-}
-
-int32 ARogueCharacter::GetEffectiveLaserCannonCount() const
-{
-	return FMath::Max(0, LaserWeapon.Count);
-}
-
-int32 ARogueCharacter::GetEffectiveHellTowerCount() const
-{
-	return FMath::Max(0, HellTowerWeapon.Count);
-}
+// ---- 武器系统方法 ----
 
 void ARogueCharacter::ApplySharedWeaponDamageBonus(float Magnitude)
 {
-	ProjectileWeapon.Damage += Magnitude;
-	ScytheWeapon.Damage += Magnitude;
-	RocketWeapon.Damage += Magnitude;
-	LaserWeapon.Damage += Magnitude;
-	HellTowerWeapon.BaseDamage += Magnitude * 0.125f;
-	HellTowerWeapon.DamageRampPerTick += Magnitude * 0.0625f;
+	for (ARogueWeaponBase* Weapon : Weapons)
+	{
+		if (IsValid(Weapon))
+		{
+			Weapon->ApplySharedDamageBonus(Magnitude);
+		}
+	}
 }
 
 void ARogueCharacter::ApplySharedWeaponSpeedBonus(float Magnitude)
 {
-	ProjectileWeapon.Interval = FMath::Max(0.15f, ProjectileWeapon.Interval - Magnitude);
-	RocketWeapon.Cooldown = FMath::Max(0.55f, RocketWeapon.Cooldown - Magnitude * 2.5f);
-	LaserWeapon.Cooldown = FMath::Max(0.35f, LaserWeapon.Cooldown - Magnitude * 2.0f);
-	HellTowerWeapon.DamageTickInterval = FMath::Max(0.03f, HellTowerWeapon.DamageTickInterval - Magnitude * 0.08f);
-	ScytheWeapon.RotationSpeed += Magnitude * 280.0f;
+	for (ARogueWeaponBase* Weapon : Weapons)
+	{
+		if (IsValid(Weapon))
+		{
+			Weapon->ApplySharedSpeedBonus(Magnitude);
+		}
+	}
 }
 
 void ARogueCharacter::ApplySharedWeaponRangeBonus(float Magnitude)
 {
-	ProjectileWeapon.Range += Magnitude;
-	LaserWeapon.Range += Magnitude;
-	LaserWeapon.RefractionRange += Magnitude * 0.45f;
-	RocketWeapon.ExplosionRadius += Magnitude * 0.25f;
-	HellTowerWeapon.Range += Magnitude * 0.70f;
-	ScytheWeapon.OrbitRadius += Magnitude * 0.12f;
+	for (ARogueWeaponBase* Weapon : Weapons)
+	{
+		if (IsValid(Weapon))
+		{
+			Weapon->ApplySharedRangeBonus(Magnitude);
+		}
+	}
 }
+
+bool ARogueCharacter::DispatchWeaponUpgrade(ERogueUpgradeType UpgradeType, float Magnitude)
+{
+	for (ARogueWeaponBase* Weapon : Weapons)
+	{
+		if (IsValid(Weapon) && Weapon->OnUpgradeApplied(UpgradeType, Magnitude))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+// ---- 向后兼容的武器查询 ----
+
+float ARogueCharacter::GetAttackDamage() const
+{
+	const ARogueWeapon_Projectile* PW = FindWeapon<ARogueWeapon_Projectile>();
+	return PW != nullptr ? PW->GetDamage() : 0.0f;
+}
+
+float ARogueCharacter::GetAttackInterval() const
+{
+	const ARogueWeapon_Projectile* PW = FindWeapon<ARogueWeapon_Projectile>();
+	return PW != nullptr ? PW->GetInterval() : 1.0f;
+}
+
+int32 ARogueCharacter::GetProjectileCount() const
+{
+	const ARogueWeapon_Projectile* PW = FindWeapon<ARogueWeapon_Projectile>();
+	return PW != nullptr ? PW->GetCount() : 1;
+}
+
+int32 ARogueCharacter::GetEffectiveProjectileCount() const
+{
+	const ARogueWeapon_Projectile* PW = FindWeapon<ARogueWeapon_Projectile>();
+	return PW != nullptr ? PW->GetEffectiveProjectileCount() : 1;
+}
+
+int32 ARogueCharacter::GetScytheCount() const
+{
+	const ARogueWeapon_Scythe* SW = FindWeapon<ARogueWeapon_Scythe>();
+	return SW != nullptr ? SW->GetCount() : 0;
+}
+
+int32 ARogueCharacter::GetEffectiveScytheCount() const
+{
+	const ARogueWeapon_Scythe* SW = FindWeapon<ARogueWeapon_Scythe>();
+	return SW != nullptr ? SW->GetEffectiveCount() : 0;
+}
+
+int32 ARogueCharacter::GetRocketLauncherCount() const
+{
+	const ARogueWeapon_Rocket* RW = FindWeapon<ARogueWeapon_Rocket>();
+	return RW != nullptr ? RW->GetCount() : 0;
+}
+
+int32 ARogueCharacter::GetEffectiveRocketLauncherCount() const
+{
+	const ARogueWeapon_Rocket* RW = FindWeapon<ARogueWeapon_Rocket>();
+	return RW != nullptr ? RW->GetEffectiveCount() : 0;
+}
+
+int32 ARogueCharacter::GetLaserCannonCount() const
+{
+	const ARogueWeapon_Laser* LW = FindWeapon<ARogueWeapon_Laser>();
+	return LW != nullptr ? LW->GetCount() : 0;
+}
+
+int32 ARogueCharacter::GetEffectiveLaserCannonCount() const
+{
+	const ARogueWeapon_Laser* LW = FindWeapon<ARogueWeapon_Laser>();
+	return LW != nullptr ? LW->GetEffectiveCount() : 0;
+}
+
+int32 ARogueCharacter::GetHellTowerCount() const
+{
+	const ARogueWeapon_HellTower* HW = FindWeapon<ARogueWeapon_HellTower>();
+	return HW != nullptr ? HW->GetCount() : 0;
+}
+
+int32 ARogueCharacter::GetEffectiveHellTowerCount() const
+{
+	const ARogueWeapon_HellTower* HW = FindWeapon<ARogueWeapon_HellTower>();
+	return HW != nullptr ? HW->GetEffectiveCount() : 0;
+}
+
+int32 ARogueCharacter::GetLaserRefractionCount() const
+{
+	const ARogueWeapon_Laser* LW = FindWeapon<ARogueWeapon_Laser>();
+	return LW != nullptr ? LW->GetRefractionCount() : 0;
+}
+
+// ---- 角色移动 / 摄像机 / 冲刺 / 护甲 / 恢复 ----
 
 void ARogueCharacter::HandleArmorRecharge(float DeltaSeconds)
 {
@@ -604,29 +702,6 @@ void ARogueCharacter::HandleDash(float DeltaSeconds)
 	}
 }
 
-void ARogueCharacter::HandleAutoAttack(float DeltaSeconds)
-{
-	AttackTimer -= DeltaSeconds;
-	if (AttackTimer > 0.0f)
-	{
-		return;
-	}
-
-	ARogueGameMode* RogueGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ARogueGameMode>() : nullptr;
-	if (RogueGameMode == nullptr)
-	{
-		return;
-	}
-
-	TArray<TObjectPtr<ARogueEnemy>> IgnoredEnemies;
-	AActor* ClosestEnemy = RogueGameMode->FindNearestEnemyInRange(GetActorLocation(), ProjectileWeapon.Range, IgnoredEnemies);
-	if (ClosestEnemy != nullptr)
-	{
-		FireAtTarget(ClosestEnemy);
-		AttackTimer = ProjectileWeapon.Interval;
-	}
-}
-
 void ARogueCharacter::HandleRecovery(float DeltaSeconds)
 {
 	if (HealthRegenPerSecond <= 0.0f || CurrentHealth >= MaxHealth)
@@ -658,416 +733,6 @@ FVector ARogueCharacter::GetDashDirection() const
 	}
 
 	return DesiredDirection;
-}
-
-void ARogueCharacter::SyncOrbitingBlades()
-{
-	const int32 TargetBladeCount = GetEffectiveScytheCount();
-
-	for (int32 Index = OrbitingBlades.Num() - 1; Index >= 0; --Index)
-	{
-		if (!IsValid(OrbitingBlades[Index]) || OrbitingBlades[Index]->IsAvailableInPool())
-		{
-			OrbitingBlades.RemoveAt(Index);
-		}
-	}
-
-	while (OrbitingBlades.Num() < TargetBladeCount)
-	{
-		FActorSpawnParameters SpawnParameters;
-		SpawnParameters.Owner = this;
-		SpawnParameters.Instigator = this;
-
-		UClass* BladeClassToSpawn = ScytheWeapon.BladeClass ? ScytheWeapon.BladeClass.Get() : ARogueOrbitingBlade::StaticClass();
-		ARogueGameMode* RogueGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ARogueGameMode>() : nullptr;
-		ARogueOrbitingBlade* Blade = RogueGameMode != nullptr
-			? RogueGameMode->AcquireOrbitingBlade(BladeClassToSpawn, this, GetActorLocation(), FRotator::ZeroRotator)
-			: GetWorld()->SpawnActor<ARogueOrbitingBlade>(BladeClassToSpawn, GetActorLocation(), FRotator::ZeroRotator, SpawnParameters);
-		if (Blade != nullptr)
-		{
-			Blade->ActivatePooledBlade(this);
-			OrbitingBlades.Add(Blade);
-		}
-		else
-		{
-			break;
-		}
-	}
-
-	while (OrbitingBlades.Num() > TargetBladeCount)
-	{
-		if (ARogueOrbitingBlade* Blade = OrbitingBlades.Pop())
-		{
-			Blade->DeactivateToPool();
-		}
-	}
-
-	for (int32 Index = 0; Index < OrbitingBlades.Num(); ++Index)
-	{
-		if (IsValid(OrbitingBlades[Index]))
-		{
-			OrbitingBlades[Index]->ConfigureBlade(this, Index, OrbitingBlades.Num(), ScytheWeapon.OrbitRadius, ScytheWeapon.RotationSpeed, ScytheWeapon.Damage, SharedScytheOrbitAngle);
-		}
-	}
-}
-
-void ARogueCharacter::CollectEnemiesInRange(float Range, TArray<ARogueEnemy*>& OutEnemies, int32 MaxResults) const
-{
-	ARogueGameMode* RogueGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ARogueGameMode>() : nullptr;
-	if (RogueGameMode == nullptr)
-	{
-		OutEnemies.Reset();
-		return;
-	}
-
-	RogueGameMode->CollectEnemiesInRange(GetActorLocation(), Range, OutEnemies, MaxResults, true);
-}
-
-void ARogueCharacter::HandleRocketLaunchers(float DeltaSeconds)
-{
-	if (GetEffectiveRocketLauncherCount() <= 0)
-	{
-		return;
-	}
-
-	RocketTimer -= DeltaSeconds;
-	if (RocketTimer > 0.0f)
-	{
-		return;
-	}
-
-	TArray<ARogueEnemy*> Enemies;
-	CollectEnemiesInRange(ProjectileWeapon.Range + 700.0f, Enemies, FMath::Max(12, GetEffectiveRocketLauncherCount() * 3));
-	if (Enemies.Num() == 0)
-	{
-		return;
-	}
-
-	FireRocketVolley(Enemies);
-	RocketTimer = RocketWeapon.Cooldown;
-}
-
-void ARogueCharacter::HandleLaserCannons(float DeltaSeconds)
-{
-	if (GetEffectiveLaserCannonCount() <= 0)
-	{
-		return;
-	}
-
-	LaserTimer -= DeltaSeconds;
-	if (LaserTimer > 0.0f)
-	{
-		return;
-	}
-
-	TArray<ARogueEnemy*> Enemies;
-	CollectEnemiesInRange(LaserWeapon.Range, Enemies, FMath::Max(8, GetEffectiveLaserCannonCount() * 3));
-	if (Enemies.Num() == 0)
-	{
-		return;
-	}
-
-	FireLaserBurst(Enemies);
-	LaserTimer = LaserWeapon.Cooldown;
-}
-
-void ARogueCharacter::HandleHellTowers(float DeltaSeconds)
-{
-	const int32 EffectiveHellTowerCount = GetEffectiveHellTowerCount();
-	if (EffectiveHellTowerCount <= 0)
-	{
-		HellTowerUpdateAccumulator = 0.0f;
-		HellTowerTargets.Reset();
-		HellTowerCurrentDamages.Reset();
-		HellTowerDamageTickTimers.Reset();
-		HellTowerBeamTimers.Reset();
-		return;
-	}
-
-	ARogueGameMode* RogueGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ARogueGameMode>() : nullptr;
-	const bool bHeavyCombat = RogueGameMode != nullptr && (RogueGameMode->ShouldCullCombatEffects() || RogueGameMode->GetActiveEnemyCount() >= 40);
-	const float UpdateStep = bHeavyCombat ? HellTowerWeapon.HeavyCombatUpdateInterval : HellTowerWeapon.UpdateInterval;
-	HellTowerUpdateAccumulator += DeltaSeconds;
-	if (HellTowerUpdateAccumulator < UpdateStep)
-	{
-		return;
-	}
-
-	const float SimulatedDeltaSeconds = FMath::Min(HellTowerUpdateAccumulator, UpdateStep * 2.0f);
-	HellTowerUpdateAccumulator = 0.0f;
-
-	HellTowerTargets.SetNum(EffectiveHellTowerCount);
-	HellTowerCurrentDamages.SetNum(EffectiveHellTowerCount);
-	HellTowerDamageTickTimers.SetNum(EffectiveHellTowerCount);
-	HellTowerBeamTimers.SetNum(EffectiveHellTowerCount);
-
-	const FVector PlayerLocation = GetActorLocation();
-	const float HellTowerRangeSquared = FMath::Square(HellTowerWeapon.Range);
-	TArray<TObjectPtr<ARogueEnemy>> LockedEnemies;
-	LockedEnemies.Reserve(EffectiveHellTowerCount);
-
-	for (int32 TowerIndex = 0; TowerIndex < EffectiveHellTowerCount; ++TowerIndex)
-	{
-		ARogueEnemy* CurrentTarget = HellTowerTargets[TowerIndex].Get();
-		const bool bHasValidTarget =
-			IsValid(CurrentTarget) &&
-			!CurrentTarget->IsDead() &&
-			!CurrentTarget->IsAvailableInPool() &&
-			!CurrentTarget->IsActorBeingDestroyed() &&
-			FVector::DistSquared2D(PlayerLocation, CurrentTarget->GetActorLocation()) <= HellTowerRangeSquared;
-
-		if (!bHasValidTarget)
-		{
-			HellTowerTargets[TowerIndex] = nullptr;
-			HellTowerCurrentDamages[TowerIndex] = FMath::Max(1.0f, HellTowerWeapon.BaseDamage);
-			HellTowerDamageTickTimers[TowerIndex] = 0.0f;
-			HellTowerBeamTimers[TowerIndex] = 0.0f;
-		}
-		else
-		{
-			HellTowerCurrentDamages[TowerIndex] = FMath::Max(HellTowerCurrentDamages[TowerIndex], FMath::Max(1.0f, HellTowerWeapon.BaseDamage));
-			LockedEnemies.Add(CurrentTarget);
-		}
-	}
-
-	for (int32 TowerIndex = 0; TowerIndex < EffectiveHellTowerCount; ++TowerIndex)
-	{
-		if (HellTowerTargets[TowerIndex].IsValid())
-		{
-			continue;
-		}
-
-		ARogueEnemy* NewTarget = FindNearestEnemyFrom(PlayerLocation, LockedEnemies, HellTowerWeapon.Range);
-		if (!IsValid(NewTarget))
-		{
-			continue;
-		}
-
-		HellTowerTargets[TowerIndex] = NewTarget;
-		HellTowerCurrentDamages[TowerIndex] = FMath::Max(1.0f, HellTowerWeapon.BaseDamage);
-		HellTowerDamageTickTimers[TowerIndex] = 0.0f;
-		HellTowerBeamTimers[TowerIndex] = 0.0f;
-		LockedEnemies.Add(NewTarget);
-	}
-
-	FVector LateralDirection = Camera != nullptr ? Camera->GetRightVector() : GetActorRightVector();
-	LateralDirection.Z = 0.0f;
-	if (!LateralDirection.Normalize())
-	{
-		LateralDirection = FVector::RightVector;
-	}
-
-	const int32 TowerHalfCount = EffectiveHellTowerCount / 2;
-	const float BeamSpacing = 18.0f;
-	const FVector BeamOriginBase = PlayerLocation + FVector(0.0f, 0.0f, 62.0f);
-	const float EffectiveBeamRefreshInterval = HellTowerWeapon.BeamRefreshInterval + (bHeavyCombat ? HellTowerWeapon.HeavyCombatBeamRefreshPenalty : 0.0f);
-
-	for (int32 TowerIndex = 0; TowerIndex < EffectiveHellTowerCount; ++TowerIndex)
-	{
-		ARogueEnemy* TargetEnemy = HellTowerTargets[TowerIndex].Get();
-		if (!IsValid(TargetEnemy) || TargetEnemy->IsDead() || TargetEnemy->IsAvailableInPool() || TargetEnemy->IsActorBeingDestroyed())
-		{
-			continue;
-		}
-
-		HellTowerDamageTickTimers[TowerIndex] += SimulatedDeltaSeconds;
-		while (HellTowerDamageTickTimers[TowerIndex] >= HellTowerWeapon.DamageTickInterval)
-		{
-			HellTowerDamageTickTimers[TowerIndex] -= HellTowerWeapon.DamageTickInterval;
-			UGameplayStatics::ApplyDamage(TargetEnemy, HellTowerCurrentDamages[TowerIndex], nullptr, this, UDamageType::StaticClass());
-			HellTowerCurrentDamages[TowerIndex] += HellTowerWeapon.DamageRampPerTick;
-		}
-
-		HellTowerBeamTimers[TowerIndex] -= SimulatedDeltaSeconds;
-		if (HellTowerBeamTimers[TowerIndex] > 0.0f)
-		{
-			continue;
-		}
-
-		const float OffsetIndex = static_cast<float>(TowerIndex - TowerHalfCount);
-		const float LateralOffset = EffectiveHellTowerCount % 2 == 0 ? (OffsetIndex + 0.5f) * BeamSpacing : OffsetIndex * BeamSpacing;
-		const FVector BeamOrigin = BeamOriginBase + LateralDirection * LateralOffset;
-		const FVector TargetLocation = TargetEnemy->GetActorLocation() + FVector(0.0f, 0.0f, 42.0f);
-		SpawnLaserBeam(BeamOrigin, TargetLocation, true, false, EffectiveBeamRefreshInterval + 0.03f);
-		HellTowerBeamTimers[TowerIndex] = EffectiveBeamRefreshInterval;
-	}
-}
-
-void ARogueCharacter::FireAtTarget(AActor* TargetActor)
-{
-	if (!IsValid(TargetActor))
-	{
-		return;
-	}
-
-	const FVector AimOrigin = GetActorLocation() + FVector(0.0f, 0.0f, 50.0f);
-	FVector Direction = TargetActor->GetActorLocation() - AimOrigin;
-	Direction.Z = 0.0f;
-	if (!Direction.Normalize())
-	{
-		Direction = GetActorForwardVector().GetSafeNormal2D();
-		if (Direction.IsNearlyZero())
-		{
-			Direction = FVector::ForwardVector;
-		}
-	}
-	const float SpreadStepDegrees = 9.0f;
-	const int32 EffectiveProjectileCount = GetEffectiveProjectileCount();
-	const int32 ProjectileHalfCount = EffectiveProjectileCount / 2;
-
-	for (int32 ProjectileIndex = 0; ProjectileIndex < EffectiveProjectileCount; ++ProjectileIndex)
-	{
-		const float OffsetIndex = static_cast<float>(ProjectileIndex - ProjectileHalfCount);
-		const float SpreadOffset = EffectiveProjectileCount % 2 == 0 ? (OffsetIndex + 0.5f) * SpreadStepDegrees : OffsetIndex * SpreadStepDegrees;
-		const FVector ShotDirection = Direction.RotateAngleAxis(SpreadOffset, FVector::UpVector).GetSafeNormal();
-		const FVector SpawnLocation = AimOrigin + ShotDirection * 100.0f;
-
-		FActorSpawnParameters SpawnParameters;
-		SpawnParameters.Owner = this;
-		SpawnParameters.Instigator = this;
-
-		UClass* ProjectileToSpawn = ProjectileWeapon.ProjectileClass ? ProjectileWeapon.ProjectileClass.Get() : ARogueProjectile::StaticClass();
-		ARogueGameMode* RogueGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ARogueGameMode>() : nullptr;
-		ARogueProjectile* Projectile = RogueGameMode != nullptr
-			? RogueGameMode->AcquirePlayerProjectile(ProjectileToSpawn, this, this, SpawnLocation, ShotDirection.Rotation())
-			: GetWorld()->SpawnActor<ARogueProjectile>(ProjectileToSpawn, SpawnLocation, ShotDirection.Rotation(), SpawnParameters);
-		if (Projectile != nullptr)
-		{
-			Projectile->ActivatePooledProjectile(this, this, SpawnLocation, ShotDirection.Rotation(), ShotDirection, ProjectileWeapon.Speed, ProjectileWeapon.Damage);
-		}
-	}
-}
-
-void ARogueCharacter::FireRocketVolley(const TArray<ARogueEnemy*>& Enemies)
-{
-	const FVector LaunchOrigin = GetActorLocation() + FVector(0.0f, 0.0f, 80.0f);
-	const int32 EffectiveRocketCount = GetEffectiveRocketLauncherCount();
-
-	for (int32 RocketIndex = 0; RocketIndex < EffectiveRocketCount; ++RocketIndex)
-	{
-		if (!Enemies.IsValidIndex(RocketIndex % Enemies.Num()) || !IsValid(Enemies[RocketIndex % Enemies.Num()]))
-		{
-			continue;
-		}
-
-		ARogueEnemy* TargetEnemy = Enemies[RocketIndex % Enemies.Num()];
-		const FVector Direction = (TargetEnemy->GetActorLocation() - LaunchOrigin).GetSafeNormal();
-		const FVector SpawnLocation = LaunchOrigin + Direction * 90.0f + FVector(0.0f, 0.0f, RocketIndex * 8.0f);
-
-		FActorSpawnParameters SpawnParameters;
-		SpawnParameters.Owner = this;
-		SpawnParameters.Instigator = this;
-
-		UClass* RocketClassToSpawn = RocketWeapon.ProjectileClass ? RocketWeapon.ProjectileClass.Get() : ARogueRocketProjectile::StaticClass();
-		ARogueGameMode* RogueGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ARogueGameMode>() : nullptr;
-		ARogueRocketProjectile* Rocket = RogueGameMode != nullptr
-			? RogueGameMode->AcquireRocketProjectile(RocketClassToSpawn, this, this, SpawnLocation, Direction.Rotation())
-			: GetWorld()->SpawnActor<ARogueRocketProjectile>(RocketClassToSpawn, SpawnLocation, Direction.Rotation(), SpawnParameters);
-		if (Rocket != nullptr)
-		{
-			Rocket->ActivatePooledRocket(this, this, SpawnLocation, Direction.Rotation(), Direction, RocketWeapon.Speed, RocketWeapon.Damage, RocketWeapon.ExplosionRadius);
-		}
-	}
-}
-
-void ARogueCharacter::FireLaserBurst(const TArray<ARogueEnemy*>& Enemies)
-{
-	const FVector BeamOriginBase = GetActorLocation() + FVector(0.0f, 0.0f, 70.0f);
-	const int32 EffectiveLaserCount = GetEffectiveLaserCannonCount();
-	FVector LateralDirection = Camera != nullptr ? Camera->GetRightVector() : GetActorRightVector();
-	LateralDirection.Z = 0.0f;
-	if (!LateralDirection.Normalize())
-	{
-		LateralDirection = FVector::RightVector;
-	}
-
-	const int32 LaserHalfCount = EffectiveLaserCount / 2;
-	const float BeamSpacing = 34.0f;
-
-	for (int32 LaserIndex = 0; LaserIndex < EffectiveLaserCount; ++LaserIndex)
-	{
-		if (!Enemies.IsValidIndex(LaserIndex % Enemies.Num()) || !IsValid(Enemies[LaserIndex % Enemies.Num()]))
-		{
-			continue;
-		}
-
-		ARogueEnemy* TargetEnemy = Enemies[LaserIndex % Enemies.Num()];
-		const float OffsetIndex = static_cast<float>(LaserIndex - LaserHalfCount);
-		const float LateralOffset = EffectiveLaserCount % 2 == 0 ? (OffsetIndex + 0.5f) * BeamSpacing : OffsetIndex * BeamSpacing;
-		const FVector BeamOrigin = BeamOriginBase + LateralDirection * LateralOffset;
-		const FVector TargetLocation = TargetEnemy->GetActorLocation() + FVector(0.0f, 0.0f, 40.0f);
-		UGameplayStatics::ApplyDamage(TargetEnemy, LaserWeapon.Damage, nullptr, this, UDamageType::StaticClass());
-		SpawnLaserBeam(BeamOrigin, TargetLocation);
-		if (LaserWeapon.RefractionCount > 0)
-		{
-			FireLaserRefractionChain(TargetEnemy, TargetLocation, LaserWeapon.Damage * 0.5f);
-		}
-	}
-}
-
-void ARogueCharacter::FireLaserRefractionChain(ARogueEnemy* InitialTarget, const FVector& InitialImpactLocation, float InitialDamage)
-{
-	if (!IsValid(InitialTarget) || LaserWeapon.RefractionCount <= 0 || InitialDamage <= 0.0f)
-	{
-		return;
-	}
-
-	TArray<TObjectPtr<ARogueEnemy>> HitEnemies;
-	HitEnemies.Add(InitialTarget);
-
-	ARogueEnemy* CurrentTarget = InitialTarget;
-	FVector CurrentStartLocation = InitialImpactLocation;
-	float CurrentDamage = InitialDamage;
-
-	for (int32 RefractionIndex = 0; RefractionIndex < LaserWeapon.RefractionCount; ++RefractionIndex)
-	{
-		if (!IsValid(CurrentTarget) || CurrentDamage <= 1.0f)
-		{
-			break;
-		}
-
-		ARogueEnemy* NextTarget = FindNearestEnemyFrom(CurrentTarget->GetActorLocation(), HitEnemies, LaserWeapon.RefractionRange);
-		if (!IsValid(NextTarget))
-		{
-			break;
-		}
-
-		const FVector NextImpactLocation = NextTarget->GetActorLocation() + FVector(0.0f, 0.0f, 40.0f);
-		UGameplayStatics::ApplyDamage(NextTarget, CurrentDamage, nullptr, this, UDamageType::StaticClass());
-		SpawnLaserBeam(CurrentStartLocation, NextImpactLocation);
-
-		HitEnemies.Add(NextTarget);
-		CurrentTarget = NextTarget;
-		CurrentStartLocation = NextImpactLocation;
-	}
-}
-
-ARogueEnemy* ARogueCharacter::FindNearestEnemyFrom(const FVector& Origin, const TArray<TObjectPtr<ARogueEnemy>>& IgnoredEnemies, float MaxRange) const
-{
-	ARogueGameMode* RogueGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ARogueGameMode>() : nullptr;
-	if (RogueGameMode == nullptr)
-	{
-		return nullptr;
-	}
-
-	return RogueGameMode->FindNearestEnemyInRange(Origin, MaxRange, IgnoredEnemies);
-}
-
-void ARogueCharacter::SpawnLaserBeam(const FVector& StartLocation, const FVector& EndLocation, bool bUseInfernoStyle, bool bSpawnImpactEffect, float BeamLifetime)
-{
-	FActorSpawnParameters SpawnParameters;
-	SpawnParameters.Owner = this;
-	SpawnParameters.Instigator = this;
-
-	UClass* BeamClassToSpawn = LaserWeapon.BeamClass ? LaserWeapon.BeamClass.Get() : ARogueLaserBeam::StaticClass();
-	ARogueGameMode* RogueGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ARogueGameMode>() : nullptr;
-	ARogueLaserBeam* Beam = RogueGameMode != nullptr
-		? RogueGameMode->AcquireLaserBeam(BeamClassToSpawn, this, StartLocation, FRotator::ZeroRotator)
-		: GetWorld()->SpawnActor<ARogueLaserBeam>(BeamClassToSpawn, StartLocation, FRotator::ZeroRotator, SpawnParameters);
-	if (Beam != nullptr)
-	{
-		Beam->ActivatePooledBeam(this, StartLocation, EndLocation, bUseInfernoStyle, bSpawnImpactEffect, BeamLifetime);
-	}
 }
 
 void ARogueCharacter::UpdateVisualPresentation(float DeltaSeconds)
@@ -1119,18 +784,16 @@ void ARogueCharacter::Die()
 {
 	bDead = true;
 	SetUpgradeSelectionInput(true);
-	for (ARogueOrbitingBlade* Blade : OrbitingBlades)
+
+	// 通知所有武器角色死亡
+	for (ARogueWeaponBase* Weapon : Weapons)
 	{
-		if (IsValid(Blade))
+		if (IsValid(Weapon))
 		{
-			Blade->DeactivateToPool();
+			Weapon->OnOwnerDied();
 		}
 	}
-	OrbitingBlades.Reset();
-	HellTowerTargets.Reset();
-	HellTowerCurrentDamages.Reset();
-	HellTowerDamageTickTimers.Reset();
-	HellTowerBeamTimers.Reset();
+
 	DisableInput(Cast<APlayerController>(GetController()));
 	GetCharacterMovement()->DisableMovement();
 

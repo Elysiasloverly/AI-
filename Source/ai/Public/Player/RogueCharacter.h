@@ -3,19 +3,18 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "Player/RogueCharacterVisualComponent.h"
-#include "Player/RogueWeaponConfig.h"
 #include "Core/RogueTypes.h"
 #include "RogueCharacter.generated.h"
 
-class ARogueProjectile;
-class ARogueRocketProjectile;
-class ARogueLaserBeam;
-class ARogueOrbitingBlade;
+class ARogueWeaponBase;
+class ARogueWeapon_Projectile;
+class ARogueWeapon_Laser;
 class ARogueEnemy;
 class ARogueHUD;
 class ARogueShopTerminal;
 class UCameraComponent;
 class USpringArmComponent;
+class UDataTable;
 class URogueCharacterVisualComponent;
 class URoguePlayerBalanceAsset;
 struct FRogueUpgradeEffectApplier;
@@ -41,6 +40,39 @@ public:
 	void SetNearbyShopTerminal(ARogueShopTerminal* ShopTerminal);
 	void ClearNearbyShopTerminal(const ARogueShopTerminal* ShopTerminal);
 	bool GetShopPromptWorldLocation(FVector& OutLocation) const;
+
+	// ---- 武器系统接口 ----
+
+	/** 获取所有武器 Actor */
+	const TArray<TObjectPtr<ARogueWeaponBase>>& GetWeapons() const { return Weapons; }
+
+	/** 按类型查找武器 */
+	template<typename T>
+	T* FindWeapon() const
+	{
+		for (ARogueWeaponBase* Weapon : Weapons)
+		{
+			if (T* Typed = Cast<T>(Weapon))
+			{
+				return Typed;
+			}
+		}
+		return nullptr;
+	}
+
+	/** 全局武器伤害加成 */
+	void ApplySharedWeaponDamageBonus(float Magnitude);
+
+	/** 全局武器攻速加成 */
+	void ApplySharedWeaponSpeedBonus(float Magnitude);
+
+	/** 全局武器范围加成 */
+	void ApplySharedWeaponRangeBonus(float Magnitude);
+
+	/** 将武器专属升级分发给所有武器 */
+	bool DispatchWeaponUpgrade(ERogueUpgradeType UpgradeType, float Magnitude);
+
+	// ---- 角色属性查询 ----
 
 	UFUNCTION(BlueprintPure)
 	float GetHealthPercent() const;
@@ -88,49 +120,10 @@ public:
 	bool CanInteractWithShop() const { return NearbyShopTerminal.IsValid(); }
 
 	UFUNCTION(BlueprintPure)
-	float GetAttackDamage() const { return ProjectileWeapon.Damage; }
-
-	UFUNCTION(BlueprintPure)
-	float GetAttackInterval() const { return ProjectileWeapon.Interval; }
-
-	UFUNCTION(BlueprintPure)
-	int32 GetProjectileCount() const { return ProjectileWeapon.Count; }
-
-	UFUNCTION(BlueprintPure)
-	int32 GetEffectiveProjectileCount() const;
-
-	UFUNCTION(BlueprintPure)
 	float GetDamageReductionPercent() const { return DamageReductionPercent; }
 
 	UFUNCTION(BlueprintPure)
 	float GetExperienceMultiplier() const { return ExperienceMultiplier; }
-
-	UFUNCTION(BlueprintPure)
-	int32 GetScytheCount() const { return ScytheWeapon.Count; }
-
-	UFUNCTION(BlueprintPure)
-	int32 GetEffectiveScytheCount() const;
-
-	UFUNCTION(BlueprintPure)
-	int32 GetRocketLauncherCount() const { return RocketWeapon.Count; }
-
-	UFUNCTION(BlueprintPure)
-	int32 GetEffectiveRocketLauncherCount() const;
-
-	UFUNCTION(BlueprintPure)
-	int32 GetLaserCannonCount() const { return LaserWeapon.Count; }
-
-	UFUNCTION(BlueprintPure)
-	int32 GetEffectiveLaserCannonCount() const;
-
-	UFUNCTION(BlueprintPure)
-	int32 GetHellTowerCount() const { return HellTowerWeapon.Count; }
-
-	UFUNCTION(BlueprintPure)
-	int32 GetEffectiveHellTowerCount() const;
-
-	UFUNCTION(BlueprintPure)
-	int32 GetLaserRefractionCount() const { return LaserWeapon.RefractionCount; }
 
 	UFUNCTION(BlueprintPure)
 	float GetDashCooldownDuration() const { return DashCooldownDuration; }
@@ -143,6 +136,47 @@ public:
 
 	UFUNCTION(BlueprintPure)
 	bool IsDead() const { return bDead; }
+
+	// ---- 向后兼容的武器查询（供 HUD / 升级规则使用） ----
+
+	UFUNCTION(BlueprintPure)
+	float GetAttackDamage() const;
+
+	UFUNCTION(BlueprintPure)
+	float GetAttackInterval() const;
+
+	UFUNCTION(BlueprintPure)
+	int32 GetEffectiveProjectileCount() const;
+
+	UFUNCTION(BlueprintPure)
+	int32 GetEffectiveScytheCount() const;
+
+	UFUNCTION(BlueprintPure)
+	int32 GetEffectiveRocketLauncherCount() const;
+
+	UFUNCTION(BlueprintPure)
+	int32 GetEffectiveLaserCannonCount() const;
+
+	UFUNCTION(BlueprintPure)
+	int32 GetEffectiveHellTowerCount() const;
+
+	UFUNCTION(BlueprintPure)
+	int32 GetLaserRefractionCount() const;
+
+	UFUNCTION(BlueprintPure)
+	int32 GetScytheCount() const;
+
+	UFUNCTION(BlueprintPure)
+	int32 GetRocketLauncherCount() const;
+
+	UFUNCTION(BlueprintPure)
+	int32 GetLaserCannonCount() const;
+
+	UFUNCTION(BlueprintPure)
+	int32 GetHellTowerCount() const;
+
+	UFUNCTION(BlueprintPure)
+	int32 GetProjectileCount() const;
 
 protected:
 	virtual void BeginPlay() override;
@@ -164,24 +198,11 @@ private:
 	void ChooseUpgradeThree();
 	void HandleDash(float DeltaSeconds);
 	void HandleArmorRecharge(float DeltaSeconds);
-	void HandleAutoAttack(float DeltaSeconds);
 	void HandleRecovery(float DeltaSeconds);
-	void HandleRocketLaunchers(float DeltaSeconds);
-	void HandleLaserCannons(float DeltaSeconds);
-	void HandleHellTowers(float DeltaSeconds);
-	void SyncOrbitingBlades();
 	FVector GetDashDirection() const;
-	void CollectEnemiesInRange(float Range, TArray<ARogueEnemy*>& OutEnemies, int32 MaxResults = 0) const;
-	void FireAtTarget(AActor* TargetActor);
-	void FireRocketVolley(const TArray<ARogueEnemy*>& Enemies);
-	void FireLaserBurst(const TArray<ARogueEnemy*>& Enemies);
-	void FireLaserRefractionChain(ARogueEnemy* InitialTarget, const FVector& InitialImpactLocation, float InitialDamage);
-	ARogueEnemy* FindNearestEnemyFrom(const FVector& Origin, const TArray<TObjectPtr<ARogueEnemy>>& IgnoredEnemies, float MaxRange) const;
-	void SpawnLaserBeam(const FVector& StartLocation, const FVector& EndLocation, bool bUseInfernoStyle = false, bool bSpawnImpactEffect = true, float BeamLifetime = 0.10f);
-	void ApplySharedWeaponDamageBonus(float Magnitude);
-	void ApplySharedWeaponSpeedBonus(float Magnitude);
-	void ApplySharedWeaponRangeBonus(float Magnitude);
 	void ApplyBalanceAsset();
+	void InitializeWeapons();
+	void TickWeapons(float DeltaSeconds);
 	void UpdateVisualPresentation(float DeltaSeconds);
 	void LevelUp();
 	void Die();
@@ -198,20 +219,20 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "Config")
 	TSoftObjectPtr<URoguePlayerBalanceAsset> PlayerBalanceAsset;
 
+	/** 武器配置数据表 —— 每行对应一种武器 */
 	UPROPERTY(EditDefaultsOnly, Category = "Combat")
-	FRogueProjectileWeaponConfig ProjectileWeapon;
+	TObjectPtr<UDataTable> WeaponDataTable;
 
+	/** 武器子类列表 —— 按顺序对应 DataTable 中的行（RowName 需与数组索引对应） */
 	UPROPERTY(EditDefaultsOnly, Category = "Combat")
-	FRogueScytheWeaponConfig ScytheWeapon;
+	TArray<TSubclassOf<ARogueWeaponBase>> WeaponClasses;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Combat")
-	FRogueRocketWeaponConfig RocketWeapon;
+	/** 运行时生成的武器 Actor 实例 */
+	UPROPERTY()
+	TArray<TObjectPtr<ARogueWeaponBase>> Weapons;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Combat")
-	FRogueLaserWeaponConfig LaserWeapon;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Combat")
-	FRogueHellTowerWeaponConfig HellTowerWeapon;
+	UPROPERTY()
+	TObjectPtr<URoguePlayerBalanceAsset> LoadedPlayerBalanceAsset;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Camera")
 	float CameraTurnSpeed = 2.2f;
@@ -288,31 +309,17 @@ private:
 	UPROPERTY(VisibleInstanceOnly, Category = "Progression")
 	int32 PlayerLevel = 1;
 
-	UPROPERTY()
-	TObjectPtr<URoguePlayerBalanceAsset> LoadedPlayerBalanceAsset;
-
 	UPROPERTY(VisibleInstanceOnly, Category = "Progression")
 	int32 Money = 0;
 
 	float ExperienceRemainder = 0.0f;
-	float AttackTimer = 0.0f;
-	float RocketTimer = 0.0f;
-	float LaserTimer = 0.0f;
-	float SharedScytheOrbitAngle = 0.0f;
 	float DashCooldownRemaining = 0.0f;
 	float DashTimeRemaining = 0.0f;
 	float ArmorRechargeDelayRemaining = 0.0f;
-	float HellTowerUpdateAccumulator = 0.0f;
 	float ForwardInputValue = 0.0f;
 	float RightInputValue = 0.0f;
 	FVector DashDirection = FVector::ForwardVector;
-	TArray<TWeakObjectPtr<ARogueEnemy>> HellTowerTargets;
-	TArray<float> HellTowerCurrentDamages;
-	TArray<float> HellTowerDamageTickTimers;
-	TArray<float> HellTowerBeamTimers;
 	TWeakObjectPtr<ARogueShopTerminal> NearbyShopTerminal;
-	UPROPERTY()
-	TArray<TObjectPtr<ARogueOrbitingBlade>> OrbitingBlades;
 	bool bDashActive = false;
 	bool bDead = false;
 };

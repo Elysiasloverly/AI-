@@ -3,6 +3,7 @@
 #include "Player/RogueCharacter.h"
 #include "Enemies/RogueEnemy.h"
 #include "Core/RogueGameMode.h"
+#include "Subsystems/RogueEnemyTrackerSubsystem.h"
 #include "AudioDevice.h"
 #include "Engine/Canvas.h"
 #include "Engine/Engine.h"
@@ -213,8 +214,8 @@ void ARogueHUD::AddDamageNumber(const FVector& WorldLocation, float Damage, bool
 		return;
 	}
 
-	const ARogueGameMode* RogueGameMode = GetWorld()->GetAuthGameMode<ARogueGameMode>();
-	const int32 MaxDamageNumbers = RogueGameMode != nullptr && RogueGameMode->ShouldCullCombatEffects() ? MaxDamageNumbersHeavy : MaxDamageNumbersNormal;
+	const URogueEnemyTrackerSubsystem* TrackerForDamage = GetWorld()->GetSubsystem<URogueEnemyTrackerSubsystem>();
+	const int32 MaxDamageNumbers = TrackerForDamage != nullptr && TrackerForDamage->ShouldCullCombatEffects() ? MaxDamageNumbersHeavy : MaxDamageNumbersNormal;
 	if (DamageNumbers.Num() >= MaxDamageNumbers)
 	{
 		const int32 OverflowCount = DamageNumbers.Num() - MaxDamageNumbers + 1;
@@ -318,18 +319,18 @@ bool ARogueHUD::GetShopButtonRect(FName ButtonName, FVector2D& OutPosition, FVec
 void ARogueHUD::DrawEnemyHealthBars(UFont* Font)
 {
 	APlayerController* PlayerController = GetOwningPlayerController();
-	ARogueGameMode* RogueGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ARogueGameMode>() : nullptr;
-	if (Canvas == nullptr || PlayerController == nullptr || RogueGameMode == nullptr || GetWorld() == nullptr)
+	URogueEnemyTrackerSubsystem* Tracker = GetWorld() ? GetWorld()->GetSubsystem<URogueEnemyTrackerSubsystem>() : nullptr;
+	if (Canvas == nullptr || PlayerController == nullptr || Tracker == nullptr || GetWorld() == nullptr)
 	{
 		return;
 	}
 
 	const float CurrentTime = GetWorld()->GetTimeSeconds();
-	const bool bHeavyCombat = RogueGameMode->ShouldCullCombatEffects() || RogueGameMode->GetActiveEnemyCount() >= 40;
+	const bool bHeavyCombat = Tracker->ShouldCullCombatEffects() || Tracker->GetActiveEnemyCount() >= 40;
 	const float RefreshInterval = bHeavyCombat ? EnemyHealthBarRefreshIntervalHeavy : EnemyHealthBarRefreshIntervalNormal;
 	if (CurrentTime >= NextHealthBarCacheRefreshTime)
 	{
-		RefreshEnemyHealthBarCache(RogueGameMode);
+		RefreshEnemyHealthBarCache(Tracker);
 		NextHealthBarCacheRefreshTime = CurrentTime + RefreshInterval;
 	}
 
@@ -373,14 +374,14 @@ void ARogueHUD::DrawEnemyHealthBars(UFont* Font)
 void ARogueHUD::DrawDamageNumbers(UFont* Font)
 {
 	APlayerController* PlayerController = GetOwningPlayerController();
-	ARogueGameMode* RogueGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ARogueGameMode>() : nullptr;
+	URogueEnemyTrackerSubsystem* Tracker = GetWorld() ? GetWorld()->GetSubsystem<URogueEnemyTrackerSubsystem>() : nullptr;
 	if (Canvas == nullptr || PlayerController == nullptr || GetWorld() == nullptr)
 	{
 		return;
 	}
 
 	const float CurrentTime = GetWorld()->GetTimeSeconds();
-	const bool bHeavyCombat = RogueGameMode != nullptr && (RogueGameMode->ShouldCullCombatEffects() || RogueGameMode->GetActiveEnemyCount() >= 40);
+	const bool bHeavyCombat = Tracker != nullptr && (Tracker->ShouldCullCombatEffects() || Tracker->GetActiveEnemyCount() >= 40);
 	const int32 MaxDamageNumbers = bHeavyCombat ? MaxDamageNumbersHeavy : MaxDamageNumbersNormal;
 	if (DamageNumbers.Num() > MaxDamageNumbers)
 	{
@@ -399,7 +400,7 @@ void ARogueHUD::DrawDamageNumbers(UFont* Font)
 	const float RefreshInterval = bHeavyCombat ? DamageProjectionRefreshIntervalHeavy : DamageProjectionRefreshIntervalNormal;
 	if (CurrentTime >= NextDamageNumberProjectionRefreshTime)
 	{
-		RefreshDamageNumberProjectionCache(PlayerController, RogueGameMode);
+		RefreshDamageNumberProjectionCache(PlayerController, Tracker);
 		NextDamageNumberProjectionRefreshTime = CurrentTime + RefreshInterval;
 	}
 
@@ -487,10 +488,10 @@ void ARogueHUD::DrawShopMenu(UFont* Font, float MouseX, float MouseY, const ARog
 	}
 }
 
-void ARogueHUD::RefreshEnemyHealthBarCache(const ARogueGameMode* RogueGameMode)
+void ARogueHUD::RefreshEnemyHealthBarCache(const URogueEnemyTrackerSubsystem* Tracker)
 {
 	CachedEnemyHealthBars.Reset();
-	if (Canvas == nullptr || RogueGameMode == nullptr)
+	if (Canvas == nullptr || Tracker == nullptr)
 	{
 		return;
 	}
@@ -498,7 +499,7 @@ void ARogueHUD::RefreshEnemyHealthBarCache(const ARogueGameMode* RogueGameMode)
 	const APlayerController* PlayerController = GetOwningPlayerController();
 	const APawn* PlayerPawn = PlayerController != nullptr ? PlayerController->GetPawn() : nullptr;
 	const FVector PlayerLocation = PlayerPawn != nullptr ? PlayerPawn->GetActorLocation() : FVector::ZeroVector;
-	const bool bHeavyCombat = RogueGameMode->ShouldCullCombatEffects() || RogueGameMode->GetActiveEnemyCount() >= 40;
+	const bool bHeavyCombat = Tracker->ShouldCullCombatEffects() || Tracker->GetActiveEnemyCount() >= 40;
 	const float MaxBarDistance = bHeavyCombat ? 1300.0f : 1800.0f;
 	const int32 MaxRegularBars = bHeavyCombat ? MaxRegularHealthBarsHeavy : MaxRegularHealthBarsNormal;
 	struct FCandidateBar
@@ -513,7 +514,7 @@ void ARogueHUD::RefreshEnemyHealthBarCache(const ARogueGameMode* RogueGameMode)
 
 	int32 DrawnRegularBars = 0;
 
-	for (const TWeakObjectPtr<ARogueEnemy>& EnemyPtr : RogueGameMode->GetActiveEnemies())
+	for (const TWeakObjectPtr<ARogueEnemy>& EnemyPtr : Tracker->GetActiveEnemies())
 	{
 		ARogueEnemy* Enemy = EnemyPtr.Get();
 		if (!IsValid(Enemy) || Enemy->IsDead())
@@ -561,7 +562,7 @@ void ARogueHUD::RefreshEnemyHealthBarCache(const ARogueGameMode* RogueGameMode)
 	}
 }
 
-void ARogueHUD::RefreshDamageNumberProjectionCache(APlayerController* PlayerController, const ARogueGameMode* RogueGameMode)
+void ARogueHUD::RefreshDamageNumberProjectionCache(APlayerController* PlayerController, const URogueEnemyTrackerSubsystem* Tracker)
 {
 	if (PlayerController == nullptr || GetWorld() == nullptr)
 	{
@@ -569,7 +570,7 @@ void ARogueHUD::RefreshDamageNumberProjectionCache(APlayerController* PlayerCont
 	}
 
 	const float CurrentTime = GetWorld()->GetTimeSeconds();
-	const bool bHeavyCombat = RogueGameMode != nullptr && (RogueGameMode->ShouldCullCombatEffects() || RogueGameMode->GetActiveEnemyCount() >= 40);
+	const bool bHeavyCombat = Tracker != nullptr && (Tracker->ShouldCullCombatEffects() || Tracker->GetActiveEnemyCount() >= 40);
 	const float PopupRiseSpeed = bHeavyCombat ? 72.0f : 90.0f;
 
 	for (FRogueDamageNumber& DamageNumber : DamageNumbers)

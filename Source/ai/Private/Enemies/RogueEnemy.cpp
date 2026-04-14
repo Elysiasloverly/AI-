@@ -6,6 +6,8 @@
 #include "Enemies/RogueEnemyProjectile.h"
 #include "Enemies/RogueEnemyVisualResources.h"
 #include "Core/RogueGameMode.h"
+#include "Subsystems/RogueCombatPoolSubsystem.h"
+#include "Subsystems/RogueEnemyTrackerSubsystem.h"
 #include "Combat/RogueImpactEffect.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -54,9 +56,9 @@ void ARogueEnemy::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	if (UWorld* World = GetWorld())
 	{
-		if (ARogueGameMode* RogueGameMode = World->GetAuthGameMode<ARogueGameMode>())
+		if (URogueEnemyTrackerSubsystem* Tracker = World->GetSubsystem<URogueEnemyTrackerSubsystem>())
 		{
-			RogueGameMode->UnregisterEnemy(this);
+			Tracker->UnregisterEnemy(this);
 		}
 	}
 
@@ -191,9 +193,9 @@ void ARogueEnemy::DeactivateToPool()
 	{
 		if (UWorld* World = GetWorld())
 		{
-			if (ARogueGameMode* RogueGameMode = World->GetAuthGameMode<ARogueGameMode>())
+			if (URogueEnemyTrackerSubsystem* Tracker = World->GetSubsystem<URogueEnemyTrackerSubsystem>())
 			{
-				RogueGameMode->UnregisterEnemy(this);
+				Tracker->UnregisterEnemy(this);
 			}
 		}
 	}
@@ -309,9 +311,9 @@ void ARogueEnemy::FireRangedShot(ARogueCharacter* PlayerCharacter)
 
 	auto SpawnProjectile = [&](const FVector& SpawnLocation, const FVector& Direction, float ProjectileSpeed, float ProjectileDamage, bool bLargeVisual)
 	{
-		ARogueGameMode* RogueGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ARogueGameMode>() : nullptr;
-		ARogueEnemyProjectile* Projectile = RogueGameMode != nullptr
-			? RogueGameMode->AcquireEnemyProjectile(ARogueEnemyProjectile::StaticClass(), this, this, SpawnLocation, Direction.Rotation())
+		URogueCombatPoolSubsystem* Pools = GetWorld() ? GetWorld()->GetSubsystem<URogueCombatPoolSubsystem>() : nullptr;
+		ARogueEnemyProjectile* Projectile = Pools != nullptr
+			? Pools->AcquireEnemyProjectile(ARogueEnemyProjectile::StaticClass(), this, this, SpawnLocation, Direction.Rotation())
 			: GetWorld()->SpawnActor<ARogueEnemyProjectile>(ARogueEnemyProjectile::StaticClass(), SpawnLocation, Direction.Rotation(), SpawnParameters);
 		if (Projectile != nullptr)
 		{

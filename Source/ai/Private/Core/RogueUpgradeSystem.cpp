@@ -17,13 +17,14 @@ namespace
 		return Option;
 	}
 
-	FRogueUpgradeOption MakeUpgradeOptionData(const FRogueUpgradeOptionDefinition& Definition)
+	/** DataTable 中未配置时使用的默认升级选项 */
+	FRogueUpgradeOption MakeDefaultUpgradeOption(ERogueUpgradeType Type)
 	{
 		FRogueUpgradeOption Option;
-		Option.Type = Definition.Type;
-		Option.Title = Definition.Title;
-		Option.Description = Definition.Description;
-		Option.Magnitude = Definition.Magnitude;
+		Option.Type = Type;
+		Option.Title = TEXT("未配置升级");
+		Option.Description = TEXT("该升级尚未在 DataTable 中配置。");
+		Option.Magnitude = 0.0f;
 		return Option;
 	}
 }
@@ -106,10 +107,7 @@ FRogueUpgradeOption FRogueUpgradeSystem::MakeUpgradeOption(ERogueUpgradeType Typ
 		}
 	}
 
-	if (const FRogueUpgradeOptionDefinition* Definition = RogueUpgradeSystemRules::FindUpgradeOptionDefinition(Type))
-	{
-		return MakeUpgradeOptionData(*Definition);
-	}
-
-	return MakeUpgradeOptionData(*RogueUpgradeSystemRules::FindUpgradeOptionDefinition(ERogueUpgradeType::MaxHealth));
+	// DataTable 中未找到对应配置，返回默认值
+	UE_LOG(LogTemp, Warning, TEXT("RogueUpgradeSystem: 升级类型 %d 未在 DataTable 中配置，使用默认值。"), static_cast<int32>(Type));
+	return MakeDefaultUpgradeOption(Type);
 }

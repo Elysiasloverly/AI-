@@ -1,12 +1,21 @@
 #include "Core/RogueUpgradeDefinitionAsset.h"
+#include "Engine/DataTable.h"
 
 bool URogueUpgradeDefinitionAsset::FindDefinition(ERogueUpgradeType Type, FRogueUpgradeDefinitionRow& OutDefinition) const
 {
-	for (const FRogueUpgradeDefinitionRow& Definition : Definitions)
+	if (UpgradeDefinitionTable == nullptr)
 	{
-		if (Definition.Type == Type)
+		return false;
+	}
+
+	// 遍历 DataTable 中所有行，查找匹配的升级类型
+	const TMap<FName, uint8*>& RowMap = UpgradeDefinitionTable->GetRowMap();
+	for (const auto& Pair : RowMap)
+	{
+		const FRogueUpgradeDefinitionRow* Row = reinterpret_cast<const FRogueUpgradeDefinitionRow*>(Pair.Value);
+		if (Row != nullptr && Row->Type == Type)
 		{
-			OutDefinition = Definition;
+			OutDefinition = *Row;
 			return true;
 		}
 	}

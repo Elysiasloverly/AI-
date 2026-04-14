@@ -18,6 +18,7 @@ public:
 	void TickVisuals(float DeltaSeconds, float HorizontalSpeed, bool bDashActive, float DashDuration, float DashTimeRemaining);
 
 private:
+	/*
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<UStaticMeshComponent> BodyMesh;
 
@@ -65,7 +66,7 @@ private:
 
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<UPointLightComponent> BodyLight;
-
+	*/
 	float VisualPulseTime = 0.0f;
 	FVector BodyBaseScale = FVector(0.90f, 0.90f, 0.90f);
 	FVector CoreBaseScale = FVector(0.30f, 0.30f, 0.30f);
