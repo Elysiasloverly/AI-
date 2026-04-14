@@ -56,6 +56,8 @@ void FRogueUpgradeEffectApplier::ApplyToCharacter(ARogueCharacter& Character, co
 	case ERogueUpgradeType::LaserCount:
 	case ERogueUpgradeType::HellTowerCount:
 	case ERogueUpgradeType::LaserRefraction:
+	case ERogueUpgradeType::MortarCount:
+	case ERogueUpgradeType::MortarBlastRadius:
 		Character.DispatchWeaponUpgrade(Upgrade.Type, Upgrade.Magnitude);
 		break;
 	default:

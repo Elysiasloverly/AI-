@@ -23,7 +23,9 @@ enum class ERogueUpgradeType : uint8
 	RocketCount,
 	LaserCount,
 	HellTowerCount,
-	LaserRefraction
+	LaserRefraction,
+	MortarCount,
+	MortarBlastRadius
 };
 
 UENUM()

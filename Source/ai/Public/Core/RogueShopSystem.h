@@ -55,6 +55,7 @@ private:
 	UPROPERTY()
 	TMap<ERogueUpgradeType, int32> OfferTypePurchaseCounts;
 
+	
 	int32 OfferCount = 6;
 	int32 BaseOfferCost = 44;
 	int32 BaseRefreshCost = 14;

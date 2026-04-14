@@ -6,6 +6,9 @@
 #include "Combat/RogueWeapon_Rocket.h"
 #include "Combat/RogueWeapon_Laser.h"
 #include "Combat/RogueWeapon_HellTower.h"
+#include "Combat/RogueWeapon_Mortar.h"
+#include "Combat/RogueMortarProjectile.h"
+#include "Combat/RogueRocketProjectile.h"
 #include "Enemies/RogueEnemy.h"
 #include "Core/RogueUpgradeEffectApplier.h"
 #include "Core/RogueGameMode.h"
@@ -22,6 +25,39 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Kismet/GameplayStatics.h"
+
+namespace
+{
+	const FName MortarWeaponRowName(TEXT("Mortar"));
+
+	FRogueWeaponTableRow BuildDefaultMortarWeaponConfig(TSubclassOf<ARogueRocketProjectile> MortarProjectileClass)
+	{
+		FRogueWeaponTableRow Row;
+		if (MortarProjectileClass == nullptr)
+		{
+			MortarProjectileClass = ARogueMortarProjectile::StaticClass();
+		}
+
+		Row.DisplayName = TEXT("迫击炮");
+		Row.WeaponClass = ARogueWeapon_Mortar::StaticClass();
+		Row.Count = 0;
+		Row.Damage = 12.0f;
+		Row.Cooldown = 2.35f;
+		Row.Range = 2600.0f;
+		Row.CountUpgradeType = ERogueUpgradeType::MortarCount;
+		Row.MortarProjectileClass = Cast<UClass>(MortarProjectileClass.Get());
+		Row.MortarExplosionRadius = 470.0f;
+		Row.MortarLaunchSpeed = 760.0f;
+		Row.RocketClass = MortarProjectileClass;
+		Row.ExplosionRadius = 470.0f;
+		Row.RocketSpeed = 760.0f;
+		Row.bEnableTrajectoryDeviation = true;
+		Row.TrajectoryDeviationMaxAngle = 2.0f;
+		Row.bEnableSpeedRandomization = false;
+		Row.SpeedRandomizationRatio = 0.0f;
+		return Row;
+	}
+}
 
 ARogueCharacter::ARogueCharacter()
 {
@@ -48,6 +84,9 @@ ARogueCharacter::ARogueCharacter()
 	GetCharacterMovement()->bOrientRotationToMovement = true;
 	GetCharacterMovement()->RotationRate = FRotator(0.0f, 720.0f, 0.0f);
 	GetCharacterMovement()->MaxWalkSpeed = MoveSpeed;
+
+	DefaultMortarWeaponClass = ARogueWeapon_Mortar::StaticClass();
+	DefaultMortarProjectileClass = ARogueMortarProjectile::StaticClass();
 
 	AutoPossessPlayer = EAutoReceiveInput::Player0;
 }
@@ -98,31 +137,126 @@ void ARogueCharacter::ApplyBalanceAsset()
 
 void ARogueCharacter::InitializeWeapons()
 {
-	// 从 DataTable 读取配置，生成武器 Actor
-	if (WeaponDataTable == nullptr || WeaponClasses.Num() == 0)
+	if (WeaponDataTable == nullptr)
 	{
 		return;
 	}
 
-	const TArray<FName> RowNames = WeaponDataTable->GetRowNames();
-	for (int32 Index = 0; Index < RowNames.Num() && Index < WeaponClasses.Num(); ++Index)
+	auto SpawnWeaponInstance = [this](TSubclassOf<ARogueWeaponBase> WeaponClass, const FRogueWeaponTableRow& Config)
 	{
-		const FRogueWeaponTableRow* Row = WeaponDataTable->FindRow<FRogueWeaponTableRow>(RowNames[Index], TEXT("InitializeWeapons"));
-		if (Row == nullptr || WeaponClasses[Index] == nullptr)
+		if (WeaponClass == nullptr)
 		{
-			continue;
+			return static_cast<ARogueWeaponBase*>(nullptr);
 		}
 
 		FActorSpawnParameters SpawnParams;
 		SpawnParams.Owner = this;
 		SpawnParams.Instigator = this;
 
-		ARogueWeaponBase* Weapon = GetWorld()->SpawnActor<ARogueWeaponBase>(WeaponClasses[Index], GetActorLocation(), FRotator::ZeroRotator, SpawnParams);
+		ARogueWeaponBase* Weapon = GetWorld()->SpawnActor<ARogueWeaponBase>(WeaponClass, GetActorLocation(), FRotator::ZeroRotator, SpawnParams);
 		if (Weapon != nullptr)
 		{
-			Weapon->InitializeWeapon(this, *Row);
+			Weapon->InitializeWeapon(this, Config);
 			Weapons.Add(Weapon);
 		}
+		return Weapon;
+	};
+
+	auto FindRowByCountUpgradeType = [this](ERogueUpgradeType CountUpgradeType, FName PreferredRowName, FRogueWeaponTableRow& OutRow) -> bool
+	{
+		if (WeaponDataTable == nullptr)
+		{
+			return false;
+		}
+
+		if (!PreferredRowName.IsNone())
+		{
+			if (const FRogueWeaponTableRow* PreferredRow = WeaponDataTable->FindRow<FRogueWeaponTableRow>(PreferredRowName, TEXT("FindRowByCountUpgradeType")))
+			{
+				OutRow = *PreferredRow;
+				return true;
+			}
+		}
+
+		const TArray<FName> TableRowNames = WeaponDataTable->GetRowNames();
+		for (const FName RowName : TableRowNames)
+		{
+			if (const FRogueWeaponTableRow* Row = WeaponDataTable->FindRow<FRogueWeaponTableRow>(RowName, TEXT("FindRowByCountUpgradeType")))
+			{
+				if (Row->CountUpgradeType == CountUpgradeType)
+				{
+					OutRow = *Row;
+					return true;
+				}
+			}
+		}
+
+		return false;
+	};
+
+	bool bHasMortarWeapon = false;
+	const TArray<FName> RowNames = WeaponDataTable->GetRowNames();
+	for (int32 Index = 0; Index < RowNames.Num(); ++Index)
+	{
+		const FRogueWeaponTableRow* Row = WeaponDataTable->FindRow<FRogueWeaponTableRow>(RowNames[Index], TEXT("InitializeWeapons"));
+		if (Row == nullptr)
+		{
+			continue;
+		}
+
+		TSubclassOf<ARogueWeaponBase> WeaponClass = Row->WeaponClass;
+		if (WeaponClass == nullptr && WeaponClasses.IsValidIndex(Index))
+		{
+			WeaponClass = WeaponClasses[Index];
+		}
+
+		if (WeaponClass == nullptr)
+		{
+			continue;
+		}
+
+		ARogueWeaponBase* Weapon = SpawnWeaponInstance(WeaponClass, *Row);
+		bHasMortarWeapon = bHasMortarWeapon || Cast<ARogueWeapon_Mortar>(Weapon) != nullptr || Row->CountUpgradeType == ERogueUpgradeType::MortarCount;
+	}
+
+	if (!bHasMortarWeapon)
+	{
+		FRogueWeaponTableRow MortarConfig;
+		if (!FindRowByCountUpgradeType(ERogueUpgradeType::MortarCount, MortarWeaponRowName, MortarConfig))
+		{
+			MortarConfig = BuildDefaultMortarWeaponConfig(DefaultMortarProjectileClass);
+		}
+
+		TSubclassOf<ARogueWeaponBase> MortarWeaponClass = DefaultMortarWeaponClass;
+		if (MortarWeaponClass == nullptr)
+		{
+			MortarWeaponClass = ARogueWeapon_Mortar::StaticClass();
+		}
+
+		if (MortarConfig.RocketClass == nullptr)
+		{
+			TSubclassOf<ARogueRocketProjectile> MortarProjectileClass = DefaultMortarProjectileClass;
+			if (MortarProjectileClass == nullptr)
+			{
+				MortarProjectileClass = ARogueMortarProjectile::StaticClass();
+			}
+			MortarConfig.RocketClass = MortarProjectileClass;
+		}
+
+		if (MortarConfig.MortarProjectileClass == nullptr)
+		{
+			MortarConfig.MortarProjectileClass = Cast<UClass>(MortarConfig.RocketClass.Get());
+		}
+		if (MortarConfig.MortarExplosionRadius <= 0.0f)
+		{
+			MortarConfig.MortarExplosionRadius = MortarConfig.ExplosionRadius;
+		}
+		if (MortarConfig.MortarLaunchSpeed <= 0.0f)
+		{
+			MortarConfig.MortarLaunchSpeed = MortarConfig.RocketSpeed;
+		}
+
+		SpawnWeaponInstance(MortarWeaponClass, MortarConfig);
 	}
 }
 
@@ -412,6 +546,18 @@ int32 ARogueCharacter::GetEffectiveHellTowerCount() const
 {
 	const ARogueWeapon_HellTower* HW = FindWeapon<ARogueWeapon_HellTower>();
 	return HW != nullptr ? HW->GetEffectiveCount() : 0;
+}
+
+int32 ARogueCharacter::GetMortarCount() const
+{
+	const ARogueWeapon_Mortar* MW = FindWeapon<ARogueWeapon_Mortar>();
+	return MW != nullptr ? MW->GetCount() : 0;
+}
+
+int32 ARogueCharacter::GetEffectiveMortarCount() const
+{
+	const ARogueWeapon_Mortar* MW = FindWeapon<ARogueWeapon_Mortar>();
+	return MW != nullptr ? MW->GetEffectiveCount() : 0;
 }
 
 int32 ARogueCharacter::GetLaserRefractionCount() const

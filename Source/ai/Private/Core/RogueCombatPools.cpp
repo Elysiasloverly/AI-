@@ -37,7 +37,7 @@ namespace
 				continue;
 			}
 
-			if (Actor->IsAvailableInPool() && Actor->IsA(ActorClass))
+			if (Actor->IsAvailableInPool() && Actor->GetClass() == ActorClass)
 			{
 				Actor->SetOwner(OwnerActor);
 				Actor->SetInstigator(InstigatorPawn);

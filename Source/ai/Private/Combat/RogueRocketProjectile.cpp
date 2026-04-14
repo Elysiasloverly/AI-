@@ -297,6 +297,7 @@ void ARogueRocketProjectile::ActivatePooledRocket(AActor* InOwner, APawn* InInst
 	{
 		ProjectileMovement->OnProjectileStop.RemoveDynamic(this, &ARogueRocketProjectile::HandleProjectileStop);
 		ProjectileMovement->OnProjectileStop.AddDynamic(this, &ARogueRocketProjectile::HandleProjectileStop);
+		ProjectileMovement->ProjectileGravityScale = 0.0f;
 	}
 
 	// ExhaustCoreMesh->SetRelativeScale3D(VisualConfig.ExhaustCoreScale);
@@ -330,6 +331,7 @@ void ARogueRocketProjectile::DeactivateToPool()
 		ProjectileMovement->StopMovementImmediately();
 		ProjectileMovement->Deactivate();
 		ProjectileMovement->Velocity = FVector::ZeroVector;
+		ProjectileMovement->ProjectileGravityScale = 0.0f;
 	}
 
 	bExploded = false;

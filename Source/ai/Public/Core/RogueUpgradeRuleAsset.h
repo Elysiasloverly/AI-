@@ -11,7 +11,8 @@ enum class ERogueWeaponUpgradeSource : uint8
 	Scythe,
 	Rocket,
 	Laser,
-	HellTower
+	HellTower,
+	Mortar
 };
 
 USTRUCT(BlueprintType)

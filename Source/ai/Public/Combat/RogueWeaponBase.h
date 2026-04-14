@@ -9,7 +9,9 @@
 
 class ARogueCharacter;
 class ARogueEnemy;
+class ARogueWeaponBase;
 class ARogueProjectile;
+class ARogueMortarProjectile;
 class ARogueRocketProjectile;
 class ARogueLaserBeam;
 class ARogueOrbitingBlade;
@@ -27,6 +29,10 @@ struct AI_API FRogueWeaponTableRow : public FTableRowBase
 	/** 武器显示名称（HUD 用） */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "General", meta = (DisplayName = "武器名称"))
 	FString DisplayName;
+
+	/** 武器逻辑类，优先于角色蓝图里的 WeaponClasses 数组 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "General", meta = (DisplayName = "武器类"))
+	TSubclassOf<ARogueWeaponBase> WeaponClass;
 
 	/** 初始数量（0 = 未解锁，1 = 开局拥有） */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "General", meta = (DisplayName = "初始数量"))
@@ -73,6 +79,17 @@ struct AI_API FRogueWeaponTableRow : public FTableRowBase
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Projectile", meta = (DisplayName = "弹体速度"))
 	float ProjectileSpeed = 1800.0f;
+
+	// ---- 迫击炮武器专属 ----
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Mortar", meta = (DisplayName = "迫击炮弹体类"))
+	TSubclassOf<ARogueMortarProjectile> MortarProjectileClass;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Mortar", meta = (DisplayName = "爆炸半径"))
+	float MortarExplosionRadius = 470.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Mortar", meta = (DisplayName = "发射速度"))
+	float MortarLaunchSpeed = 760.0f;
 
 	// ---- 镰刀武器专属 ----
 

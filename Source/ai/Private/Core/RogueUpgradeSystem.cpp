@@ -22,9 +22,24 @@ namespace
 	{
 		FRogueUpgradeOption Option;
 		Option.Type = Type;
-		Option.Title = TEXT("未配置升级");
-		Option.Description = TEXT("该升级尚未在 DataTable 中配置。");
-		Option.Magnitude = 0.0f;
+		switch (Type)
+		{
+		case ERogueUpgradeType::MortarCount:
+			Option.Title = TEXT("迫击炮");
+			Option.Description = TEXT("解锁迫击炮，或额外增加 1 枚迫击炮弹。");
+			Option.Magnitude = 1.0f;
+			break;
+		case ERogueUpgradeType::MortarBlastRadius:
+			Option.Title = TEXT("迫击炮扩爆");
+			Option.Description = TEXT("迫击炮爆炸范围扩大，覆盖更大的区域。");
+			Option.Magnitude = 90.0f;
+			break;
+		default:
+			Option.Title = TEXT("未配置升级");
+			Option.Description = TEXT("该升级尚未在 DataTable 中配置。");
+			Option.Magnitude = 0.0f;
+			break;
+		}
 		return Option;
 	}
 }

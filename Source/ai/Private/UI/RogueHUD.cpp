@@ -93,7 +93,9 @@ void ARogueHUD::DrawHUD()
 	Top += 20.0f;
 	DrawText(FString::Printf(TEXT("火箭 %d  |  激光 %d"), PlayerCharacter->GetEffectiveRocketLauncherCount(), PlayerCharacter->GetEffectiveLaserCannonCount()), FLinearColor::White, Left, Top, Font, 0.95f, false);
 	Top += 20.0f;
-	DrawText(FString::Printf(TEXT("地狱塔 %d  |  激光折射 %d"), PlayerCharacter->GetEffectiveHellTowerCount(), PlayerCharacter->GetLaserRefractionCount()), FLinearColor(1.0f, 0.48f, 0.38f), Left, Top, Font, 0.95f, false);
+	DrawText(FString::Printf(TEXT("迫击炮 %d  |  地狱塔 %d"), PlayerCharacter->GetEffectiveMortarCount(), PlayerCharacter->GetEffectiveHellTowerCount()), FLinearColor::White, Left, Top, Font, 0.95f, false);
+	Top += 20.0f;
+	DrawText(FString::Printf(TEXT("激光折射 %d"), PlayerCharacter->GetLaserRefractionCount()), FLinearColor(1.0f, 0.48f, 0.38f), Left, Top, Font, 0.95f, false);
 	Top += 20.0f;
 	const FString DashStatusText = PlayerCharacter->IsDashReady() ? TEXT("冲刺 就绪") : FString::Printf(TEXT("冲刺 %.1f 秒"), PlayerCharacter->GetDashCooldownRemaining());
 	DrawText(DashStatusText, PlayerCharacter->IsDashReady() ? FLinearColor(0.60f, 1.0f, 0.75f) : FLinearColor(1.0f, 0.78f, 0.40f), Left, Top, Font, 0.95f, false);

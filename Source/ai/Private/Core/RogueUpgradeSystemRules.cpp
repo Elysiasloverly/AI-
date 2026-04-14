@@ -36,6 +36,8 @@ namespace
 			return Character.GetLaserCannonCount();
 		case ERogueWeaponUpgradeSource::HellTower:
 			return Character.GetHellTowerCount();
+		case ERogueWeaponUpgradeSource::Mortar:
+			return Character.GetMortarCount();
 		default:
 			return 0;
 		}
@@ -81,7 +83,8 @@ namespace
 			ERogueUpgradeType::ScytheCount,
 			ERogueUpgradeType::RocketCount,
 			ERogueUpgradeType::LaserCount,
-			ERogueUpgradeType::HellTowerCount
+			ERogueUpgradeType::HellTowerCount,
+			ERogueUpgradeType::MortarCount
 		};
 
 		if (RuleAsset != nullptr && RuleAsset->DefaultWeaponUpgradeTypes.Num() > 0)
@@ -100,7 +103,8 @@ namespace
 			{ ERogueWeaponUpgradeSource::Scythe, ERogueUpgradeType::ScytheCount },
 			{ ERogueWeaponUpgradeSource::Rocket, ERogueUpgradeType::RocketCount },
 			{ ERogueWeaponUpgradeSource::Laser, ERogueUpgradeType::LaserCount },
-			{ ERogueWeaponUpgradeSource::HellTower, ERogueUpgradeType::HellTowerCount }
+			{ ERogueWeaponUpgradeSource::HellTower, ERogueUpgradeType::HellTowerCount },
+			{ ERogueWeaponUpgradeSource::Mortar, ERogueUpgradeType::MortarCount }
 		};
 
 		for (const FRogueWeaponUpgradeRuleRow& Rule : DefaultWeaponRules)
@@ -110,17 +114,37 @@ namespace
 			{
 				OutTypes.AddUnique(ERogueUpgradeType::LaserRefraction);
 			}
+			else if (Rule.Source == ERogueWeaponUpgradeSource::Mortar && GetWeaponSourceCount(Character, Rule.Source) > 0)
+			{
+				OutTypes.AddUnique(ERogueUpgradeType::MortarBlastRadius);
+			}
 		}
 	}
 
 	void AppendAssetWeaponRules(TArray<ERogueUpgradeType>& OutTypes, const ARogueCharacter& Character, const URogueUpgradeRuleAsset& RuleAsset)
 	{
+		bool bHasMortarRule = false;
+
 		for (const FRogueWeaponUpgradeRuleRow& Rule : RuleAsset.WeaponUpgradeRules)
 		{
+			bHasMortarRule = bHasMortarRule || Rule.Source == ERogueWeaponUpgradeSource::Mortar || Rule.UpgradeType == ERogueUpgradeType::MortarCount;
 			OutTypes.AddUnique(Rule.UpgradeType);
 			if (Rule.Source == ERogueWeaponUpgradeSource::Laser && GetWeaponSourceCount(Character, Rule.Source) > 0)
 			{
 				OutTypes.AddUnique(ERogueUpgradeType::LaserRefraction);
+			}
+			else if (Rule.Source == ERogueWeaponUpgradeSource::Mortar && GetWeaponSourceCount(Character, Rule.Source) > 0)
+			{
+				OutTypes.AddUnique(ERogueUpgradeType::MortarBlastRadius);
+			}
+		}
+
+		if (!bHasMortarRule)
+		{
+			OutTypes.AddUnique(ERogueUpgradeType::MortarCount);
+			if (Character.GetMortarCount() > 0)
+			{
+				OutTypes.AddUnique(ERogueUpgradeType::MortarBlastRadius);
 			}
 		}
 	}

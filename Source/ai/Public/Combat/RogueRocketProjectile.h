@@ -86,12 +86,18 @@ public:
 	ARogueRocketProjectile();
 
 	virtual void Tick(float DeltaSeconds) override;
-	void ActivatePooledRocket(AActor* InOwner, APawn* InInstigator, const FVector& SpawnLocation, const FRotator& SpawnRotation, const FVector& InDirection, float InSpeed, float InDamage, float InExplosionRadius);
-	void DeactivateToPool();
+	virtual void ActivatePooledRocket(AActor* InOwner, APawn* InInstigator, const FVector& SpawnLocation, const FRotator& SpawnRotation, const FVector& InDirection, float InSpeed, float InDamage, float InExplosionRadius);
+	virtual void DeactivateToPool();
 	bool IsAvailableInPool() const { return bPoolAvailable; }
 
 protected:
 	virtual void BeginPlay() override;
+
+	UPROPERTY(VisibleAnywhere)
+	TObjectPtr<USphereComponent> Collision;
+
+	UPROPERTY(VisibleAnywhere)
+	TObjectPtr<UProjectileMovementComponent> ProjectileMovement;
 
 private:
 	UFUNCTION()
@@ -102,9 +108,6 @@ private:
 
 	void InitializeRocket(const FVector& InDirection, float InSpeed, float InDamage, float InExplosionRadius);
 	void Explode();
-
-	UPROPERTY(VisibleAnywhere)
-	TObjectPtr<USphereComponent> Collision;
 
 	// UPROPERTY(VisibleAnywhere)
 	// TObjectPtr<UStaticMeshComponent> Mesh;
@@ -129,9 +132,6 @@ private:
 
 	// UPROPERTY(VisibleAnywhere)
 	// TObjectPtr<UStaticMeshComponent> TrailMesh;
-
-	UPROPERTY(VisibleAnywhere)
-	TObjectPtr<UProjectileMovementComponent> ProjectileMovement;
 
 	// UPROPERTY(VisibleAnywhere)
 	// TObjectPtr<UPointLightComponent> RocketLight;

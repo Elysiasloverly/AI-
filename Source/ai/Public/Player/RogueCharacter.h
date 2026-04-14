@@ -9,8 +9,10 @@
 class ARogueWeaponBase;
 class ARogueWeapon_Projectile;
 class ARogueWeapon_Laser;
+class ARogueWeapon_Mortar;
 class ARogueEnemy;
 class ARogueHUD;
+class ARogueRocketProjectile;
 class ARogueShopTerminal;
 class UCameraComponent;
 class USpringArmComponent;
@@ -161,6 +163,9 @@ public:
 	int32 GetEffectiveHellTowerCount() const;
 
 	UFUNCTION(BlueprintPure)
+	int32 GetEffectiveMortarCount() const;
+
+	UFUNCTION(BlueprintPure)
 	int32 GetLaserRefractionCount() const;
 
 	UFUNCTION(BlueprintPure)
@@ -174,6 +179,9 @@ public:
 
 	UFUNCTION(BlueprintPure)
 	int32 GetHellTowerCount() const;
+
+	UFUNCTION(BlueprintPure)
+	int32 GetMortarCount() const;
 
 	UFUNCTION(BlueprintPure)
 	int32 GetProjectileCount() const;
@@ -223,9 +231,17 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "Combat")
 	TObjectPtr<UDataTable> WeaponDataTable;
 
-	/** 武器子类列表 —— 按顺序对应 DataTable 中的行（RowName 需与数组索引对应） */
+	/** 武器子类列表 —— 旧资源仍按顺序使用，缺失项会由代码默认武器补齐 */
 	UPROPERTY(EditDefaultsOnly, Category = "Combat")
 	TArray<TSubclassOf<ARogueWeaponBase>> WeaponClasses;
+
+	/** 当 DataTable / WeaponClasses 里还没正式接入迫击炮时，代码兜底生成用的武器类 */
+	UPROPERTY(EditDefaultsOnly, Category = "Combat|Fallback")
+	TSubclassOf<ARogueWeaponBase> DefaultMortarWeaponClass;
+
+	/** 当 DataTable 里还没正式填入迫击炮弹体时，代码兜底生成用的迫击炮弹体类 */
+	UPROPERTY(EditDefaultsOnly, Category = "Combat|Fallback")
+	TSubclassOf<ARogueRocketProjectile> DefaultMortarProjectileClass;
 
 	/** 运行时生成的武器 Actor 实例 */
 	UPROPERTY()
