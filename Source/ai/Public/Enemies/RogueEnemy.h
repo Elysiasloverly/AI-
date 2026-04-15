@@ -9,8 +9,21 @@
 
 class UStaticMeshComponent;
 class ARogueCharacter;
+class UBehaviorTree;
+class UBlackboardData;
+class AAIController;
 
-UCLASS()
+/**
+ * 敌人基类 —— 支持两种行为驱动模式：
+ * 1. 基类默认行为（bUseBehaviorTree = false）：使用 C++ Tick 中的原型驱动逻辑
+ * 2. 行为树驱动（bUseBehaviorTree = true）：由蓝图子类配置行为树，基类 Tick 中的移动/攻击逻辑被跳过
+ *
+ * 蓝图子类继承此类后，可以：
+ * - 设置 BehaviorTreeAsset / BlackboardAsset 来启用行为树
+ * - 重写 BlueprintNativeEvent 钩子来自定义初始化、受伤、死亡等行为
+ * - 调用 Action 接口（MoveInDirection、FireProjectileAtPlayer 等）在行为树 Task 中驱动行为
+ */
+UCLASS(Blueprintable, BlueprintType)
 class AI_API ARogueEnemy : public ACharacter
 {
 	GENERATED_BODY()
@@ -21,37 +34,279 @@ public:
 	virtual void Tick(float DeltaSeconds) override;
 	virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser) override;
 
+	// ===========================================================
+	//  生命周期接口（由生成系统调用）
+	// ===========================================================
+
+	/** 初始化敌人属性（由生成系统调用） */
+	UFUNCTION(BlueprintCallable, Category = "Enemy|Lifecycle")
 	void InitializeEnemy(const FRogueEnemyProfile& InProfile);
+
+	/** 从对象池激活敌人 */
+	UFUNCTION(BlueprintCallable, Category = "Enemy|Lifecycle")
 	void ActivatePooledEnemy(AActor* InOwner, const FVector& SpawnLocation, const FRotator& SpawnRotation);
+
+	/** 回收到对象池 */
+	UFUNCTION(BlueprintCallable, Category = "Enemy|Lifecycle")
 	void DeactivateToPool();
+
+	/** 是否在对象池中可用 */
+	UFUNCTION(BlueprintPure, Category = "Enemy|Lifecycle")
 	bool IsAvailableInPool() const { return bPoolAvailable; }
 
-	UFUNCTION(BlueprintPure)
+	// ===========================================================
+	//  状态查询接口（蓝图/行为树可读取）
+	// ===========================================================
+
+	UFUNCTION(BlueprintPure, Category = "Enemy|State")
 	bool IsDead() const { return bDead; }
 
-	UFUNCTION(BlueprintPure)
+	UFUNCTION(BlueprintPure, Category = "Enemy|State")
 	int32 GetExperienceReward() const { return ExperienceReward; }
 
-	UFUNCTION(BlueprintPure)
+	UFUNCTION(BlueprintPure, Category = "Enemy|State")
 	bool IsBoss() const { return bIsBoss; }
 
-	UFUNCTION(BlueprintPure)
+	UFUNCTION(BlueprintPure, Category = "Enemy|State")
 	float GetCurrentHealth() const { return CurrentHealth; }
 
-	UFUNCTION(BlueprintPure)
+	UFUNCTION(BlueprintPure, Category = "Enemy|State")
 	float GetMaxHealth() const { return MaxHealth; }
 
-	UFUNCTION(BlueprintPure)
+	UFUNCTION(BlueprintPure, Category = "Enemy|State")
 	float GetHealthPercent() const { return MaxHealth > 0.0f ? CurrentHealth / MaxHealth : 0.0f; }
 
-	UFUNCTION(BlueprintPure)
+	UFUNCTION(BlueprintPure, Category = "Enemy|State")
 	FVector GetHealthBarWorldLocation() const;
+
+	UFUNCTION(BlueprintPure, Category = "Enemy|State")
+	ERogueEnemyType GetEnemyType() const { return EnemyType; }
+
+	UFUNCTION(BlueprintPure, Category = "Enemy|State")
+	float GetMoveSpeed() const { return MoveSpeed; }
+
+	UFUNCTION(BlueprintPure, Category = "Enemy|State")
+	float GetContactDamage() const { return ContactDamage; }
+
+	UFUNCTION(BlueprintPure, Category = "Enemy|State")
+	float GetContactInterval() const { return ContactInterval; }
+
+	UFUNCTION(BlueprintPure, Category = "Enemy|State")
+	const FRogueEnemyArchetype& GetCurrentArchetype() const { return CurrentArchetype; }
+
+	UFUNCTION(BlueprintPure, Category = "Enemy|State")
+	const FRogueEnemyMovementArchetype& GetMovementArchetype() const { return CurrentArchetype.Movement; }
+
+	UFUNCTION(BlueprintPure, Category = "Enemy|State")
+	const FRogueEnemyRangedArchetype& GetRangedArchetype() const { return CurrentArchetype.Ranged; }
+
+	UFUNCTION(BlueprintPure, Category = "Enemy|State")
+	bool HasRangedAttack() const { return CurrentArchetype.Ranged.bUsesRangedAttack; }
+
+	UFUNCTION(BlueprintPure, Category = "Enemy|State")
+	ERogueEnemyMovementModel GetMovementModel() const { return CurrentArchetype.Movement.Model; }
+
+	/** 获取远程攻击冷却剩余时间 */
+	UFUNCTION(BlueprintPure, Category = "Enemy|State")
+	float GetRangedAttackCooldownRemaining() const { return RangedAttackTimer; }
+
+	/** 获取爆发冲刺冷却剩余时间 */
+	UFUNCTION(BlueprintPure, Category = "Enemy|State")
+	float GetBurstCooldownRemaining() const { return BurstCooldown; }
+
+	/** 获取爆发冲刺剩余持续时间 */
+	UFUNCTION(BlueprintPure, Category = "Enemy|State")
+	float GetBurstTimeRemaining() const { return BurstTimeRemaining; }
+
+	/** 是否正在爆发冲刺中 */
+	UFUNCTION(BlueprintPure, Category = "Enemy|State")
+	bool IsBurstCharging() const { return BurstTimeRemaining > 0.0f; }
+
+	/** 获取环绕方向（1.0 或 -1.0） */
+	UFUNCTION(BlueprintPure, Category = "Enemy|State")
+	float GetOrbitDirection() const { return OrbitDirection; }
+
+	// ===========================================================
+	//  行为树/蓝图可调用的动作接口
+	// ===========================================================
+
+	/** 获取玩家角色引用 */
+	UFUNCTION(BlueprintCallable, Category = "Enemy|Action")
+	ARogueCharacter* GetPlayerCharacter() const;
+
+	/** 获取到玩家的 2D 距离 */
+	UFUNCTION(BlueprintPure, Category = "Enemy|Action")
+	float GetDistanceToPlayer() const;
+
+	/** 获取朝向玩家的 2D 方向向量（归一化） */
+	UFUNCTION(BlueprintPure, Category = "Enemy|Action")
+	FVector GetDirectionToPlayer() const;
+
+	/** 获取到玩家的向量（未归一化） */
+	UFUNCTION(BlueprintPure, Category = "Enemy|Action")
+	FVector GetVectorToPlayer() const;
+
+	/** 检查玩家是否在指定范围内 */
+	UFUNCTION(BlueprintPure, Category = "Enemy|Action")
+	bool IsPlayerInRange(float Range) const;
+
+	/** 检查是否在远程攻击范围内 */
+	UFUNCTION(BlueprintPure, Category = "Enemy|Action")
+	bool IsInRangedAttackRange() const;
+
+	/** 沿指定方向移动（行为树 Task 调用） */
+	UFUNCTION(BlueprintCallable, Category = "Enemy|Action")
+	void MoveInDirection(const FVector& Direction, float SpeedMultiplier = 1.0f, float DeltaSeconds = 0.0f);
+
+	/** 执行接触伤害检测（行为树 Task/Service 调用） */
+	UFUNCTION(BlueprintCallable, Category = "Enemy|Action")
+	void PerformContactDamage(float DeltaSeconds);
+
+	/** 向玩家发射弹幕（行为树 Task 调用） */
+	UFUNCTION(BlueprintCallable, Category = "Enemy|Action")
+	void FireProjectileAtPlayer();
+
+	/** 计算基于原型的移动方向（行为树 Task 调用，返回归一化方向） */
+	UFUNCTION(BlueprintCallable, Category = "Enemy|Action")
+	FVector CalculateArchetypeMovement(float DeltaSeconds);
+
+	/** 更新爆发冲刺计时器（行为树中 BurstCharge 类型需要每帧调用） */
+	UFUNCTION(BlueprintCallable, Category = "Enemy|Action")
+	void UpdateBurstTimers(float DeltaSeconds);
+
+	/** 更新远程攻击冷却计时器 */
+	UFUNCTION(BlueprintCallable, Category = "Enemy|Action")
+	void UpdateRangedAttackCooldown(float DeltaSeconds);
+
+	/** 重置远程攻击冷却到下一次射击间隔 */
+	UFUNCTION(BlueprintCallable, Category = "Enemy|Action")
+	void ResetRangedAttackCooldown();
+
+	/** 设置远程攻击冷却时间 */
+	UFUNCTION(BlueprintCallable, Category = "Enemy|Action")
+	void SetRangedAttackCooldown(float NewCooldown);
+
+	// ===========================================================
+	//  蓝图可重写的事件/钩子（BlueprintNativeEvent）
+	// ===========================================================
+
+	/** 敌人初始化完成后调用（蓝图中可重写以执行自定义初始化） */
+	UFUNCTION(BlueprintNativeEvent, Category = "Enemy|Event")
+	void OnEnemyInitialized(const FRogueEnemyProfile& Profile);
+
+	/** 敌人从对象池激活时调用 */
+	UFUNCTION(BlueprintNativeEvent, Category = "Enemy|Event")
+	void OnEnemyActivated();
+
+	/** 敌人回收到对象池时调用 */
+	UFUNCTION(BlueprintNativeEvent, Category = "Enemy|Event")
+	void OnEnemyDeactivated();
+
+	/** 敌人受到伤害时调用（返回实际伤害值，蓝图可修改伤害逻辑） */
+	UFUNCTION(BlueprintNativeEvent, Category = "Enemy|Event")
+	float OnDamageTaken(float DamageAmount, AActor* DamageCauser);
+
+	/** 敌人死亡时调用（蓝图中可重写以播放死亡特效等） */
+	UFUNCTION(BlueprintNativeEvent, Category = "Enemy|Event")
+	void OnEnemyDeath(AActor* Killer);
+
+	/** 每帧行为更新（蓝图中可重写以完全自定义行为，返回 true 表示已处理，跳过基类 Tick 逻辑） */
+	UFUNCTION(BlueprintNativeEvent, Category = "Enemy|Event")
+	bool OnBehaviorTick(float DeltaSeconds);
+
+	/** 应用外观样式时调用（蓝图中可重写以自定义外观） */
+	UFUNCTION(BlueprintNativeEvent, Category = "Enemy|Event")
+	void OnApplyVisualStyle();
 
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
+	// ===========================================================
+	//  行为树配置（在蓝图子类中设置）
+	// ===========================================================
+
+	/** 行为树资产（在蓝图子类中设置） */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Enemy|AI")
+	TObjectPtr<UBehaviorTree> BehaviorTreeAsset;
+
+	/** 黑板数据资产（在蓝图子类中设置） */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Enemy|AI")
+	TObjectPtr<UBlackboardData> BlackboardAsset;
+
+	/** 是否使用行为树驱动行为（为 true 时基类 Tick 中的移动/攻击逻辑将被跳过） */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Enemy|AI")
+	bool bUseBehaviorTree = false;
+
+	// ===========================================================
+	//  核心属性（蓝图可读写）
+	// ===========================================================
+
+	//UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Enemy|Components")
+	//TObjectPtr<UStaticMeshComponent> BodyMesh;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Stats")
+	float MaxHealth = 40.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Stats")
+	float CurrentHealth = 40.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Stats")
+	float MoveSpeed = 260.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Stats")
+	float ContactDamage = 10.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Stats")
+	float ContactInterval = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Stats")
+	ERogueEnemyType EnemyType = ERogueEnemyType::Hunter;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Stats")
+	int32 ExperienceReward = 1;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Enemy|Runtime")
+	FRogueEnemyArchetype CurrentArchetype;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Enemy|Runtime")
+	bool bPoolAvailable = true;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Enemy|Runtime")
+	bool bDead = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Enemy|Runtime")
+	bool bIsBoss = false;
+
+	// ===========================================================
+	//  内部运行时状态
+	// ===========================================================
+
+	UPROPERTY(BlueprintReadWrite, Category = "Enemy|Runtime")
+	float BurstCooldown = 0.0f;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Enemy|Runtime")
+	float BurstTimeRemaining = 0.0f;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Enemy|Runtime")
+	float OrbitDirection = 1.0f;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Enemy|Runtime")
+	float ContactTimer = 0.0f;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Enemy|Runtime")
+	float RangedAttackTimer = 0.0f;
+
+	float LastDamageNumberTime = -100.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Enemy|Runtime")
+	TWeakObjectPtr<ARogueCharacter> CachedPlayerCharacter;
+
+	FRogueEnemyVisualResourceLibrary VisualResourceLibrary;
+
 private:
+	/** 基类默认行为（bUseBehaviorTree = false 时执行） */
+	void HandleDefaultBehavior(float DeltaSeconds);
 	void TouchPlayer(float DeltaSeconds);
 	void HandleRangedAttack(ARogueCharacter* PlayerCharacter, float DistanceToPlayer, float DeltaSeconds);
 	void FireRangedShot(ARogueCharacter* PlayerCharacter);
@@ -59,40 +314,8 @@ private:
 	void ApplyEnemyStyle();
 	FVector GetMovementDirection(const FVector& ToPlayer, float DistanceToPlayer, float DeltaSeconds);
 
-	UPROPERTY(VisibleAnywhere)
-	TObjectPtr<UStaticMeshComponent> BodyMesh;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Enemy")
-	float MaxHealth = 40.0f;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Enemy")
-	float CurrentHealth = 40.0f;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Enemy")
-	float MoveSpeed = 260.0f;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Enemy")
-	float ContactDamage = 10.0f;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Enemy")
-	float ContactInterval = 1.0f;
-
-	UPROPERTY(VisibleInstanceOnly, Category = "Enemy")
-	ERogueEnemyType EnemyType = ERogueEnemyType::Hunter;
-
-	UPROPERTY(VisibleInstanceOnly, Category = "Enemy")
-	int32 ExperienceReward = 1;
-
-	float BurstCooldown = 0.0f;
-	float BurstTimeRemaining = 0.0f;
-	float OrbitDirection = 1.0f;
-	float ContactTimer = 0.0f;
-	float RangedAttackTimer = 0.0f;
-	float LastDamageNumberTime = -100.0f;
-	TWeakObjectPtr<ARogueCharacter> CachedPlayerCharacter;
-	FRogueEnemyArchetype CurrentArchetype;
-	FRogueEnemyVisualResourceLibrary VisualResourceLibrary;
-	bool bPoolAvailable = true;
-	bool bDead = false;
-	bool bIsBoss = false;
+	/** 启动行为树（在 InitializeEnemy 中当 bUseBehaviorTree 为 true 时调用） */
+	void StartBehaviorTree();
+	/** 停止行为树（在 DeactivateToPool 中调用） */
+	void StopBehaviorTree();
 };

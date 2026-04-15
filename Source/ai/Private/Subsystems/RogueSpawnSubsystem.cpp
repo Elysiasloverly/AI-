@@ -11,12 +11,14 @@
 #include "Kismet/GameplayStatics.h"
 
 void URogueSpawnSubsystem::Configure(
-	TSubclassOf<ARogueEnemy> InEnemyClass,
+	TSubclassOf<ARogueEnemy> InDefaultEnemyClass,
+	const TMap<ERogueEnemyType, TSubclassOf<ARogueEnemy>>& InEnemyClassMap,
 	const FRogueSpawnSettings& InSpawnSettings,
 	const FRogueBossSettings& InBossSettings,
 	URogueGameBalanceAsset* InBalanceAsset)
 {
-	EnemyClass = InEnemyClass;
+	DefaultEnemyClass = InDefaultEnemyClass;
+	EnemyClassMap = InEnemyClassMap;
 	SpawnSettings = InSpawnSettings;
 	BossSettings = InBossSettings;
 	BalanceAsset = InBalanceAsset;
@@ -91,7 +93,8 @@ ARogueEnemy* URogueSpawnSubsystem::SpawnConfiguredEnemy(const FRogueEnemyProfile
 	}
 
 	const FVector SpawnLocation = FindSpawnLocation(DesiredDistance, MinimumDistance, Arena, Character);
-	UClass* EnemyToSpawn = EnemyClass ? EnemyClass.Get() : ARogueEnemy::StaticClass();
+	TSubclassOf<ARogueEnemy> ResolvedClass = ResolveEnemyClass(EnemyProfile.EnemyType);
+	UClass* EnemyToSpawn = ResolvedClass ? ResolvedClass.Get() : ARogueEnemy::StaticClass();
 	ARogueEnemy* Enemy = Pools->AcquireEnemy(EnemyToSpawn, nullptr, SpawnLocation, FRotator::ZeroRotator);
 	if (Enemy == nullptr)
 	{
@@ -147,4 +150,19 @@ FVector URogueSpawnSubsystem::FindSpawnLocation(float DesiredDistance, float Min
 ERogueEnemyType URogueSpawnSubsystem::PickEnemyTypeForCurrentWave(int32 Wave) const
 {
 	return RogueGameModeRules::PickWeightedEnemyTypeForWave(Wave, BalanceAsset);
+}
+
+TSubclassOf<ARogueEnemy> URogueSpawnSubsystem::ResolveEnemyClass(ERogueEnemyType EnemyType) const
+{
+	// 优先查找类型映射表
+	if (const TSubclassOf<ARogueEnemy>* FoundClass = EnemyClassMap.Find(EnemyType))
+	{
+		if (*FoundClass != nullptr)
+		{
+			return *FoundClass;
+		}
+	}
+
+	// 回退到默认类
+	return DefaultEnemyClass;
 }

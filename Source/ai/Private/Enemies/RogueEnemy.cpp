@@ -13,34 +13,28 @@
 #include "Components/StaticMeshComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "AIController.h"
+#include "BehaviorTree/BehaviorTree.h"
+#include "BehaviorTree/BlackboardComponent.h"
+#include "BehaviorTree/BehaviorTreeComponent.h"
+
+// ===========================================================
+//  构造 & 生命周期
+// ===========================================================
 
 ARogueEnemy::ARogueEnemy()
 {
 	PrimaryActorTick.bCanEverTick = true;
+
+	// 确保蓝图子类也使用 AAIController，并在 Spawn 时自动 Possess
+	AIControllerClass = AAIController::StaticClass();
+	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 
 	GetCapsuleComponent()->InitCapsuleSize(34.0f, 72.0f);
 	GetCharacterMovement()->GravityScale = 0.0f;
 	GetCharacterMovement()->MaxWalkSpeed = MoveSpeed;
 	GetCharacterMovement()->bOrientRotationToMovement = true;
 	GetCharacterMovement()->RotationRate = FRotator(0.0f, 600.0f, 0.0f);
-
-	BodyMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BodyMesh"));
-	BodyMesh->SetupAttachment(RootComponent);
-	BodyMesh->SetRelativeLocation(FVector(0.0f, 0.0f, -44.0f));
-	BodyMesh->SetRelativeScale3D(FVector(0.7f, 0.7f, 1.1f));
-	BodyMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	BodyMesh->SetCastShadow(false);
-
-	RogueEnemyVisualResources::LoadDefaultResources(VisualResourceLibrary);
-	if (VisualResourceLibrary.HunterMesh != nullptr)
-	{
-		BodyMesh->SetStaticMesh(VisualResourceLibrary.HunterMesh);
-	}
-
-	if (VisualResourceLibrary.HunterMaterial != nullptr)
-	{
-		BodyMesh->SetMaterial(0, VisualResourceLibrary.HunterMaterial);
-	}
 
 	OrbitDirection = FMath::RandBool() ? 1.0f : -1.0f;
 }
@@ -65,6 +59,10 @@ void ARogueEnemy::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 }
 
+// ===========================================================
+//  Tick
+// ===========================================================
+
 void ARogueEnemy::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
@@ -72,6 +70,33 @@ void ARogueEnemy::Tick(float DeltaSeconds)
 	if (bDead || bPoolAvailable)
 	{
 		return;
+	}
+
+	// 尝试蓝图行为覆盖
+	if (OnBehaviorTick(DeltaSeconds))
+	{
+		return;
+	}
+
+	// 如果使用行为树，跳过基类默认行为（行为树自行驱动）
+	if (bUseBehaviorTree)
+	{
+		return;
+	}
+
+	// 基类默认行为
+	HandleDefaultBehavior(DeltaSeconds);
+}
+
+void ARogueEnemy::HandleDefaultBehavior(float DeltaSeconds)
+{
+	static int32 DebugLogCounter = 0;
+	if (++DebugLogCounter % 300 == 1)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[RogueEnemy] HandleDefaultBehavior: Class=%s, MovementModel=%d, HasRanged=%d"),
+			*GetClass()->GetName(),
+			static_cast<int32>(CurrentArchetype.Movement.Model),
+			CurrentArchetype.Ranged.bUsesRangedAttack);
 	}
 
 	ARogueCharacter* PlayerCharacter = CachedPlayerCharacter.Get();
@@ -107,6 +132,10 @@ void ARogueEnemy::Tick(float DeltaSeconds)
 	HandleRangedAttack(PlayerCharacter, DistanceToPlayer, DeltaSeconds);
 }
 
+// ===========================================================
+//  TakeDamage
+// ===========================================================
+
 float ARogueEnemy::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
 {
 	if (bDead || bPoolAvailable)
@@ -114,7 +143,9 @@ float ARogueEnemy::TakeDamage(float DamageAmount, FDamageEvent const& DamageEven
 		return 0.0f;
 	}
 
-	const float AppliedDamage = FMath::Clamp(DamageAmount, 0.0f, CurrentHealth);
+	// 调用蓝图钩子，允许子类修改伤害
+	const float ModifiedDamage = OnDamageTaken(DamageAmount, DamageCauser);
+	const float AppliedDamage = FMath::Clamp(ModifiedDamage, 0.0f, CurrentHealth);
 	CurrentHealth -= AppliedDamage;
 
 	if (AppliedDamage > 0.0f)
@@ -139,8 +170,15 @@ float ARogueEnemy::TakeDamage(float DamageAmount, FDamageEvent const& DamageEven
 	return AppliedDamage;
 }
 
+// ===========================================================
+//  生命周期：初始化 / 激活 / 回收
+// ===========================================================
+
 void ARogueEnemy::InitializeEnemy(const FRogueEnemyProfile& InProfile)
 {
+	UE_LOG(LogTemp, Warning, TEXT("[RogueEnemy] InitializeEnemy: Class=%s, EnemyType=%d, bIsBoss=%d"),
+		*GetClass()->GetName(), static_cast<int32>(InProfile.EnemyType), InProfile.bIsBoss);
+
 	EnemyType = InProfile.EnemyType;
 	MaxHealth = InProfile.Health;
 	CurrentHealth = MaxHealth;
@@ -149,6 +187,12 @@ void ARogueEnemy::InitializeEnemy(const FRogueEnemyProfile& InProfile)
 	ExperienceReward = InProfile.ExperienceReward;
 	bIsBoss = InProfile.bIsBoss;
 	CurrentArchetype = RogueEnemyArchetypes::BuildEnemyArchetype(EnemyType, bIsBoss);
+
+	UE_LOG(LogTemp, Warning, TEXT("[RogueEnemy] Archetype built: MovementModel=%d, HasRanged=%d, bUseBehaviorTree=%d"),
+		static_cast<int32>(CurrentArchetype.Movement.Model),
+		CurrentArchetype.Ranged.bUsesRangedAttack,
+		bUseBehaviorTree);
+
 	BurstCooldown = CurrentArchetype.Movement.Model == ERogueEnemyMovementModel::BurstCharge ? FMath::FRandRange(0.8f, 1.8f) : 0.0f;
 	BurstTimeRemaining = 0.0f;
 	ContactTimer = 0.0f;
@@ -162,6 +206,15 @@ void ARogueEnemy::InitializeEnemy(const FRogueEnemyProfile& InProfile)
 	CachedPlayerCharacter = Cast<ARogueCharacter>(UGameplayStatics::GetPlayerCharacter(this, 0));
 	GetCharacterMovement()->MaxWalkSpeed = MoveSpeed;
 	ApplyEnemyStyle();
+
+	// 启动行为树（如果配置了）
+	if (bUseBehaviorTree)
+	{
+		StartBehaviorTree();
+	}
+
+	// 通知蓝图子类初始化完成
+	OnEnemyInitialized(InProfile);
 }
 
 void ARogueEnemy::ActivatePooledEnemy(AActor* InOwner, const FVector& SpawnLocation, const FRotator& SpawnRotation)
@@ -185,10 +238,22 @@ void ARogueEnemy::ActivatePooledEnemy(AActor* InOwner, const FVector& SpawnLocat
 		Movement->Velocity = FVector::ZeroVector;
 		Movement->SetMovementMode(MOVE_Walking);
 	}
+
+	// 确保有 AI Controller
+	if (GetController() == nullptr)
+	{
+		SpawnDefaultController();
+	}
+
+	// 通知蓝图子类
+	OnEnemyActivated();
 }
 
 void ARogueEnemy::DeactivateToPool()
 {
+	// 停止行为树
+	StopBehaviorTree();
+
 	if (!bPoolAvailable)
 	{
 		if (UWorld* World = GetWorld())
@@ -199,6 +264,9 @@ void ARogueEnemy::DeactivateToPool()
 			}
 		}
 	}
+
+	// 通知蓝图子类
+	OnEnemyDeactivated();
 
 	bPoolAvailable = true;
 	bDead = true;
@@ -226,6 +294,257 @@ void ARogueEnemy::DeactivateToPool()
 		Movement->Velocity = FVector::ZeroVector;
 	}
 }
+
+// ===========================================================
+//  行为树启动/停止
+// ===========================================================
+
+void ARogueEnemy::StartBehaviorTree()
+{
+	if (BehaviorTreeAsset == nullptr)
+	{
+		return;
+	}
+
+	AAIController* AICtrl = Cast<AAIController>(GetController());
+	if (AICtrl == nullptr)
+	{
+		SpawnDefaultController();
+		AICtrl = Cast<AAIController>(GetController());
+	}
+
+	if (AICtrl == nullptr)
+	{
+		return;
+	}
+
+	// 初始化黑板
+	if (BlackboardAsset != nullptr)
+	{
+		UBlackboardComponent* BBComp = nullptr;
+		AICtrl->UseBlackboard(BlackboardAsset, BBComp);
+	}
+
+	// 设置黑板初始值
+	UBlackboardComponent* BB = AICtrl->GetBlackboardComponent();
+	if (BB != nullptr)
+	{
+		BB->SetValueAsBool(FName("IsBoss"), bIsBoss);
+		BB->SetValueAsFloat(FName("MoveSpeed"), MoveSpeed);
+		BB->SetValueAsFloat(FName("ContactDamage"), ContactDamage);
+		BB->SetValueAsEnum(FName("EnemyType"), static_cast<uint8>(EnemyType));
+		BB->SetValueAsEnum(FName("MovementModel"), static_cast<uint8>(CurrentArchetype.Movement.Model));
+		BB->SetValueAsBool(FName("HasRangedAttack"), CurrentArchetype.Ranged.bUsesRangedAttack);
+	}
+
+	// 运行行为树
+	AICtrl->RunBehaviorTree(BehaviorTreeAsset);
+}
+
+void ARogueEnemy::StopBehaviorTree()
+{
+	if (!bUseBehaviorTree || BehaviorTreeAsset == nullptr)
+	{
+		return;
+	}
+
+	AAIController* AICtrl = Cast<AAIController>(GetController());
+	if (AICtrl == nullptr)
+	{
+		return;
+	}
+
+	UBehaviorTreeComponent* BTComp = Cast<UBehaviorTreeComponent>(AICtrl->GetBrainComponent());
+	if (BTComp != nullptr)
+	{
+		BTComp->StopTree(EBTStopMode::Safe);
+	}
+}
+
+// ===========================================================
+//  状态查询接口实现
+// ===========================================================
+
+FVector ARogueEnemy::GetHealthBarWorldLocation() const
+{
+	const float VerticalOffset = GetCapsuleComponent()->GetScaledCapsuleHalfHeight() + (bIsBoss ? 92.0f : 56.0f);
+	return GetActorLocation() + FVector(0.0f, 0.0f, VerticalOffset);
+}
+
+// ===========================================================
+//  动作接口实现
+// ===========================================================
+
+ARogueCharacter* ARogueEnemy::GetPlayerCharacter() const
+{
+	ARogueCharacter* PlayerCharacter = CachedPlayerCharacter.Get();
+	if (!IsValid(PlayerCharacter))
+	{
+		PlayerCharacter = Cast<ARogueCharacter>(UGameplayStatics::GetPlayerCharacter(this, 0));
+		// 注意：const 方法中不修改 CachedPlayerCharacter，调用方可自行缓存
+	}
+	return PlayerCharacter;
+}
+
+float ARogueEnemy::GetDistanceToPlayer() const
+{
+	const ARogueCharacter* PlayerCharacter = GetPlayerCharacter();
+	if (!IsValid(PlayerCharacter))
+	{
+		return FLT_MAX;
+	}
+	return FVector::Dist2D(GetActorLocation(), PlayerCharacter->GetActorLocation());
+}
+
+FVector ARogueEnemy::GetDirectionToPlayer() const
+{
+	const ARogueCharacter* PlayerCharacter = GetPlayerCharacter();
+	if (!IsValid(PlayerCharacter))
+	{
+		return FVector::ZeroVector;
+	}
+	return (PlayerCharacter->GetActorLocation() - GetActorLocation()).GetSafeNormal2D();
+}
+
+FVector ARogueEnemy::GetVectorToPlayer() const
+{
+	const ARogueCharacter* PlayerCharacter = GetPlayerCharacter();
+	if (!IsValid(PlayerCharacter))
+	{
+		return FVector::ZeroVector;
+	}
+	return PlayerCharacter->GetActorLocation() - GetActorLocation();
+}
+
+bool ARogueEnemy::IsPlayerInRange(float Range) const
+{
+	return GetDistanceToPlayer() <= Range;
+}
+
+bool ARogueEnemy::IsInRangedAttackRange() const
+{
+	if (!CurrentArchetype.Ranged.bUsesRangedAttack)
+	{
+		return false;
+	}
+	const float Distance = GetDistanceToPlayer();
+	return Distance >= CurrentArchetype.Ranged.MinimumRange * CurrentArchetype.Ranged.AttackRangeMinFactor
+		&& Distance <= CurrentArchetype.Ranged.MaximumRange;
+}
+
+void ARogueEnemy::MoveInDirection(const FVector& Direction, float SpeedMultiplier, float DeltaSeconds)
+{
+	if (Direction.IsNearlyZero() || DeltaSeconds <= 0.0f)
+	{
+		return;
+	}
+
+	const FVector NormalizedDirection = Direction.GetSafeNormal2D();
+	const FRotator DesiredRotation = NormalizedDirection.Rotation();
+	SetActorRotation(FMath::RInterpTo(GetActorRotation(), DesiredRotation, DeltaSeconds, 8.0f));
+	AddActorWorldOffset(NormalizedDirection * MoveSpeed * SpeedMultiplier * DeltaSeconds, true);
+}
+
+void ARogueEnemy::PerformContactDamage(float DeltaSeconds)
+{
+	TouchPlayer(DeltaSeconds);
+}
+
+void ARogueEnemy::FireProjectileAtPlayer()
+{
+	ARogueCharacter* PlayerCharacter = GetPlayerCharacter();
+	if (IsValid(PlayerCharacter))
+	{
+		FireRangedShot(PlayerCharacter);
+	}
+}
+
+FVector ARogueEnemy::CalculateArchetypeMovement(float DeltaSeconds)
+{
+	const ARogueCharacter* PlayerCharacter = GetPlayerCharacter();
+	if (!IsValid(PlayerCharacter))
+	{
+		return FVector::ZeroVector;
+	}
+
+	const FVector ToPlayer = PlayerCharacter->GetActorLocation() - GetActorLocation();
+	const float DistanceToPlayer = ToPlayer.Size2D();
+	return GetMovementDirection(ToPlayer, DistanceToPlayer, DeltaSeconds);
+}
+
+void ARogueEnemy::UpdateBurstTimers(float DeltaSeconds)
+{
+	const FRogueEnemyMovementArchetype& MovementArchetype = CurrentArchetype.Movement;
+	BurstCooldown -= DeltaSeconds;
+	BurstTimeRemaining -= DeltaSeconds;
+
+	if (BurstCooldown <= 0.0f)
+	{
+		BurstCooldown = MovementArchetype.BurstCycleTime;
+		BurstTimeRemaining = MovementArchetype.BurstDuration;
+	}
+}
+
+void ARogueEnemy::UpdateRangedAttackCooldown(float DeltaSeconds)
+{
+	RangedAttackTimer = FMath::Max(0.0f, RangedAttackTimer - DeltaSeconds);
+}
+
+void ARogueEnemy::ResetRangedAttackCooldown()
+{
+	RangedAttackTimer = CurrentArchetype.Ranged.NextShotCooldown;
+}
+
+void ARogueEnemy::SetRangedAttackCooldown(float NewCooldown)
+{
+	RangedAttackTimer = FMath::Max(0.0f, NewCooldown);
+}
+
+// ===========================================================
+//  BlueprintNativeEvent 默认实现
+// ===========================================================
+
+void ARogueEnemy::OnEnemyInitialized_Implementation(const FRogueEnemyProfile& Profile)
+{
+	// 默认空实现，蓝图子类可重写
+}
+
+void ARogueEnemy::OnEnemyActivated_Implementation()
+{
+	// 默认空实现，蓝图子类可重写
+}
+
+void ARogueEnemy::OnEnemyDeactivated_Implementation()
+{
+	// 默认空实现，蓝图子类可重写
+}
+
+float ARogueEnemy::OnDamageTaken_Implementation(float DamageAmount, AActor* DamageCauser)
+{
+	// 默认直接返回原始伤害值，蓝图子类可重写以修改伤害
+	return DamageAmount;
+}
+
+void ARogueEnemy::OnEnemyDeath_Implementation(AActor* Killer)
+{
+	// 默认空实现，蓝图子类可重写以播放死亡特效等
+}
+
+bool ARogueEnemy::OnBehaviorTick_Implementation(float DeltaSeconds)
+{
+	// 默认返回 false，不拦截基类 Tick 逻辑
+	// 蓝图子类可重写返回 true 以完全自定义行为
+	return false;
+}
+
+void ARogueEnemy::OnApplyVisualStyle_Implementation()
+{
+	// 默认空实现，蓝图子类可重写以自定义外观
+}
+
+// ===========================================================
+//  内部逻辑：接触伤害
+// ===========================================================
 
 void ARogueEnemy::TouchPlayer(float DeltaSeconds)
 {
@@ -255,6 +574,10 @@ void ARogueEnemy::TouchPlayer(float DeltaSeconds)
 		ContactTimer = ContactInterval;
 	}
 }
+
+// ===========================================================
+//  内部逻辑：远程攻击
+// ===========================================================
 
 void ARogueEnemy::HandleRangedAttack(ARogueCharacter* PlayerCharacter, float DistanceToPlayer, float DeltaSeconds)
 {
@@ -351,9 +674,16 @@ void ARogueEnemy::FireRangedShot(ARogueCharacter* PlayerCharacter)
 	}
 }
 
+// ===========================================================
+//  内部逻辑：死亡
+// ===========================================================
+
 void ARogueEnemy::Die(AActor* Killer)
 {
 	bDead = true;
+
+	// 通知蓝图子类
+	OnEnemyDeath(Killer);
 
 	if (ARogueGameMode* RogueGameMode = GetWorld()->GetAuthGameMode<ARogueGameMode>())
 	{
@@ -365,6 +695,7 @@ void ARogueEnemy::Die(AActor* Killer)
 
 void ARogueEnemy::ApplyEnemyStyle()
 {
+	/*
 	if (BodyMesh == nullptr)
 	{
 		return;
@@ -396,13 +727,15 @@ void ARogueEnemy::ApplyEnemyStyle()
 	BodyMesh->SetRelativeRotation(VisualArchetype.MeshRotation);
 	BodyMesh->SetRelativeScale3D(VisualArchetype.MeshScale);
 	GetCharacterMovement()->MaxWalkSpeed = MoveSpeed;
+
+	// 通知蓝图子类可自定义外观
+	OnApplyVisualStyle();
+	*/
 }
 
-FVector ARogueEnemy::GetHealthBarWorldLocation() const
-{
-	const float VerticalOffset = GetCapsuleComponent()->GetScaledCapsuleHalfHeight() + (bIsBoss ? 92.0f : 56.0f);
-	return GetActorLocation() + FVector(0.0f, 0.0f, VerticalOffset);
-}
+// ===========================================================
+//  内部逻辑：移动方向计算
+// ===========================================================
 
 FVector ARogueEnemy::GetMovementDirection(const FVector& ToPlayer, float DistanceToPlayer, float DeltaSeconds)
 {

@@ -24,6 +24,9 @@ protected:
 	virtual void BeginPlay() override;
 
 private:
+	UPROPERTY(EditDefaultsOnly, Category = "Arena")
+	float ArenaHalfExtent = 6000.0f;
+	/*
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<USceneComponent> SceneRoot;
 
@@ -88,8 +91,6 @@ private:
 	TObjectPtr<UParticleSystem> AmbientCornerParticle;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Arena")
-	float ArenaHalfExtent = 6000.0f;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Arena")
 	float WallHeight = 220.0f;
+	*/
 };

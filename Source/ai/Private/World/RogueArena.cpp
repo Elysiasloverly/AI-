@@ -13,7 +13,7 @@
 ARogueArena::ARogueArena()
 {
 	PrimaryActorTick.bCanEverTick = false;
-
+	/*
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
 	RootComponent = SceneRoot;
 	SceneRoot->SetMobility(EComponentMobility::Static);
@@ -239,12 +239,13 @@ ARogueArena::ARogueArena()
 	WestAccentLight->SetIntensity(3400.0f);
 	WestAccentLight->SetAttenuationRadius(2100.0f);
 	WestAccentLight->SetLightColor(FLinearColor(0.72f, 0.32f, 1.0f));
+	*/
 }
 
 void ARogueArena::BeginPlay()
 {
 	Super::BeginPlay();
-
+/*
 	if (GetWorld() == nullptr)
 	{
 		return;
@@ -265,4 +266,5 @@ void ARogueArena::BeginPlay()
 			UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), AmbientCornerParticle, FTransform(FRotator::ZeroRotator, GetActorLocation() + CornerOffset, FVector(1.35f, 1.35f, 1.35f)));
 		}
 	}
+	*/
 }

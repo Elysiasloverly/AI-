@@ -73,13 +73,13 @@ void ARogueGameMode::BeginPlay()
 	// 配置生成子系统
 	if (URogueSpawnSubsystem* SpawnSubsystem = GetWorld()->GetSubsystem<URogueSpawnSubsystem>())
 	{
-		SpawnSubsystem->Configure(EnemyClass, SpawnSettings, BossSettings, LoadedGameBalanceAsset);
+		SpawnSubsystem->Configure(DefaultEnemyClass, EnemyClassMap, SpawnSettings, BossSettings, LoadedGameBalanceAsset);
 	}
 
 	// 预热对象池 —— 委托给 CombatPoolSubsystem
 	if (URogueCombatPoolSubsystem* PoolSubsystem = GetWorld()->GetSubsystem<URogueCombatPoolSubsystem>())
 	{
-		PoolSubsystem->Prewarm(this, PoolSettings, EnemyClass, ExperiencePickupClass);
+		PoolSubsystem->Prewarm(this, PoolSettings, DefaultEnemyClass, ExperiencePickupClass);
 	}
 }
 

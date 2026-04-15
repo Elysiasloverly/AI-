@@ -22,7 +22,8 @@ class AI_API URogueSpawnSubsystem : public UWorldSubsystem
 public:
 	/** 配置生成参数（由 GameMode 在 BeginPlay 时调用） */
 	void Configure(
-		TSubclassOf<ARogueEnemy> InEnemyClass,
+		TSubclassOf<ARogueEnemy> InDefaultEnemyClass,
+		const TMap<ERogueEnemyType, TSubclassOf<ARogueEnemy>>& InEnemyClassMap,
 		const FRogueSpawnSettings& InSpawnSettings,
 		const FRogueBossSettings& InBossSettings,
 		URogueGameBalanceAsset* InBalanceAsset);
@@ -41,8 +42,15 @@ private:
 	FVector FindSpawnLocation(float DesiredDistance, float MinimumDistance, const ARogueArena* Arena, ARogueCharacter* Character) const;
 	ERogueEnemyType PickEnemyTypeForCurrentWave(int32 Wave) const;
 
+	/** 根据敌人类型查找对应的蓝图子类，未配置则回退到默认类 */
+	TSubclassOf<ARogueEnemy> ResolveEnemyClass(ERogueEnemyType EnemyType) const;
+
 	UPROPERTY()
-	TSubclassOf<ARogueEnemy> EnemyClass;
+	TSubclassOf<ARogueEnemy> DefaultEnemyClass;
+
+	/** 敌人类型 → 蓝图子类映射 */
+	UPROPERTY()
+	TMap<ERogueEnemyType, TSubclassOf<ARogueEnemy>> EnemyClassMap;
 
 	UPROPERTY()
 	TObjectPtr<URogueGameBalanceAsset> BalanceAsset;

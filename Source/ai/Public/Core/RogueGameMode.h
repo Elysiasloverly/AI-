@@ -63,8 +63,13 @@ private:
 	void QueueUpgradeSelections(int32 Count, ARogueCharacter* Character);
 	void OpenNextUpgradeSelection();
 
+	/** 默认敌人类（未配置子类映射时的回退类） */
 	UPROPERTY(EditDefaultsOnly, Category = "Spawning")
-	TSubclassOf<ARogueEnemy> EnemyClass;
+	TSubclassOf<ARogueEnemy> DefaultEnemyClass;
+
+	/** 按敌人类型配置蓝图子类（在编辑器中为每种类型指定对应的蓝图子类） */
+	UPROPERTY(EditDefaultsOnly, Category = "Spawning")
+	TMap<ERogueEnemyType, TSubclassOf<ARogueEnemy>> EnemyClassMap;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Spawning")
 	TSubclassOf<ARogueExperiencePickup> ExperiencePickupClass;

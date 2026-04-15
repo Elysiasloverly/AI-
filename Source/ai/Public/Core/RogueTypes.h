@@ -28,7 +28,7 @@ enum class ERogueUpgradeType : uint8
 	MortarBlastRadius
 };
 
-UENUM()
+UENUM(BlueprintType)
 enum class ERogueEnemyType : uint8
 {
 	Hunter,
@@ -48,13 +48,27 @@ struct FRogueSpawnCadence
 	float NextSpawnDelay = 0.0f;
 };
 
+USTRUCT(BlueprintType)
 struct FRogueEnemyProfile
 {
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EnemyProfile")
 	ERogueEnemyType EnemyType = ERogueEnemyType::Hunter;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EnemyProfile")
 	float Health = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EnemyProfile")
 	float Speed = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EnemyProfile")
 	float Damage = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EnemyProfile")
 	int32 ExperienceReward = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EnemyProfile")
 	bool bIsBoss = false;
 };
 
