@@ -7,19 +7,19 @@
 UENUM(BlueprintType)
 enum class ERogueEnemyMovementModel : uint8
 {
-	Direct,
-	BurstCharge,
-	Orbit,
-	RangedKite,
-	ZigZagChase
+	Direct       UMETA(DisplayName = "直线追击"),
+	BurstCharge  UMETA(DisplayName = "爆发冲刺"),
+	Orbit        UMETA(DisplayName = "环绕运动"),
+	RangedKite   UMETA(DisplayName = "远程风筝"),
+	ZigZagChase  UMETA(DisplayName = "Z字形追击")
 };
 
 UENUM(BlueprintType)
 enum class ERogueEnemyShotPattern : uint8
 {
-	None,
-	Single,
-	Spread3
+	None     UMETA(DisplayName = "无"),
+	Single   UMETA(DisplayName = "单发"),
+	Spread3  UMETA(DisplayName = "散射")
 };
 
 UENUM(BlueprintType)
@@ -200,7 +200,16 @@ struct AI_API FRogueEnemyArchetype
 	FRogueEnemyVisualArchetype Visual;
 };
 
+class UDataTable;
+
 namespace RogueEnemyArchetypes
 {
+	/** 从硬编码构建原型（保留向后兼容，DataTable 未配置时的回退） */
 	AI_API FRogueEnemyArchetype BuildEnemyArchetype(ERogueEnemyType Type, bool bIsBoss);
+
+	/** 从 DataTable 构建原型（优先使用） */
+	AI_API FRogueEnemyArchetype BuildEnemyArchetypeFromDataTable(const UDataTable* DataTable, ERogueEnemyType Type, bool bIsBoss);
+
+	/** 在 DataTable 中查找指定敌人类型的行名（RowName） */
+	AI_API FName FindRowNameForEnemyType(const UDataTable* DataTable, ERogueEnemyType Type);
 }

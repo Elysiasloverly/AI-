@@ -1,4 +1,6 @@
 #include "Enemies/RogueEnemyArchetypes.h"
+#include "Enemies/RogueEnemyDataTable.h"
+#include "Engine/DataTable.h"
 
 namespace
 {
@@ -235,4 +237,44 @@ FRogueEnemyArchetype RogueEnemyArchetypes::BuildEnemyArchetype(ERogueEnemyType T
 	}
 
 	return Archetype;
+}
+
+FName RogueEnemyArchetypes::FindRowNameForEnemyType(const UDataTable* DataTable, ERogueEnemyType Type)
+{
+	if (DataTable == nullptr)
+	{
+		return NAME_None;
+	}
+
+	const TMap<FName, uint8*>& RowMap = DataTable->GetRowMap();
+	for (const auto& Pair : RowMap)
+	{
+		const FRogueEnemyArchetypeRow* Row = reinterpret_cast<const FRogueEnemyArchetypeRow*>(Pair.Value);
+		if (Row != nullptr && Row->EnemyType == Type)
+		{
+			return Pair.Key;
+		}
+	}
+
+	return NAME_None;
+}
+
+FRogueEnemyArchetype RogueEnemyArchetypes::BuildEnemyArchetypeFromDataTable(const UDataTable* DataTable, ERogueEnemyType Type, bool bIsBoss)
+{
+	if (DataTable != nullptr)
+	{
+		const FName RowName = FindRowNameForEnemyType(DataTable, Type);
+		if (!RowName.IsNone())
+		{
+			const FRogueEnemyArchetypeRow* Row = DataTable->FindRow<FRogueEnemyArchetypeRow>(RowName, TEXT("BuildEnemyArchetypeFromDataTable"));
+			if (Row != nullptr)
+			{
+				return Row->ToArchetype(bIsBoss);
+			}
+		}
+	}
+
+	// DataTable 中未找到对应行，回退到硬编码
+	UE_LOG(LogTemp, Warning, TEXT("[RogueEnemyArchetypes] DataTable 中未找到敌人类型 %d 的配置行，回退到硬编码"), static_cast<int32>(Type));
+	return BuildEnemyArchetype(Type, bIsBoss);
 }

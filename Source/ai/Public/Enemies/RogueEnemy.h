@@ -9,19 +9,15 @@
 
 class UStaticMeshComponent;
 class ARogueCharacter;
-class UBehaviorTree;
-class UBlackboardData;
 class AAIController;
+class UDataTable;
 
 /**
- * 敌人基类 —— 支持两种行为驱动模式：
- * 1. 基类默认行为（bUseBehaviorTree = false）：使用 C++ Tick 中的原型驱动逻辑
- * 2. 行为树驱动（bUseBehaviorTree = true）：由蓝图子类配置行为树，基类 Tick 中的移动/攻击逻辑被跳过
+ * 敌人基类 —— 使用 C++ Tick 中的原型驱动逻辑控制移动和攻击
  *
  * 蓝图子类继承此类后，可以：
- * - 设置 BehaviorTreeAsset / BlackboardAsset 来启用行为树
  * - 重写 BlueprintNativeEvent 钩子来自定义初始化、受伤、死亡等行为
- * - 调用 Action 接口（MoveInDirection、FireProjectileAtPlayer 等）在行为树 Task 中驱动行为
+ * - 调用 Action 接口（MoveInDirection、FireProjectileAtPlayer 等）驱动行为
  */
 UCLASS(Blueprintable, BlueprintType)
 class AI_API ARogueEnemy : public ACharacter
@@ -223,24 +219,12 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	// ===========================================================
-	//  行为树配置（在蓝图子类中设置）
-	// ===========================================================
-
-	/** 行为树资产（在蓝图子类中设置） */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Enemy|AI")
-	TObjectPtr<UBehaviorTree> BehaviorTreeAsset;
-
-	/** 黑板数据资产（在蓝图子类中设置） */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Enemy|AI")
-	TObjectPtr<UBlackboardData> BlackboardAsset;
-
-	/** 是否使用行为树驱动行为（为 true 时基类 Tick 中的移动/攻击逻辑将被跳过） */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Enemy|AI")
-	bool bUseBehaviorTree = false;
-
-	// ===========================================================
 	//  核心属性（蓝图可读写）
 	// ===========================================================
+
+	/** 敌人原型配置表（DataTable），如果设置则优先从表中读取原型数据 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Config", meta = (DisplayName = "敌人原型配置表"))
+	TObjectPtr<UDataTable> EnemyArchetypeDataTable;
 
 	//UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Enemy|Components")
 	//TObjectPtr<UStaticMeshComponent> BodyMesh;
@@ -305,7 +289,7 @@ protected:
 	FRogueEnemyVisualResourceLibrary VisualResourceLibrary;
 
 private:
-	/** 基类默认行为（bUseBehaviorTree = false 时执行） */
+	/** 基类默认行为 */
 	void HandleDefaultBehavior(float DeltaSeconds);
 	void TouchPlayer(float DeltaSeconds);
 	void HandleRangedAttack(ARogueCharacter* PlayerCharacter, float DistanceToPlayer, float DeltaSeconds);
@@ -314,8 +298,4 @@ private:
 	void ApplyEnemyStyle();
 	FVector GetMovementDirection(const FVector& ToPlayer, float DistanceToPlayer, float DeltaSeconds);
 
-	/** 启动行为树（在 InitializeEnemy 中当 bUseBehaviorTree 为 true 时调用） */
-	void StartBehaviorTree();
-	/** 停止行为树（在 DeactivateToPool 中调用） */
-	void StopBehaviorTree();
 };

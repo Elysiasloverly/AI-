@@ -31,14 +31,14 @@ enum class ERogueUpgradeType : uint8
 UENUM(BlueprintType)
 enum class ERogueEnemyType : uint8
 {
-	Hunter,
-	Charger,
-	Tank,
-	Orbiter,
-	Shooter,
-	Skirmisher,
-	Artillery,
-	Spitter
+	Hunter      UMETA(DisplayName = "猎手"),
+	Charger     UMETA(DisplayName = "冲锋者"),
+	Tank        UMETA(DisplayName = "坦克"),
+	Orbiter     UMETA(DisplayName = "环绕者"),
+	Shooter     UMETA(DisplayName = "射手"),
+	Skirmisher  UMETA(DisplayName = "游击者"),
+	Artillery   UMETA(DisplayName = "炮兵"),
+	Spitter     UMETA(DisplayName = "喷射者")
 };
 
 struct FRogueSpawnCadence

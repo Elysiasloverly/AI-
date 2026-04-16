@@ -14,9 +14,6 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "AIController.h"
-#include "BehaviorTree/BehaviorTree.h"
-#include "BehaviorTree/BlackboardComponent.h"
-#include "BehaviorTree/BehaviorTreeComponent.h"
 
 // ===========================================================
 //  构造 & 生命周期
@@ -74,12 +71,6 @@ void ARogueEnemy::Tick(float DeltaSeconds)
 
 	// 尝试蓝图行为覆盖
 	if (OnBehaviorTick(DeltaSeconds))
-	{
-		return;
-	}
-
-	// 如果使用行为树，跳过基类默认行为（行为树自行驱动）
-	if (bUseBehaviorTree)
 	{
 		return;
 	}
@@ -186,12 +177,20 @@ void ARogueEnemy::InitializeEnemy(const FRogueEnemyProfile& InProfile)
 	ContactDamage = InProfile.Damage;
 	ExperienceReward = InProfile.ExperienceReward;
 	bIsBoss = InProfile.bIsBoss;
-	CurrentArchetype = RogueEnemyArchetypes::BuildEnemyArchetype(EnemyType, bIsBoss);
 
-	UE_LOG(LogTemp, Warning, TEXT("[RogueEnemy] Archetype built: MovementModel=%d, HasRanged=%d, bUseBehaviorTree=%d"),
+	// 优先从 DataTable 读取原型配置，未配置则回退到硬编码
+	if (EnemyArchetypeDataTable != nullptr)
+	{
+		CurrentArchetype = RogueEnemyArchetypes::BuildEnemyArchetypeFromDataTable(EnemyArchetypeDataTable, EnemyType, bIsBoss);
+	}
+	else
+	{
+		CurrentArchetype = RogueEnemyArchetypes::BuildEnemyArchetype(EnemyType, bIsBoss);
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("[RogueEnemy] Archetype built: MovementModel=%d, HasRanged=%d"),
 		static_cast<int32>(CurrentArchetype.Movement.Model),
-		CurrentArchetype.Ranged.bUsesRangedAttack,
-		bUseBehaviorTree);
+		CurrentArchetype.Ranged.bUsesRangedAttack);
 
 	BurstCooldown = CurrentArchetype.Movement.Model == ERogueEnemyMovementModel::BurstCharge ? FMath::FRandRange(0.8f, 1.8f) : 0.0f;
 	BurstTimeRemaining = 0.0f;
@@ -206,12 +205,6 @@ void ARogueEnemy::InitializeEnemy(const FRogueEnemyProfile& InProfile)
 	CachedPlayerCharacter = Cast<ARogueCharacter>(UGameplayStatics::GetPlayerCharacter(this, 0));
 	GetCharacterMovement()->MaxWalkSpeed = MoveSpeed;
 	ApplyEnemyStyle();
-
-	// 启动行为树（如果配置了）
-	if (bUseBehaviorTree)
-	{
-		StartBehaviorTree();
-	}
 
 	// 通知蓝图子类初始化完成
 	OnEnemyInitialized(InProfile);
@@ -251,9 +244,6 @@ void ARogueEnemy::ActivatePooledEnemy(AActor* InOwner, const FVector& SpawnLocat
 
 void ARogueEnemy::DeactivateToPool()
 {
-	// 停止行为树
-	StopBehaviorTree();
-
 	if (!bPoolAvailable)
 	{
 		if (UWorld* World = GetWorld())
@@ -292,72 +282,6 @@ void ARogueEnemy::DeactivateToPool()
 	{
 		Movement->StopMovementImmediately();
 		Movement->Velocity = FVector::ZeroVector;
-	}
-}
-
-// ===========================================================
-//  行为树启动/停止
-// ===========================================================
-
-void ARogueEnemy::StartBehaviorTree()
-{
-	if (BehaviorTreeAsset == nullptr)
-	{
-		return;
-	}
-
-	AAIController* AICtrl = Cast<AAIController>(GetController());
-	if (AICtrl == nullptr)
-	{
-		SpawnDefaultController();
-		AICtrl = Cast<AAIController>(GetController());
-	}
-
-	if (AICtrl == nullptr)
-	{
-		return;
-	}
-
-	// 初始化黑板
-	if (BlackboardAsset != nullptr)
-	{
-		UBlackboardComponent* BBComp = nullptr;
-		AICtrl->UseBlackboard(BlackboardAsset, BBComp);
-	}
-
-	// 设置黑板初始值
-	UBlackboardComponent* BB = AICtrl->GetBlackboardComponent();
-	if (BB != nullptr)
-	{
-		BB->SetValueAsBool(FName("IsBoss"), bIsBoss);
-		BB->SetValueAsFloat(FName("MoveSpeed"), MoveSpeed);
-		BB->SetValueAsFloat(FName("ContactDamage"), ContactDamage);
-		BB->SetValueAsEnum(FName("EnemyType"), static_cast<uint8>(EnemyType));
-		BB->SetValueAsEnum(FName("MovementModel"), static_cast<uint8>(CurrentArchetype.Movement.Model));
-		BB->SetValueAsBool(FName("HasRangedAttack"), CurrentArchetype.Ranged.bUsesRangedAttack);
-	}
-
-	// 运行行为树
-	AICtrl->RunBehaviorTree(BehaviorTreeAsset);
-}
-
-void ARogueEnemy::StopBehaviorTree()
-{
-	if (!bUseBehaviorTree || BehaviorTreeAsset == nullptr)
-	{
-		return;
-	}
-
-	AAIController* AICtrl = Cast<AAIController>(GetController());
-	if (AICtrl == nullptr)
-	{
-		return;
-	}
-
-	UBehaviorTreeComponent* BTComp = Cast<UBehaviorTreeComponent>(AICtrl->GetBrainComponent());
-	if (BTComp != nullptr)
-	{
-		BTComp->StopTree(EBTStopMode::Safe);
 	}
 }
 
