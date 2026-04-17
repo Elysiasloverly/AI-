@@ -1,6 +1,8 @@
 // 火箭武器 —— 齐射逻辑
 #include "Combat/RogueWeapon_Rocket.h"
 
+#include "Engine/World.h"
+
 #include "Player/RogueCharacter.h"
 #include "Enemies/RogueEnemy.h"
 #include "Subsystems/RogueCombatPoolSubsystem.h"

@@ -1,5 +1,7 @@
 #include "World/RogueExperiencePickup.h"
 
+#include "Engine/World.h"
+
 #include "Player/RogueCharacter.h"
 #include "Subsystems/RogueEnemyTrackerSubsystem.h"
 #include "Components/PointLightComponent.h"

@@ -1,6 +1,8 @@
 // 镰刀武器 —— 环绕刀片同步逻辑
 #include "Combat/RogueWeapon_Scythe.h"
 
+#include "Engine/World.h"
+
 #include "Player/RogueCharacter.h"
 #include "Subsystems/RogueCombatPoolSubsystem.h"
 #include "Combat/RogueOrbitingBlade.h"
