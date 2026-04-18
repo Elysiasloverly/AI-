@@ -3,12 +3,18 @@
 #include "CoreMinimal.h"
 #include "GameFramework/GameUserSettings.h"
 #include "GameFramework/HUD.h"
+#include "UI/RogueMenuWidgetBases.h"
 #include "RogueHUD.generated.h"
 
 class ARogueGameMode;
 class ARogueCharacter;
 class ARogueEnemy;
 class APlayerController;
+class URoguePauseMenuWidgetBase;
+class URogueShopWidgetBase;
+class URogueUpgradeSelectionWidgetBase;
+class URogueSettingsMenuWidgetBase;
+class URogueDeathScreenWidgetBase;
 class URogueEnemyTrackerSubsystem;
 
 enum class ERoguePauseMenuPage : uint8
@@ -48,6 +54,22 @@ public:
 	void AddDamageNumber(const FVector& WorldLocation, float Damage, bool bIsBossDamage);
 	void OpenPauseMenu();
 	void ClosePauseMenu();
+	void RequestSelectOfferFromShop(int32 OfferIndex);
+	void RequestRefreshFromShop();
+	void RequestCloseFromShop();
+	void RequestSelectUpgradeFromWidget(int32 UpgradeIndex);
+	void RequestResumeFromPauseMenu();
+	void RequestOpenSettingsFromPauseMenu();
+	void RequestQuitFromPauseMenu();
+	void RequestBackFromSettingsMenu();
+	void RequestApplyFromSettingsMenu();
+	void RequestVolumeAdjustFromSettingsMenu(bool bIncrease);
+	void RequestQualityAdjustFromSettingsMenu(bool bIncrease);
+	void RequestResolutionAdjustFromSettingsMenu(bool bIncrease);
+	void RequestFrameLimitAdjustFromSettingsMenu(bool bIncrease);
+	void RequestToggleDisplayModeFromSettingsMenu();
+	void RequestRestartAfterDeath();
+	void RequestQuitAfterDeath();
 
 	bool IsPauseMenuOpen() const { return PauseMenuPage != ERoguePauseMenuPage::None; }
 
@@ -70,6 +92,12 @@ private:
 	void HandlePauseMenuAction(FName BoxName);
 	void HandleShopAction(FName BoxName);
 	void HandleDeathMenuAction(FName BoxName);
+	void InitializeMenuWidgets();
+	void UpdateShopWidget(const ARogueGameMode* RogueGameMode, const ARogueCharacter* PlayerCharacter);
+	void UpdateUpgradeSelectionWidget(const ARogueGameMode* RogueGameMode);
+	void UpdatePauseWidget();
+	void UpdateSettingsWidget();
+	void UpdateDeathWidget(ARogueGameMode* RogueGameMode);
 	void RefreshPauseSettings();
 	void RefreshResolutionOptions(const FIntPoint& CurrentResolution, const FIntPoint& InDesktopResolution);
 	void RefreshFrameRateLimitOptions(float CurrentFrameRateLimit);
@@ -102,4 +130,34 @@ private:
 	bool bGraphicsQualityCustom = false;
 	bool bFrameRateLimitCustom = false;
 	bool bDisplaySettingsDirty = false;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Rogue UI|Widgets")
+	TSubclassOf<URoguePauseMenuWidgetBase> PauseMenuWidgetClass;
+
+	UPROPERTY(Transient)
+	TObjectPtr<URoguePauseMenuWidgetBase> PauseMenuWidget = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Rogue UI|Widgets")
+	TSubclassOf<URogueShopWidgetBase> ShopWidgetClass;
+
+	UPROPERTY(Transient)
+	TObjectPtr<URogueShopWidgetBase> ShopWidget = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Rogue UI|Widgets")
+	TSubclassOf<URogueUpgradeSelectionWidgetBase> UpgradeSelectionWidgetClass;
+
+	UPROPERTY(Transient)
+	TObjectPtr<URogueUpgradeSelectionWidgetBase> UpgradeSelectionWidget = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Rogue UI|Widgets")
+	TSubclassOf<URogueSettingsMenuWidgetBase> SettingsMenuWidgetClass;
+
+	UPROPERTY(Transient)
+	TObjectPtr<URogueSettingsMenuWidgetBase> SettingsMenuWidget = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Rogue UI|Widgets")
+	TSubclassOf<URogueDeathScreenWidgetBase> DeathScreenWidgetClass;
+
+	UPROPERTY(Transient)
+	TObjectPtr<URogueDeathScreenWidgetBase> DeathScreenWidget = nullptr;
 };

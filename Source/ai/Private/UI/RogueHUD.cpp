@@ -3,6 +3,7 @@
 #include "Player/RogueCharacter.h"
 #include "Enemies/RogueEnemy.h"
 #include "Core/RogueGameMode.h"
+#include "UI/RogueMenuWidgetBases.h"
 #include "Subsystems/RogueEnemyTrackerSubsystem.h"
 #include "AudioDevice.h"
 #include "Engine/Canvas.h"
@@ -36,6 +37,7 @@ void ARogueHUD::BeginPlay()
 
 	RefreshPauseSettings();
 	ApplyMasterVolume();
+	InitializeMenuWidgets();
 }
 
 void ARogueHUD::DrawHUD()
@@ -48,6 +50,12 @@ void ARogueHUD::DrawHUD()
 	{
 		return;
 	}
+
+	UpdateShopWidget(RogueGameMode, PlayerCharacter);
+	UpdateUpgradeSelectionWidget(RogueGameMode);
+	UpdatePauseWidget();
+	UpdateSettingsWidget();
+	UpdateDeathWidget(RogueGameMode);
 
 	UFont* Font = GEngine != nullptr ? GEngine->GetSmallFont() : nullptr;
 	UFont* AccentFont = GEngine != nullptr ? GEngine->GetMediumFont() : Font;
@@ -138,42 +146,45 @@ void ARogueHUD::DrawHUD()
 
 	if (RogueGameMode->IsAwaitingUpgradeChoice())
 	{
-		DrawRect(FLinearColor(0.02f, 0.02f, 0.05f, 0.88f), Canvas->SizeX * 0.15f, Canvas->SizeY * 0.18f, Canvas->SizeX * 0.7f, Canvas->SizeY * 0.55f);
-		DrawText(TEXT("请选择升级 - 鼠标点击卡牌"), FLinearColor(1.0f, 0.9f, 0.4f), Canvas->SizeX * 0.25f, Canvas->SizeY * 0.22f, Font, 1.6f, false);
-
-		const TArray<FRogueUpgradeOption>& Options = RogueGameMode->GetPendingUpgrades();
-		float MouseX = -1.0f;
-		float MouseY = -1.0f;
-		if (APlayerController* PlayerController = GetOwningPlayerController())
+		if (UpgradeSelectionWidget == nullptr)
 		{
-			PlayerController->GetMousePosition(MouseX, MouseY);
-		}
+			DrawRect(FLinearColor(0.02f, 0.02f, 0.05f, 0.88f), Canvas->SizeX * 0.15f, Canvas->SizeY * 0.18f, Canvas->SizeX * 0.7f, Canvas->SizeY * 0.55f);
+			DrawText(TEXT("请选择升级 - 鼠标点击卡牌"), FLinearColor(1.0f, 0.9f, 0.4f), Canvas->SizeX * 0.25f, Canvas->SizeY * 0.22f, Font, 1.6f, false);
 
-		for (int32 Index = 0; Index < Options.Num(); ++Index)
-		{
-			FVector2D CardPosition;
-			FVector2D CardSize;
-			if (!GetUpgradeCardRect(Index, CardPosition, CardSize))
+			const TArray<FRogueUpgradeOption>& Options = RogueGameMode->GetPendingUpgrades();
+			float MouseX = -1.0f;
+			float MouseY = -1.0f;
+			if (APlayerController* PlayerController = GetOwningPlayerController())
 			{
-				continue;
+				PlayerController->GetMousePosition(MouseX, MouseY);
 			}
 
-			const bool bHovered = MouseX >= CardPosition.X && MouseX <= CardPosition.X + CardSize.X && MouseY >= CardPosition.Y && MouseY <= CardPosition.Y + CardSize.Y;
-			const FLinearColor CardColor = bHovered ? FLinearColor(0.18f, 0.24f, 0.32f, 0.98f) : FLinearColor(0.08f, 0.08f, 0.12f, 0.95f);
-			DrawRect(CardColor, CardPosition.X, CardPosition.Y, CardSize.X, CardSize.Y);
-			AddHitBox(CardPosition, CardSize, FName(*FString::Printf(TEXT("Upgrade_%d"), Index)), true, 10);
-			DrawText(FString::Printf(TEXT("%d. %s"), Index + 1, *Options[Index].Title), FLinearColor::White, CardPosition.X + 26.0f, CardPosition.Y + 12.0f, Font, 1.25f, false);
-			DrawText(Options[Index].Description, FLinearColor(0.75f, 0.85f, 1.0f), CardPosition.X + 26.0f, CardPosition.Y + 38.0f, Font, 0.95f, false);
-		}
-
-		if (APlayerController* PlayerController = GetOwningPlayerController())
-		{
-			if (PlayerController->WasInputKeyJustPressed(EKeys::LeftMouseButton))
+			for (int32 Index = 0; Index < Options.Num(); ++Index)
 			{
-				const int32 UpgradeIndex = GetUpgradeIndexAtScreenPosition(MouseX, MouseY);
-				if (UpgradeIndex != INDEX_NONE)
+				FVector2D CardPosition;
+				FVector2D CardSize;
+				if (!GetUpgradeCardRect(Index, CardPosition, CardSize))
 				{
-					RogueGameMode->TrySelectUpgrade(UpgradeIndex);
+					continue;
+				}
+
+				const bool bHovered = MouseX >= CardPosition.X && MouseX <= CardPosition.X + CardSize.X && MouseY >= CardPosition.Y && MouseY <= CardPosition.Y + CardSize.Y;
+				const FLinearColor CardColor = bHovered ? FLinearColor(0.18f, 0.24f, 0.32f, 0.98f) : FLinearColor(0.08f, 0.08f, 0.12f, 0.95f);
+				DrawRect(CardColor, CardPosition.X, CardPosition.Y, CardSize.X, CardSize.Y);
+				AddHitBox(CardPosition, CardSize, FName(*FString::Printf(TEXT("Upgrade_%d"), Index)), true, 10);
+				DrawText(FString::Printf(TEXT("%d. %s"), Index + 1, *Options[Index].Title), FLinearColor::White, CardPosition.X + 26.0f, CardPosition.Y + 12.0f, Font, 1.25f, false);
+				DrawText(Options[Index].Description, FLinearColor(0.75f, 0.85f, 1.0f), CardPosition.X + 26.0f, CardPosition.Y + 38.0f, Font, 0.95f, false);
+			}
+
+			if (APlayerController* PlayerController = GetOwningPlayerController())
+			{
+				if (PlayerController->WasInputKeyJustPressed(EKeys::LeftMouseButton))
+				{
+					const int32 UpgradeIndex = GetUpgradeIndexAtScreenPosition(MouseX, MouseY);
+					if (UpgradeIndex != INDEX_NONE)
+					{
+						RogueGameMode->TrySelectUpgrade(UpgradeIndex);
+					}
 				}
 			}
 		}
@@ -181,31 +192,43 @@ void ARogueHUD::DrawHUD()
 
 	if (RogueGameMode->IsShopOpen())
 	{
-		float MouseX = -1.0f;
-		float MouseY = -1.0f;
-		if (APlayerController* PlayerController = GetOwningPlayerController())
+		if (ShopWidget == nullptr)
 		{
-			PlayerController->GetMousePosition(MouseX, MouseY);
-		}
+			float MouseX = -1.0f;
+			float MouseY = -1.0f;
+			if (APlayerController* PlayerController = GetOwningPlayerController())
+			{
+				PlayerController->GetMousePosition(MouseX, MouseY);
+			}
 
-		DrawShopMenu(Font, MouseX, MouseY, RogueGameMode, PlayerCharacter);
+			DrawShopMenu(Font, MouseX, MouseY, RogueGameMode, PlayerCharacter);
+		}
 	}
 
 	if (PauseMenuPage != ERoguePauseMenuPage::None)
 	{
-		DrawPauseMenu(Font);
+		const bool bShouldDrawPauseFallback =
+			(PauseMenuPage == ERoguePauseMenuPage::Main && PauseMenuWidget == nullptr) ||
+			(PauseMenuPage == ERoguePauseMenuPage::Settings && SettingsMenuWidget == nullptr);
+		if (bShouldDrawPauseFallback)
+		{
+			DrawPauseMenu(Font);
+		}
 	}
 
 	if (PlayerCharacter->IsDead())
 	{
-		float MouseX = -1.0f;
-		float MouseY = -1.0f;
-		if (APlayerController* PlayerController = GetOwningPlayerController())
+		if (DeathScreenWidget == nullptr)
 		{
-			PlayerController->GetMousePosition(MouseX, MouseY);
-		}
+			float MouseX = -1.0f;
+			float MouseY = -1.0f;
+			if (APlayerController* PlayerController = GetOwningPlayerController())
+			{
+				PlayerController->GetMousePosition(MouseX, MouseY);
+			}
 
-		DrawDeathMenu(Font, MouseX, MouseY, RogueGameMode);
+			DrawDeathMenu(Font, MouseX, MouseY, RogueGameMode);
+		}
 	}
 }
 
@@ -243,6 +266,98 @@ void ARogueHUD::OpenPauseMenu()
 void ARogueHUD::ClosePauseMenu()
 {
 	PauseMenuPage = ERoguePauseMenuPage::None;
+}
+
+void ARogueHUD::RequestSelectOfferFromShop(int32 OfferIndex)
+{
+	if (ARogueGameMode* RogueGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ARogueGameMode>() : nullptr)
+	{
+		RogueGameMode->TryBuyShopOffer(OfferIndex);
+	}
+}
+
+void ARogueHUD::RequestRefreshFromShop()
+{
+	if (ARogueGameMode* RogueGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ARogueGameMode>() : nullptr)
+	{
+		RogueGameMode->TryRefreshShop();
+	}
+}
+
+void ARogueHUD::RequestCloseFromShop()
+{
+	if (ARogueGameMode* RogueGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ARogueGameMode>() : nullptr)
+	{
+		RogueGameMode->CloseShop();
+	}
+}
+
+void ARogueHUD::RequestSelectUpgradeFromWidget(int32 UpgradeIndex)
+{
+	if (ARogueGameMode* RogueGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ARogueGameMode>() : nullptr)
+	{
+		RogueGameMode->TrySelectUpgrade(UpgradeIndex);
+	}
+}
+
+void ARogueHUD::RequestResumeFromPauseMenu()
+{
+	HandlePauseMenuAction(FName(TEXT("Pause_Resume")));
+}
+
+void ARogueHUD::RequestOpenSettingsFromPauseMenu()
+{
+	HandlePauseMenuAction(FName(TEXT("Pause_Settings")));
+}
+
+void ARogueHUD::RequestQuitFromPauseMenu()
+{
+	HandlePauseMenuAction(FName(TEXT("Pause_Quit")));
+}
+
+void ARogueHUD::RequestBackFromSettingsMenu()
+{
+	HandlePauseMenuAction(FName(TEXT("Settings_Back")));
+}
+
+void ARogueHUD::RequestApplyFromSettingsMenu()
+{
+	HandlePauseMenuAction(FName(TEXT("Settings_Apply")));
+}
+
+void ARogueHUD::RequestVolumeAdjustFromSettingsMenu(bool bIncrease)
+{
+	HandlePauseMenuAction(bIncrease ? FName(TEXT("Settings_VolumeUp")) : FName(TEXT("Settings_VolumeDown")));
+}
+
+void ARogueHUD::RequestQualityAdjustFromSettingsMenu(bool bIncrease)
+{
+	HandlePauseMenuAction(bIncrease ? FName(TEXT("Settings_QualityUp")) : FName(TEXT("Settings_QualityDown")));
+}
+
+void ARogueHUD::RequestResolutionAdjustFromSettingsMenu(bool bIncrease)
+{
+	HandlePauseMenuAction(bIncrease ? FName(TEXT("Settings_ResolutionUp")) : FName(TEXT("Settings_ResolutionDown")));
+}
+
+void ARogueHUD::RequestFrameLimitAdjustFromSettingsMenu(bool bIncrease)
+{
+	HandlePauseMenuAction(bIncrease ? FName(TEXT("Settings_FrameLimitUp")) : FName(TEXT("Settings_FrameLimitDown")));
+}
+
+void ARogueHUD::RequestToggleDisplayModeFromSettingsMenu()
+{
+	HandlePauseMenuAction(FName(TEXT("Settings_Fullscreen")));
+}
+
+void ARogueHUD::RequestRestartAfterDeath()
+{
+	HandleDeathMenuAction(FName(TEXT("Death_Restart")));
+}
+
+void ARogueHUD::RequestQuitAfterDeath()
+{
+	HandleDeathMenuAction(FName(TEXT("Death_Quit")));
 }
 
 int32 ARogueHUD::GetUpgradeIndexAtScreenPosition(float ScreenX, float ScreenY) const
@@ -1015,6 +1130,213 @@ void ARogueHUD::HandleDeathMenuAction(FName BoxName)
 		UGameplayStatics::SetGamePaused(this, false);
 		UKismetSystemLibrary::QuitGame(this, PlayerController, EQuitPreference::Quit, false);
 	}
+}
+
+void ARogueHUD::InitializeMenuWidgets()
+{
+	if (APlayerController* PlayerController = GetOwningPlayerController())
+	{
+		if (ShopWidgetClass != nullptr)
+		{
+			ShopWidget = CreateWidget<URogueShopWidgetBase>(PlayerController, ShopWidgetClass);
+			if (ShopWidget != nullptr)
+			{
+				ShopWidget->SetOwningRogueHUD(this);
+				ShopWidget->AddToViewport(64);
+				ShopWidget->SetVisibility(ESlateVisibility::Collapsed);
+			}
+		}
+
+		if (UpgradeSelectionWidgetClass != nullptr)
+		{
+			UpgradeSelectionWidget = CreateWidget<URogueUpgradeSelectionWidgetBase>(PlayerController, UpgradeSelectionWidgetClass);
+			if (UpgradeSelectionWidget != nullptr)
+			{
+				UpgradeSelectionWidget->SetOwningRogueHUD(this);
+				UpgradeSelectionWidget->AddToViewport(63);
+				UpgradeSelectionWidget->SetVisibility(ESlateVisibility::Collapsed);
+			}
+		}
+
+		if (PauseMenuWidgetClass != nullptr)
+		{
+			PauseMenuWidget = CreateWidget<URoguePauseMenuWidgetBase>(PlayerController, PauseMenuWidgetClass);
+			if (PauseMenuWidget != nullptr)
+			{
+				PauseMenuWidget->SetOwningRogueHUD(this);
+				PauseMenuWidget->AddToViewport(65);
+				PauseMenuWidget->SetVisibility(ESlateVisibility::Collapsed);
+			}
+		}
+
+		if (SettingsMenuWidgetClass != nullptr)
+		{
+			SettingsMenuWidget = CreateWidget<URogueSettingsMenuWidgetBase>(PlayerController, SettingsMenuWidgetClass);
+			if (SettingsMenuWidget != nullptr)
+			{
+				SettingsMenuWidget->SetOwningRogueHUD(this);
+				SettingsMenuWidget->AddToViewport(66);
+				SettingsMenuWidget->SetVisibility(ESlateVisibility::Collapsed);
+			}
+		}
+	}
+
+	if (DeathScreenWidgetClass == nullptr)
+	{
+		return;
+	}
+
+	if (APlayerController* PlayerController = GetOwningPlayerController())
+	{
+		DeathScreenWidget = CreateWidget<URogueDeathScreenWidgetBase>(PlayerController, DeathScreenWidgetClass);
+		if (DeathScreenWidget != nullptr)
+		{
+			DeathScreenWidget->SetOwningRogueHUD(this);
+			DeathScreenWidget->AddToViewport(70);
+			DeathScreenWidget->SetVisibility(ESlateVisibility::Collapsed);
+		}
+	}
+}
+
+void ARogueHUD::UpdateShopWidget(const ARogueGameMode* RogueGameMode, const ARogueCharacter* PlayerCharacter)
+{
+	if (ShopWidget == nullptr)
+	{
+		return;
+	}
+
+	FRogueShopViewData ViewData;
+	ViewData.bVisible = RogueGameMode != nullptr && PlayerCharacter != nullptr && RogueGameMode->IsShopOpen();
+	ViewData.TitleText = FText::FromString(TEXT("商店"));
+	if (PlayerCharacter != nullptr)
+	{
+		ViewData.MoneyText = FText::FromString(FString::Printf(TEXT("金币 %d"), PlayerCharacter->GetMoney()));
+	}
+	ViewData.HintText = FText::FromString(TEXT("点击卡牌购买强化"));
+	if (RogueGameMode != nullptr)
+	{
+		ViewData.AutoRefreshText = FText::FromString(FString::Printf(TEXT("自动补货 %.0f 秒"), FMath::CeilToFloat(RogueGameMode->GetShopSecondsUntilRefresh())));
+		ViewData.RefreshButtonText = FText::FromString(FString::Printf(TEXT("立即刷新 (%d)"), RogueGameMode->GetShopRefreshCost()));
+
+		const TArray<FRogueShopOffer>& Offers = RogueGameMode->GetShopOffers();
+		for (const FRogueShopOffer& Offer : Offers)
+		{
+			FRogueShopOfferViewData& OfferView = ViewData.Offers.AddDefaulted_GetRef();
+			OfferView.TitleText = FText::FromString(Offer.Upgrade.Title);
+			OfferView.DescriptionText = FText::FromString(Offer.Upgrade.Description);
+			OfferView.bPurchased = Offer.bPurchased;
+			OfferView.bAffordable = PlayerCharacter != nullptr && PlayerCharacter->GetMoney() >= Offer.Cost;
+			OfferView.CostText = FText::FromString(
+				Offer.bPurchased ? TEXT("已购买") : FString::Printf(TEXT("价格 %d"), Offer.Cost));
+		}
+	}
+
+	ShopWidget->UpdateShopView(ViewData);
+}
+
+void ARogueHUD::UpdateUpgradeSelectionWidget(const ARogueGameMode* RogueGameMode)
+{
+	if (UpgradeSelectionWidget == nullptr)
+	{
+		return;
+	}
+
+	FRogueUpgradeSelectionViewData ViewData;
+	ViewData.bVisible = RogueGameMode != nullptr && RogueGameMode->IsAwaitingUpgradeChoice();
+	ViewData.TitleText = FText::FromString(TEXT("请选择升级"));
+	if (RogueGameMode != nullptr)
+	{
+		const TArray<FRogueUpgradeOption>& Options = RogueGameMode->GetPendingUpgrades();
+		for (const FRogueUpgradeOption& Option : Options)
+		{
+			FRogueUpgradeCardViewData& Card = ViewData.Cards.AddDefaulted_GetRef();
+			Card.TitleText = FText::FromString(Option.Title);
+			Card.DescriptionText = FText::FromString(Option.Description);
+		}
+	}
+
+	UpgradeSelectionWidget->UpdateUpgradeSelectionView(ViewData);
+}
+
+void ARogueHUD::UpdatePauseWidget()
+{
+	if (PauseMenuWidget == nullptr)
+	{
+		return;
+	}
+
+	FRoguePauseMenuViewData ViewData;
+	ViewData.bVisible = PauseMenuPage == ERoguePauseMenuPage::Main;
+	ViewData.TitleText = FText::FromString(TEXT("暂停菜单"));
+	PauseMenuWidget->UpdatePauseView(ViewData);
+}
+
+void ARogueHUD::UpdateSettingsWidget()
+{
+	if (SettingsMenuWidget == nullptr)
+	{
+		return;
+	}
+
+	FRogueSettingsMenuViewData ViewData;
+	ViewData.bVisible = PauseMenuPage == ERoguePauseMenuPage::Settings;
+	ViewData.TitleText = FText::FromString(TEXT("设置"));
+	ViewData.bCanApply = bDisplaySettingsDirty;
+	ViewData.StatusText = FText::FromString(
+		bDisplaySettingsDirty ? TEXT("画面设置已修改，点击“应用设置”后生效") : TEXT("当前画面设置已应用"));
+
+	const TArray<FString> RowLabels =
+	{
+		TEXT("主音量"),
+		TEXT("画质等级"),
+		TEXT("分辨率"),
+		TEXT("显示模式"),
+		TEXT("限制帧率")
+	};
+
+	const TArray<FString> RowValues =
+	{
+		FString::Printf(TEXT("%d%%"), FMath::RoundToInt(MasterVolume * 100.0f)),
+		GetGraphicsQualityLabel(),
+		GetResolutionLabel(),
+		GetDisplayModeLabel(),
+		GetFrameRateLimitLabel()
+	};
+
+	for (int32 RowIndex = 0; RowIndex < RowLabels.Num() && RowIndex < RowValues.Num(); ++RowIndex)
+	{
+		FRogueSettingsRowViewData& Row = ViewData.Rows.AddDefaulted_GetRef();
+		Row.LabelText = FText::FromString(RowLabels[RowIndex]);
+		Row.ValueText = FText::FromString(RowValues[RowIndex]);
+		Row.bUseAdjustButtons = RowIndex != 3;
+	}
+
+	SettingsMenuWidget->UpdateSettingsView(ViewData);
+}
+
+void ARogueHUD::UpdateDeathWidget(ARogueGameMode* RogueGameMode)
+{
+	if (DeathScreenWidget == nullptr)
+	{
+		return;
+	}
+
+	const ARogueCharacter* PlayerCharacter = Cast<ARogueCharacter>(UGameplayStatics::GetPlayerCharacter(this, 0));
+	const bool bPlayerDead = PlayerCharacter != nullptr && PlayerCharacter->IsDead();
+
+	FRogueDeathViewData ViewData;
+	ViewData.bVisible = bPlayerDead;
+	if (bPlayerDead)
+	{
+		ViewData.TitleText = FText::FromString(TEXT("本轮结束"));
+		if (RogueGameMode != nullptr)
+		{
+			ViewData.SummaryText = FText::FromString(
+				FString::Printf(TEXT("存活 %.0f 秒  |  击败 %d 个敌人"), RogueGameMode->GetRunTimeSeconds(), RogueGameMode->GetEnemiesDefeated()));
+		}
+	}
+
+	DeathScreenWidget->UpdateDeathView(ViewData);
 }
 
 void ARogueHUD::RefreshPauseSettings()
