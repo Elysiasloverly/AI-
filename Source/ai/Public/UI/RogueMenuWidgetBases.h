@@ -5,6 +5,11 @@
 #include "RogueMenuWidgetBases.generated.h"
 
 class ARogueHUD;
+class UBorder;
+class UButton;
+class UHorizontalBox;
+class UTextBlock;
+class UUniformGridPanel;
 
 USTRUCT(BlueprintType)
 struct FRogueDeathViewData
@@ -150,6 +155,8 @@ class AI_API URogueShopOfferCardWidgetBase : public UUserWidget
 	GENERATED_BODY()
 
 public:
+	virtual void NativeConstruct() override;
+
 	UFUNCTION(BlueprintCallable, Category = "Rogue|Shop")
 	void InitializeOfferCard(ARogueHUD* InOwningHUD, int32 InOfferIndex);
 
@@ -167,6 +174,26 @@ protected:
 	void OnOfferViewUpdated(const FRogueShopOfferViewData& InViewData);
 
 private:
+	UFUNCTION()
+	void HandleOfferButtonClicked();
+
+	void ApplyManagedOfferView(const FRogueShopOfferViewData& InViewData);
+
+	UPROPERTY(BlueprintReadOnly, Category = "Rogue|Shop", meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UButton> Button_Offer = nullptr;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Rogue|Shop", meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UBorder> Border_Card = nullptr;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Rogue|Shop", meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UTextBlock> Text_Title = nullptr;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Rogue|Shop", meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UTextBlock> Text_Desc = nullptr;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Rogue|Shop", meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UTextBlock> Text_Cost = nullptr;
+
 	TWeakObjectPtr<ARogueHUD> OwningRogueHUD;
 	int32 OfferIndex = INDEX_NONE;
 };
@@ -177,6 +204,8 @@ class AI_API URogueUpgradeCardWidgetBase : public UUserWidget
 	GENERATED_BODY()
 
 public:
+	virtual void NativeConstruct() override;
+
 	UFUNCTION(BlueprintCallable, Category = "Rogue|Upgrade")
 	void InitializeUpgradeCard(ARogueHUD* InOwningHUD, int32 InUpgradeIndex);
 
@@ -194,6 +223,23 @@ protected:
 	void OnUpgradeCardViewUpdated(const FRogueUpgradeCardViewData& InViewData);
 
 private:
+	UFUNCTION()
+	void HandleSelectButtonClicked();
+
+	void ApplyManagedUpgradeCardView(const FRogueUpgradeCardViewData& InViewData);
+
+	UPROPERTY(BlueprintReadOnly, Category = "Rogue|Upgrade", meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UButton> Button_Select = nullptr;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Rogue|Upgrade", meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UBorder> Border_Card = nullptr;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Rogue|Upgrade", meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UTextBlock> Text_Title = nullptr;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Rogue|Upgrade", meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UTextBlock> Text_Desc = nullptr;
+
 	TWeakObjectPtr<ARogueHUD> OwningRogueHUD;
 	int32 UpgradeIndex = INDEX_NONE;
 };
@@ -230,6 +276,8 @@ class AI_API URogueUpgradeSelectionWidgetBase : public UUserWidget
 	GENERATED_BODY()
 
 public:
+	virtual void NativeConstruct() override;
+
 	void SetOwningRogueHUD(ARogueHUD* InOwningHUD);
 	void UpdateUpgradeSelectionView(const FRogueUpgradeSelectionViewData& InViewData);
 
@@ -241,6 +289,22 @@ protected:
 	void OnUpgradeSelectionViewUpdated(const FRogueUpgradeSelectionViewData& InViewData);
 
 private:
+	void ApplyManagedUpgradeSelectionView(const FRogueUpgradeSelectionViewData& InViewData);
+	void EnsureUpgradeCardWidgets(int32 DesiredCount);
+	TSubclassOf<URogueUpgradeCardWidgetBase> ResolveUpgradeCardWidgetClass();
+
+	UPROPERTY(BlueprintReadOnly, Category = "Rogue|Upgrade", meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UTextBlock> Text_Title = nullptr;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Rogue|Upgrade", meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UHorizontalBox> HorizontalBox_Cards = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Rogue|Upgrade")
+	TSubclassOf<URogueUpgradeCardWidgetBase> ManagedUpgradeCardWidgetClass;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<URogueUpgradeCardWidgetBase>> ManagedUpgradeCardWidgets;
+
 	TWeakObjectPtr<ARogueHUD> OwningRogueHUD;
 };
 
@@ -250,6 +314,8 @@ class AI_API URogueShopWidgetBase : public UUserWidget
 	GENERATED_BODY()
 
 public:
+	virtual void NativeConstruct() override;
+
 	void SetOwningRogueHUD(ARogueHUD* InOwningHUD);
 	void UpdateShopView(const FRogueShopViewData& InViewData);
 
@@ -270,6 +336,46 @@ protected:
 	void OnShopViewUpdated(const FRogueShopViewData& InViewData);
 
 private:
+	UFUNCTION()
+	void HandleRefreshButtonClicked();
+
+	UFUNCTION()
+	void HandleCloseButtonClicked();
+
+	void ApplyManagedShopView(const FRogueShopViewData& InViewData);
+	void EnsureOfferCardWidgets(int32 DesiredCount);
+	TSubclassOf<URogueShopOfferCardWidgetBase> ResolveOfferCardWidgetClass();
+
+	UPROPERTY(BlueprintReadOnly, Category = "Rogue|Shop", meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UTextBlock> Text_Title = nullptr;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Rogue|Shop", meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UTextBlock> Text_Money = nullptr;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Rogue|Shop", meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UTextBlock> Text_Hint = nullptr;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Rogue|Shop", meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UTextBlock> Text_AutoRefresh = nullptr;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Rogue|Shop", meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UTextBlock> Text_Refresh = nullptr;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Rogue|Shop", meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UUniformGridPanel> UniformGridPanel_Offers = nullptr;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Rogue|Shop", meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UButton> Button_Refresh = nullptr;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Rogue|Shop", meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UButton> Button_Close = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Rogue|Shop")
+	TSubclassOf<URogueShopOfferCardWidgetBase> ManagedOfferCardWidgetClass;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<URogueShopOfferCardWidgetBase>> ManagedOfferCardWidgets;
+
 	TWeakObjectPtr<ARogueHUD> OwningRogueHUD;
 };
 
