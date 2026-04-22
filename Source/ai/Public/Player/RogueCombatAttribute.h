@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 /**
  * 这个文件目前存储战斗伤害相关的数值，其他属性暂时没考虑要不要加入
@@ -58,11 +58,8 @@ struct AI_API FAttributesModifier
 };
 
 
-USTRUCT()
 struct AI_API FAttributeModifierSet
 {
-	GENERATED_BODY()
-	virtual ~FAttributeModifierSet() = default;
 	virtual const TArray<FAttributesModifier>& GetModifiers() const
 		{ static TArray<FAttributesModifier> EmptyArray; return EmptyArray; }
 };
