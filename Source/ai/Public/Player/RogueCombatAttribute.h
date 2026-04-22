@@ -59,10 +59,10 @@ struct AI_API FAttributesModifier
 
 
 USTRUCT()
-struct AI_API FAttributesModifierSet
+struct AI_API FAttributeModifierSet
 {
 	GENERATED_BODY()
-	virtual ~FAttributesModifierSet() = default;
+	virtual ~FAttributeModifierSet() = default;
 	virtual const TArray<FAttributesModifier>& GetModifiers() const
 		{ static TArray<FAttributesModifier> EmptyArray; return EmptyArray; }
 };
@@ -81,28 +81,15 @@ struct AI_API FAttributeCache
 /**
  * 属性计算规则的接口
  */
-struct AI_API FAttributesCalculator
+struct AI_API FAttributeCalculator
 {
 	virtual EAttributesOperation GetOperation() const { return EAttributesOperation::Additive; }
-	virtual void ApplyModifier(const FAttributesModifier& Modifier) {}
+	virtual void ApplyModifier(float& AttributeProperty, const TArray<FAttributesModifier>& Modifiers) {}
 };
 
-/**
- * 通过继承FAttributesModifier实现FAttributesModifier<T>，完成成员选择
- */
-template<typename TAttributes>
-class AI_API TAttributesStat
+class AI_API FAttributeStat
 {
-public:
-	TArray<FAttributesCalculator> Calculators;
-	TArray<FAttributesModifierSet> Modifiers;
-
-	TAttributes& Get()
-	{
-		// 步骤1：根据Operation和 指定的指针 对Modifier进行整理
-		// 步骤2：将Modifier分别丢进Calculator计算应用
-		// 步骤3：输出结果
-		// 优化：储存中间结果，需要时再进行局部更新？需要思考
-		// 难点：对Modifier进行高效的分类
-	}
+protected:
+	TArray<FAttributeCalculator> Calculators;
+	TArray<FAttributeModifierSet> Modifiers;
 };
