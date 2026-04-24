@@ -45,8 +45,6 @@ void FRogueEnemyTracker::RegisterEnemy(ARogueEnemy* Enemy)
 
 	ActiveEnemies.Add(Enemy);
 	++ActiveEnemyCount;
-	bEnemySpatialHashDirty = true;
-	EnemySpatialHashRefreshTimer = 0.0f;
 }
 
 void FRogueEnemyTracker::UnregisterEnemy(ARogueEnemy* Enemy)
@@ -64,8 +62,6 @@ void FRogueEnemyTracker::UnregisterEnemy(ARogueEnemy* Enemy)
 	{
 		ActiveEnemies.RemoveAtSwap(FoundIndex);
 		ActiveEnemyCount = FMath::Max(0, ActiveEnemyCount - 1);
-		bEnemySpatialHashDirty = true;
-		EnemySpatialHashRefreshTimer = 0.0f;
 	}
 }
 
@@ -215,7 +211,6 @@ ARogueExperiencePickup* FRogueEnemyTracker::FindPickupMergeTarget(const FVector&
 
 void FRogueEnemyTracker::ForceSpatialRefresh(const FRogueRuntimePerformanceSettings& Settings)
 {
-	bEnemySpatialHashDirty = true;
 	EnemySpatialHashRefreshTimer = 0.0f;
 	EnsureEnemySpatialHashUpToDate(Settings);
 }
@@ -232,7 +227,6 @@ void FRogueEnemyTracker::CompactEnemyRegistry()
 	}
 
 	ActiveEnemyCount = ActiveEnemies.Num();
-	bEnemySpatialHashDirty = true;
 }
 
 void FRogueEnemyTracker::CompactPickupRegistry()
@@ -264,12 +258,12 @@ void FRogueEnemyTracker::RebuildEnemySpatialHash(float CellSize)
 	}
 
 	ActiveEnemyCount = ActiveEnemies.Num();
-	bEnemySpatialHashDirty = false;
 }
 
 void FRogueEnemyTracker::EnsureEnemySpatialHashUpToDate(const FRogueRuntimePerformanceSettings& Settings)
 {
-	if (bEnemySpatialHashDirty || EnemySpatialHashRefreshTimer <= 0.0f)
+	const bool bHashMissing = ActiveEnemyCount > 0 && EnemySpatialHash.Num() == 0;
+	if (bHashMissing || EnemySpatialHashRefreshTimer <= 0.0f)
 	{
 		RebuildEnemySpatialHash(Settings.EnemySpatialCellSize);
 		EnemySpatialHashRefreshTimer = Settings.EnemySpatialHashRefreshInterval;

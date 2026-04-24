@@ -51,22 +51,24 @@ void URogueSpawnSubsystem::TickSpawning(float DeltaSeconds, FRogueRunState& RunS
 	{
 		for (int32 SpawnIndex = 0; SpawnIndex < SpawnCadence.SpawnBatchSize && AliveEnemies < SpawnCadence.EffectiveMaxAliveEnemies; ++SpawnIndex)
 		{
-			SpawnEnemy(RunState, Character, Arena);
-			++AliveEnemies;
+			if (SpawnEnemy(RunState, Character, Arena))
+			{
+				++AliveEnemies;
+			}
 		}
 
 		RunState.SpawnTimer = SpawnCadence.NextSpawnDelay;
 	}
 }
 
-void URogueSpawnSubsystem::SpawnEnemy(FRogueRunState& RunState, ARogueCharacter* Character, const ARogueArena* Arena)
+bool URogueSpawnSubsystem::SpawnEnemy(FRogueRunState& RunState, ARogueCharacter* Character, const ARogueArena* Arena)
 {
 	if (!IsValid(Character) || Character->IsDead())
 	{
-		return;
+		return false;
 	}
 
-	SpawnConfiguredEnemy(RogueGameModeRules::BuildEnemyProfile(RunState.CurrentWave, PickEnemyTypeForCurrentWave(RunState.CurrentWave), BalanceAsset), SpawnSettings.SpawnRadius, SpawnSettings.EnemySpawnMinimumDistance, Arena, Character);
+	return SpawnConfiguredEnemy(RogueGameModeRules::BuildEnemyProfile(RunState.CurrentWave, PickEnemyTypeForCurrentWave(RunState.CurrentWave), BalanceAsset), SpawnSettings.SpawnRadius, SpawnSettings.EnemySpawnMinimumDistance, Arena, Character) != nullptr;
 }
 
 void URogueSpawnSubsystem::SpawnBoss(FRogueRunState& RunState, ARogueCharacter* Character, const ARogueArena* Arena)

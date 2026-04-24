@@ -32,7 +32,7 @@ public:
 	void TickSpawning(float DeltaSeconds, FRogueRunState& RunState, ARogueCharacter* Character, const ARogueArena* Arena);
 
 	/** 生成普通敌人 */
-	void SpawnEnemy(FRogueRunState& RunState, ARogueCharacter* Character, const ARogueArena* Arena);
+	bool SpawnEnemy(FRogueRunState& RunState, ARogueCharacter* Character, const ARogueArena* Arena);
 
 	/** 生成 Boss */
 	void SpawnBoss(FRogueRunState& RunState, ARogueCharacter* Character, const ARogueArena* Arena);

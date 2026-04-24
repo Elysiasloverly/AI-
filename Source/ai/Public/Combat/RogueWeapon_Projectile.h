@@ -18,8 +18,7 @@ public:
 	virtual void ApplySharedDamageBonus(float Magnitude) override;
 	virtual void ApplySharedSpeedBonus(float Magnitude) override;
 
-	/** 弹体武器始终至少 1 发 */
-	int32 GetEffectiveProjectileCount() const { return FMath::Max(1, GetConfig().Count); }
+	int32 GetEffectiveProjectileCount() const { return FMath::Max(0, GetConfig().Count); }
 
 	float GetProjectileSpeed() const { return GetConfig().ProjectileSpeed; }
 	float GetInterval() const { return GetConfig().Cooldown; }

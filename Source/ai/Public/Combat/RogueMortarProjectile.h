@@ -24,7 +24,8 @@ public:
 		const FVector& SpawnLocation,
 		const FVector& InTargetLocation,
 		float InDamage,
-		float InExplosionRadius);
+		float InExplosionRadius,
+		float InLaunchSpeed);
 
 protected:
 	virtual void BeginPlay() override;
@@ -46,6 +47,12 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Mortar")
 	float MinimumLaunchSpeed = 680.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Mortar")
+	float MinimumFlightTime = 0.65f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Mortar")
+	float MaximumFlightTime = 2.8f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Mortar")
 	float LandingIndicatorHeight = 6.0f;

@@ -79,13 +79,38 @@ void FRogueShopSystem::CloseShop()
 
 bool FRogueShopSystem::TryRefresh(ARogueCharacter* Character, const FRogueUpgradeSystem& UpgradeSystem)
 {
-	if (!bOpen || Character == nullptr || !Character->TrySpendMoney(CurrentRefreshCost))
+	if (!bOpen || Character == nullptr || Character->GetMoney() < CurrentRefreshCost)
 	{
 		return false;
 	}
 
-	CurrentRefreshCost = GetDoubledCost(CurrentRefreshCost);
-	return BuildOffers(Character, UpgradeSystem, false);
+	TArray<FRogueShopOffer> PreviousOffers = Offers;
+	const int32 PreviousRefreshCost = CurrentRefreshCost;
+	const float PreviousTimeUntilAutoRefresh = TimeUntilAutoRefresh;
+	const bool bPreviousAutoRefreshPending = bAutoRefreshPending;
+	const bool bPreviousOpen = bOpen;
+	if (!BuildOffers(Character, UpgradeSystem, false))
+	{
+		Offers = MoveTemp(PreviousOffers);
+		CurrentRefreshCost = PreviousRefreshCost;
+		TimeUntilAutoRefresh = PreviousTimeUntilAutoRefresh;
+		bAutoRefreshPending = bPreviousAutoRefreshPending;
+		bOpen = bPreviousOpen;
+		return false;
+	}
+
+	if (!Character->TrySpendMoney(PreviousRefreshCost))
+	{
+		Offers = MoveTemp(PreviousOffers);
+		CurrentRefreshCost = PreviousRefreshCost;
+		TimeUntilAutoRefresh = PreviousTimeUntilAutoRefresh;
+		bAutoRefreshPending = bPreviousAutoRefreshPending;
+		bOpen = bPreviousOpen;
+		return false;
+	}
+
+	CurrentRefreshCost = GetDoubledCost(PreviousRefreshCost);
+	return true;
 }
 
 bool FRogueShopSystem::TryBuyOffer(int32 OfferIndex, ARogueCharacter* Character, FRogueUpgradeOption& OutUpgrade)

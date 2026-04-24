@@ -275,6 +275,6 @@ FRogueEnemyArchetype RogueEnemyArchetypes::BuildEnemyArchetypeFromDataTable(cons
 	}
 
 	// DataTable 中未找到对应行，回退到硬编码
-	UE_LOG(LogTemp, Warning, TEXT("[RogueEnemyArchetypes] DataTable 中未找到敌人类型 %d 的配置行，回退到硬编码"), static_cast<int32>(Type));
+		UE_LOG(LogTemp, Verbose, TEXT("[RogueEnemyArchetypes] DataTable 中未找到敌人类型 %d 的配置行，回退到硬编码"), static_cast<int32>(Type));
 	return BuildEnemyArchetype(Type, bIsBoss);
 }

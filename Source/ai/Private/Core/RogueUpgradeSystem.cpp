@@ -69,7 +69,7 @@ bool FRogueUpgradeSystem::OpenNextSelection(const ARogueCharacter* Character)
 
 	BuildRandomUpgradeOptions(Character, 3, PendingUpgrades);
 
-	if (PendingUpgrades.Num() != 3)
+	if (PendingUpgrades.Num() == 0)
 	{
 		Reset();
 		return false;
@@ -123,6 +123,6 @@ FRogueUpgradeOption FRogueUpgradeSystem::MakeUpgradeOption(ERogueUpgradeType Typ
 	}
 
 	// DataTable 中未找到对应配置，返回默认值
-	UE_LOG(LogTemp, Warning, TEXT("RogueUpgradeSystem: 升级类型 %d 未在 DataTable 中配置，使用默认值。"), static_cast<int32>(Type));
+	UE_LOG(LogTemp, Verbose, TEXT("RogueUpgradeSystem: 升级类型 %d 未在 DataTable 中配置，使用默认值。"), static_cast<int32>(Type));
 	return MakeDefaultUpgradeOption(Type);
 }

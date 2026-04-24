@@ -48,6 +48,9 @@ public:
 	/** 获取所有武器 Actor */
 	const TArray<TObjectPtr<ARogueWeaponBase>>& GetWeapons() const { return Weapons; }
 
+	/** 获取武器配置表，供对象池预热和调试工具读取实际配置类 */
+	UDataTable* GetWeaponDataTable() const { return WeaponDataTable; }
+
 	/** 按类型查找武器 */
 	template<typename T>
 	T* FindWeapon() const

@@ -16,19 +16,19 @@ struct AI_API FRogueUpgradeDefinitionRow : public FTableRowBase
 	GENERATED_BODY()
 
 	/** 升级类型 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Upgrade", meta = (DisplayName = "升级类型"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "升级", meta = (DisplayName = "升级类型"))
 	ERogueUpgradeType Type = ERogueUpgradeType::MaxHealth;
 
 	/** 显示名称 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Upgrade", meta = (DisplayName = "名称"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "升级", meta = (DisplayName = "名称"))
 	FString Title;
 
 	/** 效果描述 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Upgrade", meta = (DisplayName = "效果描述"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "升级", meta = (DisplayName = "效果描述"))
 	FString Description;
 
 	/** 数值幅度 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Upgrade", meta = (DisplayName = "数值"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "升级", meta = (DisplayName = "数值"))
 	float Magnitude = 0.0f;
 };
 
@@ -50,6 +50,6 @@ public:
 	bool FindDefinition(ERogueUpgradeType Type, FRogueUpgradeDefinitionRow& OutDefinition) const;
 
 	/** 升级定义 DataTable（行结构为 FRogueUpgradeDefinitionRow） */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Upgrade", meta = (DisplayName = "升级定义表"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "升级", meta = (DisplayName = "升级定义表"))
 	TObjectPtr<UDataTable> UpgradeDefinitionTable;
 };

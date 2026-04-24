@@ -8,6 +8,11 @@
 
 void ARogueWeapon_Projectile::WeaponTick(float DeltaSeconds)
 {
+	if (GetEffectiveProjectileCount() <= 0)
+	{
+		return;
+	}
+
 	AttackTimer -= DeltaSeconds;
 	if (AttackTimer > 0.0f)
 	{

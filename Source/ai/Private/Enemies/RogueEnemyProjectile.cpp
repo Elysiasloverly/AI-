@@ -283,12 +283,12 @@ void ARogueEnemyProjectile::DeactivateToPool()
 	Collision->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Collision->SetGenerateOverlapEvents(false);
 	Collision->ClearMoveIgnoreActors();
-	Collision->SetSphereRadius(22.0f);
+	Collision->SetSphereRadius(NormalVisualState.CollisionRadius);
 	if (GlowLight != nullptr)
 	{
-		GlowLight->SetAttenuationRadius(260.0f);
-		GlowLight->SetSourceRadius(10.0f);
-		GlowLight->SetSoftSourceRadius(16.0f);
+		GlowLight->SetAttenuationRadius(NormalVisualState.LightAttenuationRadius);
+		GlowLight->SetSourceRadius(NormalVisualState.LightSourceRadius);
+		GlowLight->SetSoftSourceRadius(NormalVisualState.LightSoftSourceRadius);
 	}
 }
 

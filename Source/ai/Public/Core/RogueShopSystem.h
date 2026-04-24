@@ -57,7 +57,7 @@ private:
 
 	
 	int32 OfferCount = 6;
-	int32 BaseOfferCost = 44;
+	int32 BaseOfferCost = 22;
 	int32 BaseRefreshCost = 14;
 	int32 CurrentRefreshCost = 14;
 	float AutoRefreshInterval = 60.0f;

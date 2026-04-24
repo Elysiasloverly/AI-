@@ -46,6 +46,18 @@ ARogueImpactEffect::ARogueImpactEffect()
 	EffectMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	EffectMesh->SetCastShadow(false);
 
+	PrimaryParticleComponent = CreateDefaultSubobject<UParticleSystemComponent>(TEXT("PrimaryParticleComponent"));
+	PrimaryParticleComponent->SetupAttachment(SceneRoot);
+	PrimaryParticleComponent->bAutoActivate = false;
+	PrimaryParticleComponent->bAutoDestroy = false;
+	PrimaryParticleComponent->SetCastShadow(false);
+
+	SmokeParticleComponent = CreateDefaultSubobject<UParticleSystemComponent>(TEXT("SmokeParticleComponent"));
+	SmokeParticleComponent->SetupAttachment(SceneRoot);
+	SmokeParticleComponent->bAutoActivate = false;
+	SmokeParticleComponent->bAutoDestroy = false;
+	SmokeParticleComponent->SetCastShadow(false);
+
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> SparkMesh(TEXT("/Game/GameAssets/StarterContent/Shapes/Shape_Sphere.Shape_Sphere"));
 	if (SparkMesh.Succeeded())
 	{
@@ -167,6 +179,16 @@ void ARogueImpactEffect::DeactivateToPool()
 	SetActorEnableCollision(false);
 	SetOwner(nullptr);
 	EffectMesh->SetVisibility(false, true);
+	if (PrimaryParticleComponent != nullptr)
+	{
+		PrimaryParticleComponent->DeactivateSystem();
+		PrimaryParticleComponent->SetTemplate(nullptr);
+	}
+	if (SmokeParticleComponent != nullptr)
+	{
+		SmokeParticleComponent->DeactivateSystem();
+		SmokeParticleComponent->SetTemplate(nullptr);
+	}
 	SetActorScale3D(FVector::OneVector);
 }
 
@@ -222,30 +244,40 @@ void ARogueImpactEffect::InitializeImpactVisuals(ERogueImpactVisualStyle InStyle
 		break;
 	}
 
-	if (UWorld* World = GetWorld())
+	if (StyleConfig->bSpawnPrimaryParticle && SelectedParticle != nullptr && PrimaryParticleComponent != nullptr)
 	{
-		if (StyleConfig->bSpawnPrimaryParticle && SelectedParticle != nullptr)
+		PrimaryParticleComponent->SetTemplate(SelectedParticle);
+		PrimaryParticleComponent->SetRelativeLocation(FVector::ZeroVector);
+		PrimaryParticleComponent->SetRelativeRotation(FRotator::ZeroRotator);
+		PrimaryParticleComponent->SetRelativeScale3D(StyleConfig->ParticleScale);
+		PrimaryParticleComponent->ActivateSystem(true);
+		if (StyleConfig->bDeactivatePrimaryParticleImmediately)
 		{
-			if (UParticleSystemComponent* ParticleComponent = UGameplayStatics::SpawnEmitterAtLocation(World, SelectedParticle, FTransform(GetActorRotation(), GetActorLocation(), StyleConfig->ParticleScale)))
-			{
-				ParticleComponent->bAutoDestroy = true;
-				ParticleComponent->SetCastShadow(false);
-				if (StyleConfig->bDeactivatePrimaryParticleImmediately)
-				{
-					ParticleComponent->DeactivateSystem();
-				}
-			}
+			PrimaryParticleComponent->DeactivateSystem();
 		}
+	}
+	else if (PrimaryParticleComponent != nullptr)
+	{
+		PrimaryParticleComponent->DeactivateSystem();
+		PrimaryParticleComponent->SetTemplate(nullptr);
+	}
 
-		if (InStyle == ERogueImpactVisualStyle::Explosion && ExplosionSmokeParticle != nullptr)
+	if (InStyle == ERogueImpactVisualStyle::Explosion && ExplosionSmokeParticle != nullptr && SmokeParticleComponent != nullptr)
+	{
+		SmokeParticleComponent->SetTemplate(ExplosionSmokeParticle);
+		SmokeParticleComponent->SetRelativeLocation(FVector::ZeroVector);
+		SmokeParticleComponent->SetRelativeRotation(FRotator::ZeroRotator);
+		SmokeParticleComponent->SetRelativeScale3D(ExplosionSmokeScale);
+		SmokeParticleComponent->ActivateSystem(true);
+		if (StyleConfig->bDeactivatePrimaryParticleImmediately)
 		{
-			if (UParticleSystemComponent* SmokeComponent = UGameplayStatics::SpawnEmitterAtLocation(World, ExplosionSmokeParticle, FTransform(GetActorRotation(), GetActorLocation(), ExplosionSmokeScale)))
-			{
-				SmokeComponent->bAutoDestroy = true;
-				SmokeComponent->SetCastShadow(false);
-				SmokeComponent->DeactivateSystem();
-			}
+			SmokeParticleComponent->DeactivateSystem();
 		}
+	}
+	else if (SmokeParticleComponent != nullptr)
+	{
+		SmokeParticleComponent->DeactivateSystem();
+		SmokeParticleComponent->SetTemplate(nullptr);
 	}
 }
 

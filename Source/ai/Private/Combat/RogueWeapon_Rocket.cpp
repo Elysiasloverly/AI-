@@ -61,6 +61,7 @@ void ARogueWeapon_Rocket::ApplySharedSpeedBonus(float Magnitude)
 
 void ARogueWeapon_Rocket::ApplySharedRangeBonus(float Magnitude)
 {
+	Config.Range += Magnitude;
 	Config.ExplosionRadius += Magnitude * 0.25f;
 }
 

@@ -16,6 +16,17 @@ class ARogueImpactEffect;
 class ARogueLaserBeam;
 class ARogueOrbitingBlade;
 
+struct AI_API FRogueCombatPoolPrewarmClasses
+{
+	TArray<TSubclassOf<ARogueEnemy>> EnemyClasses;
+	TArray<TSubclassOf<ARogueProjectile>> PlayerProjectileClasses;
+	TArray<TSubclassOf<ARogueEnemyProjectile>> EnemyProjectileClasses;
+	TArray<TSubclassOf<ARogueRocketProjectile>> RocketProjectileClasses;
+	TArray<TSubclassOf<ARogueExperiencePickup>> ExperiencePickupClasses;
+	TArray<TSubclassOf<ARogueLaserBeam>> LaserBeamClasses;
+	TArray<TSubclassOf<ARogueOrbitingBlade>> OrbitingBladeClasses;
+};
+
 USTRUCT()
 struct AI_API FRogueCombatPools
 {
@@ -27,7 +38,8 @@ public:
 		AActor* OwnerActor,
 		const FRoguePoolSettings& Settings,
 		TSubclassOf<ARogueEnemy> EnemyClass,
-		TSubclassOf<ARogueExperiencePickup> ExperiencePickupClass);
+		TSubclassOf<ARogueExperiencePickup> ExperiencePickupClass,
+		const FRogueCombatPoolPrewarmClasses& AdditionalClasses);
 
 	ARogueEnemy* AcquireEnemy(UWorld* World, TSubclassOf<ARogueEnemy> EnemyClass, AActor* OwnerActor, const FVector& SpawnLocation, const FRotator& SpawnRotation);
 	ARogueProjectile* AcquirePlayerProjectile(UWorld* World, TSubclassOf<ARogueProjectile> ProjectileClass, AActor* OwnerActor, APawn* InstigatorPawn, const FVector& SpawnLocation, const FRotator& SpawnRotation);

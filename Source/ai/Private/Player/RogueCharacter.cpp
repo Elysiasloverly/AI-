@@ -25,10 +25,27 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "UObject/SoftObjectPath.h"
 
 namespace
 {
 	const FName MortarWeaponRowName(TEXT("Mortar"));
+	const TCHAR* DefaultPlayerBalanceAssetPath = TEXT("/Game/DataTable/AS_RoguePlayerBalanceAsset.AS_RoguePlayerBalanceAsset");
+
+	URoguePlayerBalanceAsset* LoadConfiguredOrDefaultPlayerBalanceAsset(const TSoftObjectPtr<URoguePlayerBalanceAsset>& ConfiguredAsset)
+	{
+		if (!ConfiguredAsset.IsNull())
+		{
+			if (URoguePlayerBalanceAsset* LoadedAsset = ConfiguredAsset.LoadSynchronous())
+			{
+				return LoadedAsset;
+			}
+		}
+
+		const FSoftObjectPath DefaultObjectPath(DefaultPlayerBalanceAssetPath);
+		const TSoftObjectPtr<URoguePlayerBalanceAsset> DefaultAsset(DefaultObjectPath);
+		return DefaultAsset.IsNull() ? nullptr : DefaultAsset.LoadSynchronous();
+	}
 
 	FRogueWeaponTableRow BuildDefaultMortarWeaponConfig(TSubclassOf<ARogueRocketProjectile> MortarProjectileClass)
 	{
@@ -112,7 +129,7 @@ void ARogueCharacter::BeginPlay()
 
 void ARogueCharacter::ApplyBalanceAsset()
 {
-	LoadedPlayerBalanceAsset = PlayerBalanceAsset.IsNull() ? nullptr : PlayerBalanceAsset.LoadSynchronous();
+	LoadedPlayerBalanceAsset = LoadConfiguredOrDefaultPlayerBalanceAsset(PlayerBalanceAsset);
 	if (LoadedPlayerBalanceAsset == nullptr)
 	{
 		return;
@@ -363,11 +380,12 @@ void ARogueCharacter::AddExperience(int32 ExperienceAmount)
 	ExperienceRemainder = TotalExperience - static_cast<float>(GrantedExperience);
 	CurrentExperience += GrantedExperience;
 
-	while (CurrentExperience >= ExperienceToNextLevel)
+	int32 LevelUpGuard = 0;
+	while (ExperienceToNextLevel > 0 && CurrentExperience >= ExperienceToNextLevel && LevelUpGuard < 20)
 	{
 		CurrentExperience -= ExperienceToNextLevel;
 		LevelUp();
-		break;
+		++LevelUpGuard;
 	}
 }
 

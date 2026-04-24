@@ -10,9 +10,14 @@
 #include "Combat/RogueLaserBeam.h"
 #include "Combat/RogueOrbitingBlade.h"
 
-void URogueCombatPoolSubsystem::Prewarm(AActor* OwnerActor, const FRoguePoolSettings& Settings, TSubclassOf<ARogueEnemy> EnemyClass, TSubclassOf<ARogueExperiencePickup> ExperiencePickupClass)
+void URogueCombatPoolSubsystem::Prewarm(
+	AActor* OwnerActor,
+	const FRoguePoolSettings& Settings,
+	TSubclassOf<ARogueEnemy> EnemyClass,
+	TSubclassOf<ARogueExperiencePickup> ExperiencePickupClass,
+	const FRogueCombatPoolPrewarmClasses& AdditionalClasses)
 {
-	CombatPools.Prewarm(GetWorld(), OwnerActor, Settings, EnemyClass, ExperiencePickupClass);
+	CombatPools.Prewarm(GetWorld(), OwnerActor, Settings, EnemyClass, ExperiencePickupClass, AdditionalClasses);
 }
 
 ARogueEnemy* URogueCombatPoolSubsystem::AcquireEnemy(TSubclassOf<ARogueEnemy> EnemyClass, AActor* OwnerActor, const FVector& SpawnLocation, const FRotator& SpawnRotation)

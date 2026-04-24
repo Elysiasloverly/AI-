@@ -130,6 +130,11 @@ private:
 	bool bGraphicsQualityCustom = false;
 	bool bFrameRateLimitCustom = false;
 	bool bDisplaySettingsDirty = false;
+	FString LastShopWidgetSignature;
+	FString LastUpgradeWidgetSignature;
+	FString LastPauseWidgetSignature;
+	FString LastSettingsWidgetSignature;
+	FString LastDeathWidgetSignature;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Rogue UI|Widgets")
 	TSubclassOf<URoguePauseMenuWidgetBase> PauseMenuWidgetClass;

@@ -3,7 +3,6 @@
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "GameFramework/ProjectileMovementComponent.h"
-#include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInterface.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -61,29 +60,43 @@ void ARogueMortarProjectile::ActivatePooledMortar(
 	const FVector& SpawnLocation,
 	const FVector& InTargetLocation,
 	float InDamage,
-	float InExplosionRadius)
+	float InExplosionRadius,
+	float InLaunchSpeed)
 {
-	FVector LaunchVelocity = FVector::ZeroVector;
 	const FVector ArcTargetLocation = InTargetLocation + FVector(0.0f, 0.0f, 12.0f);
-	const bool bHasArcSolution = UGameplayStatics::SuggestProjectileVelocity_CustomArc(
-		this,
-		LaunchVelocity,
-		SpawnLocation,
-		ArcTargetLocation,
-		0.0f,
-		MortarArcParam);
+	const FVector TargetOffset = ArcTargetLocation - SpawnLocation;
+	const FVector HorizontalOffset(TargetOffset.X, TargetOffset.Y, 0.0f);
+	const float HorizontalDistance = HorizontalOffset.Size();
 
-	if (!bHasArcSolution || LaunchVelocity.IsNearlyZero())
+	FVector HorizontalDirection = HorizontalDistance > KINDA_SMALL_NUMBER
+		? HorizontalOffset / HorizontalDistance
+		: FVector::ZeroVector;
+	if (HorizontalDirection.IsNearlyZero())
 	{
-		FVector FallbackDirection = (ArcTargetLocation - SpawnLocation).GetSafeNormal();
-		if (!FallbackDirection.Normalize())
+		if (IsValid(InOwner))
 		{
-			FallbackDirection = FVector::UpVector;
+			HorizontalDirection = InOwner->GetActorForwardVector().GetSafeNormal2D();
 		}
-		LaunchVelocity = FallbackDirection * MinimumLaunchSpeed + FVector(0.0f, 0.0f, MinimumLaunchSpeed * 0.55f);
+		if (HorizontalDirection.IsNearlyZero())
+		{
+			HorizontalDirection = FVector::ForwardVector;
+		}
 	}
 
+	const float RequestedHorizontalSpeed = FMath::Max(MinimumLaunchSpeed, InLaunchSpeed);
+	const float ArcTimeMultiplier = FMath::Lerp(0.85f, 1.35f, FMath::Clamp(MortarArcParam, 0.0f, 1.0f));
+	const float RawFlightTime = HorizontalDistance > KINDA_SMALL_NUMBER
+		? HorizontalDistance / RequestedHorizontalSpeed * ArcTimeMultiplier
+		: MinimumFlightTime;
+	const float FlightTime = FMath::Clamp(RawFlightTime, MinimumFlightTime, FMath::Max(MinimumFlightTime, MaximumFlightTime));
+	const float HorizontalSpeed = HorizontalDistance > KINDA_SMALL_NUMBER
+		? HorizontalDistance / FlightTime
+		: RequestedHorizontalSpeed * 0.35f;
+	const float GravityMagnitude = FMath::Abs((GetWorld() != nullptr ? GetWorld()->GetGravityZ() : -980.0f) * MortarGravityScale);
+	const float VerticalSpeed = TargetOffset.Z / FlightTime + 0.5f * GravityMagnitude * FlightTime;
+	const FVector LaunchVelocity = HorizontalDirection * HorizontalSpeed + FVector(0.0f, 0.0f, VerticalSpeed);
 	const float LaunchSpeed = FMath::Max(MinimumLaunchSpeed, LaunchVelocity.Size());
+
 	ActivatePooledRocket(InOwner, InInstigator, SpawnLocation, LaunchVelocity.Rotation(), LaunchVelocity.GetSafeNormal(), LaunchSpeed, InDamage, InExplosionRadius);
 
 	if (ProjectileMovement != nullptr)

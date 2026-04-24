@@ -401,11 +401,6 @@ void ARogueRocketProjectile::Explode()
 	ARogueImpactEffect::SpawnImpactEffect(World, ExplosionLocation, FRotator::ZeroRotator, ERogueImpactVisualStyle::Explosion, ExplosionScale, ImpactEffectLifetime, this);
 
 	URogueEnemyTrackerSubsystem* Tracker = World->GetSubsystem<URogueEnemyTrackerSubsystem>();
-	const bool bCullCombatEffects = Tracker != nullptr && Tracker->ShouldCullCombatEffects();
-	if (!bCullCombatEffects && ExplosionBurstEffect != nullptr)
-	{
-		UGameplayStatics::SpawnEmitterAtLocation(World, ExplosionBurstEffect, FTransform(FRotator::ZeroRotator, ExplosionLocation, FVector(0.52f, 0.52f, 0.52f)));
-	}
 
 	TArray<ARogueEnemy*> AffectedEnemies;
 	TArray<float> PendingDamages;

@@ -37,5 +37,4 @@ private:
 	float EnemySpatialHashRefreshTimer = 0.0f;
 	float PickupRegistryCleanupTimer = 0.0f;
 	int32 ActiveEnemyCount = 0;
-	bool bEnemySpatialHashDirty = true;
 };

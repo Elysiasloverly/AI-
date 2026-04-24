@@ -23,7 +23,12 @@ class AI_API URogueCombatPoolSubsystem : public UWorldSubsystem
 
 public:
 	/** 预热所有对象池 */
-	void Prewarm(AActor* OwnerActor, const FRoguePoolSettings& Settings, TSubclassOf<ARogueEnemy> EnemyClass, TSubclassOf<ARogueExperiencePickup> ExperiencePickupClass);
+	void Prewarm(
+		AActor* OwnerActor,
+		const FRoguePoolSettings& Settings,
+		TSubclassOf<ARogueEnemy> EnemyClass,
+		TSubclassOf<ARogueExperiencePickup> ExperiencePickupClass,
+		const FRogueCombatPoolPrewarmClasses& AdditionalClasses);
 
 	/** 获取敌人 */
 	ARogueEnemy* AcquireEnemy(TSubclassOf<ARogueEnemy> EnemyClass, AActor* OwnerActor, const FVector& SpawnLocation, const FRotator& SpawnRotation);

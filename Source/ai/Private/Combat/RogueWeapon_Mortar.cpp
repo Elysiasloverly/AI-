@@ -136,7 +136,8 @@ void ARogueWeapon_Mortar::FireMortarVolley(const TArray<ARogueEnemy*>& Enemies)
 				SpawnLocation,
 				TargetLocation,
 				Config.Damage,
-				GetExplosionRadius());
+				GetExplosionRadius(),
+				GetProjectileSpeed());
 		}
 		else if (Projectile != nullptr)
 		{

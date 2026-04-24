@@ -81,15 +81,6 @@ void ARogueEnemy::Tick(float DeltaSeconds)
 
 void ARogueEnemy::HandleDefaultBehavior(float DeltaSeconds)
 {
-	static int32 DebugLogCounter = 0;
-	if (++DebugLogCounter % 300 == 1)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[RogueEnemy] HandleDefaultBehavior: Class=%s, MovementModel=%d, HasRanged=%d"),
-			*GetClass()->GetName(),
-			static_cast<int32>(CurrentArchetype.Movement.Model),
-			CurrentArchetype.Ranged.bUsesRangedAttack);
-	}
-
 	ARogueCharacter* PlayerCharacter = CachedPlayerCharacter.Get();
 	if (!IsValid(PlayerCharacter))
 	{
@@ -167,9 +158,6 @@ float ARogueEnemy::TakeDamage(float DamageAmount, FDamageEvent const& DamageEven
 
 void ARogueEnemy::InitializeEnemy(const FRogueEnemyProfile& InProfile)
 {
-	UE_LOG(LogTemp, Warning, TEXT("[RogueEnemy] InitializeEnemy: Class=%s, EnemyType=%d, bIsBoss=%d"),
-		*GetClass()->GetName(), static_cast<int32>(InProfile.EnemyType), InProfile.bIsBoss);
-
 	EnemyType = InProfile.EnemyType;
 	MaxHealth = InProfile.Health;
 	CurrentHealth = MaxHealth;
@@ -187,10 +175,6 @@ void ARogueEnemy::InitializeEnemy(const FRogueEnemyProfile& InProfile)
 	{
 		CurrentArchetype = RogueEnemyArchetypes::BuildEnemyArchetype(EnemyType, bIsBoss);
 	}
-
-	UE_LOG(LogTemp, Warning, TEXT("[RogueEnemy] Archetype built: MovementModel=%d, HasRanged=%d"),
-		static_cast<int32>(CurrentArchetype.Movement.Model),
-		CurrentArchetype.Ranged.bUsesRangedAttack);
 
 	BurstCooldown = CurrentArchetype.Movement.Model == ERogueEnemyMovementModel::BurstCharge ? FMath::FRandRange(0.8f, 1.8f) : 0.0f;
 	BurstTimeRemaining = 0.0f;

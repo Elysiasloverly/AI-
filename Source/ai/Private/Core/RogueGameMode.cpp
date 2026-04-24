@@ -11,11 +11,43 @@
 #include "Core/RogueUpgradeRuleAsset.h"
 #include "Core/RogueGameModeRules.h"
 #include "Core/RogueUpgradeSystem.h"
+#include "Combat/RogueLaserBeam.h"
+#include "Combat/RogueMortarProjectile.h"
+#include "Combat/RogueOrbitingBlade.h"
+#include "Combat/RogueProjectile.h"
+#include "Combat/RogueRocketProjectile.h"
+#include "Combat/RogueWeaponBase.h"
+#include "Enemies/RogueEnemyProjectile.h"
+#include "Engine/DataTable.h"
 #include "Subsystems/RogueCombatPoolSubsystem.h"
 #include "Subsystems/RogueEnemyTrackerSubsystem.h"
 #include "Subsystems/RogueSpawnSubsystem.h"
 #include "Subsystems/RogueSceneSubsystem.h"
 #include "Kismet/GameplayStatics.h"
+#include "UObject/SoftObjectPath.h"
+
+namespace
+{
+	const TCHAR* DefaultGameBalanceAssetPath = TEXT("/Game/DataTable/AS_RogueGameBalanceAsse.AS_RogueGameBalanceAsse");
+	const TCHAR* DefaultUpgradeDefinitionAssetPath = TEXT("/Game/DataTable/AS_UpgradeDefinitionAsset.AS_UpgradeDefinitionAsset");
+	const TCHAR* DefaultUpgradeRuleAssetPath = TEXT("/Game/DataTable/AS_RogueUpgradeRuleAsset.AS_RogueUpgradeRuleAsset");
+
+	template <typename AssetType>
+	AssetType* LoadConfiguredOrDefaultAsset(const TSoftObjectPtr<AssetType>& ConfiguredAsset, const TCHAR* DefaultAssetPath)
+	{
+		if (!ConfiguredAsset.IsNull())
+		{
+			if (AssetType* LoadedAsset = ConfiguredAsset.LoadSynchronous())
+			{
+				return LoadedAsset;
+			}
+		}
+
+		const FSoftObjectPath DefaultObjectPath(DefaultAssetPath);
+		const TSoftObjectPtr<AssetType> DefaultAsset(DefaultObjectPath);
+		return DefaultAsset.IsNull() ? nullptr : DefaultAsset.LoadSynchronous();
+	}
+}
 
 ARogueGameMode::ARogueGameMode()
 {
@@ -55,9 +87,9 @@ void ARogueGameMode::BeginPlay()
 		CachedCharacter->SetActorLocation(FVector(0.0f, 0.0f, 120.0f));
 	}
 
-	LoadedGameBalanceAsset = GameBalanceAsset.IsNull() ? nullptr : GameBalanceAsset.LoadSynchronous();
-	UpgradeSystem.SetDefinitionAsset(UpgradeDefinitionAsset.IsNull() ? nullptr : UpgradeDefinitionAsset.LoadSynchronous());
-	UpgradeSystem.SetRuleAsset(UpgradeRuleAsset.IsNull() ? nullptr : UpgradeRuleAsset.LoadSynchronous());
+	LoadedGameBalanceAsset = LoadConfiguredOrDefaultAsset(GameBalanceAsset, DefaultGameBalanceAssetPath);
+	UpgradeSystem.SetDefinitionAsset(LoadConfiguredOrDefaultAsset(UpgradeDefinitionAsset, DefaultUpgradeDefinitionAssetPath));
+	UpgradeSystem.SetRuleAsset(LoadConfiguredOrDefaultAsset(UpgradeRuleAsset, DefaultUpgradeRuleAssetPath));
 	ShopSystem.Configure(
 		RogueGameModeRules::GetShopOfferCount(LoadedGameBalanceAsset),
 		RogueGameModeRules::GetShopOfferCost(LoadedGameBalanceAsset),
@@ -79,7 +111,39 @@ void ARogueGameMode::BeginPlay()
 	// 预热对象池 —— 委托给 CombatPoolSubsystem
 	if (URogueCombatPoolSubsystem* PoolSubsystem = GetWorld()->GetSubsystem<URogueCombatPoolSubsystem>())
 	{
-		PoolSubsystem->Prewarm(this, PoolSettings, DefaultEnemyClass, ExperiencePickupClass);
+		FRogueCombatPoolPrewarmClasses PrewarmClasses;
+		PrewarmClasses.EnemyClasses.Add(DefaultEnemyClass);
+		for (const TPair<ERogueEnemyType, TSubclassOf<ARogueEnemy>>& EnemyClassPair : EnemyClassMap)
+		{
+			PrewarmClasses.EnemyClasses.Add(EnemyClassPair.Value);
+		}
+
+		PrewarmClasses.EnemyProjectileClasses.Add(ARogueEnemyProjectile::StaticClass());
+		PrewarmClasses.RocketProjectileClasses.Add(ARogueMortarProjectile::StaticClass());
+
+		if (CachedCharacter.IsValid())
+		{
+			if (const UDataTable* WeaponTable = CachedCharacter->GetWeaponDataTable())
+			{
+				const TArray<FName> RowNames = WeaponTable->GetRowNames();
+				for (const FName& RowName : RowNames)
+				{
+					const FRogueWeaponTableRow* Row = WeaponTable->FindRow<FRogueWeaponTableRow>(RowName, TEXT("CombatPoolPrewarm"));
+					if (Row == nullptr)
+					{
+						continue;
+					}
+
+					PrewarmClasses.PlayerProjectileClasses.Add(Row->ProjectileClass);
+					PrewarmClasses.RocketProjectileClasses.Add(Row->RocketClass);
+					PrewarmClasses.RocketProjectileClasses.Add(Row->MortarProjectileClass.Get());
+					PrewarmClasses.LaserBeamClasses.Add(Row->BeamClass);
+					PrewarmClasses.OrbitingBladeClasses.Add(Row->BladeClass);
+				}
+			}
+		}
+
+		PoolSubsystem->Prewarm(this, PoolSettings, DefaultEnemyClass, ExperiencePickupClass, PrewarmClasses);
 	}
 }
 

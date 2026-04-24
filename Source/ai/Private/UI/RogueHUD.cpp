@@ -362,6 +362,11 @@ void ARogueHUD::RequestQuitAfterDeath()
 
 int32 ARogueHUD::GetUpgradeIndexAtScreenPosition(float ScreenX, float ScreenY) const
 {
+	if (UpgradeSelectionWidget != nullptr)
+	{
+		return INDEX_NONE;
+	}
+
 	for (int32 Index = 0; Index < 3; ++Index)
 	{
 		FVector2D CardPosition;
@@ -1205,8 +1210,35 @@ void ARogueHUD::UpdateShopWidget(const ARogueGameMode* RogueGameMode, const ARog
 		return;
 	}
 
+	const bool bVisible = RogueGameMode != nullptr && PlayerCharacter != nullptr && RogueGameMode->IsShopOpen();
+	FString Signature = bVisible ? TEXT("Shop|Visible") : TEXT("Shop|Hidden");
+	if (bVisible)
+	{
+		const int32 AutoRefreshSeconds = RogueGameMode != nullptr ? FMath::CeilToInt(RogueGameMode->GetShopSecondsUntilRefresh()) : 0;
+		Signature += FString::Printf(TEXT("|Money=%d|Refresh=%d|Auto=%d"), PlayerCharacter->GetMoney(), RogueGameMode->GetShopRefreshCost(), AutoRefreshSeconds);
+		const TArray<FRogueShopOffer>& Offers = RogueGameMode->GetShopOffers();
+		for (const FRogueShopOffer& Offer : Offers)
+		{
+			const bool bAffordable = PlayerCharacter->GetMoney() >= Offer.Cost;
+			Signature += FString::Printf(
+				TEXT("|%d:%d:%d:%d:%s:%s"),
+				static_cast<int32>(Offer.Upgrade.Type),
+				Offer.Cost,
+				Offer.bPurchased ? 1 : 0,
+				bAffordable ? 1 : 0,
+				*Offer.Upgrade.Title,
+				*Offer.Upgrade.Description);
+		}
+	}
+
+	if (Signature == LastShopWidgetSignature)
+	{
+		return;
+	}
+	LastShopWidgetSignature = Signature;
+
 	FRogueShopViewData ViewData;
-	ViewData.bVisible = RogueGameMode != nullptr && PlayerCharacter != nullptr && RogueGameMode->IsShopOpen();
+	ViewData.bVisible = bVisible;
 	ViewData.TitleText = FText::FromString(TEXT("商店"));
 	if (PlayerCharacter != nullptr)
 	{
@@ -1241,8 +1273,25 @@ void ARogueHUD::UpdateUpgradeSelectionWidget(const ARogueGameMode* RogueGameMode
 		return;
 	}
 
+	const bool bVisible = RogueGameMode != nullptr && RogueGameMode->IsAwaitingUpgradeChoice();
+	FString Signature = bVisible ? TEXT("Upgrade|Visible") : TEXT("Upgrade|Hidden");
+	if (bVisible)
+	{
+		const TArray<FRogueUpgradeOption>& Options = RogueGameMode->GetPendingUpgrades();
+		for (const FRogueUpgradeOption& Option : Options)
+		{
+			Signature += FString::Printf(TEXT("|%d:%s:%s"), static_cast<int32>(Option.Type), *Option.Title, *Option.Description);
+		}
+	}
+
+	if (Signature == LastUpgradeWidgetSignature)
+	{
+		return;
+	}
+	LastUpgradeWidgetSignature = Signature;
+
 	FRogueUpgradeSelectionViewData ViewData;
-	ViewData.bVisible = RogueGameMode != nullptr && RogueGameMode->IsAwaitingUpgradeChoice();
+	ViewData.bVisible = bVisible;
 	ViewData.TitleText = FText::FromString(TEXT("请选择升级"));
 	if (RogueGameMode != nullptr)
 	{
@@ -1265,6 +1314,13 @@ void ARogueHUD::UpdatePauseWidget()
 		return;
 	}
 
+	const FString Signature = PauseMenuPage == ERoguePauseMenuPage::Main ? TEXT("Pause|Main") : TEXT("Pause|Hidden");
+	if (Signature == LastPauseWidgetSignature)
+	{
+		return;
+	}
+	LastPauseWidgetSignature = Signature;
+
 	FRoguePauseMenuViewData ViewData;
 	ViewData.bVisible = PauseMenuPage == ERoguePauseMenuPage::Main;
 	ViewData.TitleText = FText::FromString(TEXT("暂停菜单"));
@@ -1278,8 +1334,31 @@ void ARogueHUD::UpdateSettingsWidget()
 		return;
 	}
 
+	const bool bVisible = PauseMenuPage == ERoguePauseMenuPage::Settings;
+	FString Signature = bVisible ? TEXT("Settings|Visible") : TEXT("Settings|Hidden");
+	if (bVisible)
+	{
+		Signature += FString::Printf(
+			TEXT("|Vol=%.2f|Quality=%d|Res=%d|Mode=%d|Frame=%d|FrameValue=%.1f|QualityCustom=%d|FrameCustom=%d|Dirty=%d"),
+			MasterVolume,
+			GraphicsQualityLevel,
+			ResolutionOptionIndex,
+			static_cast<int32>(DisplayWindowMode),
+			FrameRateLimitOptionIndex,
+			FrameRateLimitValue,
+			bGraphicsQualityCustom ? 1 : 0,
+			bFrameRateLimitCustom ? 1 : 0,
+			bDisplaySettingsDirty ? 1 : 0);
+	}
+
+	if (Signature == LastSettingsWidgetSignature)
+	{
+		return;
+	}
+	LastSettingsWidgetSignature = Signature;
+
 	FRogueSettingsMenuViewData ViewData;
-	ViewData.bVisible = PauseMenuPage == ERoguePauseMenuPage::Settings;
+	ViewData.bVisible = bVisible;
 	ViewData.TitleText = FText::FromString(TEXT("设置"));
 	ViewData.bCanApply = bDisplaySettingsDirty;
 	ViewData.StatusText = FText::FromString(
@@ -1323,6 +1402,17 @@ void ARogueHUD::UpdateDeathWidget(ARogueGameMode* RogueGameMode)
 
 	const ARogueCharacter* PlayerCharacter = Cast<ARogueCharacter>(UGameplayStatics::GetPlayerCharacter(this, 0));
 	const bool bPlayerDead = PlayerCharacter != nullptr && PlayerCharacter->IsDead();
+	FString Signature = bPlayerDead ? TEXT("Death|Visible") : TEXT("Death|Hidden");
+	if (bPlayerDead && RogueGameMode != nullptr)
+	{
+		Signature += FString::Printf(TEXT("|Time=%.0f|Kills=%d"), RogueGameMode->GetRunTimeSeconds(), RogueGameMode->GetEnemiesDefeated());
+	}
+
+	if (Signature == LastDeathWidgetSignature)
+	{
+		return;
+	}
+	LastDeathWidgetSignature = Signature;
 
 	FRogueDeathViewData ViewData;
 	ViewData.bVisible = bPlayerDead;

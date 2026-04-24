@@ -15,6 +15,7 @@ class USceneComponent;
 class UStaticMeshComponent;
 class UStaticMesh;
 class UParticleSystem;
+class UParticleSystemComponent;
 class APawn;
 
 UENUM()
@@ -73,6 +74,12 @@ private:
 
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<UStaticMeshComponent> EffectMesh;
+
+	UPROPERTY(VisibleAnywhere)
+	TObjectPtr<UParticleSystemComponent> PrimaryParticleComponent;
+
+	UPROPERTY(VisibleAnywhere)
+	TObjectPtr<UParticleSystemComponent> SmokeParticleComponent;
 
 	UPROPERTY()
 	TObjectPtr<UStaticMesh> SparkMeshAsset;
