@@ -276,8 +276,6 @@ class AI_API URogueUpgradeSelectionWidgetBase : public UUserWidget
 	GENERATED_BODY()
 
 public:
-	virtual void NativeConstruct() override;
-
 	void SetOwningRogueHUD(ARogueHUD* InOwningHUD);
 	void UpdateUpgradeSelectionView(const FRogueUpgradeSelectionViewData& InViewData);
 

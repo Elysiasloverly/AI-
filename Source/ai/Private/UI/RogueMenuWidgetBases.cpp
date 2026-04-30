@@ -9,6 +9,36 @@
 #include "Components/UniformGridPanel.h"
 #include "Components/UniformGridSlot.h"
 
+namespace
+{
+	ESlateVisibility GetMenuVisibility(bool bVisible)
+	{
+		return bVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed;
+	}
+
+	void SetManagedText(UTextBlock* TextBlock, const FText& Text)
+	{
+		if (TextBlock == nullptr)
+		{
+			return;
+		}
+
+		TextBlock->SetText(Text);
+		TextBlock->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+	}
+
+	void SetManagedBorderColor(UBorder* Border, const FLinearColor& Color)
+	{
+		if (Border == nullptr)
+		{
+			return;
+		}
+
+		Border->SetBrushColor(Color);
+		Border->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+	}
+}
+
 void URogueShopOfferCardWidgetBase::NativeConstruct()
 {
 	Super::NativeConstruct();
@@ -47,32 +77,16 @@ void URogueShopOfferCardWidgetBase::RequestPurchaseOffer()
 
 void URogueShopOfferCardWidgetBase::ApplyManagedOfferView(const FRogueShopOfferViewData& InViewData)
 {
-	if (Text_Title != nullptr)
-	{
-		Text_Title->SetText(InViewData.TitleText);
-		Text_Title->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-	}
-
-	if (Text_Desc != nullptr)
-	{
-		Text_Desc->SetText(InViewData.DescriptionText);
-		Text_Desc->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-	}
-
-	if (Text_Cost != nullptr)
-	{
-		Text_Cost->SetText(InViewData.CostText);
-		Text_Cost->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-	}
+	SetManagedText(Text_Title, InViewData.TitleText);
+	SetManagedText(Text_Desc, InViewData.DescriptionText);
+	SetManagedText(Text_Cost, InViewData.CostText);
 
 	if (Border_Card != nullptr)
 	{
 		const FLinearColor NormalColor(0.05f, 0.11f, 0.26f, 0.96f);
 		const FLinearColor PurchasedColor(0.18f, 0.18f, 0.20f, 0.92f);
 		const FLinearColor UnaffordableColor(0.26f, 0.08f, 0.08f, 0.92f);
-		Border_Card->SetBrushColor(
-			InViewData.bPurchased ? PurchasedColor : (InViewData.bAffordable ? NormalColor : UnaffordableColor));
-		Border_Card->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+		SetManagedBorderColor(Border_Card, InViewData.bPurchased ? PurchasedColor : (InViewData.bAffordable ? NormalColor : UnaffordableColor));
 	}
 }
 
@@ -114,7 +128,7 @@ void URoguePauseMenuWidgetBase::SetOwningRogueHUD(ARogueHUD* InOwningHUD)
 
 void URoguePauseMenuWidgetBase::UpdatePauseView(const FRoguePauseMenuViewData& InViewData)
 {
-	SetVisibility(InViewData.bVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	SetVisibility(GetMenuVisibility(InViewData.bVisible));
 	OnPauseViewUpdated(InViewData);
 }
 
@@ -149,23 +163,9 @@ void URogueUpgradeCardWidgetBase::HandleSelectButtonClicked()
 
 void URogueUpgradeCardWidgetBase::ApplyManagedUpgradeCardView(const FRogueUpgradeCardViewData& InViewData)
 {
-	if (Text_Title != nullptr)
-	{
-		Text_Title->SetText(InViewData.TitleText);
-		Text_Title->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-	}
-
-	if (Text_Desc != nullptr)
-	{
-		Text_Desc->SetText(InViewData.DescriptionText);
-		Text_Desc->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-	}
-
-	if (Border_Card != nullptr)
-	{
-		Border_Card->SetBrushColor(FLinearColor(0.05f, 0.11f, 0.26f, 0.96f));
-		Border_Card->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-	}
+	SetManagedText(Text_Title, InViewData.TitleText);
+	SetManagedText(Text_Desc, InViewData.DescriptionText);
+	SetManagedBorderColor(Border_Card, FLinearColor(0.05f, 0.11f, 0.26f, 0.96f));
 }
 
 void URogueShopWidgetBase::NativeConstruct()
@@ -192,7 +192,7 @@ void URogueShopWidgetBase::SetOwningRogueHUD(ARogueHUD* InOwningHUD)
 
 void URogueShopWidgetBase::UpdateShopView(const FRogueShopViewData& InViewData)
 {
-	SetVisibility(InViewData.bVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	SetVisibility(GetMenuVisibility(InViewData.bVisible));
 
 	if (UniformGridPanel_Offers != nullptr && ResolveOfferCardWidgetClass() != nullptr)
 	{
@@ -205,12 +205,7 @@ void URogueShopWidgetBase::UpdateShopView(const FRogueShopViewData& InViewData)
 
 void URogueShopWidgetBase::UpdateAutoRefreshText(const FText& InAutoRefreshText)
 {
-	if (Text_AutoRefresh != nullptr)
-	{
-		Text_AutoRefresh->SetText(InAutoRefreshText);
-		Text_AutoRefresh->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-	}
-
+	SetManagedText(Text_AutoRefresh, InAutoRefreshText);
 	OnAutoRefreshTextUpdated(InAutoRefreshText);
 }
 
@@ -250,31 +245,11 @@ void URogueShopWidgetBase::RequestCloseShop()
 
 void URogueShopWidgetBase::ApplyManagedShopView(const FRogueShopViewData& InViewData)
 {
-	if (Text_Title != nullptr)
-	{
-		Text_Title->SetText(InViewData.TitleText);
-		Text_Title->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-	}
-
-	if (Text_Money != nullptr)
-	{
-		Text_Money->SetText(InViewData.MoneyText);
-		Text_Money->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-	}
-
-	if (Text_Hint != nullptr)
-	{
-		Text_Hint->SetText(InViewData.HintText);
-		Text_Hint->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-	}
-
+	SetManagedText(Text_Title, InViewData.TitleText);
+	SetManagedText(Text_Money, InViewData.MoneyText);
+	SetManagedText(Text_Hint, InViewData.HintText);
 	UpdateAutoRefreshText(InViewData.AutoRefreshText);
-
-	if (Text_Refresh != nullptr)
-	{
-		Text_Refresh->SetText(InViewData.RefreshButtonText);
-		Text_Refresh->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-	}
+	SetManagedText(Text_Refresh, InViewData.RefreshButtonText);
 
 	EnsureOfferCardWidgets(InViewData.Offers.Num());
 
@@ -359,14 +334,9 @@ void URogueUpgradeSelectionWidgetBase::SetOwningRogueHUD(ARogueHUD* InOwningHUD)
 	OwningRogueHUD = InOwningHUD;
 }
 
-void URogueUpgradeSelectionWidgetBase::NativeConstruct()
-{
-	Super::NativeConstruct();
-}
-
 void URogueUpgradeSelectionWidgetBase::UpdateUpgradeSelectionView(const FRogueUpgradeSelectionViewData& InViewData)
 {
-	SetVisibility(InViewData.bVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	SetVisibility(GetMenuVisibility(InViewData.bVisible));
 
 	if (HorizontalBox_Cards != nullptr && ResolveUpgradeCardWidgetClass() != nullptr)
 	{
@@ -379,11 +349,7 @@ void URogueUpgradeSelectionWidgetBase::UpdateUpgradeSelectionView(const FRogueUp
 
 void URogueUpgradeSelectionWidgetBase::ApplyManagedUpgradeSelectionView(const FRogueUpgradeSelectionViewData& InViewData)
 {
-	if (Text_Title != nullptr)
-	{
-		Text_Title->SetText(InViewData.TitleText);
-		Text_Title->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-	}
+	SetManagedText(Text_Title, InViewData.TitleText);
 
 	EnsureUpgradeCardWidgets(InViewData.Cards.Num());
 
@@ -468,7 +434,7 @@ void URogueSettingsMenuWidgetBase::SetOwningRogueHUD(ARogueHUD* InOwningHUD)
 
 void URogueSettingsMenuWidgetBase::UpdateSettingsView(const FRogueSettingsMenuViewData& InViewData)
 {
-	SetVisibility(InViewData.bVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	SetVisibility(GetMenuVisibility(InViewData.bVisible));
 	OnSettingsViewUpdated(InViewData);
 }
 
@@ -567,7 +533,7 @@ void URogueDeathScreenWidgetBase::SetOwningRogueHUD(ARogueHUD* InOwningHUD)
 
 void URogueDeathScreenWidgetBase::UpdateDeathView(const FRogueDeathViewData& InViewData)
 {
-	SetVisibility(InViewData.bVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	SetVisibility(GetMenuVisibility(InViewData.bVisible));
 	OnDeathViewUpdated(InViewData);
 }
 

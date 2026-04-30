@@ -76,9 +76,8 @@ private:
 	void RefreshDamageNumberProjectionCache(APlayerController* PlayerController, const URogueEnemyTrackerSubsystem* Tracker);
 	void DrawEnemyHealthBars(UFont* Font);
 	void DrawDamageNumbers(UFont* Font);
-	void HandlePauseMenuAction(FName BoxName);
-	void HandleDeathMenuAction(FName BoxName);
 	void InitializeMenuWidgets();
+	ARogueGameMode* GetRogueGameMode() const;
 	void UpdateShopWidget(const ARogueGameMode* RogueGameMode, const ARogueCharacter* PlayerCharacter);
 	void UpdateUpgradeSelectionWidget(const ARogueGameMode* RogueGameMode);
 	void UpdatePauseWidget();

@@ -10,6 +10,11 @@
 #include "Core/RogueGameModeRules.h"
 #include "Kismet/GameplayStatics.h"
 
+namespace
+{
+	constexpr float EnemySpawnGroundZ = 60.0f;
+}
+
 void URogueSpawnSubsystem::Configure(
 	TSubclassOf<ARogueEnemy> InDefaultEnemyClass,
 	const TMap<ERogueEnemyType, TSubclassOf<ARogueEnemy>>& InEnemyClassMap,
@@ -113,18 +118,19 @@ FVector URogueSpawnSubsystem::FindSpawnLocation(float DesiredDistance, float Min
 {
 	if (!IsValid(Character))
 	{
-		return FVector(0.0f, 0.0f, 60.0f);
+		return FVector(0.0f, 0.0f, EnemySpawnGroundZ);
 	}
 
 	const FVector PlayerLocation = Character->GetActorLocation();
+	const FVector PlayerGroundLocation(PlayerLocation.X, PlayerLocation.Y, EnemySpawnGroundZ);
 	const float ArenaHalfExtent = IsValid(Arena) ? Arena->GetArenaHalfExtent() - SpawnSettings.ArenaSpawnPadding : FMath::Max(SpawnSettings.SpawnRadius, DesiredDistance) + 500.0f;
 
 	for (int32 Attempt = 0; Attempt < 16; ++Attempt)
 	{
 		const FVector2D SpawnDirection = FVector2D(FMath::FRandRange(-1.0f, 1.0f), FMath::FRandRange(-1.0f, 1.0f)).GetSafeNormal();
 		const float DistanceScale = FMath::FRandRange(0.82f, 1.15f);
-		const FVector CandidateLocation = PlayerLocation + FVector(SpawnDirection.X * DesiredDistance * DistanceScale, SpawnDirection.Y * DesiredDistance * DistanceScale, 60.0f);
-		if (FMath::Abs(CandidateLocation.X) <= ArenaHalfExtent && FMath::Abs(CandidateLocation.Y) <= ArenaHalfExtent && FVector::DistSquared2D(CandidateLocation, PlayerLocation) >= FMath::Square(MinimumDistance))
+		const FVector CandidateLocation = PlayerGroundLocation + FVector(SpawnDirection.X * DesiredDistance * DistanceScale, SpawnDirection.Y * DesiredDistance * DistanceScale, 0.0f);
+		if (FMath::Abs(CandidateLocation.X) <= ArenaHalfExtent && FMath::Abs(CandidateLocation.Y) <= ArenaHalfExtent && FVector::DistSquared2D(CandidateLocation, PlayerGroundLocation) >= FMath::Square(MinimumDistance))
 		{
 			return CandidateLocation;
 		}
@@ -135,18 +141,18 @@ FVector URogueSpawnSubsystem::FindSpawnLocation(float DesiredDistance, float Min
 		const FVector CandidateLocation(
 			FMath::FRandRange(-ArenaHalfExtent, ArenaHalfExtent),
 			FMath::FRandRange(-ArenaHalfExtent, ArenaHalfExtent),
-			60.0f);
+			EnemySpawnGroundZ);
 
-		if (FVector::DistSquared2D(CandidateLocation, PlayerLocation) >= FMath::Square(MinimumDistance))
+		if (FVector::DistSquared2D(CandidateLocation, PlayerGroundLocation) >= FMath::Square(MinimumDistance))
 		{
 			return CandidateLocation;
 		}
 	}
 
 	return FVector(
-		FMath::Clamp(PlayerLocation.X + DesiredDistance * 0.5f, -ArenaHalfExtent, ArenaHalfExtent),
-		FMath::Clamp(PlayerLocation.Y + DesiredDistance * 0.5f, -ArenaHalfExtent, ArenaHalfExtent),
-		60.0f);
+		FMath::Clamp(PlayerGroundLocation.X + DesiredDistance * 0.5f, -ArenaHalfExtent, ArenaHalfExtent),
+		FMath::Clamp(PlayerGroundLocation.Y + DesiredDistance * 0.5f, -ArenaHalfExtent, ArenaHalfExtent),
+		EnemySpawnGroundZ);
 }
 
 ERogueEnemyType URogueSpawnSubsystem::PickEnemyTypeForCurrentWave(int32 Wave) const

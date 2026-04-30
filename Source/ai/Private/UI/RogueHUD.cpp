@@ -28,6 +28,42 @@ namespace
 	constexpr float EnemyHealthBarRefreshIntervalHeavy = 0.10f;
 	constexpr float DamageProjectionRefreshIntervalNormal = 0.05f;
 	constexpr float DamageProjectionRefreshIntervalHeavy = 0.09f;
+
+	bool UpdateCachedSignature(FString& LastSignature, const FString& NewSignature)
+	{
+		if (NewSignature == LastSignature)
+		{
+			return false;
+		}
+
+		LastSignature = NewSignature;
+		return true;
+	}
+
+	FText GetAutoRefreshText(int32 Seconds)
+	{
+		return FText::FromString(FString::Printf(TEXT("自动补货 %d 秒"), FMath::Max(0, Seconds)));
+	}
+
+	template <typename WidgetType>
+	WidgetType* CreateRogueMenuWidget(APlayerController* PlayerController, TSubclassOf<WidgetType> WidgetClass, ARogueHUD* OwningHUD, int32 ZOrder)
+	{
+		if (PlayerController == nullptr || WidgetClass == nullptr || OwningHUD == nullptr)
+		{
+			return nullptr;
+		}
+
+		WidgetType* Widget = CreateWidget<WidgetType>(PlayerController, WidgetClass);
+		if (Widget == nullptr)
+		{
+			return nullptr;
+		}
+
+		Widget->SetOwningRogueHUD(OwningHUD);
+		Widget->AddToViewport(ZOrder);
+		Widget->SetVisibility(ESlateVisibility::Collapsed);
+		return Widget;
+	}
 }
 
 void ARogueHUD::BeginPlay()
@@ -182,7 +218,7 @@ void ARogueHUD::ClosePauseMenu()
 
 void ARogueHUD::RequestSelectOfferFromShop(int32 OfferIndex)
 {
-	if (ARogueGameMode* RogueGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ARogueGameMode>() : nullptr)
+	if (ARogueGameMode* RogueGameMode = GetRogueGameMode())
 	{
 		RogueGameMode->TryBuyShopOffer(OfferIndex);
 	}
@@ -190,7 +226,7 @@ void ARogueHUD::RequestSelectOfferFromShop(int32 OfferIndex)
 
 void ARogueHUD::RequestRefreshFromShop()
 {
-	if (ARogueGameMode* RogueGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ARogueGameMode>() : nullptr)
+	if (ARogueGameMode* RogueGameMode = GetRogueGameMode())
 	{
 		RogueGameMode->TryRefreshShop();
 	}
@@ -198,7 +234,7 @@ void ARogueHUD::RequestRefreshFromShop()
 
 void ARogueHUD::RequestCloseFromShop()
 {
-	if (ARogueGameMode* RogueGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ARogueGameMode>() : nullptr)
+	if (ARogueGameMode* RogueGameMode = GetRogueGameMode())
 	{
 		RogueGameMode->CloseShop();
 	}
@@ -206,7 +242,7 @@ void ARogueHUD::RequestCloseFromShop()
 
 void ARogueHUD::RequestSelectUpgradeFromWidget(int32 UpgradeIndex)
 {
-	if (ARogueGameMode* RogueGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ARogueGameMode>() : nullptr)
+	if (ARogueGameMode* RogueGameMode = GetRogueGameMode())
 	{
 		RogueGameMode->TrySelectUpgrade(UpgradeIndex);
 	}
@@ -214,62 +250,84 @@ void ARogueHUD::RequestSelectUpgradeFromWidget(int32 UpgradeIndex)
 
 void ARogueHUD::RequestResumeFromPauseMenu()
 {
-	HandlePauseMenuAction(FName(TEXT("Pause_Resume")));
+	ClosePauseMenu();
+	if (ARogueCharacter* PlayerCharacter = Cast<ARogueCharacter>(UGameplayStatics::GetPlayerCharacter(this, 0)))
+	{
+		PlayerCharacter->SetUpgradeSelectionInput(false);
+	}
+	UGameplayStatics::SetGamePaused(this, false);
 }
 
 void ARogueHUD::RequestOpenSettingsFromPauseMenu()
 {
-	HandlePauseMenuAction(FName(TEXT("Pause_Settings")));
+	PauseMenuPage = ERoguePauseMenuPage::Settings;
 }
 
 void ARogueHUD::RequestQuitFromPauseMenu()
 {
-	HandlePauseMenuAction(FName(TEXT("Pause_Quit")));
+	ClosePauseMenu();
+	UKismetSystemLibrary::QuitGame(this, GetOwningPlayerController(), EQuitPreference::Quit, false);
 }
 
 void ARogueHUD::RequestBackFromSettingsMenu()
 {
-	HandlePauseMenuAction(FName(TEXT("Settings_Back")));
+	PauseMenuPage = ERoguePauseMenuPage::Main;
 }
 
 void ARogueHUD::RequestApplyFromSettingsMenu()
 {
-	HandlePauseMenuAction(FName(TEXT("Settings_Apply")));
+	ApplyDisplaySettings();
 }
 
 void ARogueHUD::RequestVolumeAdjustFromSettingsMenu(bool bIncrease)
 {
-	HandlePauseMenuAction(bIncrease ? FName(TEXT("Settings_VolumeUp")) : FName(TEXT("Settings_VolumeDown")));
+	const float Direction = bIncrease ? 1.0f : -1.0f;
+	MasterVolume = FMath::Clamp(MasterVolume + Direction * 0.1f, 0.0f, 1.0f);
+	ApplyMasterVolume();
 }
 
 void ARogueHUD::RequestQualityAdjustFromSettingsMenu(bool bIncrease)
 {
-	HandlePauseMenuAction(bIncrease ? FName(TEXT("Settings_QualityUp")) : FName(TEXT("Settings_QualityDown")));
+	GraphicsQualityLevel = FMath::Clamp(GraphicsQualityLevel + (bIncrease ? 1 : -1), 0, 4);
+	bGraphicsQualityCustom = false;
+	bDisplaySettingsDirty = true;
 }
 
 void ARogueHUD::RequestResolutionAdjustFromSettingsMenu(bool bIncrease)
 {
-	HandlePauseMenuAction(bIncrease ? FName(TEXT("Settings_ResolutionUp")) : FName(TEXT("Settings_ResolutionDown")));
+	StepResolution(bIncrease ? 1 : -1);
+	bDisplaySettingsDirty = true;
 }
 
 void ARogueHUD::RequestFrameLimitAdjustFromSettingsMenu(bool bIncrease)
 {
-	HandlePauseMenuAction(bIncrease ? FName(TEXT("Settings_FrameLimitUp")) : FName(TEXT("Settings_FrameLimitDown")));
+	StepFrameRateLimit(bIncrease ? 1 : -1);
+	bDisplaySettingsDirty = true;
 }
 
 void ARogueHUD::RequestToggleDisplayModeFromSettingsMenu()
 {
-	HandlePauseMenuAction(FName(TEXT("Settings_Fullscreen")));
+	CycleDisplayMode();
+	bDisplaySettingsDirty = true;
 }
 
 void ARogueHUD::RequestRestartAfterDeath()
 {
-	HandleDeathMenuAction(FName(TEXT("Death_Restart")));
+	PauseMenuPage = ERoguePauseMenuPage::None;
+	UGameplayStatics::SetGamePaused(this, false);
+
+	const FString CurrentLevelName = UGameplayStatics::GetCurrentLevelName(this, true);
+	if (!CurrentLevelName.IsEmpty())
+	{
+		UGameplayStatics::OpenLevel(this, FName(*CurrentLevelName));
+	}
 }
 
 void ARogueHUD::RequestQuitAfterDeath()
 {
-	HandleDeathMenuAction(FName(TEXT("Death_Quit")));
+	PauseMenuPage = ERoguePauseMenuPage::None;
+	UGameplayStatics::SetGamePaused(this, false);
+	UKismetSystemLibrary::QuitGame(this, GetOwningPlayerController(), EQuitPreference::Quit, false);
 }
 
 void ARogueHUD::DrawEnemyHealthBars(UFont* Font)
@@ -476,200 +534,21 @@ void ARogueHUD::RefreshDamageNumberProjectionCache(APlayerController* PlayerCont
 	}
 }
 
-void ARogueHUD::HandlePauseMenuAction(FName BoxName)
-{
-	APlayerController* PlayerController = GetOwningPlayerController();
-	ARogueCharacter* PlayerCharacter = Cast<ARogueCharacter>(UGameplayStatics::GetPlayerCharacter(this, 0));
-
-	if (BoxName == FName(TEXT("Pause_Resume")))
-	{
-		ClosePauseMenu();
-		if (PlayerCharacter != nullptr)
-		{
-			PlayerCharacter->SetUpgradeSelectionInput(false);
-		}
-		UGameplayStatics::SetGamePaused(this, false);
-		return;
-	}
-
-	if (BoxName == FName(TEXT("Pause_Settings")))
-	{
-		PauseMenuPage = ERoguePauseMenuPage::Settings;
-		return;
-	}
-
-	if (BoxName == FName(TEXT("Pause_Quit")))
-	{
-		ClosePauseMenu();
-		UKismetSystemLibrary::QuitGame(this, PlayerController, EQuitPreference::Quit, false);
-		return;
-	}
-
-	if (BoxName == FName(TEXT("Settings_Back")))
-	{
-		PauseMenuPage = ERoguePauseMenuPage::Main;
-		return;
-	}
-
-	if (BoxName == FName(TEXT("Settings_Apply")))
-	{
-		ApplyDisplaySettings();
-		return;
-	}
-
-	if (BoxName == FName(TEXT("Settings_VolumeDown")))
-	{
-		MasterVolume = FMath::Clamp(MasterVolume - 0.1f, 0.0f, 1.0f);
-		ApplyMasterVolume();
-		return;
-	}
-
-	if (BoxName == FName(TEXT("Settings_VolumeUp")))
-	{
-		MasterVolume = FMath::Clamp(MasterVolume + 0.1f, 0.0f, 1.0f);
-		ApplyMasterVolume();
-		return;
-	}
-
-	if (BoxName == FName(TEXT("Settings_QualityDown")))
-	{
-		GraphicsQualityLevel = FMath::Clamp(GraphicsQualityLevel - 1, 0, 4);
-		bGraphicsQualityCustom = false;
-		bDisplaySettingsDirty = true;
-		return;
-	}
-
-	if (BoxName == FName(TEXT("Settings_QualityUp")))
-	{
-		GraphicsQualityLevel = FMath::Clamp(GraphicsQualityLevel + 1, 0, 4);
-		bGraphicsQualityCustom = false;
-		bDisplaySettingsDirty = true;
-		return;
-	}
-
-	if (BoxName == FName(TEXT("Settings_ResolutionDown")))
-	{
-		StepResolution(-1);
-		bDisplaySettingsDirty = true;
-		return;
-	}
-
-	if (BoxName == FName(TEXT("Settings_ResolutionUp")))
-	{
-		StepResolution(1);
-		bDisplaySettingsDirty = true;
-		return;
-	}
-
-	if (BoxName == FName(TEXT("Settings_FrameLimitDown")))
-	{
-		StepFrameRateLimit(-1);
-		bDisplaySettingsDirty = true;
-		return;
-	}
-
-	if (BoxName == FName(TEXT("Settings_FrameLimitUp")))
-	{
-		StepFrameRateLimit(1);
-		bDisplaySettingsDirty = true;
-		return;
-	}
-
-	if (BoxName == FName(TEXT("Settings_Fullscreen")))
-	{
-		CycleDisplayMode();
-		bDisplaySettingsDirty = true;
-	}
-}
-
-void ARogueHUD::HandleDeathMenuAction(FName BoxName)
-{
-	APlayerController* PlayerController = GetOwningPlayerController();
-
-	if (BoxName == FName(TEXT("Death_Restart")))
-	{
-		PauseMenuPage = ERoguePauseMenuPage::None;
-		UGameplayStatics::SetGamePaused(this, false);
-		const FString CurrentLevelName = UGameplayStatics::GetCurrentLevelName(this, true);
-		if (!CurrentLevelName.IsEmpty())
-		{
-			UGameplayStatics::OpenLevel(this, FName(*CurrentLevelName));
-		}
-		return;
-	}
-
-	if (BoxName == FName(TEXT("Death_Quit")))
-	{
-		PauseMenuPage = ERoguePauseMenuPage::None;
-		UGameplayStatics::SetGamePaused(this, false);
-		UKismetSystemLibrary::QuitGame(this, PlayerController, EQuitPreference::Quit, false);
-	}
-}
-
 void ARogueHUD::InitializeMenuWidgets()
 {
 	if (APlayerController* PlayerController = GetOwningPlayerController())
 	{
-		if (ShopWidgetClass != nullptr)
-		{
-			ShopWidget = CreateWidget<URogueShopWidgetBase>(PlayerController, ShopWidgetClass);
-			if (ShopWidget != nullptr)
-			{
-				ShopWidget->SetOwningRogueHUD(this);
-				ShopWidget->AddToViewport(64);
-				ShopWidget->SetVisibility(ESlateVisibility::Collapsed);
-			}
-		}
-
-		if (UpgradeSelectionWidgetClass != nullptr)
-		{
-			UpgradeSelectionWidget = CreateWidget<URogueUpgradeSelectionWidgetBase>(PlayerController, UpgradeSelectionWidgetClass);
-			if (UpgradeSelectionWidget != nullptr)
-			{
-				UpgradeSelectionWidget->SetOwningRogueHUD(this);
-				UpgradeSelectionWidget->AddToViewport(63);
-				UpgradeSelectionWidget->SetVisibility(ESlateVisibility::Collapsed);
-			}
-		}
-
-		if (PauseMenuWidgetClass != nullptr)
-		{
-			PauseMenuWidget = CreateWidget<URoguePauseMenuWidgetBase>(PlayerController, PauseMenuWidgetClass);
-			if (PauseMenuWidget != nullptr)
-			{
-				PauseMenuWidget->SetOwningRogueHUD(this);
-				PauseMenuWidget->AddToViewport(65);
-				PauseMenuWidget->SetVisibility(ESlateVisibility::Collapsed);
-			}
-		}
-
-		if (SettingsMenuWidgetClass != nullptr)
-		{
-			SettingsMenuWidget = CreateWidget<URogueSettingsMenuWidgetBase>(PlayerController, SettingsMenuWidgetClass);
-			if (SettingsMenuWidget != nullptr)
-			{
-				SettingsMenuWidget->SetOwningRogueHUD(this);
-				SettingsMenuWidget->AddToViewport(66);
-				SettingsMenuWidget->SetVisibility(ESlateVisibility::Collapsed);
-			}
-		}
+		UpgradeSelectionWidget = CreateRogueMenuWidget(PlayerController, UpgradeSelectionWidgetClass, this, 63);
+		ShopWidget = CreateRogueMenuWidget(PlayerController, ShopWidgetClass, this, 64);
+		PauseMenuWidget = CreateRogueMenuWidget(PlayerController, PauseMenuWidgetClass, this, 65);
+		SettingsMenuWidget = CreateRogueMenuWidget(PlayerController, SettingsMenuWidgetClass, this, 66);
+		DeathScreenWidget = CreateRogueMenuWidget(PlayerController, DeathScreenWidgetClass, this, 70);
 	}
+}
 
-	if (DeathScreenWidgetClass == nullptr)
-	{
-		return;
-	}
-
-	if (APlayerController* PlayerController = GetOwningPlayerController())
-	{
-		DeathScreenWidget = CreateWidget<URogueDeathScreenWidgetBase>(PlayerController, DeathScreenWidgetClass);
-		if (DeathScreenWidget != nullptr)
-		{
-			DeathScreenWidget->SetOwningRogueHUD(this);
-			DeathScreenWidget->AddToViewport(70);
-			DeathScreenWidget->SetVisibility(ESlateVisibility::Collapsed);
-		}
-	}
+ARogueGameMode* ARogueHUD::GetRogueGameMode() const
+{
+	return GetWorld() != nullptr ? GetWorld()->GetAuthGameMode<ARogueGameMode>() : nullptr;
 }
 
 void ARogueHUD::UpdateShopWidget(const ARogueGameMode* RogueGameMode, const ARogueCharacter* PlayerCharacter)
@@ -705,7 +584,7 @@ void ARogueHUD::UpdateShopWidget(const ARogueGameMode* RogueGameMode, const ARog
 		if (bVisible && AutoRefreshSeconds != LastShopAutoRefreshSeconds)
 		{
 			LastShopAutoRefreshSeconds = AutoRefreshSeconds;
-			ShopWidget->UpdateAutoRefreshText(FText::FromString(FString::Printf(TEXT("自动补货 %d 秒"), AutoRefreshSeconds)));
+			ShopWidget->UpdateAutoRefreshText(GetAutoRefreshText(AutoRefreshSeconds));
 		}
 		return;
 	}
@@ -722,7 +601,7 @@ void ARogueHUD::UpdateShopWidget(const ARogueGameMode* RogueGameMode, const ARog
 	ViewData.HintText = FText::FromString(TEXT("点击卡牌购买强化"));
 	if (RogueGameMode != nullptr)
 	{
-		ViewData.AutoRefreshText = FText::FromString(FString::Printf(TEXT("自动补货 %d 秒"), FMath::Max(0, AutoRefreshSeconds)));
+		ViewData.AutoRefreshText = GetAutoRefreshText(AutoRefreshSeconds);
 		ViewData.RefreshButtonText = FText::FromString(FString::Printf(TEXT("立即刷新 (%d)"), RogueGameMode->GetShopRefreshCost()));
 
 		const TArray<FRogueShopOffer>& Offers = RogueGameMode->GetShopOffers();
@@ -759,11 +638,10 @@ void ARogueHUD::UpdateUpgradeSelectionWidget(const ARogueGameMode* RogueGameMode
 		}
 	}
 
-	if (Signature == LastUpgradeWidgetSignature)
+	if (!UpdateCachedSignature(LastUpgradeWidgetSignature, Signature))
 	{
 		return;
 	}
-	LastUpgradeWidgetSignature = Signature;
 
 	FRogueUpgradeSelectionViewData ViewData;
 	ViewData.bVisible = bVisible;
@@ -790,11 +668,10 @@ void ARogueHUD::UpdatePauseWidget()
 	}
 
 	const FString Signature = PauseMenuPage == ERoguePauseMenuPage::Main ? TEXT("Pause|Main") : TEXT("Pause|Hidden");
-	if (Signature == LastPauseWidgetSignature)
+	if (!UpdateCachedSignature(LastPauseWidgetSignature, Signature))
 	{
 		return;
 	}
-	LastPauseWidgetSignature = Signature;
 
 	FRoguePauseMenuViewData ViewData;
 	ViewData.bVisible = PauseMenuPage == ERoguePauseMenuPage::Main;
@@ -826,11 +703,10 @@ void ARogueHUD::UpdateSettingsWidget()
 			bDisplaySettingsDirty ? 1 : 0);
 	}
 
-	if (Signature == LastSettingsWidgetSignature)
+	if (!UpdateCachedSignature(LastSettingsWidgetSignature, Signature))
 	{
 		return;
 	}
-	LastSettingsWidgetSignature = Signature;
 
 	FRogueSettingsMenuViewData ViewData;
 	ViewData.bVisible = bVisible;
@@ -883,11 +759,10 @@ void ARogueHUD::UpdateDeathWidget(ARogueGameMode* RogueGameMode)
 		Signature += FString::Printf(TEXT("|Time=%.0f|Kills=%d"), RogueGameMode->GetRunTimeSeconds(), RogueGameMode->GetEnemiesDefeated());
 	}
 
-	if (Signature == LastDeathWidgetSignature)
+	if (!UpdateCachedSignature(LastDeathWidgetSignature, Signature))
 	{
 		return;
 	}
-	LastDeathWidgetSignature = Signature;
 
 	FRogueDeathViewData ViewData;
 	ViewData.bVisible = bPlayerDead;
