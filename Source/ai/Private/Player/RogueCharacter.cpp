@@ -101,6 +101,10 @@ ARogueCharacter::ARogueCharacter()
 	GetCharacterMovement()->bOrientRotationToMovement = true;
 	GetCharacterMovement()->RotationRate = FRotator(0.0f, 720.0f, 0.0f);
 	GetCharacterMovement()->MaxWalkSpeed = MoveSpeed;
+	GetCharacterMovement()->JumpZVelocity = JumpZVelocity;
+	GetCharacterMovement()->AirControl = AirControl;
+	GetCharacterMovement()->GravityScale = GravityScale;
+	JumpMaxCount = JumpMaxCountConfig;
 
 	DefaultMortarWeaponClass = ARogueWeapon_Mortar::StaticClass();
 	DefaultMortarProjectileClass = ARogueMortarProjectile::StaticClass();
@@ -150,6 +154,14 @@ void ARogueCharacter::ApplyBalanceAsset()
 	DashMinCooldown = BaseStats.DashMinCooldown;
 	DashDuration = BaseStats.DashDuration;
 	DashSpeed = BaseStats.DashSpeed;
+	JumpZVelocity = BaseStats.JumpZVelocity;
+	AirControl = BaseStats.AirControl;
+	GravityScale = BaseStats.GravityScale;
+	JumpMaxCountConfig = BaseStats.JumpMaxCount;
+	GetCharacterMovement()->JumpZVelocity = JumpZVelocity;
+	GetCharacterMovement()->AirControl = AirControl;
+	GetCharacterMovement()->GravityScale = GravityScale;
+	JumpMaxCount = FMath::Max(0, JumpMaxCountConfig);
 }
 
 void ARogueCharacter::InitializeWeapons()
@@ -317,10 +329,9 @@ void ARogueCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComp
 	PauseMenuBinding.bExecuteWhenPaused = true;
 	FInputActionBinding& InteractBinding = PlayerInputComponent->BindAction(TEXT("Interact"), IE_Pressed, this, &ARogueCharacter::Interact);
 	InteractBinding.bExecuteWhenPaused = true;
+	PlayerInputComponent->BindAction(TEXT("Jump"), IE_Pressed, this, &ARogueCharacter::StartJump);
+	PlayerInputComponent->BindAction(TEXT("Jump"), IE_Released, this, &ARogueCharacter::StopJump);
 	PlayerInputComponent->BindAction(TEXT("Dash"), IE_Pressed, this, &ARogueCharacter::Dash);
-
-	FInputActionBinding& ConfirmUpgradeBinding = PlayerInputComponent->BindAction(TEXT("ConfirmUpgradeSelection"), IE_Pressed, this, &ARogueCharacter::ConfirmUpgradeSelection);
-	ConfirmUpgradeBinding.bExecuteWhenPaused = true;
 
 	FInputActionBinding& UpgradeOneBinding = PlayerInputComponent->BindAction(TEXT("ChooseUpgrade1"), IE_Pressed, this, &ARogueCharacter::ChooseUpgradeOne);
 	UpgradeOneBinding.bExecuteWhenPaused = true;
@@ -789,33 +800,19 @@ void ARogueCharacter::Dash()
 	ARogueImpactEffect::SpawnImpactEffect(GetWorld(), GetActorLocation() + FVector(0.0f, 0.0f, 38.0f), DashDirection.Rotation(), ERogueImpactVisualStyle::Laser, FVector(0.42f, 0.42f, 0.20f), 0.18f, this);
 }
 
-void ARogueCharacter::ConfirmUpgradeSelection()
+void ARogueCharacter::StartJump()
 {
-	ARogueGameMode* RogueGameMode = GetWorld()->GetAuthGameMode<ARogueGameMode>();
-	APlayerController* PlayerController = Cast<APlayerController>(GetController());
-	if (!IsValid(RogueGameMode) || !RogueGameMode->IsAwaitingUpgradeChoice() || PlayerController == nullptr)
+	if (bDead || bDashActive || GetWorld()->IsPaused() || JumpMaxCount <= 0)
 	{
 		return;
 	}
 
-	ARogueHUD* RogueHUD = Cast<ARogueHUD>(PlayerController->GetHUD());
-	if (!IsValid(RogueHUD))
-	{
-		return;
-	}
+	Jump();
+}
 
-	float MouseX = 0.0f;
-	float MouseY = 0.0f;
-	if (!PlayerController->GetMousePosition(MouseX, MouseY))
-	{
-		return;
-	}
-
-	const int32 UpgradeIndex = RogueHUD->GetUpgradeIndexAtScreenPosition(MouseX, MouseY);
-	if (UpgradeIndex != INDEX_NONE)
-	{
-		RogueGameMode->TrySelectUpgrade(UpgradeIndex);
-	}
+void ARogueCharacter::StopJump()
+{
+	StopJumping();
 }
 
 void ARogueCharacter::ChooseUpgradeOne()

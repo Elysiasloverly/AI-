@@ -203,7 +203,8 @@ private:
 	void TogglePauseMenu();
 	void Interact();
 	void Dash();
-	void ConfirmUpgradeSelection();
+	void StartJump();
+	void StopJump();
 	void ChooseUpgradeOne();
 	void ChooseUpgradeTwo();
 	void ChooseUpgradeThree();
@@ -315,6 +316,18 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Mobility")
 	float DashSpeed = 4200.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "跳跃")
+	float JumpZVelocity = 720.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "跳跃")
+	float AirControl = 0.35f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "跳跃")
+	float GravityScale = 1.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "跳跃")
+	int32 JumpMaxCountConfig = 1;
 
 	UPROPERTY(VisibleInstanceOnly, Category = "Stats")
 	float CurrentHealth = 100.0f;

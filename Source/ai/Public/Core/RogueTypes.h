@@ -38,7 +38,8 @@ enum class ERogueEnemyType : uint8
 	Shooter     UMETA(DisplayName = "射手"),
 	Skirmisher  UMETA(DisplayName = "游击者"),
 	Artillery   UMETA(DisplayName = "炮兵"),
-	Spitter     UMETA(DisplayName = "喷射者")
+	Spitter     UMETA(DisplayName = "喷射者"),
+	ShockPillar UMETA(DisplayName = "震荡柱")
 };
 
 struct FRogueSpawnCadence

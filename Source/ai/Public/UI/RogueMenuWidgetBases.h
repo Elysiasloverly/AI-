@@ -319,6 +319,9 @@ public:
 	void SetOwningRogueHUD(ARogueHUD* InOwningHUD);
 	void UpdateShopView(const FRogueShopViewData& InViewData);
 
+	UFUNCTION(BlueprintCallable, Category = "Rogue|Shop")
+	void UpdateAutoRefreshText(const FText& InAutoRefreshText);
+
 	UFUNCTION(BlueprintPure, Category = "Rogue|Shop")
 	ARogueHUD* GetOwningRogueHUDObject() const { return OwningRogueHUD.Get(); }
 
@@ -334,6 +337,9 @@ public:
 protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Rogue|Shop")
 	void OnShopViewUpdated(const FRogueShopViewData& InViewData);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Rogue|Shop")
+	void OnAutoRefreshTextUpdated(const FText& InAutoRefreshText);
 
 private:
 	UFUNCTION()

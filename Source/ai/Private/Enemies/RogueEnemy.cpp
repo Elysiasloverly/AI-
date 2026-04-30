@@ -9,11 +9,77 @@
 #include "Subsystems/RogueCombatPoolSubsystem.h"
 #include "Subsystems/RogueEnemyTrackerSubsystem.h"
 #include "Combat/RogueImpactEffect.h"
+#include "World/RogueArena.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/InstancedStaticMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "Materials/MaterialInterface.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "AIController.h"
+#include "UObject/ConstructorHelpers.h"
+
+namespace
+{
+	constexpr float GroundWaveVisualHeight = 46.0f;
+	constexpr float GroundWaveRingThickness = 46.0f;
+	constexpr float GroundWaveRingHeight = 10.0f;
+	constexpr float GroundWaveArenaPadding = 300.0f;
+	constexpr float GroundWaveFallbackFullMapRadius = 9000.0f;
+	constexpr float GroundWaveMinimumExpansionSpeed = 100.0f;
+	constexpr int32 GroundWaveMinRingSegments = 32;
+	constexpr int32 GroundWaveMaxRingSegments = 176;
+	constexpr float GroundWaveTargetSegmentLength = 180.0f;
+	constexpr float UnrealBasicShapeSize = 100.0f;
+
+	float GetGroundWaveVisualBaseOffset(const ARogueEnemy& Enemy)
+	{
+		return -Enemy.GetCapsuleComponent()->GetScaledCapsuleHalfHeight() + GroundWaveVisualHeight;
+	}
+
+	float CalculateFullMapGroundWaveRadius(const ARogueEnemy& Enemy, float ConfiguredRadius)
+	{
+		float EffectiveRadius = FMath::Max(ConfiguredRadius, GroundWaveFallbackFullMapRadius);
+		UWorld* World = Enemy.GetWorld();
+		if (World == nullptr)
+		{
+			return EffectiveRadius;
+		}
+
+		const ARogueArena* Arena = Cast<ARogueArena>(UGameplayStatics::GetActorOfClass(World, ARogueArena::StaticClass()));
+		if (Arena == nullptr)
+		{
+			return EffectiveRadius;
+		}
+
+		const float HalfExtent = Arena->GetArenaHalfExtent() + GroundWaveArenaPadding;
+		const FVector ArenaCenter = Arena->GetActorLocation();
+		const FVector Origin = Enemy.GetActorLocation();
+		const FVector Corners[] =
+		{
+			ArenaCenter + FVector(HalfExtent, HalfExtent, 0.0f),
+			ArenaCenter + FVector(HalfExtent, -HalfExtent, 0.0f),
+			ArenaCenter + FVector(-HalfExtent, HalfExtent, 0.0f),
+			ArenaCenter + FVector(-HalfExtent, -HalfExtent, 0.0f)
+		};
+
+		for (const FVector& Corner : Corners)
+		{
+			EffectiveRadius = FMath::Max(EffectiveRadius, FVector::Dist2D(Origin, Corner));
+		}
+
+		return EffectiveRadius;
+	}
+
+	float CalculateReadableGroundWaveDuration(const FRogueEnemyGroundWaveArchetype& GroundWave, float EffectiveRadius)
+	{
+		const float ConfiguredSpeed = FMath::Max(GroundWave.ExpansionSpeed, GroundWaveMinimumExpansionSpeed);
+		const float SpeedDrivenDuration = EffectiveRadius / ConfiguredSpeed;
+		return FMath::Max(GroundWave.ExpansionDuration, SpeedDrivenDuration);
+	}
+}
 
 // ===========================================================
 //  构造 & 生命周期
@@ -32,6 +98,51 @@ ARogueEnemy::ARogueEnemy()
 	GetCharacterMovement()->MaxWalkSpeed = MoveSpeed;
 	GetCharacterMovement()->bOrientRotationToMovement = true;
 	GetCharacterMovement()->RotationRate = FRotator(0.0f, 600.0f, 0.0f);
+
+	ShockPillarMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ShockPillarMesh"));
+	ShockPillarMesh->SetupAttachment(RootComponent);
+	ShockPillarMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	ShockPillarMesh->SetCastShadow(true);
+	ShockPillarMesh->SetVisibility(false, true);
+	ShockPillarMesh->SetHiddenInGame(true);
+
+	GroundWaveMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("GroundWaveMesh"));
+	GroundWaveMesh->SetupAttachment(RootComponent);
+	GroundWaveMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	GroundWaveMesh->SetCastShadow(false);
+	GroundWaveMesh->SetVisibility(false, true);
+	GroundWaveMesh->SetHiddenInGame(true);
+
+	GroundWaveRingSegments = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("GroundWaveRingSegments"));
+	GroundWaveRingSegments->SetupAttachment(RootComponent);
+	GroundWaveRingSegments->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	GroundWaveRingSegments->SetCastShadow(false);
+	GroundWaveRingSegments->SetVisibility(false, true);
+	GroundWaveRingSegments->SetHiddenInGame(true);
+
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> PillarMeshAsset(TEXT("/Game/GameAssets/StarterContent/Shapes/Shape_Cylinder.Shape_Cylinder"));
+	if (PillarMeshAsset.Succeeded())
+	{
+		ShockPillarMesh->SetStaticMesh(PillarMeshAsset.Object);
+	}
+
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> WaveMeshAsset(TEXT("/Game/GameAssets/StarterContent/Shapes/Shape_Cube.Shape_Cube"));
+	if (WaveMeshAsset.Succeeded())
+	{
+		GroundWaveRingSegments->SetStaticMesh(WaveMeshAsset.Object);
+	}
+
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> PillarMaterialAsset(TEXT("/Game/GameAssets/Realistic_Starter_VFX_Pack_Vol2/Materials/M_Glow_D.M_Glow_D"));
+	if (PillarMaterialAsset.Succeeded())
+	{
+		ShockPillarMaterial = PillarMaterialAsset.Object;
+	}
+
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> WaveMaterialAsset(TEXT("/Game/GameAssets/Realistic_Starter_VFX_Pack_Vol2/Materials/M_Glow_C_Inst.M_Glow_C_Inst"));
+	if (WaveMaterialAsset.Succeeded())
+	{
+		ShockWaveMaterial = WaveMaterialAsset.Object;
+	}
 
 	OrbitDirection = FMath::RandBool() ? 1.0f : -1.0f;
 }
@@ -95,7 +206,10 @@ void ARogueEnemy::HandleDefaultBehavior(float DeltaSeconds)
 
 	const FVector ToPlayer = PlayerCharacter->GetActorLocation() - GetActorLocation();
 	const float DistanceToPlayer = ToPlayer.Size2D();
-	const float DesiredTickInterval = bIsBoss ? 0.0f : (DistanceToPlayer > 1700.0f ? 0.08f : (DistanceToPlayer > 950.0f ? 0.04f : 0.0f));
+	const bool bUsesGroundWave = CurrentArchetype.GroundWave.bUsesGroundWave;
+	const float DesiredTickInterval = (bIsBoss || bUsesGroundWave || bGroundWaveActive)
+		? 0.0f
+		: (DistanceToPlayer > 1700.0f ? 0.08f : (DistanceToPlayer > 950.0f ? 0.04f : 0.0f));
 	if (!FMath::IsNearlyEqual(PrimaryActorTick.TickInterval, DesiredTickInterval, KINDA_SMALL_NUMBER))
 	{
 		SetActorTickInterval(DesiredTickInterval);
@@ -108,6 +222,12 @@ void ARogueEnemy::HandleDefaultBehavior(float DeltaSeconds)
 		const FRotator DesiredRotation = MoveDirection.Rotation();
 		SetActorRotation(FMath::RInterpTo(GetActorRotation(), DesiredRotation, DeltaSeconds, 8.0f));
 		AddActorWorldOffset(MoveDirection * MoveSpeed * DeltaSeconds, true);
+	}
+
+	if (bUsesGroundWave)
+	{
+		HandleGroundWaveAttack(PlayerCharacter, DistanceToPlayer, DeltaSeconds);
+		return;
 	}
 
 	TouchPlayer(DeltaSeconds);
@@ -182,6 +302,16 @@ void ARogueEnemy::InitializeEnemy(const FRogueEnemyProfile& InProfile)
 	RangedAttackTimer = CurrentArchetype.Ranged.bUsesRangedAttack
 		? FMath::FRandRange(CurrentArchetype.Ranged.InitialCooldownMin, CurrentArchetype.Ranged.InitialCooldownMax)
 		: 0.0f;
+	GroundWaveAttackTimer = CurrentArchetype.GroundWave.bUsesGroundWave
+		? FMath::FRandRange(CurrentArchetype.GroundWave.InitialCooldownMin, CurrentArchetype.GroundWave.InitialCooldownMax)
+		: 0.0f;
+	GroundWaveElapsed = 0.0f;
+	GroundWaveCurrentRadius = 0.0f;
+	GroundWaveAlpha = 0.0f;
+	GroundWaveEffectiveMaxRadius = 0.0f;
+	GroundWaveEffectiveDuration = 0.0f;
+	bGroundWaveActive = false;
+	bGroundWaveDamagedPlayer = false;
 	LastDamageNumberTime = -100.0f;
 	bDead = false;
 	bPoolAvailable = false;
@@ -247,10 +377,19 @@ void ARogueEnemy::DeactivateToPool()
 	CurrentHealth = 0.0f;
 	ContactTimer = 0.0f;
 	RangedAttackTimer = 0.0f;
+	GroundWaveAttackTimer = 0.0f;
+	GroundWaveElapsed = 0.0f;
+	GroundWaveCurrentRadius = 0.0f;
+	GroundWaveAlpha = 0.0f;
+	GroundWaveEffectiveMaxRadius = 0.0f;
+	GroundWaveEffectiveDuration = 0.0f;
+	bGroundWaveActive = false;
+	bGroundWaveDamagedPlayer = false;
 	BurstCooldown = 0.0f;
 	BurstTimeRemaining = 0.0f;
 	LastDamageNumberTime = -100.0f;
 	CachedPlayerCharacter.Reset();
+	HideGroundWave();
 	SetActorHiddenInGame(true);
 	SetActorTickEnabled(false);
 	SetActorEnableCollision(false);
@@ -450,6 +589,21 @@ void ARogueEnemy::OnApplyVisualStyle_Implementation()
 	// 默认空实现，蓝图子类可重写以自定义外观
 }
 
+void ARogueEnemy::OnGroundWaveStarted_Implementation(float MaxRadius, float ExpansionDuration)
+{
+	// 默认空实现，震荡柱蓝图可重写
+}
+
+void ARogueEnemy::OnGroundWaveUpdated_Implementation(float Radius, float Alpha)
+{
+	// 默认空实现，震荡柱蓝图可重写
+}
+
+void ARogueEnemy::OnGroundWaveFinished_Implementation()
+{
+	// 默认空实现，震荡柱蓝图可重写
+}
+
 // ===========================================================
 //  内部逻辑：接触伤害
 // ===========================================================
@@ -583,6 +737,183 @@ void ARogueEnemy::FireRangedShot(ARogueCharacter* PlayerCharacter)
 }
 
 // ===========================================================
+//  内部逻辑：地面波攻击
+// ===========================================================
+
+void ARogueEnemy::HandleGroundWaveAttack(ARogueCharacter* PlayerCharacter, float DistanceToPlayer, float DeltaSeconds)
+{
+	if (!CurrentArchetype.GroundWave.bUsesGroundWave || !IsValid(PlayerCharacter))
+	{
+		return;
+	}
+
+	if (!bGroundWaveActive)
+	{
+		GroundWaveAttackTimer = FMath::Max(0.0f, GroundWaveAttackTimer - DeltaSeconds);
+		const float EffectiveMaxRadius = CalculateFullMapGroundWaveRadius(*this, CurrentArchetype.GroundWave.MaxRadius);
+		if (GroundWaveAttackTimer <= 0.0f && DistanceToPlayer <= EffectiveMaxRadius + 220.0f)
+		{
+			StartGroundWave();
+		}
+	}
+
+	if (bGroundWaveActive)
+	{
+		UpdateGroundWave(DeltaSeconds, PlayerCharacter);
+	}
+}
+
+void ARogueEnemy::StartGroundWave()
+{
+	bGroundWaveActive = true;
+	bGroundWaveDamagedPlayer = false;
+	GroundWaveElapsed = 0.0f;
+	GroundWaveCurrentRadius = 24.0f;
+	GroundWaveAlpha = 0.0f;
+	GroundWaveEffectiveMaxRadius = CalculateFullMapGroundWaveRadius(*this, CurrentArchetype.GroundWave.MaxRadius);
+	GroundWaveEffectiveDuration = CalculateReadableGroundWaveDuration(CurrentArchetype.GroundWave, GroundWaveEffectiveMaxRadius);
+
+	if (bUseBuiltInShockPillarVisual && GroundWaveMesh != nullptr)
+	{
+		GroundWaveMesh->SetHiddenInGame(true);
+		GroundWaveMesh->SetVisibility(false, true);
+	}
+
+	UpdateGroundWaveRingVisual(GroundWaveCurrentRadius);
+
+	if (GetWorld() != nullptr)
+	{
+		ARogueImpactEffect::SpawnImpactEffect(
+			GetWorld(),
+			GetActorLocation() + FVector(0.0f, 0.0f, 8.0f),
+			FRotator::ZeroRotator,
+			ERogueImpactVisualStyle::Spark,
+			FVector(0.95f, 0.95f, 0.32f),
+			0.28f,
+			this);
+	}
+
+	OnGroundWaveStarted(GroundWaveEffectiveMaxRadius, GroundWaveEffectiveDuration);
+}
+
+void ARogueEnemy::UpdateGroundWave(float DeltaSeconds, ARogueCharacter* PlayerCharacter)
+{
+	const FRogueEnemyGroundWaveArchetype& GroundWave = CurrentArchetype.GroundWave;
+	const float Duration = FMath::Max(GroundWaveEffectiveDuration, KINDA_SMALL_NUMBER);
+	GroundWaveElapsed += DeltaSeconds;
+
+	const float Alpha = FMath::Clamp(GroundWaveElapsed / Duration, 0.0f, 1.0f);
+	const float Radius = FMath::Lerp(24.0f, FMath::Max(GroundWaveEffectiveMaxRadius, 24.0f), Alpha);
+	GroundWaveCurrentRadius = Radius;
+	GroundWaveAlpha = Alpha;
+
+	UpdateGroundWaveRingVisual(Radius);
+
+	if (!bGroundWaveDamagedPlayer && IsValid(PlayerCharacter) && CanGroundWaveHitPlayer(PlayerCharacter))
+	{
+		const float DistanceToPlayer = FVector::Dist2D(GetActorLocation(), PlayerCharacter->GetActorLocation());
+		const float PlayerRadius = PlayerCharacter->GetCapsuleComponent() != nullptr
+			? PlayerCharacter->GetCapsuleComponent()->GetScaledCapsuleRadius()
+			: 34.0f;
+		const float HitBandHalfWidth = GroundWave.HitThickness * 0.5f + PlayerRadius;
+		if (FMath::Abs(DistanceToPlayer - Radius) <= HitBandHalfWidth)
+		{
+			UGameplayStatics::ApplyDamage(PlayerCharacter, ContactDamage * GroundWave.DamageMultiplier, nullptr, this, UDamageType::StaticClass());
+			bGroundWaveDamagedPlayer = true;
+		}
+	}
+
+	OnGroundWaveUpdated(Radius, Alpha);
+
+	if (Alpha >= 1.0f)
+	{
+		bGroundWaveActive = false;
+		bGroundWaveDamagedPlayer = false;
+		GroundWaveElapsed = 0.0f;
+		GroundWaveCurrentRadius = 0.0f;
+		GroundWaveAlpha = 0.0f;
+		GroundWaveEffectiveMaxRadius = 0.0f;
+		GroundWaveEffectiveDuration = 0.0f;
+		GroundWaveAttackTimer = GroundWave.AttackCooldown;
+		HideGroundWave();
+		OnGroundWaveFinished();
+	}
+}
+
+void ARogueEnemy::UpdateGroundWaveRingVisual(float Radius)
+{
+	if (!bUseBuiltInShockPillarVisual || GroundWaveRingSegments == nullptr)
+	{
+		return;
+	}
+
+	GroundWaveRingSegments->ClearInstances();
+	if (Radius <= KINDA_SMALL_NUMBER)
+	{
+		GroundWaveRingSegments->SetHiddenInGame(true);
+		GroundWaveRingSegments->SetVisibility(false, true);
+		return;
+	}
+
+	const float Circumference = 2.0f * UE_PI * Radius;
+	const int32 SegmentCount = FMath::Clamp(FMath::CeilToInt(Circumference / GroundWaveTargetSegmentLength), GroundWaveMinRingSegments, GroundWaveMaxRingSegments);
+	const float SegmentLength = FMath::Max(Circumference / static_cast<float>(SegmentCount) * 0.94f, 12.0f);
+	const FVector SegmentScale(
+		SegmentLength / UnrealBasicShapeSize,
+		GroundWaveRingThickness / UnrealBasicShapeSize,
+		GroundWaveRingHeight / UnrealBasicShapeSize);
+	const float BaseOffset = GetGroundWaveVisualBaseOffset(*this);
+
+	for (int32 SegmentIndex = 0; SegmentIndex < SegmentCount; ++SegmentIndex)
+	{
+		const float AngleRadians = 2.0f * UE_PI * static_cast<float>(SegmentIndex) / static_cast<float>(SegmentCount);
+		const float AngleDegrees = FMath::RadiansToDegrees(AngleRadians);
+		const FVector SegmentLocation(FMath::Cos(AngleRadians) * Radius, FMath::Sin(AngleRadians) * Radius, BaseOffset);
+		const FRotator SegmentRotation(0.0f, AngleDegrees + 90.0f, 0.0f);
+		GroundWaveRingSegments->AddInstance(FTransform(SegmentRotation, SegmentLocation, SegmentScale));
+	}
+
+	GroundWaveRingSegments->SetHiddenInGame(false);
+	GroundWaveRingSegments->SetVisibility(true, true);
+}
+
+void ARogueEnemy::HideGroundWave()
+{
+	if (GroundWaveMesh != nullptr)
+	{
+		GroundWaveMesh->SetHiddenInGame(true);
+		GroundWaveMesh->SetVisibility(false, true);
+	}
+
+	if (GroundWaveRingSegments != nullptr)
+	{
+		GroundWaveRingSegments->ClearInstances();
+		GroundWaveRingSegments->SetHiddenInGame(true);
+		GroundWaveRingSegments->SetVisibility(false, true);
+	}
+}
+
+bool ARogueEnemy::CanGroundWaveHitPlayer(const ARogueCharacter* PlayerCharacter) const
+{
+	if (!IsValid(PlayerCharacter) || !CurrentArchetype.GroundWave.bJumpCanDodge)
+	{
+		return IsValid(PlayerCharacter);
+	}
+
+	const UCharacterMovementComponent* PlayerMovement = PlayerCharacter->GetCharacterMovement();
+	if (PlayerMovement != nullptr && PlayerMovement->IsFalling())
+	{
+		return false;
+	}
+
+	const UCapsuleComponent* PlayerCapsule = PlayerCharacter->GetCapsuleComponent();
+	const float PlayerHalfHeight = PlayerCapsule != nullptr ? PlayerCapsule->GetScaledCapsuleHalfHeight() : 88.0f;
+	const float PlayerFeetZ = PlayerCharacter->GetActorLocation().Z - PlayerHalfHeight;
+	const float WaveZ = GetActorLocation().Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+	return PlayerFeetZ <= WaveZ + 30.0f;
+}
+
+// ===========================================================
 //  内部逻辑：死亡
 // ===========================================================
 
@@ -603,6 +934,68 @@ void ARogueEnemy::Die(AActor* Killer)
 
 void ARogueEnemy::ApplyEnemyStyle()
 {
+	const bool bIsShockPillar = EnemyType == ERogueEnemyType::ShockPillar && CurrentArchetype.GroundWave.bUsesGroundWave;
+	const bool bShowBuiltInShockPillar = bIsShockPillar && bUseBuiltInShockPillarVisual;
+	if (ShockPillarMesh != nullptr)
+	{
+		ShockPillarMesh->SetHiddenInGame(!bShowBuiltInShockPillar);
+		ShockPillarMesh->SetVisibility(bShowBuiltInShockPillar, true);
+
+		if (bShowBuiltInShockPillar)
+		{
+			ShockPillarMesh->SetRelativeLocation(CurrentArchetype.Visual.MeshLocation);
+			ShockPillarMesh->SetRelativeRotation(CurrentArchetype.Visual.MeshRotation);
+			ShockPillarMesh->SetRelativeScale3D(CurrentArchetype.Visual.MeshScale);
+
+			if (ShockPillarMaterial != nullptr)
+			{
+				UMaterialInstanceDynamic* PillarMaterialInstance = UMaterialInstanceDynamic::Create(ShockPillarMaterial, this);
+				if (PillarMaterialInstance != nullptr)
+				{
+					const FLinearColor PillarColor(1.0f, 0.78f, 0.05f, 1.0f);
+					PillarMaterialInstance->SetVectorParameterValue(TEXT("Color"), PillarColor);
+					PillarMaterialInstance->SetVectorParameterValue(TEXT("BaseColor"), PillarColor);
+					PillarMaterialInstance->SetVectorParameterValue(TEXT("EmissiveColor"), PillarColor * 2.2f);
+					ShockPillarMesh->SetMaterial(0, PillarMaterialInstance);
+				}
+				else
+				{
+					ShockPillarMesh->SetMaterial(0, ShockPillarMaterial);
+				}
+			}
+		}
+	}
+
+	if (GroundWaveMesh != nullptr)
+	{
+		if (bUseBuiltInShockPillarVisual && ShockWaveMaterial != nullptr)
+		{
+			UMaterialInterface* EffectiveWaveMaterial = ShockWaveMaterial;
+			UMaterialInstanceDynamic* WaveMaterialInstance = UMaterialInstanceDynamic::Create(ShockWaveMaterial, this);
+			if (WaveMaterialInstance != nullptr)
+			{
+				const FLinearColor WaveColor(1.0f, 0.62f, 0.08f, 1.0f);
+				WaveMaterialInstance->SetVectorParameterValue(TEXT("Color"), WaveColor);
+				WaveMaterialInstance->SetVectorParameterValue(TEXT("BaseColor"), WaveColor);
+				WaveMaterialInstance->SetVectorParameterValue(TEXT("EmissiveColor"), WaveColor * 3.0f);
+				EffectiveWaveMaterial = WaveMaterialInstance;
+			}
+
+			GroundWaveMesh->SetMaterial(0, EffectiveWaveMaterial);
+			if (GroundWaveRingSegments != nullptr)
+			{
+				GroundWaveRingSegments->SetMaterial(0, EffectiveWaveMaterial);
+			}
+		}
+		HideGroundWave();
+	}
+
+	GetCapsuleComponent()->SetCapsuleSize(CurrentArchetype.Visual.CapsuleRadius, CurrentArchetype.Visual.CapsuleHalfHeight);
+	GetCharacterMovement()->MaxWalkSpeed = bIsShockPillar ? 0.0f : MoveSpeed;
+	GetCharacterMovement()->bOrientRotationToMovement = !bIsShockPillar;
+
+	OnApplyVisualStyle();
+
 	/*
 	if (BodyMesh == nullptr)
 	{
@@ -656,6 +1049,8 @@ FVector ARogueEnemy::GetMovementDirection(const FVector& ToPlayer, float Distanc
 
 	switch (MovementArchetype.Model)
 	{
+	case ERogueEnemyMovementModel::Stationary:
+		return FVector::ZeroVector;
 	case ERogueEnemyMovementModel::Direct:
 		return TowardPlayer * MovementArchetype.BaseMoveMultiplier;
 	case ERogueEnemyMovementModel::BurstCharge:

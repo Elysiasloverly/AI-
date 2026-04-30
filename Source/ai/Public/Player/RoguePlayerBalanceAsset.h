@@ -50,6 +50,18 @@ struct AI_API FRoguePlayerBaseStatConfig
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "机动", meta = (DisplayName = "冲刺速度"))
 	float DashSpeed = 4200.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "跳跃", meta = (DisplayName = "跳跃初速度"))
+	float JumpZVelocity = 720.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "跳跃", meta = (DisplayName = "空中控制力"))
+	float AirControl = 0.35f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "跳跃", meta = (DisplayName = "重力倍率"))
+	float GravityScale = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "跳跃", meta = (DisplayName = "最大跳跃次数", ClampMin = "0", UIMin = "0"))
+	int32 JumpMaxCount = 1;
 };
 
 UCLASS(BlueprintType)

@@ -333,6 +333,40 @@ struct AI_API FRogueSpitterSpecialParams
 	float SpreadSpawnOffset = 12.0f;
 };
 
+/** 震荡柱（ShockPillar）专属属性 - 固定柱体 + 地面波参数 */
+USTRUCT(BlueprintType)
+struct AI_API FRogueShockPillarSpecialParams
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "地面波", meta = (DisplayName = "初始冷却最小值"))
+	float InitialCooldownMin = 1.6f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "地面波", meta = (DisplayName = "初始冷却最大值"))
+	float InitialCooldownMax = 3.2f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "地面波", meta = (DisplayName = "攻击冷却时间"))
+	float AttackCooldown = 4.8f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "地面波", meta = (DisplayName = "最大半径"))
+	float MaxRadius = 980.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "地面波", meta = (DisplayName = "最短扩散持续时间"))
+	float ExpansionDuration = 1.05f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "地面波", meta = (DisplayName = "扩散速度（单位/秒）"))
+	float ExpansionSpeed = 2600.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "地面波", meta = (DisplayName = "命中厚度"))
+	float HitThickness = 92.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "地面波", meta = (DisplayName = "伤害倍率"))
+	float DamageMultiplier = 1.2f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "地面波", meta = (DisplayName = "跳跃可躲避"))
+	bool bJumpCanDodge = true;
+};
+
 // ===================================================================
 //  Boss 覆盖参数（可选，用于覆盖普通敌人的专属参数）
 // ===================================================================
@@ -416,6 +450,9 @@ struct AI_API FRogueEnemyArchetypeRow : public FTableRowBase
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpecialParams|Spitter", meta = (DisplayName = "喷射者专属参数"))
 	FRogueSpitterSpecialParams SpitterParams;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "专属参数|震荡柱", meta = (DisplayName = "震荡柱专属参数"))
+	FRogueShockPillarSpecialParams ShockPillarParams;
 
 	// ===== Boss 覆盖 =====
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BossOverride", meta = (DisplayName = "Boss覆盖参数"))

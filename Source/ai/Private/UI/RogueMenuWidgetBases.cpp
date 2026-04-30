@@ -203,6 +203,17 @@ void URogueShopWidgetBase::UpdateShopView(const FRogueShopViewData& InViewData)
 	OnShopViewUpdated(InViewData);
 }
 
+void URogueShopWidgetBase::UpdateAutoRefreshText(const FText& InAutoRefreshText)
+{
+	if (Text_AutoRefresh != nullptr)
+	{
+		Text_AutoRefresh->SetText(InAutoRefreshText);
+		Text_AutoRefresh->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+	}
+
+	OnAutoRefreshTextUpdated(InAutoRefreshText);
+}
+
 void URogueShopWidgetBase::HandleRefreshButtonClicked()
 {
 	RequestRefreshShop();
@@ -257,11 +268,7 @@ void URogueShopWidgetBase::ApplyManagedShopView(const FRogueShopViewData& InView
 		Text_Hint->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 	}
 
-	if (Text_AutoRefresh != nullptr)
-	{
-		Text_AutoRefresh->SetText(InViewData.AutoRefreshText);
-		Text_AutoRefresh->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-	}
+	UpdateAutoRefreshText(InViewData.AutoRefreshText);
 
 	if (Text_Refresh != nullptr)
 	{

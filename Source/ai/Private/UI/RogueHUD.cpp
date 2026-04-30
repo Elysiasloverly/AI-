@@ -10,7 +10,6 @@
 #include "Engine/Engine.h"
 #include "Engine/Font.h"
 #include "GameFramework/GameUserSettings.h"
-#include "InputCoreTypes.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
@@ -143,93 +142,6 @@ void ARogueHUD::DrawHUD()
 
 	DrawRect(FLinearColor(0.0f, 0.0f, 0.0f, 0.55f), Left, BarTop + 32.0f, 320.0f, 20.0f);
 	DrawRect(FLinearColor(0.2f, 0.6f, 1.0f, 0.95f), Left + 2.0f, BarTop + 34.0f, 316.0f * PlayerCharacter->GetExperiencePercent(), 16.0f);
-
-	if (RogueGameMode->IsAwaitingUpgradeChoice())
-	{
-		if (UpgradeSelectionWidget == nullptr)
-		{
-			DrawRect(FLinearColor(0.02f, 0.02f, 0.05f, 0.88f), Canvas->SizeX * 0.15f, Canvas->SizeY * 0.18f, Canvas->SizeX * 0.7f, Canvas->SizeY * 0.55f);
-			DrawText(TEXT("请选择升级 - 鼠标点击卡牌"), FLinearColor(1.0f, 0.9f, 0.4f), Canvas->SizeX * 0.25f, Canvas->SizeY * 0.22f, Font, 1.6f, false);
-
-			const TArray<FRogueUpgradeOption>& Options = RogueGameMode->GetPendingUpgrades();
-			float MouseX = -1.0f;
-			float MouseY = -1.0f;
-			if (APlayerController* PlayerController = GetOwningPlayerController())
-			{
-				PlayerController->GetMousePosition(MouseX, MouseY);
-			}
-
-			for (int32 Index = 0; Index < Options.Num(); ++Index)
-			{
-				FVector2D CardPosition;
-				FVector2D CardSize;
-				if (!GetUpgradeCardRect(Index, CardPosition, CardSize))
-				{
-					continue;
-				}
-
-				const bool bHovered = MouseX >= CardPosition.X && MouseX <= CardPosition.X + CardSize.X && MouseY >= CardPosition.Y && MouseY <= CardPosition.Y + CardSize.Y;
-				const FLinearColor CardColor = bHovered ? FLinearColor(0.18f, 0.24f, 0.32f, 0.98f) : FLinearColor(0.08f, 0.08f, 0.12f, 0.95f);
-				DrawRect(CardColor, CardPosition.X, CardPosition.Y, CardSize.X, CardSize.Y);
-				AddHitBox(CardPosition, CardSize, FName(*FString::Printf(TEXT("Upgrade_%d"), Index)), true, 10);
-				DrawText(FString::Printf(TEXT("%d. %s"), Index + 1, *Options[Index].Title), FLinearColor::White, CardPosition.X + 26.0f, CardPosition.Y + 12.0f, Font, 1.25f, false);
-				DrawText(Options[Index].Description, FLinearColor(0.75f, 0.85f, 1.0f), CardPosition.X + 26.0f, CardPosition.Y + 38.0f, Font, 0.95f, false);
-			}
-
-			if (APlayerController* PlayerController = GetOwningPlayerController())
-			{
-				if (PlayerController->WasInputKeyJustPressed(EKeys::LeftMouseButton))
-				{
-					const int32 UpgradeIndex = GetUpgradeIndexAtScreenPosition(MouseX, MouseY);
-					if (UpgradeIndex != INDEX_NONE)
-					{
-						RogueGameMode->TrySelectUpgrade(UpgradeIndex);
-					}
-				}
-			}
-		}
-	}
-
-	if (RogueGameMode->IsShopOpen())
-	{
-		if (ShopWidget == nullptr)
-		{
-			float MouseX = -1.0f;
-			float MouseY = -1.0f;
-			if (APlayerController* PlayerController = GetOwningPlayerController())
-			{
-				PlayerController->GetMousePosition(MouseX, MouseY);
-			}
-
-			DrawShopMenu(Font, MouseX, MouseY, RogueGameMode, PlayerCharacter);
-		}
-	}
-
-	if (PauseMenuPage != ERoguePauseMenuPage::None)
-	{
-		const bool bShouldDrawPauseFallback =
-			(PauseMenuPage == ERoguePauseMenuPage::Main && PauseMenuWidget == nullptr) ||
-			(PauseMenuPage == ERoguePauseMenuPage::Settings && SettingsMenuWidget == nullptr);
-		if (bShouldDrawPauseFallback)
-		{
-			DrawPauseMenu(Font);
-		}
-	}
-
-	if (PlayerCharacter->IsDead())
-	{
-		if (DeathScreenWidget == nullptr)
-		{
-			float MouseX = -1.0f;
-			float MouseY = -1.0f;
-			if (APlayerController* PlayerController = GetOwningPlayerController())
-			{
-				PlayerController->GetMousePosition(MouseX, MouseY);
-			}
-
-			DrawDeathMenu(Font, MouseX, MouseY, RogueGameMode);
-		}
-	}
 }
 
 void ARogueHUD::AddDamageNumber(const FVector& WorldLocation, float Damage, bool bIsBossDamage)
@@ -360,84 +272,6 @@ void ARogueHUD::RequestQuitAfterDeath()
 	HandleDeathMenuAction(FName(TEXT("Death_Quit")));
 }
 
-int32 ARogueHUD::GetUpgradeIndexAtScreenPosition(float ScreenX, float ScreenY) const
-{
-	if (UpgradeSelectionWidget != nullptr)
-	{
-		return INDEX_NONE;
-	}
-
-	for (int32 Index = 0; Index < 3; ++Index)
-	{
-		FVector2D CardPosition;
-		FVector2D CardSize;
-		if (!GetUpgradeCardRect(Index, CardPosition, CardSize))
-		{
-			continue;
-		}
-
-		if (ScreenX >= CardPosition.X && ScreenX <= CardPosition.X + CardSize.X && ScreenY >= CardPosition.Y && ScreenY <= CardPosition.Y + CardSize.Y)
-		{
-			return Index;
-		}
-	}
-
-	return INDEX_NONE;
-}
-
-bool ARogueHUD::GetUpgradeCardRect(int32 UpgradeIndex, FVector2D& OutPosition, FVector2D& OutSize) const
-{
-	if (Canvas == nullptr || UpgradeIndex < 0)
-	{
-		return false;
-	}
-
-	OutPosition = FVector2D(Canvas->SizeX * 0.23f, Canvas->SizeY * 0.30f + UpgradeIndex * 90.0f);
-	OutSize = FVector2D(Canvas->SizeX * 0.54f, 72.0f);
-	return true;
-}
-
-bool ARogueHUD::GetShopCardRect(int32 ShopIndex, FVector2D& OutPosition, FVector2D& OutSize) const
-{
-	if (Canvas == nullptr || ShopIndex < 0 || ShopIndex >= 6)
-	{
-		return false;
-	}
-
-	const int32 Column = ShopIndex % 3;
-	const int32 Row = ShopIndex / 3;
-	const float StartX = Canvas->SizeX * 0.14f;
-	const float StartY = Canvas->SizeY * 0.26f;
-	const float SpacingX = Canvas->SizeX * 0.24f;
-	const float SpacingY = 132.0f;
-	OutPosition = FVector2D(StartX + Column * SpacingX, StartY + Row * SpacingY);
-	OutSize = FVector2D(Canvas->SizeX * 0.20f, 112.0f);
-	return true;
-}
-
-bool ARogueHUD::GetShopButtonRect(FName ButtonName, FVector2D& OutPosition, FVector2D& OutSize) const
-{
-	if (Canvas == nullptr)
-	{
-		return false;
-	}
-
-	OutSize = FVector2D(Canvas->SizeX * 0.18f, 56.0f);
-	if (ButtonName == FName(TEXT("Shop_Refresh")))
-	{
-		OutPosition = FVector2D(Canvas->SizeX * 0.26f, Canvas->SizeY * 0.69f);
-		return true;
-	}
-
-	if (ButtonName == FName(TEXT("Shop_Close")))
-	{
-		OutPosition = FVector2D(Canvas->SizeX * 0.56f, Canvas->SizeY * 0.69f);
-		return true;
-	}
-
-	return false;
-}
-
 void ARogueHUD::DrawEnemyHealthBars(UFont* Font)
 {
 	APlayerController* PlayerController = GetOwningPlayerController();
@@ -543,73 +377,6 @@ void ARogueHUD::DrawDamageNumbers(UFont* Font)
 	}
 }
 
-void ARogueHUD::DrawShopMenu(UFont* Font, float MouseX, float MouseY, const ARogueGameMode* RogueGameMode, const ARogueCharacter* PlayerCharacter)
-{
-	if (Canvas == nullptr || RogueGameMode == nullptr || PlayerCharacter == nullptr)
-	{
-		return;
-	}
-
-	DrawRect(FLinearColor(0.01f, 0.02f, 0.05f, 0.88f), 0.0f, 0.0f, Canvas->SizeX, Canvas->SizeY);
-	DrawRect(FLinearColor(0.05f, 0.07f, 0.11f, 0.97f), Canvas->SizeX * 0.10f, Canvas->SizeY * 0.16f, Canvas->SizeX * 0.80f, Canvas->SizeY * 0.62f);
-	DrawText(TEXT("商店"), FLinearColor(1.0f, 0.92f, 0.55f), Canvas->SizeX * 0.47f, Canvas->SizeY * 0.18f, Font, 1.9f, false);
-	DrawText(FString::Printf(TEXT("金币 %d"), PlayerCharacter->GetMoney()), FLinearColor(1.0f, 0.86f, 0.36f), Canvas->SizeX * 0.14f, Canvas->SizeY * 0.20f, Font, 1.15f, false);
-	DrawText(TEXT("点击卡牌购买强化"), FLinearColor(0.72f, 0.84f, 0.96f), Canvas->SizeX * 0.40f, Canvas->SizeY * 0.20f, Font, 1.0f, false);
-	DrawText(FString::Printf(TEXT("自动补货 %.0f 秒"), FMath::CeilToFloat(RogueGameMode->GetShopSecondsUntilRefresh())), FLinearColor(0.76f, 0.88f, 1.0f), Canvas->SizeX * 0.68f, Canvas->SizeY * 0.20f, Font, 0.95f, false);
-
-	const TArray<FRogueShopOffer>& Offers = RogueGameMode->GetShopOffers();
-	for (int32 Index = 0; Index < Offers.Num() && Index < 6; ++Index)
-	{
-		FVector2D CardPosition;
-		FVector2D CardSize;
-		if (!GetShopCardRect(Index, CardPosition, CardSize))
-		{
-			continue;
-		}
-
-		const bool bHovered = MouseX >= CardPosition.X && MouseX <= CardPosition.X + CardSize.X && MouseY >= CardPosition.Y && MouseY <= CardPosition.Y + CardSize.Y;
-		const bool bAffordable = PlayerCharacter->GetMoney() >= Offers[Index].Cost;
-		const FLinearColor CardColor = Offers[Index].bPurchased
-			? FLinearColor(0.10f, 0.13f, 0.16f, 0.95f)
-			: (bHovered ? FLinearColor(0.16f, 0.23f, 0.32f, 0.98f) : FLinearColor(0.08f, 0.10f, 0.14f, 0.96f));
-		DrawRect(CardColor, CardPosition.X, CardPosition.Y, CardSize.X, CardSize.Y);
-		AddHitBox(CardPosition, CardSize, FName(*FString::Printf(TEXT("Shop_Offer_%d"), Index)), true, 15);
-		DrawText(Offers[Index].Upgrade.Title, FLinearColor::White, CardPosition.X + 18.0f, CardPosition.Y + 10.0f, Font, 1.05f, false);
-		DrawText(Offers[Index].Upgrade.Description, FLinearColor(0.74f, 0.84f, 0.98f), CardPosition.X + 18.0f, CardPosition.Y + 38.0f, Font, 0.82f, false);
-		const FString CostLabel = Offers[Index].bPurchased ? TEXT("已购买") : FString::Printf(TEXT("价格 %d"), Offers[Index].Cost);
-		const FLinearColor CostColor = Offers[Index].bPurchased ? FLinearColor(0.60f, 0.72f, 0.82f) : (bAffordable ? FLinearColor(1.0f, 0.86f, 0.36f) : FLinearColor(1.0f, 0.42f, 0.42f));
-		DrawText(CostLabel, CostColor, CardPosition.X + 18.0f, CardPosition.Y + 82.0f, Font, 0.95f, false);
-	}
-
-	const TArray<FName> Buttons =
-	{
-		FName(TEXT("Shop_Refresh")),
-		FName(TEXT("Shop_Close"))
-	};
-
-	for (const FName& ButtonName : Buttons)
-	{
-		FVector2D Position;
-		FVector2D Size;
-		if (!GetShopButtonRect(ButtonName, Position, Size))
-		{
-			continue;
-		}
-
-		const bool bHovered = MouseX >= Position.X && MouseX <= Position.X + Size.X && MouseY >= Position.Y && MouseY <= Position.Y + Size.Y;
-		DrawRect(bHovered ? FLinearColor(0.18f, 0.24f, 0.34f, 0.98f) : FLinearColor(0.08f, 0.10f, 0.16f, 0.95f), Position.X, Position.Y, Size.X, Size.Y);
-		AddHitBox(Position, Size, ButtonName, true, 16);
-		if (ButtonName == FName(TEXT("Shop_Refresh")))
-		{
-			DrawText(FString::Printf(TEXT("立即刷新 (%d)"), RogueGameMode->GetShopRefreshCost()), FLinearColor::White, Position.X + 18.0f, Position.Y + 14.0f, Font, 1.00f, false);
-		}
-		else
-		{
-			DrawText(TEXT("离开商店"), FLinearColor::White, Position.X + 36.0f, Position.Y + 14.0f, Font, 1.04f, false);
-		}
-	}
-}
-
 void ARogueHUD::RefreshEnemyHealthBarCache(const URogueEnemyTrackerSubsystem* Tracker)
 {
 	CachedEnemyHealthBars.Reset();
@@ -707,304 +474,6 @@ void ARogueHUD::RefreshDamageNumberProjectionCache(APlayerController* PlayerCont
 		const FVector PopupLocation = DamageNumber.WorldLocation + FVector(0.0f, 0.0f, Age * PopupRiseSpeed);
 		DamageNumber.bScreenPositionValid = PlayerController->ProjectWorldLocationToScreen(PopupLocation, DamageNumber.CachedScreenPosition, true);
 	}
-}
-
-void ARogueHUD::DrawPauseMenu(UFont* Font)
-{
-	if (Canvas == nullptr)
-	{
-		return;
-	}
-
-	float MouseX = -1.0f;
-	float MouseY = -1.0f;
-	if (APlayerController* PlayerController = GetOwningPlayerController())
-	{
-		PlayerController->GetMousePosition(MouseX, MouseY);
-	}
-
-	DrawRect(FLinearColor(0.01f, 0.02f, 0.05f, 0.86f), 0.0f, 0.0f, Canvas->SizeX, Canvas->SizeY);
-
-	if (PauseMenuPage == ERoguePauseMenuPage::Main)
-	{
-		DrawPauseMainMenu(Font, MouseX, MouseY);
-	}
-	else if (PauseMenuPage == ERoguePauseMenuPage::Settings)
-	{
-		DrawPauseSettingsMenu(Font, MouseX, MouseY);
-	}
-}
-
-void ARogueHUD::DrawPauseMainMenu(UFont* Font, float MouseX, float MouseY)
-{
-	DrawText(TEXT("游戏菜单"), FLinearColor(1.0f, 0.92f, 0.55f), Canvas->SizeX * 0.41f, Canvas->SizeY * 0.20f, Font, 1.9f, false);
-
-	const TArray<FName> Buttons =
-	{
-		FName(TEXT("Pause_Resume")),
-		FName(TEXT("Pause_Settings")),
-		FName(TEXT("Pause_Quit"))
-	};
-
-	const TArray<FString> Labels =
-	{
-		TEXT("回到游戏"),
-		TEXT("设置"),
-		TEXT("退出游戏")
-	};
-
-	for (int32 Index = 0; Index < Buttons.Num(); ++Index)
-	{
-		FVector2D Position;
-		FVector2D Size;
-		if (!GetPauseMenuButtonRect(Buttons[Index], Position, Size))
-		{
-			continue;
-		}
-
-		const bool bHovered = MouseX >= Position.X && MouseX <= Position.X + Size.X && MouseY >= Position.Y && MouseY <= Position.Y + Size.Y;
-		DrawRect(bHovered ? FLinearColor(0.18f, 0.24f, 0.34f, 0.98f) : FLinearColor(0.08f, 0.10f, 0.16f, 0.95f), Position.X, Position.Y, Size.X, Size.Y);
-		AddHitBox(Position, Size, Buttons[Index], true, 20);
-		DrawText(Labels[Index], FLinearColor::White, Position.X + 48.0f, Position.Y + 18.0f, Font, 1.25f, false);
-	}
-}
-
-void ARogueHUD::DrawPauseSettingsMenu(UFont* Font, float MouseX, float MouseY)
-{
-	DrawText(TEXT("设置"), FLinearColor(1.0f, 0.92f, 0.55f), Canvas->SizeX * 0.46f, Canvas->SizeY * 0.18f, Font, 1.8f, false);
-
-	const FVector2D PanelPosition(Canvas->SizeX * 0.23f, Canvas->SizeY * 0.26f);
-	const FVector2D PanelSize(Canvas->SizeX * 0.54f, Canvas->SizeY * 0.54f);
-	DrawRect(FLinearColor(0.06f, 0.08f, 0.12f, 0.96f), PanelPosition.X, PanelPosition.Y, PanelSize.X, PanelSize.Y);
-
-	const TArray<FString> RowLabels =
-	{
-		TEXT("主音量"),
-		TEXT("画质等级"),
-		TEXT("分辨率"),
-		TEXT("显示模式"),
-		TEXT("限制帧率")
-	};
-
-	const TArray<FString> RowValues =
-	{
-		FString::Printf(TEXT("%d%%"), FMath::RoundToInt(MasterVolume * 100.0f)),
-		GetGraphicsQualityLabel(),
-		GetResolutionLabel(),
-		GetDisplayModeLabel(),
-		GetFrameRateLimitLabel()
-	};
-
-	for (int32 RowIndex = 0; RowIndex < RowLabels.Num(); ++RowIndex)
-	{
-		FVector2D ValuePosition;
-		FVector2D ValueSize;
-		if (!GetSettingsValueRect(RowIndex, ValuePosition, ValueSize))
-		{
-			continue;
-		}
-
-		const float LabelX = PanelPosition.X + 34.0f;
-		const float RowY = ValuePosition.Y + 10.0f;
-		DrawText(RowLabels[RowIndex], FLinearColor::White, LabelX, RowY, Font, 1.08f, false);
-		DrawText(RowValues[RowIndex], FLinearColor(0.65f, 0.85f, 1.0f), ValuePosition.X + 52.0f, RowY, Font, 1.0f, false);
-
-		const bool bUseAdjustButtons = RowIndex != 3;
-		if (bUseAdjustButtons)
-		{
-			const FVector2D MinusPosition(ValuePosition.X, ValuePosition.Y);
-			const FVector2D PlusPosition(ValuePosition.X + ValueSize.X - 44.0f, ValuePosition.Y);
-			const FVector2D AdjustSize(44.0f, ValueSize.Y);
-			FName MinusName;
-			FName PlusName;
-			switch (RowIndex)
-			{
-			case 0:
-				MinusName = FName(TEXT("Settings_VolumeDown"));
-				PlusName = FName(TEXT("Settings_VolumeUp"));
-				break;
-			case 1:
-				MinusName = FName(TEXT("Settings_QualityDown"));
-				PlusName = FName(TEXT("Settings_QualityUp"));
-				break;
-			case 2:
-				MinusName = FName(TEXT("Settings_ResolutionDown"));
-				PlusName = FName(TEXT("Settings_ResolutionUp"));
-				break;
-			default:
-				MinusName = FName(TEXT("Settings_FrameLimitDown"));
-				PlusName = FName(TEXT("Settings_FrameLimitUp"));
-				break;
-			}
-
-			const bool bMinusHovered = MouseX >= MinusPosition.X && MouseX <= MinusPosition.X + AdjustSize.X && MouseY >= MinusPosition.Y && MouseY <= MinusPosition.Y + AdjustSize.Y;
-			const bool bPlusHovered = MouseX >= PlusPosition.X && MouseX <= PlusPosition.X + AdjustSize.X && MouseY >= PlusPosition.Y && MouseY <= PlusPosition.Y + AdjustSize.Y;
-
-			DrawRect(bMinusHovered ? FLinearColor(0.18f, 0.24f, 0.34f, 0.98f) : FLinearColor(0.10f, 0.12f, 0.20f, 0.95f), MinusPosition.X, MinusPosition.Y, AdjustSize.X, AdjustSize.Y);
-			DrawRect(bPlusHovered ? FLinearColor(0.18f, 0.24f, 0.34f, 0.98f) : FLinearColor(0.10f, 0.12f, 0.20f, 0.95f), PlusPosition.X, PlusPosition.Y, AdjustSize.X, AdjustSize.Y);
-			AddHitBox(MinusPosition, AdjustSize, MinusName, true, 20);
-			AddHitBox(PlusPosition, AdjustSize, PlusName, true, 20);
-			DrawText(TEXT("-"), FLinearColor::White, MinusPosition.X + 16.0f, MinusPosition.Y + 4.0f, Font, 1.15f, false);
-			DrawText(TEXT("+"), FLinearColor::White, PlusPosition.X + 14.0f, PlusPosition.Y + 2.0f, Font, 1.15f, false);
-		}
-		else
-		{
-			const bool bHovered = MouseX >= ValuePosition.X && MouseX <= ValuePosition.X + ValueSize.X && MouseY >= ValuePosition.Y && MouseY <= ValuePosition.Y + ValueSize.Y;
-			DrawRect(bHovered ? FLinearColor(0.18f, 0.24f, 0.34f, 0.98f) : FLinearColor(0.10f, 0.12f, 0.20f, 0.95f), ValuePosition.X, ValuePosition.Y, ValueSize.X, ValueSize.Y);
-			AddHitBox(ValuePosition, ValueSize, FName(TEXT("Settings_Fullscreen")), true, 20);
-			DrawText(RowValues[RowIndex], FLinearColor::White, ValuePosition.X + 38.0f, ValuePosition.Y + 8.0f, Font, 1.0f, false);
-		}
-	}
-
-	DrawText(
-		bDisplaySettingsDirty ? TEXT("画面设置已修改，点击“应用设置”后生效") : TEXT("当前画面设置已应用"),
-		bDisplaySettingsDirty ? FLinearColor(1.0f, 0.82f, 0.45f) : FLinearColor(0.70f, 0.78f, 0.84f),
-		Canvas->SizeX * 0.31f,
-		Canvas->SizeY * 0.77f,
-		Font,
-		0.95f,
-		false);
-
-	FVector2D ApplyPosition;
-	FVector2D ApplySize;
-	if (GetPauseMenuButtonRect(FName(TEXT("Settings_Apply")), ApplyPosition, ApplySize))
-	{
-		const bool bHovered = MouseX >= ApplyPosition.X && MouseX <= ApplyPosition.X + ApplySize.X && MouseY >= ApplyPosition.Y && MouseY <= ApplyPosition.Y + ApplySize.Y;
-		const FLinearColor ApplyColor = bDisplaySettingsDirty
-			? (bHovered ? FLinearColor(0.22f, 0.34f, 0.22f, 0.98f) : FLinearColor(0.12f, 0.22f, 0.12f, 0.95f))
-			: (bHovered ? FLinearColor(0.16f, 0.20f, 0.22f, 0.96f) : FLinearColor(0.08f, 0.10f, 0.12f, 0.92f));
-		DrawRect(ApplyColor, ApplyPosition.X, ApplyPosition.Y, ApplySize.X, ApplySize.Y);
-		AddHitBox(ApplyPosition, ApplySize, FName(TEXT("Settings_Apply")), true, 20);
-		DrawText(TEXT("应用设置"), FLinearColor::White, ApplyPosition.X + 44.0f, ApplyPosition.Y + 14.0f, Font, 1.1f, false);
-	}
-
-	FVector2D BackPosition;
-	FVector2D BackSize;
-	if (GetPauseMenuButtonRect(FName(TEXT("Settings_Back")), BackPosition, BackSize))
-	{
-		const bool bHovered = MouseX >= BackPosition.X && MouseX <= BackPosition.X + BackSize.X && MouseY >= BackPosition.Y && MouseY <= BackPosition.Y + BackSize.Y;
-		DrawRect(bHovered ? FLinearColor(0.18f, 0.24f, 0.34f, 0.98f) : FLinearColor(0.08f, 0.10f, 0.16f, 0.95f), BackPosition.X, BackPosition.Y, BackSize.X, BackSize.Y);
-		AddHitBox(BackPosition, BackSize, FName(TEXT("Settings_Back")), true, 20);
-		DrawText(TEXT("返回上一层"), FLinearColor::White, BackPosition.X + 42.0f, BackPosition.Y + 14.0f, Font, 1.1f, false);
-	}
-}
-
-void ARogueHUD::DrawDeathMenu(UFont* Font, float MouseX, float MouseY, ARogueGameMode* RogueGameMode)
-{
-	DrawRect(FLinearColor(0.0f, 0.0f, 0.0f, 0.78f), 0.0f, 0.0f, Canvas->SizeX, Canvas->SizeY);
-	DrawText(TEXT("本轮结束"), FLinearColor(1.0f, 0.25f, 0.25f), Canvas->SizeX * 0.42f, Canvas->SizeY * 0.34f, Font, 2.0f, false);
-
-	if (RogueGameMode != nullptr)
-	{
-		DrawText(FString::Printf(TEXT("存活 %.0f 秒  |  击败 %d 个敌人"), RogueGameMode->GetRunTimeSeconds(), RogueGameMode->GetEnemiesDefeated()), FLinearColor::White, Canvas->SizeX * 0.29f, Canvas->SizeY * 0.40f, Font, 1.2f, false);
-	}
-
-	const TArray<FName> Buttons =
-	{
-		FName(TEXT("Death_Restart")),
-		FName(TEXT("Death_Quit"))
-	};
-
-	const TArray<FString> Labels =
-	{
-		TEXT("开始新的一局"),
-		TEXT("退出游戏")
-	};
-
-	for (int32 Index = 0; Index < Buttons.Num(); ++Index)
-	{
-		FVector2D Position;
-		FVector2D Size;
-		if (!GetDeathMenuButtonRect(Buttons[Index], Position, Size))
-		{
-			continue;
-		}
-
-		const bool bHovered = MouseX >= Position.X && MouseX <= Position.X + Size.X && MouseY >= Position.Y && MouseY <= Position.Y + Size.Y;
-		DrawRect(bHovered ? FLinearColor(0.18f, 0.24f, 0.34f, 0.98f) : FLinearColor(0.08f, 0.10f, 0.16f, 0.95f), Position.X, Position.Y, Size.X, Size.Y);
-		AddHitBox(Position, Size, Buttons[Index], true, 30);
-		DrawText(Labels[Index], FLinearColor::White, Position.X + 36.0f, Position.Y + 18.0f, Font, 1.18f, false);
-	}
-}
-
-bool ARogueHUD::GetPauseMenuButtonRect(FName ButtonName, FVector2D& OutPosition, FVector2D& OutSize) const
-{
-	if (Canvas == nullptr)
-	{
-		return false;
-	}
-
-	OutSize = FVector2D(Canvas->SizeX * 0.28f, 62.0f);
-
-	if (ButtonName == FName(TEXT("Pause_Resume")))
-	{
-		OutPosition = FVector2D(Canvas->SizeX * 0.36f, Canvas->SizeY * 0.32f);
-		return true;
-	}
-
-	if (ButtonName == FName(TEXT("Pause_Settings")))
-	{
-		OutPosition = FVector2D(Canvas->SizeX * 0.36f, Canvas->SizeY * 0.43f);
-		return true;
-	}
-
-	if (ButtonName == FName(TEXT("Pause_Quit")))
-	{
-		OutPosition = FVector2D(Canvas->SizeX * 0.36f, Canvas->SizeY * 0.54f);
-		return true;
-	}
-
-	if (ButtonName == FName(TEXT("Settings_Back")))
-	{
-		OutPosition = FVector2D(Canvas->SizeX * 0.39f, Canvas->SizeY * 0.82f);
-		OutSize = FVector2D(Canvas->SizeX * 0.22f, 56.0f);
-		return true;
-	}
-
-	if (ButtonName == FName(TEXT("Settings_Apply")))
-	{
-		OutPosition = FVector2D(Canvas->SizeX * 0.17f, Canvas->SizeY * 0.82f);
-		OutSize = FVector2D(Canvas->SizeX * 0.22f, 56.0f);
-		return true;
-	}
-
-	return false;
-}
-
-bool ARogueHUD::GetDeathMenuButtonRect(FName ButtonName, FVector2D& OutPosition, FVector2D& OutSize) const
-{
-	if (Canvas == nullptr)
-	{
-		return false;
-	}
-
-	OutSize = FVector2D(Canvas->SizeX * 0.24f, 60.0f);
-
-	if (ButtonName == FName(TEXT("Death_Restart")))
-	{
-		OutPosition = FVector2D(Canvas->SizeX * 0.38f, Canvas->SizeY * 0.50f);
-		return true;
-	}
-
-	if (ButtonName == FName(TEXT("Death_Quit")))
-	{
-		OutPosition = FVector2D(Canvas->SizeX * 0.38f, Canvas->SizeY * 0.61f);
-		return true;
-	}
-
-	return false;
-}
-
-bool ARogueHUD::GetSettingsValueRect(int32 RowIndex, FVector2D& OutPosition, FVector2D& OutSize) const
-{
-	if (Canvas == nullptr || RowIndex < 0)
-	{
-		return false;
-	}
-
-	OutPosition = FVector2D(Canvas->SizeX * 0.47f, Canvas->SizeY * 0.31f + RowIndex * 66.0f);
-	OutSize = FVector2D(Canvas->SizeX * 0.21f, 42.0f);
-	return true;
 }
 
 void ARogueHUD::HandlePauseMenuAction(FName BoxName)
@@ -1211,11 +680,11 @@ void ARogueHUD::UpdateShopWidget(const ARogueGameMode* RogueGameMode, const ARog
 	}
 
 	const bool bVisible = RogueGameMode != nullptr && PlayerCharacter != nullptr && RogueGameMode->IsShopOpen();
+	const int32 AutoRefreshSeconds = bVisible ? FMath::CeilToInt(RogueGameMode->GetShopSecondsUntilRefresh()) : INDEX_NONE;
 	FString Signature = bVisible ? TEXT("Shop|Visible") : TEXT("Shop|Hidden");
 	if (bVisible)
 	{
-		const int32 AutoRefreshSeconds = RogueGameMode != nullptr ? FMath::CeilToInt(RogueGameMode->GetShopSecondsUntilRefresh()) : 0;
-		Signature += FString::Printf(TEXT("|Money=%d|Refresh=%d|Auto=%d"), PlayerCharacter->GetMoney(), RogueGameMode->GetShopRefreshCost(), AutoRefreshSeconds);
+		Signature += FString::Printf(TEXT("|Money=%d|Refresh=%d"), PlayerCharacter->GetMoney(), RogueGameMode->GetShopRefreshCost());
 		const TArray<FRogueShopOffer>& Offers = RogueGameMode->GetShopOffers();
 		for (const FRogueShopOffer& Offer : Offers)
 		{
@@ -1233,9 +702,15 @@ void ARogueHUD::UpdateShopWidget(const ARogueGameMode* RogueGameMode, const ARog
 
 	if (Signature == LastShopWidgetSignature)
 	{
+		if (bVisible && AutoRefreshSeconds != LastShopAutoRefreshSeconds)
+		{
+			LastShopAutoRefreshSeconds = AutoRefreshSeconds;
+			ShopWidget->UpdateAutoRefreshText(FText::FromString(FString::Printf(TEXT("自动补货 %d 秒"), AutoRefreshSeconds)));
+		}
 		return;
 	}
 	LastShopWidgetSignature = Signature;
+	LastShopAutoRefreshSeconds = AutoRefreshSeconds;
 
 	FRogueShopViewData ViewData;
 	ViewData.bVisible = bVisible;
@@ -1247,7 +722,7 @@ void ARogueHUD::UpdateShopWidget(const ARogueGameMode* RogueGameMode, const ARog
 	ViewData.HintText = FText::FromString(TEXT("点击卡牌购买强化"));
 	if (RogueGameMode != nullptr)
 	{
-		ViewData.AutoRefreshText = FText::FromString(FString::Printf(TEXT("自动补货 %.0f 秒"), FMath::CeilToFloat(RogueGameMode->GetShopSecondsUntilRefresh())));
+		ViewData.AutoRefreshText = FText::FromString(FString::Printf(TEXT("自动补货 %d 秒"), FMath::Max(0, AutoRefreshSeconds)));
 		ViewData.RefreshButtonText = FText::FromString(FString::Printf(TEXT("立即刷新 (%d)"), RogueGameMode->GetShopRefreshCost()));
 
 		const TArray<FRogueShopOffer>& Offers = RogueGameMode->GetShopOffers();
@@ -1735,70 +1210,4 @@ FString ARogueHUD::GetFrameRateLimitLabel() const
 
 	const FString BaseLabel = FString::Printf(TEXT("%.0f FPS"), FrameRateLimitValue);
 	return bFrameRateLimitCustom ? FString::Printf(TEXT("自定义(%s)"), *BaseLabel) : BaseLabel;
-}
-
-void ARogueHUD::NotifyHitBoxClick(FName BoxName)
-{
-	Super::NotifyHitBoxClick(BoxName);
-
-	const FString BoxNameString = BoxName.ToString();
-	if (BoxNameString.StartsWith(TEXT("Shop_")))
-	{
-		HandleShopAction(BoxName);
-		return;
-	}
-
-	if (BoxNameString.StartsWith(TEXT("Pause_")) || BoxNameString.StartsWith(TEXT("Settings_")))
-	{
-		HandlePauseMenuAction(BoxName);
-		return;
-	}
-
-	if (BoxNameString.StartsWith(TEXT("Death_")))
-	{
-		HandleDeathMenuAction(BoxName);
-		return;
-	}
-
-	if (!BoxNameString.StartsWith(TEXT("Upgrade_")))
-	{
-		return;
-	}
-
-	const FString IndexString = BoxNameString.RightChop(8);
-	const int32 UpgradeIndex = FCString::Atoi(*IndexString);
-	if (ARogueGameMode* RogueGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ARogueGameMode>() : nullptr)
-	{
-		RogueGameMode->TrySelectUpgrade(UpgradeIndex);
-	}
-}
-
-void ARogueHUD::HandleShopAction(FName BoxName)
-{
-	ARogueGameMode* RogueGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ARogueGameMode>() : nullptr;
-	if (RogueGameMode == nullptr)
-	{
-		return;
-	}
-
-	if (BoxName == FName(TEXT("Shop_Refresh")))
-	{
-		RogueGameMode->TryRefreshShop();
-		return;
-	}
-
-	if (BoxName == FName(TEXT("Shop_Close")))
-	{
-		RogueGameMode->CloseShop();
-		return;
-	}
-
-	const FString BoxNameString = BoxName.ToString();
-	if (!BoxNameString.StartsWith(TEXT("Shop_Offer_")))
-	{
-		return;
-	}
-
-	const int32 OfferIndex = FCString::Atoi(*BoxNameString.RightChop(11));
-	RogueGameMode->TryBuyShopOffer(OfferIndex);
 }

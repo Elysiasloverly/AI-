@@ -11,7 +11,8 @@ enum class ERogueEnemyMovementModel : uint8
 	BurstCharge  UMETA(DisplayName = "爆发冲刺"),
 	Orbit        UMETA(DisplayName = "环绕运动"),
 	RangedKite   UMETA(DisplayName = "远程风筝"),
-	ZigZagChase  UMETA(DisplayName = "Z字形追击")
+	ZigZagChase  UMETA(DisplayName = "Z字形追击"),
+	Stationary   UMETA(DisplayName = "固定不动")
 };
 
 UENUM(BlueprintType)
@@ -32,7 +33,8 @@ enum class ERogueEnemyVisualKey : uint8
 	Shooter,
 	Skirmisher,
 	Artillery,
-	Spitter
+	Spitter,
+	ShockPillar
 };
 
 USTRUCT(BlueprintType)
@@ -159,6 +161,42 @@ struct AI_API FRogueEnemyRangedArchetype
 };
 
 USTRUCT(BlueprintType)
+struct AI_API FRogueEnemyGroundWaveArchetype
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "地面波", meta = (DisplayName = "启用地面波攻击"))
+	bool bUsesGroundWave = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "地面波", meta = (DisplayName = "初始冷却最小值"))
+	float InitialCooldownMin = 1.6f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "地面波", meta = (DisplayName = "初始冷却最大值"))
+	float InitialCooldownMax = 3.2f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "地面波", meta = (DisplayName = "攻击冷却时间"))
+	float AttackCooldown = 4.8f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "地面波", meta = (DisplayName = "最大半径"))
+	float MaxRadius = 980.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "地面波", meta = (DisplayName = "最短扩散持续时间"))
+	float ExpansionDuration = 1.05f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "地面波", meta = (DisplayName = "扩散速度（单位/秒）"))
+	float ExpansionSpeed = 2600.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "地面波", meta = (DisplayName = "命中厚度"))
+	float HitThickness = 92.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "地面波", meta = (DisplayName = "伤害倍率"))
+	float DamageMultiplier = 1.2f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "地面波", meta = (DisplayName = "跳跃可躲避"))
+	bool bJumpCanDodge = true;
+};
+
+USTRUCT(BlueprintType)
 struct AI_API FRogueEnemyVisualArchetype
 {
 	GENERATED_BODY()
@@ -195,6 +233,9 @@ struct AI_API FRogueEnemyArchetype
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Archetype")
 	FRogueEnemyRangedArchetype Ranged;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Archetype")
+	FRogueEnemyGroundWaveArchetype GroundWave;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Archetype")
 	FRogueEnemyVisualArchetype Visual;

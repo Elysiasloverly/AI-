@@ -8,6 +8,8 @@
 #include "RogueEnemy.generated.h"
 
 class UStaticMeshComponent;
+class UInstancedStaticMeshComponent;
+class UMaterialInterface;
 class ARogueCharacter;
 class AAIController;
 class UDataTable;
@@ -105,6 +107,22 @@ public:
 	/** 获取远程攻击冷却剩余时间 */
 	UFUNCTION(BlueprintPure, Category = "Enemy|State")
 	float GetRangedAttackCooldownRemaining() const { return RangedAttackTimer; }
+
+	/** 获取地面波攻击冷却剩余时间 */
+	UFUNCTION(BlueprintPure, Category = "Enemy|State")
+	float GetGroundWaveAttackCooldownRemaining() const { return GroundWaveAttackTimer; }
+
+	/** 地面波是否正在扩散 */
+	UFUNCTION(BlueprintPure, Category = "Enemy|State")
+	bool IsGroundWaveActive() const { return bGroundWaveActive; }
+
+	/** 当前地面波半径，给震荡柱蓝图视觉使用 */
+	UFUNCTION(BlueprintPure, Category = "Enemy|State")
+	float GetGroundWaveCurrentRadius() const { return GroundWaveCurrentRadius; }
+
+	/** 当前地面波进度，0-1 */
+	UFUNCTION(BlueprintPure, Category = "Enemy|State")
+	float GetGroundWaveAlpha() const { return GroundWaveAlpha; }
 
 	/** 获取爆发冲刺冷却剩余时间 */
 	UFUNCTION(BlueprintPure, Category = "Enemy|State")
@@ -214,6 +232,18 @@ public:
 	UFUNCTION(BlueprintNativeEvent, Category = "Enemy|Event")
 	void OnApplyVisualStyle();
 
+	/** 地面波开始扩散时调用，震荡柱蓝图可用来播放起手特效 */
+	UFUNCTION(BlueprintNativeEvent, Category = "Enemy|GroundWave")
+	void OnGroundWaveStarted(float MaxRadius, float ExpansionDuration);
+
+	/** 地面波扩散中每帧调用，震荡柱蓝图可用 Radius/Alpha 驱动材质或缩放 */
+	UFUNCTION(BlueprintNativeEvent, Category = "Enemy|GroundWave")
+	void OnGroundWaveUpdated(float Radius, float Alpha);
+
+	/** 地面波结束时调用，震荡柱蓝图可用来隐藏自定义波纹 */
+	UFUNCTION(BlueprintNativeEvent, Category = "Enemy|GroundWave")
+	void OnGroundWaveFinished();
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -228,6 +258,24 @@ protected:
 
 	//UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Enemy|Components")
 	//TObjectPtr<UStaticMeshComponent> BodyMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "敌人|组件", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UStaticMeshComponent> ShockPillarMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "敌人|组件", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UStaticMeshComponent> GroundWaveMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "敌人|组件", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UInstancedStaticMeshComponent> GroundWaveRingSegments;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "敌人|震荡柱|视觉", meta = (DisplayName = "使用内置震荡柱视觉"))
+	bool bUseBuiltInShockPillarVisual = true;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "敌人|震荡柱|视觉", meta = (DisplayName = "震荡柱材质"))
+	TObjectPtr<UMaterialInterface> ShockPillarMaterial;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "敌人|震荡柱|视觉", meta = (DisplayName = "地面波材质"))
+	TObjectPtr<UMaterialInterface> ShockWaveMaterial;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Stats")
 	float MaxHealth = 40.0f;
@@ -281,6 +329,24 @@ protected:
 	UPROPERTY(BlueprintReadWrite, Category = "Enemy|Runtime")
 	float RangedAttackTimer = 0.0f;
 
+	UPROPERTY(BlueprintReadOnly, Category = "Enemy|Runtime")
+	float GroundWaveAttackTimer = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Enemy|Runtime")
+	float GroundWaveElapsed = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Enemy|Runtime")
+	float GroundWaveCurrentRadius = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Enemy|Runtime")
+	float GroundWaveAlpha = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Enemy|Runtime")
+	float GroundWaveEffectiveMaxRadius = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Enemy|Runtime")
+	float GroundWaveEffectiveDuration = 0.0f;
+
 	float LastDamageNumberTime = -100.0f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Enemy|Runtime")
@@ -293,9 +359,17 @@ private:
 	void HandleDefaultBehavior(float DeltaSeconds);
 	void TouchPlayer(float DeltaSeconds);
 	void HandleRangedAttack(ARogueCharacter* PlayerCharacter, float DistanceToPlayer, float DeltaSeconds);
+	void HandleGroundWaveAttack(ARogueCharacter* PlayerCharacter, float DistanceToPlayer, float DeltaSeconds);
+	void StartGroundWave();
+	void UpdateGroundWave(float DeltaSeconds, ARogueCharacter* PlayerCharacter);
+	void UpdateGroundWaveRingVisual(float Radius);
+	void HideGroundWave();
+	bool CanGroundWaveHitPlayer(const ARogueCharacter* PlayerCharacter) const;
 	void FireRangedShot(ARogueCharacter* PlayerCharacter);
 	void Die(AActor* Killer);
 	void ApplyEnemyStyle();
 	FVector GetMovementDirection(const FVector& ToPlayer, float DistanceToPlayer, float DeltaSeconds);
 
+	bool bGroundWaveActive = false;
+	bool bGroundWaveDamagedPlayer = false;
 };

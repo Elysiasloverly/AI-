@@ -119,4 +119,5 @@ private:
 	TWeakObjectPtr<ARogueCharacter> CachedCharacter;
 	TWeakObjectPtr<ARogueArena> SpawnedArena;
 	TWeakObjectPtr<ARogueShopTerminal> SpawnedShopTerminal;
+	float LastShopAutoRefreshRealTimeSeconds = 0.0f;
 };

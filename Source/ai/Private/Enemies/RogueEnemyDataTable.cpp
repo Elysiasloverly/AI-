@@ -217,6 +217,24 @@ FRogueEnemyArchetype FRogueEnemyArchetypeRow::ToArchetype(bool bIsBoss) const
 		}
 		break;
 
+	case ERogueEnemyType::ShockPillar:
+		{
+			const FRogueShockPillarSpecialParams& P = ShockPillarParams;
+			Archetype.Movement.Model = ERogueEnemyMovementModel::Stationary;
+			Archetype.Movement.BaseMoveMultiplier = 0.0f;
+			Archetype.GroundWave.bUsesGroundWave = true;
+			Archetype.GroundWave.InitialCooldownMin = P.InitialCooldownMin;
+			Archetype.GroundWave.InitialCooldownMax = P.InitialCooldownMax;
+			Archetype.GroundWave.AttackCooldown = P.AttackCooldown;
+			Archetype.GroundWave.MaxRadius = P.MaxRadius;
+			Archetype.GroundWave.ExpansionDuration = P.ExpansionDuration;
+			Archetype.GroundWave.ExpansionSpeed = P.ExpansionSpeed;
+			Archetype.GroundWave.HitThickness = P.HitThickness;
+			Archetype.GroundWave.DamageMultiplier = P.DamageMultiplier;
+			Archetype.GroundWave.bJumpCanDodge = P.bJumpCanDodge;
+		}
+		break;
+
 	case ERogueEnemyType::Hunter:
 	default:
 		// 猎手使用基础属性，无专属参数

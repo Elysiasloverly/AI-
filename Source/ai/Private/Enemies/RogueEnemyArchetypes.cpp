@@ -193,6 +193,32 @@ namespace
 		Archetype.Visual.bUseBossMaterialOverride = bIsBoss;
 		return Archetype;
 	}
+
+	FRogueEnemyArchetype MakeShockPillarArchetype(bool bIsBoss)
+	{
+		FRogueEnemyArchetype Archetype;
+		Archetype.Movement.Model = ERogueEnemyMovementModel::Stationary;
+		Archetype.Movement.BaseMoveMultiplier = 0.0f;
+
+		Archetype.GroundWave.bUsesGroundWave = true;
+		Archetype.GroundWave.InitialCooldownMin = bIsBoss ? 1.1f : 1.6f;
+		Archetype.GroundWave.InitialCooldownMax = bIsBoss ? 2.2f : 3.2f;
+		Archetype.GroundWave.AttackCooldown = bIsBoss ? 3.8f : 4.8f;
+		Archetype.GroundWave.MaxRadius = bIsBoss ? 1280.0f : 980.0f;
+		Archetype.GroundWave.ExpansionDuration = bIsBoss ? 0.95f : 1.05f;
+		Archetype.GroundWave.ExpansionSpeed = bIsBoss ? 3200.0f : 2600.0f;
+		Archetype.GroundWave.HitThickness = bIsBoss ? 116.0f : 92.0f;
+		Archetype.GroundWave.DamageMultiplier = bIsBoss ? 1.45f : 1.2f;
+		Archetype.GroundWave.bJumpCanDodge = true;
+
+		Archetype.Visual.VisualKey = ERogueEnemyVisualKey::ShockPillar;
+		Archetype.Visual.MeshScale = FVector(0.74f, 0.74f, 1.72f);
+		Archetype.Visual.MeshLocation = FVector(0.0f, 0.0f, -10.0f);
+		Archetype.Visual.CapsuleRadius = bIsBoss ? 72.0f : 48.0f;
+		Archetype.Visual.CapsuleHalfHeight = bIsBoss ? 156.0f : 112.0f;
+		Archetype.Visual.bUseBossMaterialOverride = bIsBoss;
+		return Archetype;
+	}
 }
 
 FRogueEnemyArchetype RogueEnemyArchetypes::BuildEnemyArchetype(ERogueEnemyType Type, bool bIsBoss)
@@ -222,13 +248,16 @@ FRogueEnemyArchetype RogueEnemyArchetypes::BuildEnemyArchetype(ERogueEnemyType T
 	case ERogueEnemyType::Spitter:
 		Archetype = MakeSpitterArchetype(bIsBoss);
 		break;
+	case ERogueEnemyType::ShockPillar:
+		Archetype = MakeShockPillarArchetype(bIsBoss);
+		break;
 	case ERogueEnemyType::Hunter:
 	default:
 		Archetype = MakeHunterArchetype(bIsBoss);
 		break;
 	}
 
-	if (bIsBoss)
+	if (bIsBoss && Type != ERogueEnemyType::ShockPillar)
 	{
 		Archetype.Visual.MeshScale *= 1.75f;
 		Archetype.Visual.CapsuleRadius = 62.0f;

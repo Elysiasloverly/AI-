@@ -52,6 +52,7 @@ namespace
 ARogueGameMode::ARogueGameMode()
 {
 	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bTickEvenWhenPaused = true;
 	DefaultPawnClass = ARogueCharacter::StaticClass();
 	HUDClass = ARogueHUD::StaticClass();
 	ArenaClass = ARogueArena::StaticClass();
@@ -151,13 +152,43 @@ void ARogueGameMode::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
-	if (RunState.bGameOver || UpgradeSystem.IsAwaitingChoice() || ShopSystem.IsOpen())
+	if (RunState.bGameOver)
+	{
+		LastShopAutoRefreshRealTimeSeconds = 0.0f;
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	const bool bWorldPaused = World != nullptr && World->IsPaused();
+
+	float ShopDeltaSeconds = DeltaSeconds;
+	if (bWorldPaused && ShopSystem.IsOpen())
+	{
+		const float CurrentRealTimeSeconds = World->GetRealTimeSeconds();
+		if (LastShopAutoRefreshRealTimeSeconds > 0.0f)
+		{
+			ShopDeltaSeconds = FMath::Max(0.0f, CurrentRealTimeSeconds - LastShopAutoRefreshRealTimeSeconds);
+		}
+		else
+		{
+			ShopDeltaSeconds = 0.0f;
+		}
+		LastShopAutoRefreshRealTimeSeconds = CurrentRealTimeSeconds;
+	}
+	else
+	{
+		ShopDeltaSeconds = bWorldPaused ? 0.0f : DeltaSeconds;
+		LastShopAutoRefreshRealTimeSeconds = 0.0f;
+	}
+
+	ShopSystem.AdvanceAutoRefresh(ShopDeltaSeconds, CachedCharacter.Get(), UpgradeSystem);
+
+	if (UpgradeSystem.IsAwaitingChoice() || ShopSystem.IsOpen() || bWorldPaused)
 	{
 		return;
 	}
 
 	RunState.RunTimeSeconds += DeltaSeconds;
-	ShopSystem.AdvanceAutoRefresh(DeltaSeconds, CachedCharacter.Get(), UpgradeSystem);
 
 	// 生成调度 —— 委托给 SpawnSubsystem
 	if (URogueSpawnSubsystem* SpawnSubsystem = GetWorld()->GetSubsystem<URogueSpawnSubsystem>())

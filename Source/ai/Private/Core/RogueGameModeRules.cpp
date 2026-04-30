@@ -36,7 +36,8 @@ namespace
 		{ ERogueEnemyType::Shooter, 0.88f, 0.98f, 1.18f, 1, 1.05f, 1.05f, 1.22f },
 		{ ERogueEnemyType::Skirmisher, 0.76f, 1.42f, 1.14f, 1, 0.90f, 1.32f, 1.16f },
 		{ ERogueEnemyType::Artillery, 1.02f, 0.86f, 1.34f, 2, 1.14f, 0.92f, 1.35f },
-		{ ERogueEnemyType::Spitter, 0.82f, 1.08f, 1.10f, 1, 0.96f, 1.12f, 1.24f }
+		{ ERogueEnemyType::Spitter, 0.82f, 1.08f, 1.10f, 1, 0.96f, 1.12f, 1.24f },
+		{ ERogueEnemyType::ShockPillar, 3.35f, 0.0f, 1.24f, 2, 1.55f, 0.0f, 1.30f }
 	};
 
 	const TArray<FRogueEnemyWaveEntryRow>* GetWaveEntries(const URogueGameBalanceAsset* BalanceAsset)
