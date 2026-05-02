@@ -1,106 +1,119 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
-
-/**
- * 这个文件目前存储战斗伤害相关的数值，其他属性暂时没考虑要不要加入
- * FAttributesCalculator不需要与找到对应属性，只需要接受一个float&进行运算
- * 因此FAttributesModifier不再需要携带成员信息
- * 最终类型的选择只需要继承FAttributesModifier和FAttributesStat实现泛型即可
- */
-
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "UObject/Object.h"
+#include "Algo/Transform.h"
 #include "RogueCombatAttribute.h"
-#include "RogueCombatAttributeTemplate.generated.h"
+// #include "RogueCombatAttributeTemplate.generated.h"
 
-template<typename TAttributes>
-class TAttributesModifier : FAttributesModifier
+
+// 选择属性的方式
+enum class EAttributesModifierMember
 {
-	enum class EMember
-	{
-		Method,
-		Field,
-	};
+	Field,   // 成员变量指针
+	Method,  // 返回 float& 的成员函数指针
+};
 
-protected:
-	EMember MemberMode = EMember::Field;
 
-    typedef float& (TAttributes::*FPropertyMethod)();
+/**
+ * 模板化属性修饰器：在基础修饰器上绑定属性成员指针，
+ * 使其能直接定位到 TAttributes 的某个 float 字段或方法。
+ */
+template<typename TAttributes>
+class TAttributeModifier : public FAttributeModifier
+{
+public:
+	/** 成员函数类型：返回 float& */
+	typedef float& (TAttributes::*FPropertyMethod)();
+	/** 成员变量类型：float 成员指针 */
 	using FPropertyField = float TAttributes::*;
 
-	/** 选择返回属性的函数 */
-	FPropertyMethod PropertyGetter = nullptr;
-	
-	/** 选择属性字段 */
-	FPropertyField PropertyField = nullptr;
-
-public:
-	FPropertyField GetMemberMode() const
+	EAttributesModifierMember GetMemberMode() const
 	{
 		return MemberMode;
 	}
 
+	FPropertyField GetPropertyField()
+	{
+		return PropertyField;
+	}
+
+	FPropertyMethod GetPropertyMethod()
+	{
+		return PropertyGetter;
+	}
 	void SetPropertyField(FPropertyField InPropertyField)
 	{
 		PropertyField = InPropertyField;
-		MemberMode = EMember::Field;
+		MemberMode = EAttributesModifierMember::Field;
 	}
 
 	void SetPropertyGetter(FPropertyMethod InPropertyMethod)
 	{
 		PropertyGetter = InPropertyMethod;
-		MemberMode = EMember::Method;
+		MemberMode = EAttributesModifierMember::Method;
 	}
 
-	float& GetMember(TAttributes* InAttributes)
-	{
-		switch (MemberMode)
-		{
-			case EMember::Method:
-				return (InAttributes->*PropertyGetter)();
-			case EMember::Field:
-				return &(InAttributes.*PropertyField);
-			default:
-				return &(InAttributes.*PropertyField);
-		}
-	}
+public:
+	EAttributesModifierMember MemberMode = EAttributesModifierMember::Field;
+	FPropertyMethod PropertyGetter = nullptr;
+	FPropertyField PropertyField = nullptr;
 };
 
-
+/**
+ * 模板化修饰器集合，持有具体类型的修饰器列表
+ */
 template<typename TAttributes>
-class TAttributeModifierSet : public FAttributeModifierSet
+class TAttributeModifierGroup : public FAttributeModifierGroup
 {
 public:
-	/** 禁止重写FAttributeModifierSet::GetModifiers */
-	virtual const TArray<TAttributesModifier<TAttributes>>& FAttributeModifierSet::GetModifiers() const override final 
-		{ return TAttributeModifierSet::GetModifiers(); }
-	
+using TAttributeModifierPtr = TSharedPtr<TAttributeModifier<TAttributes>>;
+
 protected:
-	virtual const TArray<TAttributesModifier<TAttributes>>& GetModifiers() 
-		{ static TArray<FAttributesModifier> EmptyArray; return EmptyArray; }
+	virtual TArrayView<TAttributeModifierPtr> GetTModifiers() const
+	{ static TArray<TAttributeModifierPtr> EmptyArray; return EmptyArray; }
+
+public:
+	/** 禁止重写FAttributeModifierSet::GetModifiers */
+	virtual TArrayView<FModifierPtr> GetModifiers() const override final
+	{
+		TArrayView<TAttributeModifierPtr> TModifiers = GetTModifiers();
+		return TArrayView<FModifierPtr>(
+			reinterpret_cast<FModifierPtr*>(TModifiers.GetData()), 
+			TModifiers.Num()
+		);
+	}
+
 };
 
 
 /**
- * 通过继承FAttributesModifier实现FAttributesModifier<T>，完成成员选择
+ * 模板化属性状态：管理一个 TAttributes 实例的最终属性计算
  */
 template<typename TAttributes>
-class AI_API TAttributeStat : public FAttributeStat
+class TAttributeSystem : public FAttributeSystemAbstract
 {
-private:
-	bool IsChanged = false;
-
-	TAttributes Attributes;
-	
 public:
-	const TAttributes& Get()
+	using TAttributeModifier = TAttributeModifier<TAttributes>;
+	using TAttributeModifierSet = TAttributeModifierGroup<TAttributes>;
+	
+	TAttributes* Attributes = nullptr;
+
+	void AddModifierSet(TAttributeModifierSet* ModifierSet)
 	{
-		// 步骤1：根据Operation和 指定的指针 对Modifier进行整理
-		// 步骤2：将Modifier分别丢进Calculator计算应用
-		// 步骤3：输出结果
-		// 优化：储存中间结果，需要时再进行局部更新？需要思考
-		// 目前：懒得搞，每次更新先全部重算
-		return Attributes;
+		FAttributeSystemAbstract::AddModifierSet(ModifierSet);
+	}
+	
+	virtual float* GetProperty(FAttributeModifier* InModifier) const override
+	{
+		TAttributeModifier* Modifier = static_cast<TAttributeModifier*>(InModifier);
+		switch (Modifier->GetMemberMode())
+		{
+			case EAttributesModifierMember::Field:
+				return &(Attributes->*Modifier->GetPropertyField());
+			case EAttributesModifierMember::Method:
+				return &(Attributes->*Modifier->GetPropertyMethod())();
+		}
+		return FAttributeSystemAbstract::GetProperty(InModifier);
 	}
 };
