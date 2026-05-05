@@ -96,12 +96,37 @@ class TAttributeSystem : public FAttributeSystemAbstract
 public:
 	using TAttributeModifier = TAttributeModifier<TAttributes>;
 	using TAttributeModifierSet = TAttributeModifierGroup<TAttributes>;
+	using TAttributesPtr = TUniquePtr<TAttributes>;
 	
-	TAttributes* Attributes = nullptr;
+	TAttributes GetAttributesCopy()
+	{
+		CalculateAttribute();
+		return *Attributes;
+	}
+
+	TWeakPtr<TAttributes> GetAttributesWeak()
+	{
+		CalculateAttribute();
+		return Attributes;
+	}
+
+	const TAttributes* GetAttributes()
+	{
+		CalculateAttribute();
+		return Attributes.Get();
+	}
 
 	void AddModifierSet(TAttributeModifierSet* ModifierSet)
 	{
 		FAttributeSystemAbstract::AddModifierSet(ModifierSet);
+	}
+	
+protected:
+	TAttributesPtr Attributes = MakeUnique<TAttributes>();
+
+	virtual void OnRecalculate() override
+	{
+		*Attributes = {};
 	}
 	
 	virtual float* GetProperty(FAttributeModifier* InModifier) const override
@@ -110,10 +135,11 @@ public:
 		switch (Modifier->GetMemberMode())
 		{
 			case EAttributesModifierMember::Field:
-				return &(Attributes->*Modifier->GetPropertyField());
+				return &(Attributes.Get()->*Modifier->GetPropertyField());
 			case EAttributesModifierMember::Method:
-				return &(Attributes->*Modifier->GetPropertyMethod())();
+				return &(Attributes.Get()->*Modifier->GetPropertyMethod())();
 		}
 		return FAttributeSystemAbstract::GetProperty(InModifier);
 	}
+
 };

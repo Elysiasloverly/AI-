@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "UObject/Object.h"
@@ -118,7 +118,7 @@ private:
 	bool bIsChanged = true;
 
 protected:
-    virtual float* GetProperty(FAttributeModifier* Modifier) const;
+    virtual float* GetProperty(FAttributeModifier* Modifier) const { return nullptr; }
 
 	void AddModifierSet(FAttributeModifierGroup* ModifierGroup);
 
@@ -126,8 +126,10 @@ protected:
 
 	bool GetIsChanged() const { return bIsChanged; }
 
+	virtual void OnRecalculate() {}
+	
 public:
 	void AddCalculator(FAttributeCalculator* Calculator);
 	
-	void Recalculate();
+	void CalculateAttribute(bool IsForceRecalculate = false);
 };
