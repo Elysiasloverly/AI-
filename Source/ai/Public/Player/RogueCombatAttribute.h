@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "UObject/Object.h"
@@ -20,6 +20,9 @@ bool operator!=(const ClassName& Other) const \
 { \
 return !(*this == Other); \
 }
+
+/** 要求更新委托 */
+DECLARE_MULTICAST_DELEGATE(FOnMarkDirty);
 
 /** 用于顺序遍历，禁止赋值! */
 UENUM()
@@ -57,6 +60,12 @@ public:
 	
 	virtual TArrayView<FModifierPtr> GetModifiers() const
 		{ static TArray<FModifierPtr> EmptyArray; return EmptyArray; }
+	
+	void MarkDirty() { OnMarkDirty.Broadcast(); }
+	
+private:
+	FOnMarkDirty OnMarkDirty;
+	friend class FAttributeSystemAbstract;
 };
 
 /**
@@ -113,7 +122,9 @@ protected:
 
 	void AddModifierSet(FAttributeModifierGroup* ModifierGroup);
 
-	void MarkDirty();
+	void MarkDirty() { bIsChanged = true; }
+
+	bool GetIsChanged() const { return bIsChanged; }
 
 public:
 	void AddCalculator(FAttributeCalculator* Calculator);

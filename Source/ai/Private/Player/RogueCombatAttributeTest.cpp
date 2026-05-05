@@ -1,4 +1,4 @@
-﻿#include "Player/RogueCombatAttributeTest.h"
+#include "Player/RogueCombatAttributeTest.h"
 
 
 class FAttributeModifierFatory
@@ -25,7 +25,7 @@ public:
     
     static TModifierPtr AttackMult(float Mult)
     {
-        auto Modifier = CreateModifier(EAttributesOperation::Additive, Mult);
+        auto Modifier = CreateModifier(EAttributesOperation::Multiplier, Mult);
         Modifier->SetPropertyField(&FRogueCombatAttribute::Damage);
         return Modifier;
     }
@@ -57,10 +57,12 @@ void FAdditiveCalculator::ApplyModifier(float& AttributeProperty, const TArray<F
 
 void FMultiplierCalculator::ApplyModifier(float& AttributeProperty, const TArray<FAttributeModifier*>& Modifiers) const
 {
+    float Multiplier = 0;
     for (const FAttributeModifier* Mod : Modifiers)
     {
-        AttributeProperty *= Mod->Value; 
+        Multiplier += Mod->Value;
     }
+    AttributeProperty *= Multiplier; 
 }
 
 void URogueCombatAttributeTest::Test()

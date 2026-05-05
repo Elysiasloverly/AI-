@@ -34,8 +34,8 @@ struct FMultiplierCalculator : public FAttributeCalculator
 class AI_API FRogueCombatAttribute
 {
 public:
-	float Damage;
-	float Speed;
+	float Damage = 0;
+	float Speed = 0;
 
 	float& GetSpeed()
 	{

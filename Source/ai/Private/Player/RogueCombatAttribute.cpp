@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "Player/RogueCombatAttribute.h"
@@ -19,30 +19,20 @@ struct FModifierFlatItem
 		auto Cmp = Modifier->Operation <=> Other.Modifier->Operation;
 		if (Cmp == 0)
 		{
-			Cmp = &TargetProperty <=> &Other.TargetProperty;
+			Cmp = TargetProperty <=> Other.TargetProperty;
 		}
 		return Cmp;
 	}
 };
 
-float* FAttributeSystemAbstract::GetProperty(FAttributeModifier* Modifier) const
-{
-	static float Tmp;
-	return &Tmp;
-}
-
 void FAttributeSystemAbstract::AddModifierSet(FAttributeModifierGroup* ModifierGroup)
 {
 	if (ModifierGroup)
 	{
+		ModifierGroup->OnMarkDirty.AddRaw(this, &FAttributeSystemAbstract::MarkDirty);
 		Groups.Add(ModifierGroup);
 		MarkDirty();
 	}
-}
-
-void FAttributeSystemAbstract::MarkDirty()
-{
-	bIsChanged = true;
 }
 
 void FAttributeSystemAbstract::AddCalculator(FAttributeCalculator* Calculator)
