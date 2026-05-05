@@ -15,6 +15,7 @@ class ARogueMortarProjectile;
 class ARogueRocketProjectile;
 class ARogueLaserBeam;
 class ARogueOrbitingBlade;
+struct FRogueCombatPoolPrewarmClasses;
 
 // ============================================================
 // DataTable 行结构体 —— 在编辑器中配置每种武器的属性
@@ -146,6 +147,9 @@ struct AI_API FRogueWeaponTableRow : public FTableRowBase
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "地狱塔", meta = (DisplayName = "高负载光束刷新惩罚"))
 	float HeavyCombatBeamRefreshPenalty = 0.05f;
+
+	/** 收集此武器可能用到的对象池类，避免 GameMode 直接知道每种武器字段。 */
+	void CollectPoolPrewarmClasses(FRogueCombatPoolPrewarmClasses& OutClasses) const;
 };
 
 // ============================================================

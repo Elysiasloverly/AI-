@@ -121,16 +121,16 @@ bool FRogueShopSystem::TryBuyOffer(int32 OfferIndex, ARogueCharacter* Character,
 	}
 
 	FRogueShopOffer& Offer = Offers[OfferIndex];
-	if (Offer.bPurchased || !Character->TrySpendMoney(Offer.Cost))
+	if (!Offer.IsUpgradeOffer() || Offer.IsPurchased() || !Character->TrySpendMoney(Offer.GetCost()))
 	{
 		return false;
 	}
 
-	Offer.bPurchased = true;
-	OutUpgrade = Offer.Upgrade;
-	int32& PurchaseCount = OfferTypePurchaseCounts.FindOrAdd(Offer.Upgrade.Type);
+	Offer.MarkPurchased();
+	OutUpgrade = Offer.GetUpgrade();
+	int32& PurchaseCount = OfferTypePurchaseCounts.FindOrAdd(Offer.GetUpgrade().Type);
 	++PurchaseCount;
-	ApplyOfferCostForUpgradeType(Offer.Upgrade.Type);
+	ApplyOfferCostForUpgradeType(Offer.GetUpgrade().Type);
 	return true;
 }
 
@@ -153,9 +153,7 @@ bool FRogueShopSystem::BuildOffers(const ARogueCharacter* Character, const FRogu
 	for (const FRogueUpgradeOption& Upgrade : GeneratedOffers)
 	{
 		FRogueShopOffer& Offer = Offers.AddDefaulted_GetRef();
-		Offer.Upgrade = Upgrade;
-		Offer.Cost = GetOfferCostForUpgradeType(Upgrade.Type);
-		Offer.bPurchased = false;
+		Offer.Reward = FRogueRewardOffer::MakeUpgrade(Upgrade, ERogueRewardSource::Shop, GetOfferCostForUpgradeType(Upgrade.Type));
 	}
 
 	const bool bBuiltOffers = Offers.Num() > 0;
@@ -183,9 +181,9 @@ void FRogueShopSystem::ApplyOfferCostForUpgradeType(ERogueUpgradeType UpgradeTyp
 {
 	for (FRogueShopOffer& Offer : Offers)
 	{
-		if (!Offer.bPurchased && Offer.Upgrade.Type == UpgradeType)
+		if (Offer.IsUpgradeOffer() && !Offer.IsPurchased() && Offer.GetUpgrade().Type == UpgradeType)
 		{
-			Offer.Cost = GetOfferCostForUpgradeType(UpgradeType);
+			Offer.SetCost(GetOfferCostForUpgradeType(UpgradeType));
 		}
 	}
 }

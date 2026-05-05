@@ -567,15 +567,15 @@ void ARogueHUD::UpdateShopWidget(const ARogueGameMode* RogueGameMode, const ARog
 		const TArray<FRogueShopOffer>& Offers = RogueGameMode->GetShopOffers();
 		for (const FRogueShopOffer& Offer : Offers)
 		{
-			const bool bAffordable = PlayerCharacter->GetMoney() >= Offer.Cost;
+			const bool bAffordable = PlayerCharacter->GetMoney() >= Offer.GetCost();
 			Signature += FString::Printf(
 				TEXT("|%d:%d:%d:%d:%s:%s"),
-				static_cast<int32>(Offer.Upgrade.Type),
-				Offer.Cost,
-				Offer.bPurchased ? 1 : 0,
+				static_cast<int32>(Offer.GetUpgrade().Type),
+				Offer.GetCost(),
+				Offer.IsPurchased() ? 1 : 0,
 				bAffordable ? 1 : 0,
-				*Offer.Upgrade.Title,
-				*Offer.Upgrade.Description);
+				*Offer.GetUpgrade().Title,
+				*Offer.GetUpgrade().Description);
 		}
 	}
 
@@ -608,12 +608,12 @@ void ARogueHUD::UpdateShopWidget(const ARogueGameMode* RogueGameMode, const ARog
 		for (const FRogueShopOffer& Offer : Offers)
 		{
 			FRogueShopOfferViewData& OfferView = ViewData.Offers.AddDefaulted_GetRef();
-			OfferView.TitleText = FText::FromString(Offer.Upgrade.Title);
-			OfferView.DescriptionText = FText::FromString(Offer.Upgrade.Description);
-			OfferView.bPurchased = Offer.bPurchased;
-			OfferView.bAffordable = PlayerCharacter != nullptr && PlayerCharacter->GetMoney() >= Offer.Cost;
+			OfferView.TitleText = FText::FromString(Offer.GetUpgrade().Title);
+			OfferView.DescriptionText = FText::FromString(Offer.GetUpgrade().Description);
+			OfferView.bPurchased = Offer.IsPurchased();
+			OfferView.bAffordable = PlayerCharacter != nullptr && PlayerCharacter->GetMoney() >= Offer.GetCost();
 			OfferView.CostText = FText::FromString(
-				Offer.bPurchased ? TEXT("已购买") : FString::Printf(TEXT("价格 %d"), Offer.Cost));
+				Offer.IsPurchased() ? TEXT("已购买") : FString::Printf(TEXT("价格 %d"), Offer.GetCost()));
 		}
 	}
 

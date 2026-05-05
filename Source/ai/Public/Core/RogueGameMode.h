@@ -14,9 +14,12 @@ class ARogueEnemy;
 class ARogueExperiencePickup;
 class ARogueShopTerminal;
 class APawn;
+class URogueCombatPoolSubsystem;
+class URogueEnemyTrackerSubsystem;
 class URogueGameBalanceAsset;
 class URogueUpgradeDefinitionAsset;
 class URogueUpgradeRuleAsset;
+struct FRogueCombatPoolPrewarmClasses;
 
 UCLASS()
 class AI_API ARogueGameMode : public AGameModeBase
@@ -60,6 +63,18 @@ protected:
 	virtual void BeginPlay() override;
 
 private:
+	void SpawnRuntimeWorldActors();
+	void ConfigureRuntimeAssets();
+	void ConfigureRuntimeSubsystems();
+	void PrewarmCombatPools();
+	void BuildCombatPoolPrewarmClasses(FRogueCombatPoolPrewarmClasses& OutClasses) const;
+	ARogueCharacter* GetCachedCharacter();
+	void AdvanceShopAutoRefresh(float DeltaSeconds, bool bWorldPaused);
+	void TickRunSystems(float DeltaSeconds);
+	ARogueCharacter* ResolveRewardCharacter(AActor* Killer) const;
+	void AwardEnemyCurrency(const ARogueEnemy* Enemy, ARogueCharacter* RewardCharacter);
+	void SpawnExperienceReward(ARogueEnemy* Enemy, URogueEnemyTrackerSubsystem* Tracker, URogueCombatPoolSubsystem* Pools);
+	void HandleBossKilledReward();
 	void QueueUpgradeSelections(int32 Count, ARogueCharacter* Character);
 	void OpenNextUpgradeSelection();
 

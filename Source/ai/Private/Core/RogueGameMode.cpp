@@ -11,11 +11,7 @@
 #include "Core/RogueUpgradeRuleAsset.h"
 #include "Core/RogueGameModeRules.h"
 #include "Core/RogueUpgradeSystem.h"
-#include "Combat/RogueLaserBeam.h"
 #include "Combat/RogueMortarProjectile.h"
-#include "Combat/RogueOrbitingBlade.h"
-#include "Combat/RogueProjectile.h"
-#include "Combat/RogueRocketProjectile.h"
 #include "Combat/RogueWeaponBase.h"
 #include "Enemies/RogueEnemyProjectile.h"
 #include "Engine/DataTable.h"
@@ -63,6 +59,14 @@ void ARogueGameMode::BeginPlay()
 {
 	Super::BeginPlay();
 
+	SpawnRuntimeWorldActors();
+	ConfigureRuntimeAssets();
+	ConfigureRuntimeSubsystems();
+	PrewarmCombatPools();
+}
+
+void ARogueGameMode::SpawnRuntimeWorldActors()
+{
 	if (!SpawnedArena.IsValid())
 	{
 		UClass* ArenaToSpawn = ArenaClass ? ArenaClass.Get() : ARogueArena::StaticClass();
@@ -87,7 +91,10 @@ void ARogueGameMode::BeginPlay()
 	{
 		CachedCharacter->SetActorLocation(FVector(0.0f, 0.0f, 120.0f));
 	}
+}
 
+void ARogueGameMode::ConfigureRuntimeAssets()
+{
 	LoadedGameBalanceAsset = LoadConfiguredOrDefaultAsset(GameBalanceAsset, DefaultGameBalanceAssetPath);
 	UpgradeSystem.SetDefinitionAsset(LoadConfiguredOrDefaultAsset(UpgradeDefinitionAsset, DefaultUpgradeDefinitionAssetPath));
 	UpgradeSystem.SetRuleAsset(LoadConfiguredOrDefaultAsset(UpgradeRuleAsset, DefaultUpgradeRuleAssetPath));
@@ -96,7 +103,10 @@ void ARogueGameMode::BeginPlay()
 		RogueGameModeRules::GetShopOfferCost(LoadedGameBalanceAsset),
 		RogueGameModeRules::GetShopRefreshCost(LoadedGameBalanceAsset),
 		RogueGameModeRules::GetShopAutoRefreshInterval(LoadedGameBalanceAsset));
+}
 
+void ARogueGameMode::ConfigureRuntimeSubsystems()
+{
 	// 配置敌人追踪子系统
 	if (URogueEnemyTrackerSubsystem* TrackerSubsystem = GetWorld()->GetSubsystem<URogueEnemyTrackerSubsystem>())
 	{
@@ -108,43 +118,50 @@ void ARogueGameMode::BeginPlay()
 	{
 		SpawnSubsystem->Configure(DefaultEnemyClass, EnemyClassMap, SpawnSettings, BossSettings, LoadedGameBalanceAsset);
 	}
+}
 
+void ARogueGameMode::PrewarmCombatPools()
+{
 	// 预热对象池 —— 委托给 CombatPoolSubsystem
 	if (URogueCombatPoolSubsystem* PoolSubsystem = GetWorld()->GetSubsystem<URogueCombatPoolSubsystem>())
 	{
 		FRogueCombatPoolPrewarmClasses PrewarmClasses;
-		PrewarmClasses.EnemyClasses.Add(DefaultEnemyClass);
-		for (const TPair<ERogueEnemyType, TSubclassOf<ARogueEnemy>>& EnemyClassPair : EnemyClassMap)
-		{
-			PrewarmClasses.EnemyClasses.Add(EnemyClassPair.Value);
-		}
-
-		PrewarmClasses.EnemyProjectileClasses.Add(ARogueEnemyProjectile::StaticClass());
-		PrewarmClasses.RocketProjectileClasses.Add(ARogueMortarProjectile::StaticClass());
-
-		if (CachedCharacter.IsValid())
-		{
-			if (const UDataTable* WeaponTable = CachedCharacter->GetWeaponDataTable())
-			{
-				const TArray<FName> RowNames = WeaponTable->GetRowNames();
-				for (const FName& RowName : RowNames)
-				{
-					const FRogueWeaponTableRow* Row = WeaponTable->FindRow<FRogueWeaponTableRow>(RowName, TEXT("CombatPoolPrewarm"));
-					if (Row == nullptr)
-					{
-						continue;
-					}
-
-					PrewarmClasses.PlayerProjectileClasses.Add(Row->ProjectileClass);
-					PrewarmClasses.RocketProjectileClasses.Add(Row->RocketClass);
-					PrewarmClasses.RocketProjectileClasses.Add(Row->MortarProjectileClass.Get());
-					PrewarmClasses.LaserBeamClasses.Add(Row->BeamClass);
-					PrewarmClasses.OrbitingBladeClasses.Add(Row->BladeClass);
-				}
-			}
-		}
-
+		BuildCombatPoolPrewarmClasses(PrewarmClasses);
 		PoolSubsystem->Prewarm(this, PoolSettings, DefaultEnemyClass, ExperiencePickupClass, PrewarmClasses);
+	}
+}
+
+void ARogueGameMode::BuildCombatPoolPrewarmClasses(FRogueCombatPoolPrewarmClasses& OutClasses) const
+{
+	OutClasses.EnemyClasses.Add(DefaultEnemyClass);
+	for (const TPair<ERogueEnemyType, TSubclassOf<ARogueEnemy>>& EnemyClassPair : EnemyClassMap)
+	{
+		OutClasses.EnemyClasses.Add(EnemyClassPair.Value);
+	}
+
+	OutClasses.EnemyProjectileClasses.Add(ARogueEnemyProjectile::StaticClass());
+	OutClasses.RocketProjectileClasses.Add(ARogueMortarProjectile::StaticClass());
+
+	const ARogueCharacter* Character = CachedCharacter.Get();
+	if (!IsValid(Character))
+	{
+		return;
+	}
+
+	const UDataTable* WeaponTable = Character->GetWeaponDataTable();
+	if (WeaponTable == nullptr)
+	{
+		return;
+	}
+
+	const TArray<FName> RowNames = WeaponTable->GetRowNames();
+	for (const FName& RowName : RowNames)
+	{
+		const FRogueWeaponTableRow* Row = WeaponTable->FindRow<FRogueWeaponTableRow>(RowName, TEXT("CombatPoolPrewarm"));
+		if (Row != nullptr)
+		{
+			Row->CollectPoolPrewarmClasses(OutClasses);
+		}
 	}
 }
 
@@ -161,10 +178,33 @@ void ARogueGameMode::Tick(float DeltaSeconds)
 	UWorld* World = GetWorld();
 	const bool bWorldPaused = World != nullptr && World->IsPaused();
 
+	AdvanceShopAutoRefresh(DeltaSeconds, bWorldPaused);
+
+	if (UpgradeSystem.IsAwaitingChoice() || ShopSystem.IsOpen() || bWorldPaused)
+	{
+		return;
+	}
+
+	TickRunSystems(DeltaSeconds);
+}
+
+ARogueCharacter* ARogueGameMode::GetCachedCharacter()
+{
+	if (!CachedCharacter.IsValid())
+	{
+		CachedCharacter = Cast<ARogueCharacter>(UGameplayStatics::GetPlayerCharacter(this, 0));
+	}
+
+	return CachedCharacter.Get();
+}
+
+void ARogueGameMode::AdvanceShopAutoRefresh(float DeltaSeconds, bool bWorldPaused)
+{
+	UWorld* World = GetWorld();
 	float ShopDeltaSeconds = DeltaSeconds;
 	if (bWorldPaused && ShopSystem.IsOpen())
 	{
-		const float CurrentRealTimeSeconds = World->GetRealTimeSeconds();
+		const float CurrentRealTimeSeconds = World != nullptr ? World->GetRealTimeSeconds() : 0.0f;
 		if (LastShopAutoRefreshRealTimeSeconds > 0.0f)
 		{
 			ShopDeltaSeconds = FMath::Max(0.0f, CurrentRealTimeSeconds - LastShopAutoRefreshRealTimeSeconds);
@@ -182,23 +222,16 @@ void ARogueGameMode::Tick(float DeltaSeconds)
 	}
 
 	ShopSystem.AdvanceAutoRefresh(ShopDeltaSeconds, CachedCharacter.Get(), UpgradeSystem);
+}
 
-	if (UpgradeSystem.IsAwaitingChoice() || ShopSystem.IsOpen() || bWorldPaused)
-	{
-		return;
-	}
-
+void ARogueGameMode::TickRunSystems(float DeltaSeconds)
+{
 	RunState.RunTimeSeconds += DeltaSeconds;
 
 	// 生成调度 —— 委托给 SpawnSubsystem
 	if (URogueSpawnSubsystem* SpawnSubsystem = GetWorld()->GetSubsystem<URogueSpawnSubsystem>())
 	{
-		if (!CachedCharacter.IsValid())
-		{
-			CachedCharacter = Cast<ARogueCharacter>(UGameplayStatics::GetPlayerCharacter(this, 0));
-		}
-
-		SpawnSubsystem->TickSpawning(DeltaSeconds, RunState, CachedCharacter.Get(), SpawnedArena.Get());
+		SpawnSubsystem->TickSpawning(DeltaSeconds, RunState, GetCachedCharacter(), SpawnedArena.Get());
 	}
 }
 
@@ -216,54 +249,75 @@ void ARogueGameMode::HandleEnemyKilled(ARogueEnemy* Enemy, AActor* Killer)
 
 	if (IsValid(Enemy))
 	{
-		ARogueCharacter* RewardCharacter = Cast<ARogueCharacter>(Killer);
-		if (RewardCharacter == nullptr && IsValid(Killer))
-		{
-			RewardCharacter = Cast<ARogueCharacter>(Killer->GetOwner());
-			if (RewardCharacter == nullptr)
-			{
-				RewardCharacter = Cast<ARogueCharacter>(Killer->GetInstigator());
-			}
-		}
-		if (RewardCharacter == nullptr)
-		{
-			RewardCharacter = CachedCharacter.Get();
-		}
-		if (RewardCharacter != nullptr)
-		{
-			RewardCharacter->AddMoney(RogueGameModeRules::BuildCurrencyReward(RunState.CurrentWave, Enemy->IsBoss(), LoadedGameBalanceAsset));
-		}
-
-		ARogueExperiencePickup* MergeTargetPickup = Tracker != nullptr ? Tracker->FindPickupMergeTarget(Enemy->GetActorLocation(), 170.0f) : nullptr;
-
-		if (MergeTargetPickup != nullptr)
-		{
-			MergeTargetPickup->AddExperienceValue(Enemy->GetExperienceReward());
-		}
-		else if (Pools != nullptr)
-		{
-			ARogueExperiencePickup* Pickup = Pools->AcquireExperiencePickup(ExperiencePickupClass, this, Enemy->GetActorLocation());
-			if (Pickup != nullptr)
-			{
-				Pickup->ActivatePooledPickup(this, Enemy->GetActorLocation(), Enemy->GetExperienceReward());
-				if (Tracker != nullptr)
-				{
-					Tracker->RegisterExperiencePickup(Pickup);
-				}
-			}
-		}
+		AwardEnemyCurrency(Enemy, ResolveRewardCharacter(Killer));
+		SpawnExperienceReward(Enemy, Tracker, Pools);
 
 		if (Enemy->IsBoss())
 		{
-			RunState.bBossAlive = false;
-			if (!CachedCharacter.IsValid())
-			{
-				CachedCharacter = Cast<ARogueCharacter>(UGameplayStatics::GetPlayerCharacter(this, 0));
-			}
-
-			QueueUpgradeSelections(BossSettings.BossBonusSelections, CachedCharacter.Get());
+			HandleBossKilledReward();
 		}
 	}
+}
+
+ARogueCharacter* ARogueGameMode::ResolveRewardCharacter(AActor* Killer) const
+{
+	ARogueCharacter* RewardCharacter = Cast<ARogueCharacter>(Killer);
+	if (RewardCharacter == nullptr && IsValid(Killer))
+	{
+		RewardCharacter = Cast<ARogueCharacter>(Killer->GetOwner());
+		if (RewardCharacter == nullptr)
+		{
+			RewardCharacter = Cast<ARogueCharacter>(Killer->GetInstigator());
+		}
+	}
+
+	return RewardCharacter != nullptr ? RewardCharacter : CachedCharacter.Get();
+}
+
+void ARogueGameMode::AwardEnemyCurrency(const ARogueEnemy* Enemy, ARogueCharacter* RewardCharacter)
+{
+	if (!IsValid(Enemy) || RewardCharacter == nullptr)
+	{
+		return;
+	}
+
+	RewardCharacter->AddMoney(RogueGameModeRules::BuildCurrencyReward(RunState.CurrentWave, Enemy->IsBoss(), LoadedGameBalanceAsset));
+}
+
+void ARogueGameMode::SpawnExperienceReward(ARogueEnemy* Enemy, URogueEnemyTrackerSubsystem* Tracker, URogueCombatPoolSubsystem* Pools)
+{
+	if (!IsValid(Enemy))
+	{
+		return;
+	}
+
+	ARogueExperiencePickup* MergeTargetPickup = Tracker != nullptr ? Tracker->FindPickupMergeTarget(Enemy->GetActorLocation(), 170.0f) : nullptr;
+	if (MergeTargetPickup != nullptr)
+	{
+		MergeTargetPickup->AddExperienceValue(Enemy->GetExperienceReward());
+		return;
+	}
+
+	if (Pools == nullptr)
+	{
+		return;
+	}
+
+	ARogueExperiencePickup* Pickup = Pools->AcquireExperiencePickup(ExperiencePickupClass, this, Enemy->GetActorLocation());
+	if (Pickup != nullptr)
+	{
+		Pickup->ActivatePooledPickup(this, Enemy->GetActorLocation(), Enemy->GetExperienceReward());
+		if (Tracker != nullptr)
+		{
+			Tracker->RegisterExperiencePickup(Pickup);
+		}
+	}
+}
+
+void ARogueGameMode::HandleBossKilledReward()
+{
+	RunState.bBossAlive = false;
+	QueueUpgradeSelections(BossSettings.BossBonusSelections, GetCachedCharacter());
 }
 
 bool ARogueGameMode::GetShopPromptWorldLocation(FVector& OutLocation) const

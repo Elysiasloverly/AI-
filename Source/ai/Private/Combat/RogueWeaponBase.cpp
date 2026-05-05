@@ -4,10 +4,15 @@
 #include "Engine/World.h"
 
 #include "Player/RogueCharacter.h"
+#include "Core/RogueCombatPools.h"
 #include "Enemies/RogueEnemy.h"
 #include "Subsystems/RogueCombatPoolSubsystem.h"
 #include "Subsystems/RogueEnemyTrackerSubsystem.h"
 #include "Combat/RogueLaserBeam.h"
+#include "Combat/RogueMortarProjectile.h"
+#include "Combat/RogueOrbitingBlade.h"
+#include "Combat/RogueProjectile.h"
+#include "Combat/RogueRocketProjectile.h"
 #include "Camera/CameraComponent.h"
 
 ARogueWeaponBase::ARogueWeaponBase()
@@ -15,6 +20,15 @@ ARogueWeaponBase::ARogueWeaponBase()
 	PrimaryActorTick.bCanEverTick = false; // 由 Character 手动调用 WeaponTick
 	SetActorHiddenInGame(true);
 	SetActorEnableCollision(false);
+}
+
+void FRogueWeaponTableRow::CollectPoolPrewarmClasses(FRogueCombatPoolPrewarmClasses& OutClasses) const
+{
+	OutClasses.PlayerProjectileClasses.Add(ProjectileClass);
+	OutClasses.RocketProjectileClasses.Add(RocketClass);
+	OutClasses.RocketProjectileClasses.Add(MortarProjectileClass.Get());
+	OutClasses.LaserBeamClasses.Add(BeamClass);
+	OutClasses.OrbitingBladeClasses.Add(BladeClass);
 }
 
 void ARogueWeaponBase::InitializeWeapon(ARogueCharacter* InOwnerCharacter, const FRogueWeaponTableRow& InConfig)

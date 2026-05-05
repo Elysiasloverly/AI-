@@ -275,13 +275,13 @@ FName RogueEnemyArchetypes::FindRowNameForEnemyType(const UDataTable* DataTable,
 		return NAME_None;
 	}
 
-	const TMap<FName, uint8*>& RowMap = DataTable->GetRowMap();
-	for (const auto& Pair : RowMap)
+	const TArray<FName> RowNames = DataTable->GetRowNames();
+	for (const FName& RowName : RowNames)
 	{
-		const FRogueEnemyArchetypeRow* Row = reinterpret_cast<const FRogueEnemyArchetypeRow*>(Pair.Value);
+		const FRogueEnemyArchetypeRow* Row = DataTable->FindRow<FRogueEnemyArchetypeRow>(RowName, TEXT("FindRowNameForEnemyType"));
 		if (Row != nullptr && Row->EnemyType == Type)
 		{
-			return Pair.Key;
+			return RowName;
 		}
 	}
 
@@ -304,6 +304,6 @@ FRogueEnemyArchetype RogueEnemyArchetypes::BuildEnemyArchetypeFromDataTable(cons
 	}
 
 	// DataTable 中未找到对应行，回退到硬编码
-		UE_LOG(LogTemp, Verbose, TEXT("[RogueEnemyArchetypes] DataTable 中未找到敌人类型 %d 的配置行，回退到硬编码"), static_cast<int32>(Type));
+	UE_LOG(LogTemp, Verbose, TEXT("[RogueEnemyArchetypes] DataTable 中未找到敌人类型 %d 的配置行，回退到硬编码"), static_cast<int32>(Type));
 	return BuildEnemyArchetype(Type, bIsBoss);
 }

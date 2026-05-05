@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Core/RogueRewardTypes.h"
 #include "Core/RogueTypes.h"
 #include "RogueShopSystem.generated.h"
 
@@ -13,13 +14,15 @@ struct AI_API FRogueShopOffer
 	GENERATED_BODY()
 
 	UPROPERTY()
-	FRogueUpgradeOption Upgrade;
+	FRogueRewardOffer Reward;
 
-	UPROPERTY()
-	int32 Cost = 0;
-
-	UPROPERTY()
-	bool bPurchased = false;
+	const FRogueUpgradeOption& GetUpgrade() const { return Reward.Upgrade; }
+	FRogueUpgradeOption& GetUpgrade() { return Reward.Upgrade; }
+	int32 GetCost() const { return Reward.Cost; }
+	bool IsPurchased() const { return Reward.bPurchased; }
+	bool IsUpgradeOffer() const { return Reward.IsUpgrade(); }
+	void SetCost(int32 NewCost) { Reward.Cost = NewCost; }
+	void MarkPurchased() { Reward.bPurchased = true; }
 };
 
 USTRUCT()

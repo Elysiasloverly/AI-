@@ -3,7 +3,7 @@
 
 FRogueEnemyArchetype FRogueEnemyArchetypeRow::ToArchetype(bool bIsBoss) const
 {
-	FRogueEnemyArchetype Archetype;
+	FRogueEnemyArchetype Archetype = RogueEnemyArchetypes::BuildEnemyArchetype(EnemyType, bIsBoss);
 
 	// 基础移动属性
 	Archetype.Movement.Model = MovementModel;

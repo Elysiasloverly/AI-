@@ -35,7 +35,7 @@ void FAttributeSystemAbstract::AddModifierSet(FAttributeModifierGroup* ModifierG
 {
 	if (ModifierGroup)
 	{
-		ModifierGroup.Add(ModifierGroup);
+		Groups.Add(ModifierGroup);
 		MarkDirty();
 	}
 }
