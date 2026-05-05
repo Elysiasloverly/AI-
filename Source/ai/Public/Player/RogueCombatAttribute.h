@@ -21,7 +21,7 @@ bool operator!=(const ClassName& Other) const \
 return !(*this == Other); \
 }
 
-/** 要求更新委托 */
+/** 脏标记委托 */
 DECLARE_MULTICAST_DELEGATE(FOnMarkDirty);
 
 /** 用于顺序遍历，禁止赋值! */
