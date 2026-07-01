@@ -101,13 +101,13 @@ public:
 	TAttributes GetAttributesCopy()
 	{
 		CalculateAttribute();
-		return *Attributes;
+		return *Attributes.Get();
 	}
 
 	TWeakPtr<TAttributes> GetAttributesWeak()
 	{
 		CalculateAttribute();
-		return Attributes;
+		return TWeakPtr<TAttributes>(Attributes);
 	}
 
 	const TAttributes* GetAttributes()
@@ -122,7 +122,7 @@ public:
 	}
 	
 protected:
-	TAttributesPtr Attributes = MakeUnique<TAttributes>();
+	TSharedPtr<TAttributes> Attributes = MakeShared<TAttributes>();
 
 	virtual void OnRecalculate() override
 	{

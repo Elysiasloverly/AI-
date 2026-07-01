@@ -4,6 +4,7 @@
 #include "GameFramework/Character.h"
 #include "Player/RogueCharacterVisualComponent.h"
 #include "Core/RogueTypes.h"
+#include "Player/RoguePlayerAttributeSet.h"
 #include "RogueCharacter.generated.h"
 
 class ARogueWeaponBase;
@@ -20,6 +21,7 @@ class UDataTable;
 class URogueCharacterVisualComponent;
 class URoguePlayerBalanceAsset;
 struct FRogueUpgradeEffectApplier;
+class FRoguePlayerAttributeSystem;
 
 UCLASS()
 class AI_API ARogueCharacter : public ACharacter
@@ -76,6 +78,8 @@ public:
 
 	/** 将武器专属升级分发给所有武器 */
 	bool DispatchWeaponUpgrade(ERogueUpgradeType UpgradeType, float Magnitude);
+
+	FRoguePlayerAttributeSystem* GetAttributeSystem() const { return AttributeSystem; }
 
 	// ---- 角色属性查询 ----
 
@@ -191,9 +195,11 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void BeginDestroy() override;
 
 private:
 	friend struct FRogueUpgradeEffectApplier;
+	friend class FRoguePlayerAttributeSystem;
 
 	void MoveForward(float Value);
 	void MoveRight(float Value);
@@ -213,6 +219,7 @@ private:
 	void HandleRecovery(float DeltaSeconds);
 	FVector GetDashDirection() const;
 	void ApplyBalanceAsset();
+	void SyncAttributesFromSystem();
 	void InitializeWeapons();
 	void TickWeapons(float DeltaSeconds);
 	void UpdateVisualPresentation(float DeltaSeconds);
@@ -227,6 +234,8 @@ private:
 
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<URogueCharacterVisualComponent> Visuals;
+
+	FRoguePlayerAttributeSystem* AttributeSystem = nullptr;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Config")
 	TSoftObjectPtr<URoguePlayerBalanceAsset> PlayerBalanceAsset;

@@ -13,6 +13,7 @@
 #include "Core/RogueUpgradeEffectApplier.h"
 #include "Core/RogueGameMode.h"
 #include "Player/RoguePlayerBalanceAsset.h"
+#include "Player/RoguePlayerAttributeSet.h"
 #include "World/RogueShopTerminal.h"
 #include "UI/RogueHUD.h"
 #include "Combat/RogueImpactEffect.h"
@@ -109,16 +110,28 @@ ARogueCharacter::ARogueCharacter()
 	DefaultMortarWeaponClass = ARogueWeapon_Mortar::StaticClass();
 	DefaultMortarProjectileClass = ARogueMortarProjectile::StaticClass();
 
+	AttributeSystem = new FRoguePlayerAttributeSystem();
+
 	AutoPossessPlayer = EAutoReceiveInput::Player0;
+}
+
+void ARogueCharacter::BeginDestroy()
+{
+	if (AttributeSystem)
+	{
+		delete AttributeSystem;
+		AttributeSystem = nullptr;
+	}
+	Super::BeginDestroy();
 }
 
 void ARogueCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 	ApplyBalanceAsset();
+	SyncAttributesFromSystem();
 	CurrentHealth = MaxHealth;
 	CurrentArmor = MaxArmor;
-	GetCharacterMovement()->MaxWalkSpeed = MoveSpeed;
 
 	if (APlayerController* PlayerController = Cast<APlayerController>(GetController()))
 	{
@@ -140,20 +153,10 @@ void ARogueCharacter::ApplyBalanceAsset()
 	}
 
 	const FRoguePlayerBaseStatConfig& BaseStats = LoadedPlayerBalanceAsset->BaseStats;
+
+	// 非属性系统管理的字段仍然直接赋值
 	ExperienceToNextLevel = BaseStats.ExperienceToNextLevel;
-	MaxHealth = BaseStats.MaxHealth;
-	MaxArmor = BaseStats.MaxArmor;
-	MoveSpeed = BaseStats.MoveSpeed;
-	PickupRadius = BaseStats.PickupRadius;
-	HealthRegenPerSecond = BaseStats.HealthRegenPerSecond;
-	DamageReductionPercent = BaseStats.DamageReductionPercent;
-	ExperienceMultiplier = BaseStats.ExperienceMultiplier;
-	ArmorRechargeDelay = BaseStats.ArmorRechargeDelay;
-	ArmorRechargeRate = BaseStats.ArmorRechargeRate;
-	DashCooldownDuration = BaseStats.DashCooldownDuration;
 	DashMinCooldown = BaseStats.DashMinCooldown;
-	DashDuration = BaseStats.DashDuration;
-	DashSpeed = BaseStats.DashSpeed;
 	JumpZVelocity = BaseStats.JumpZVelocity;
 	AirControl = BaseStats.AirControl;
 	GravityScale = BaseStats.GravityScale;
@@ -162,6 +165,56 @@ void ARogueCharacter::ApplyBalanceAsset()
 	GetCharacterMovement()->AirControl = AirControl;
 	GetCharacterMovement()->GravityScale = GravityScale;
 	JumpMaxCount = FMath::Max(0, JumpMaxCountConfig);
+
+	// 属性系统管理的字段：写入基础修饰器组（Additive 阶段 = 基础值）
+	if (AttributeSystem)
+	{
+		FRoguePlayerModifierGroup* Base = AttributeSystem->GetBaseGroup();
+		Base->ClearAll();
+		Base->Add(BaseStats.MaxHealth,               EAttributesOperation::Additive, &FRoguePlayerAttributeSet::MaxHealth);
+		Base->Add(BaseStats.MaxArmor,                EAttributesOperation::Additive, &FRoguePlayerAttributeSet::MaxArmor);
+		Base->Add(BaseStats.MoveSpeed,               EAttributesOperation::Additive, &FRoguePlayerAttributeSet::MoveSpeed);
+		Base->Add(BaseStats.PickupRadius,            EAttributesOperation::Additive, &FRoguePlayerAttributeSet::PickupRadius);
+		Base->Add(BaseStats.HealthRegenPerSecond,    EAttributesOperation::Additive, &FRoguePlayerAttributeSet::HealthRegenPerSecond);
+		Base->Add(BaseStats.DamageReductionPercent,  EAttributesOperation::Additive, &FRoguePlayerAttributeSet::DamageReductionPercent);
+		Base->Add(BaseStats.ExperienceMultiplier,    EAttributesOperation::Additive, &FRoguePlayerAttributeSet::ExperienceMultiplier);
+		Base->Add(BaseStats.ArmorRechargeDelay,      EAttributesOperation::Additive, &FRoguePlayerAttributeSet::ArmorRechargeDelay);
+		Base->Add(BaseStats.ArmorRechargeRate,       EAttributesOperation::Additive, &FRoguePlayerAttributeSet::ArmorRechargeRate);
+		Base->Add(BaseStats.DashCooldownDuration,    EAttributesOperation::Additive, &FRoguePlayerAttributeSet::DashCooldownDuration);
+		Base->Add(BaseStats.DashDuration,            EAttributesOperation::Additive, &FRoguePlayerAttributeSet::DashDuration);
+		Base->Add(BaseStats.DashSpeed,               EAttributesOperation::Additive, &FRoguePlayerAttributeSet::DashSpeed);
+	}
+
+	// 同步属性系统计算后的值到角色运行时字段
+	SyncAttributesFromSystem();
+}
+
+void ARogueCharacter::SyncAttributesFromSystem()
+{
+	if (!AttributeSystem)
+	{
+		return;
+	}
+
+	const FRoguePlayerAttributeSet* Attr = AttributeSystem->GetFinalAttributes();
+	MaxHealth = Attr->MaxHealth;
+	MaxArmor = Attr->MaxArmor;
+	MoveSpeed = Attr->MoveSpeed;
+	PickupRadius = Attr->PickupRadius;
+	HealthRegenPerSecond = Attr->HealthRegenPerSecond;
+	DamageReductionPercent = Attr->DamageReductionPercent;
+	ExperienceMultiplier = Attr->ExperienceMultiplier;
+	ArmorRechargeDelay = Attr->ArmorRechargeDelay;
+	ArmorRechargeRate = Attr->ArmorRechargeRate;
+	DashCooldownDuration = Attr->DashCooldownDuration;
+	DashDuration = Attr->DashDuration;
+	DashSpeed = Attr->DashSpeed;
+
+	// 应用移动速度到角色
+	if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
+	{
+		MoveComp->MaxWalkSpeed = MoveSpeed;
+	}
 }
 
 void ARogueCharacter::InitializeWeapons()
