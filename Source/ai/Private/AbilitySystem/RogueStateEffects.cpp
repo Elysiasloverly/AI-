@@ -132,3 +132,19 @@ URogueWeaponCooldownEffect::URogueWeaponCooldownEffect()
 
 	GrantStateTag(RogueGameplayTags::Cooldown_WeaponAutoAttack);
 }
+
+// ===========================================================
+//  敌人攻击冷却：Cooldown.Enemy.Attack（时长 = SetByCaller(Data.Cooldown)）
+// ===========================================================
+
+URogueEnemyAttackCooldownEffect::URogueEnemyAttackCooldownEffect()
+{
+	DurationPolicy = EGameplayEffectDurationType::HasDuration;
+
+	// 与武器冷却同构：时长由施加方给出（三种攻击的冷却字段各不相同，见头文件说明）。
+	FSetByCallerFloat DurationFromCaller;
+	DurationFromCaller.DataTag = RogueGameplayTags::Data_Cooldown;
+	DurationMagnitude = FGameplayEffectModifierMagnitude(DurationFromCaller);
+
+	GrantStateTag(RogueGameplayTags::Cooldown_EnemyAttack);
+}

@@ -20,6 +20,8 @@
 #include "AbilitySystem/RogueAbilitySystemComponent.h"
 #include "AbilitySystem/RogueAbilitySystemLibrary.h"
 #include "AbilitySystem/Abilities/RogueWeaponAbility.h"
+#include "AbilitySystem/Abilities/RogueEnemyAttackAbility.h"
+#include "Subsystems/RogueEnemyTrackerSubsystem.h"
 #include "AbilitySystem/RogueAttributeSet.h"
 #include "AbilitySystem/RogueAttributeUpgradeEffect.h"
 #include "Core/RogueGameplayTags.h"
@@ -750,6 +752,15 @@ void ARogueCharacter::TickWeaponFireReport(float DeltaSeconds)
 	}
 
 	const float NowSeconds = World->GetTimeSeconds();
+
+	// 帧时采样：每帧累加，报告时取平均（报告本身每 10 秒一次）。
+	// 放在"还没到报告时间"的判断**之前**，否则采样窗口会不完整。
+	if (WeaponFireReportNextTime > 0.0f)
+	{
+		FireReportAccumulatedTime += DeltaSeconds;
+		++FireReportFrameCount;
+	}
+
 	if (WeaponFireReportNextTime <= 0.0f)
 	{
 		// 第一次调用只建立时间基准（这时候武器与技能通常都还没就绪）
@@ -785,11 +796,40 @@ void ARogueCharacter::TickWeaponFireReport(float DeltaSeconds)
 
 	const APlayerState* OwningPlayerState = GetPlayerState();
 
-	UE_LOG(LogTemp, Log, TEXT("[SelfTest] 武器技能报告#%d | 本机(%s) 玩家=%s | 波次=%d 击杀=%d"),
+	// 场上敌人数量 + 最近 10 秒的平均帧时：
+	//   · 敌人数量是"这次采样可不可比"的前提（波次推进时它会一直变）；
+	//   · 帧时用来对比 Phase 3 前后的性能（200+ 敌人不退化这条红线）。
+	int32 ActiveEnemies = -1;
+	if (const URogueEnemyTrackerSubsystem* Tracker = World->GetSubsystem<URogueEnemyTrackerSubsystem>())
+	{
+		ActiveEnemies = Tracker->GetActiveEnemyCount();
+	}
+
+	const int32 SampledFrames = FMath::Max(1, FireReportFrameCount);
+	const float AverageFrameMs = FireReportAccumulatedTime * 1000.0f / static_cast<float>(SampledFrames);
+	FireReportAccumulatedTime = 0.0f;
+	FireReportFrameCount = 0;
+
+	const RogueEnemyAttackStats::FCounters& AttackCounters = RogueEnemyAttackStats::Get();
+
+	UE_LOG(LogTemp, Log, TEXT("[SelfTest] 武器技能报告#%d | 本机(%s) 玩家=%s | 波次=%d 击杀=%d 敌人=%d"),
 		WeaponFireReportCount,
 		IsAuthoritySide() ? TEXT("服务端") : TEXT("客户端"),
 		OwningPlayerState != nullptr ? *OwningPlayerState->GetPlayerName() : TEXT("?"),
-		Wave, Kills);
+		Wave, Kills, ActiveEnemies);
+
+	if (IsAuthoritySide())
+	{
+		// 敌人攻击（Phase 3）：三种攻击各执行了多少次。
+		// 这三个数字是"攻击真的改成能力驱动了"的直接证据 ——
+		// 它们只在 URogueEnemyAttackAbility 的激活路径里自增。
+		// "尝试"与"执行"必须一起看：两者都是 0 = 敌人根本没走到攻击距离；
+		// 尝试 > 0 而执行 = 0 = GAS 激活这一步出了问题。
+		UE_LOG(LogTemp, Log, TEXT("[SelfTest]   敌人攻击(能力执行)：接触=%d 远程=%d 地面波=%d | 尝试：接触=%d 远程=%d 地面波=%d | 最近 10 秒平均帧时=%.2f ms（%d 帧）"),
+			AttackCounters.Contact, AttackCounters.Ranged, AttackCounters.GroundWave,
+			AttackCounters.ContactAttempts, AttackCounters.RangedAttempts, AttackCounters.GroundWaveAttempts,
+			AverageFrameMs, SampledFrames);
+	}
 
 	for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
 	{

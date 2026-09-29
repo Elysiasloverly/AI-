@@ -382,6 +382,10 @@ private:
 	float WeaponFireReportNextTime = 0.0f;
 	int32 WeaponFireReportCount = 0;
 
+	/** 报告窗口内的帧时采样（用来算"最近 10 秒平均帧时"）。 */
+	float FireReportAccumulatedTime = 0.0f;
+	int32 FireReportFrameCount = 0;
+
 	void UpdateVisualPresentation(float DeltaSeconds);
 	void LevelUp();
 

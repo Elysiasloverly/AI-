@@ -631,6 +631,22 @@ void ARogueGameMode::RunWeaponUpgradeSelfTest()
 			UE_LOG(LogTemp, Log, TEXT("[SelfTest] ==== 自检全部完成 ===="));
 			UE_LOG(LogTemp, Log, TEXT("[SelfTest] 判据：客户端日志里**同名玩家**的『属性集加成』『角色快照』『武器生效值』"));
 			UE_LOG(LogTemp, Log, TEXT("[SelfTest]       必须与服务端此处逐字一致（伤害加成 15→20、武器伤害随之 +5）。"));
+
+			// 敌人攻击能力的验证探针放在**自检全部完成之后**：
+			// 它们会故意改变场上状态（瞬移敌人、临时刷一只很硬的震荡柱），
+			// 混在前面会干扰"加成数值逐行对比"那部分自检。
+			//
+			// 为什么非要有探针：这三条攻击路径的触发条件（贴脸 / 进射程 / 起波时机）
+			// 在无头测试里几乎撞不上 —— 武器会在敌人靠近前把它打死。
+			// 只统计次数的话，"没实现"和"没机会触发"看起来完全一样（实测两者都是 0）。
+			TArray<ARogueCharacter*, TInlineAllocator<4>> ProbeTargets;
+			CollectAlivePlayers(ProbeTargets);
+			if (ProbeTargets.Num() > 0 && !bSelfTestProbesDone)
+			{
+				bSelfTestProbesDone = true;
+				ProbeContactAttack(ProbeTargets[0]);
+				ProbeGroundWaveAttack(ProbeTargets[0]);
+			}
 		}
 		return;
 	}
@@ -666,6 +682,134 @@ void ARogueGameMode::RunWeaponUpgradeSelfTest()
 	}
 	DumpAll(TEXT("升级后"));
 	UE_LOG(LogTemp, Log, TEXT("[SelfTest] ==== 第一阶段完成（等客户端连上后会自动进入第二阶段）===="));
+}
+
+/** 探针专用血量：高到足以活过"下一次决策 + 地面波初始冷却"。
+ *  为什么必须调高：两条攻击路径的触发都需要敌人活到那个时候，而武器一轮齐射就能秒掉普通怪 ——
+ *  这个坑实测踩过两次（接触 / 地面波计数都是 0，看起来像"能力没实现"）。 */
+static constexpr float ProbeEnemyHealth = 20000.0f;
+
+void ARogueGameMode::ProbeContactAttack(ARogueCharacter* Target)
+{
+	if (Target == nullptr || GetWorld() == nullptr)
+	{
+		return;
+	}
+
+	const URogueEnemyTrackerSubsystem* Tracker = GetWorld()->GetSubsystem<URogueEnemyTrackerSubsystem>();
+	if (Tracker == nullptr)
+	{
+		return;
+	}
+
+	// 找离目标玩家最近的一只活着的敌人
+	ARogueEnemy* Nearest = nullptr;
+	float BestDistanceSquared = TNumericLimits<float>::Max();
+	const FVector TargetLocation = Target->GetActorLocation();
+	for (const TWeakObjectPtr<ARogueEnemy>& WeakEnemy : Tracker->GetActiveEnemies())
+	{
+		ARogueEnemy* Enemy = WeakEnemy.Get();
+		if (!IsValid(Enemy) || Enemy->IsDead() || Enemy->IsAvailableInPool())
+		{
+			continue;
+		}
+
+		const float DistanceSquared = FVector::DistSquared2D(Enemy->GetActorLocation(), TargetLocation);
+		if (DistanceSquared < BestDistanceSquared)
+		{
+			BestDistanceSquared = DistanceSquared;
+			Nearest = Enemy;
+		}
+	}
+
+	if (Nearest == nullptr)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[SelfTest] 接触攻击验证：场上一只可用敌人都没有，跳过（这条路径本次没被验证）"));
+		return;
+	}
+
+	const FString TargetName = Target->GetPlayerState() != nullptr ? Target->GetPlayerState()->GetPlayerName() : Target->GetName();
+
+	// 先把这只怪改硬：接触攻击要等它下一次 Tick 才判定，而武器一轮齐射就能把它秒了 ——
+	// 实测这就是"瞬移过去了但『接触』计数还是 0"的真正原因（不是能力没跑）。
+	// 直接写属性基值：这是自检探针，允许改数值，但不改任何玩法逻辑。
+	if (UAbilitySystemComponent* EnemyASC = Nearest->GetAbilitySystemComponent())
+	{
+		EnemyASC->SetNumericAttributeBase(URogueAttributeSet::GetHealthAttribute(), ProbeEnemyHealth);
+	}
+
+	Nearest->SetActorLocation(TargetLocation, /*bSweep=*/false, nullptr, ETeleportType::TeleportPhysics);
+
+	// 诊断一次到位：把"决策为什么可能不触发"的前置条件全打出来。
+	// 踩过的坑：只看计数时，"瞬移过去了但计数还是 0"完全无法定位原因。
+	const UFunction* BehaviorFunction = Nearest->GetClass()->FindFunctionByName(TEXT("OnBehaviorTick"));
+	const bool bBlueprintOverridesBehavior =
+		BehaviorFunction != nullptr && BehaviorFunction->GetOuter() != ARogueEnemy::StaticClass();
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[SelfTest] 接触攻击验证：已把敌人 %s（类=%s）瞬移到玩家 %s 身上 | 距离=%.1f 判定HasTouching=%d 接触能力=%s 蓝图重写了行为Tick=%d"),
+		*Nearest->GetName(), *Nearest->GetClass()->GetName(), *TargetName,
+		FVector::Dist2D(Nearest->GetActorLocation(), TargetLocation),
+		Nearest->HasTouchingPlayer() ? 1 : 0,
+		Nearest->ContactAttackAbilityHandle.IsValid() ? TEXT("已授予") : TEXT("未授予"),
+		bBlueprintOverridesBehavior ? 1 : 0);
+}
+
+void ARogueGameMode::ProbeGroundWaveAttack(ARogueCharacter* Target)
+{
+	if (Target == nullptr || GetWorld() == nullptr)
+	{
+		return;
+	}
+
+	URogueCombatPoolSubsystem* Pools = GetWorld()->GetSubsystem<URogueCombatPoolSubsystem>();
+	if (Pools == nullptr)
+	{
+		return;
+	}
+
+	// 直接用池生成一只震荡柱放在玩家附近。
+	// 为什么不用常规刷怪流程：刷怪按波次/权重选类型，短时间内不一定会出震荡柱，
+	// 于是"地面波攻击能力"这条路径可能整场都没被验证过（实测跑了 2 分钟一次都没出）。
+	const FVector SpawnLocation = Target->GetActorLocation() + FVector(600.0f, 0.0f, 0.0f);
+	ARogueEnemy* Enemy = Pools->AcquireEnemy(ARogueEnemy::StaticClass(), nullptr, SpawnLocation, FRotator::ZeroRotator);
+	if (Enemy == nullptr)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[SelfTest] 地面波验证：池里取不到敌人，跳过"));
+		return;
+	}
+
+	FRogueEnemyProfile Profile;
+	Profile.EnemyType = ERogueEnemyType::ShockPillar;
+	// 够硬才能活到"起波"那一刻：地面波的初始冷却是随机的（实测这次 2.24 秒），
+	// 而 500 血在六把武器面前只够活 2 秒左右 —— 于是永远等不到起波，计数一直是 0。
+	Profile.Health = ProbeEnemyHealth;
+	Profile.Speed = 0.0f;
+	Profile.Damage = 5.0f;
+	Profile.ExperienceReward = 0;
+	Profile.bIsBoss = false;
+
+	Enemy->ActivatePooledEnemy(nullptr, SpawnLocation, FRotator::ZeroRotator);
+	Enemy->InitializeEnemy(Profile);
+
+	if (URogueEnemyTrackerSubsystem* Tracker = GetWorld()->GetSubsystem<URogueEnemyTrackerSubsystem>())
+	{
+		Tracker->RegisterEnemy(Enemy);
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[SelfTest] 地面波验证：已在玩家 %s 附近生成一只震荡柱（%s），等它起波"),
+		Target->GetPlayerState() != nullptr ? *Target->GetPlayerState()->GetPlayerName() : *Target->GetName(),
+		*Enemy->GetName());
+
+	// 诊断：能力是否真的授予了、原型里地面波开关是不是开的、决策用的初始冷却还剩多久。
+	UE_LOG(LogTemp, Log,
+		TEXT("[SelfTest]   震荡柱诊断：地面波开关=%d 攻击能力=%s 初始冷却=%.2f 距离=%.1f 扩展半径参数=%.1f 可命中跳跃=%d"),
+		Enemy->GetCurrentArchetype().GroundWave.bUsesGroundWave ? 1 : 0,
+		Enemy->GroundWaveAttackAbilityHandle.IsValid() ? TEXT("已授予") : TEXT("未授予"),
+		Enemy->GetGroundWaveAttackCooldownRemaining(),
+		FVector::Dist2D(Enemy->GetActorLocation(), Target->GetActorLocation()),
+		Enemy->GetCurrentArchetype().GroundWave.MaxRadius,
+		Enemy->GetCurrentArchetype().GroundWave.bJumpCanDodge ? 1 : 0);
 }
 
 void ARogueGameMode::TickReviveQueue()

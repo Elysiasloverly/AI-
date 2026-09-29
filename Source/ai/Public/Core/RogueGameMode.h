@@ -176,6 +176,19 @@ private:
 	 */
 	void RunWeaponUpgradeSelfTest();
 
+	/** 自检辅助：把最近的一只敌人瞬移到玩家身上，用来真的验证一次"接触攻击"能力路径。
+	 *  为什么需要它：无头测试里武器会在敌人靠近前把它打死，接触攻击的决策永远不会触发 ——
+	 *  只统计执行次数的话，"没实现"和"没机会触发"看起来完全一样。 */
+	void ProbeContactAttack(ARogueCharacter* Target);
+
+	/** 自检辅助：在玩家附近**直接生成一只震荡柱**，用来验证"地面波攻击"能力路径。
+	 *  常规刷怪按波次/权重选类型，短时间内不一定出震荡柱 —— 实测跑 2 分钟一次都没出，
+	 *  那条路径就整场没被验证过。 */
+	void ProbeGroundWaveAttack(ARogueCharacter* Target);
+
+	/** 三个攻击路径探针是否已经跑过（自检完成时只跑一次）。 */
+	bool bSelfTestProbesDone = false;
+
 	/** 自检阶段机：
 	 *    0 = 未跑
 	 *    1 = 第一阶段已跑（全员施加 5 项升级），等"客户端连上 + 20 秒"

@@ -111,3 +111,25 @@ class AI_API URogueWeaponCooldownEffect : public URogueStateTagEffect
 public:
 	URogueWeaponCooldownEffect();
 };
+
+/**
+ * 敌人攻击冷却效果：授予 Cooldown.Enemy.Attack，时长同样由 SetByCaller(Data.Cooldown) 给出。
+ *
+ * 三种攻击（接触 / 远程 / 地面波）共用这一个 GE 类：
+ *   · 它们各自的冷却数值来自 DT_FRogueEnemyArchetypeRow 的不同字段
+ *     （ContactInterval / Ranged.NextShotCooldown / GroundWave.AttackCooldown），
+ *     由能力在激活时按秒数写进来；
+ *   · 各自的能力实例有自己的冷却 GE 实例，所以"共用类"不会让三种攻击互相卡冷却。
+ *
+ * ⚠️ 分工要说清楚：**AI 的计时器仍然是"要不要打"的决策节流**（它同时还要判断距离、
+ *    目标是否有效，这些不属于能力层）。这个 GE 是能力层的权威冷却：
+ *    GAS 用它挡住同一次攻击的重复激活，也让"这只怪的远程攻击在冷却中"变成可查询的 GAS 状态。
+ */
+UCLASS()
+class AI_API URogueEnemyAttackCooldownEffect : public URogueStateTagEffect
+{
+	GENERATED_BODY()
+
+public:
+	URogueEnemyAttackCooldownEffect();
+};

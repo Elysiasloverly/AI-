@@ -9,6 +9,7 @@ namespace RogueGameplayTags
 	// ---- 技能 ----
 	UE_DEFINE_GAMEPLAY_TAG(Ability_Dash,                 "Ability.Dash");
 	UE_DEFINE_GAMEPLAY_TAG(Ability_WeaponAutoAttack,     "Ability.Weapon.AutoAttack");
+	UE_DEFINE_GAMEPLAY_TAG(Ability_Enemy_Attack,         "Ability.Enemy.Attack");
 
 	// ---- 状态 ----
 	UE_DEFINE_GAMEPLAY_TAG(State_Dead,                   "State.Dead");
@@ -19,6 +20,7 @@ namespace RogueGameplayTags
 	// ---- 冷却 ----
 	UE_DEFINE_GAMEPLAY_TAG(Cooldown_Dash,                "Cooldown.Dash");
 	UE_DEFINE_GAMEPLAY_TAG(Cooldown_WeaponAutoAttack,    "Cooldown.Weapon.AutoAttack");
+	UE_DEFINE_GAMEPLAY_TAG(Cooldown_EnemyAttack,         "Cooldown.Enemy.Attack");
 
 	// ---- SetByCaller 数值 ----
 	UE_DEFINE_GAMEPLAY_TAG(Data_Damage,                  "Data.Damage");

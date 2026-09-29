@@ -32,6 +32,10 @@ namespace RogueGameplayTags
 	 *  用这个 Tag 标识"它属于自动攻击"，后续按武器族挂子 Tag。 */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_WeaponAutoAttack);
 
+	/** 敌人攻击（接触 / 远程 / 地面波三种共用这个族标签）。
+	 *  AI（ARogueEnemy）只负责"决定要不要打"，真正的攻击由这个标签下的能力执行。 */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Enemy_Attack);
+
 	// ===========================================================
 	//  状态（State）—— 用来阻塞技能、驱动表现
 	// ===========================================================
@@ -62,6 +66,9 @@ namespace RogueGameplayTags
 	/** 武器自动攻击的冷却。六把武器目前各有自己的 Config.Cooldown 计时器，
 	 *  迁移后统一由这个 Tag 承担，升级改冷却就变成改 GE 的时长。 */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_WeaponAutoAttack);
+
+	/** 敌人攻击的冷却（三种攻击共用一个 GE 类，时长走 SetByCaller）。 */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_EnemyAttack);
 
 	// ===========================================================
 	//  SetByCaller 数值（Data）—— 让同一个 GE 资产承载不同数值

@@ -4,6 +4,7 @@
 #include "AbilitySystem/RogueAbilitySystemComponent.h"
 #include "AbilitySystem/RogueAbilitySystemLibrary.h"
 #include "AbilitySystem/RogueAttributeSet.h"
+#include "AbilitySystem/Abilities/RogueEnemyAttackAbility.h"
 #include "Core/RogueGameplayTags.h"
 #include "Core/RogueCombatFeedback.h"
 #include "Enemies/RogueEnemyArchetypes.h"
@@ -665,12 +666,232 @@ void ARogueEnemy::HandleDefaultBehavior(float DeltaSeconds)
 
 	if (bUsesGroundWave)
 	{
-		HandleGroundWaveAttack(PlayerCharacter, DistanceToPlayer, DeltaSeconds);
+		DecideGroundWaveAttack(PlayerCharacter, DistanceToPlayer, DeltaSeconds);
 		return;
 	}
 
-	TouchPlayer(DeltaSeconds);
-	HandleRangedAttack(PlayerCharacter, DistanceToPlayer, DeltaSeconds);
+	// 接触与远程攻击都走"AI 决策 → 能力执行"（见各自函数的说明）。
+	DecideContactAttack(DeltaSeconds);
+	DecideRangedAttack(PlayerCharacter, DistanceToPlayer, DeltaSeconds);
+}
+
+// ===========================================================
+//  攻击能力：授予 / 激活
+// ===========================================================
+
+void ARogueEnemy::GrantAttackAbilities()
+{
+	// 敌人没有"本人客户端"，能力只在服务端有；客户端连技能列表都没有（ServerOnly）。
+	if (!HasAuthority() || AbilitySystemComponent == nullptr)
+	{
+		return;
+	}
+
+	// 先清空句柄：换原型/换池周期后旧句柄不该再被使用。
+	ContactAttackAbilityHandle = FGameplayAbilitySpecHandle();
+	RangedAttackAbilityHandle = FGameplayAbilitySpecHandle();
+	GroundWaveAttackAbilityHandle = FGameplayAbilitySpecHandle();
+
+	// 用地面波的敌人（震荡柱）不贴身打人 —— 改造前 HandleDefaultBehavior 里
+	// `if (bUsesGroundWave) { HandleGroundWaveAttack(); return; }` 就是这个语义。
+	if (!CurrentArchetype.GroundWave.bUsesGroundWave)
+	{
+		ContactAttackAbilityHandle = AbilitySystemComponent->GiveAbility(
+			FGameplayAbilitySpec(URogueEnemyContactAttackAbility::StaticClass(), /*Level=*/1, /*InputID=*/INDEX_NONE, /*SourceObject=*/this));
+	}
+
+	if (CurrentArchetype.Ranged.bUsesRangedAttack)
+	{
+		RangedAttackAbilityHandle = AbilitySystemComponent->GiveAbility(
+			FGameplayAbilitySpec(URogueEnemyRangedAttackAbility::StaticClass(), 1, INDEX_NONE, this));
+	}
+
+	if (CurrentArchetype.GroundWave.bUsesGroundWave)
+	{
+		GroundWaveAttackAbilityHandle = AbilitySystemComponent->GiveAbility(
+			FGameplayAbilitySpec(URogueEnemyGroundWaveAttackAbility::StaticClass(), 1, INDEX_NONE, this));
+	}
+}
+
+bool ARogueEnemy::TryActivateAttackAbility(const FGameplayAbilitySpecHandle& Handle)
+{
+	if (AbilitySystemComponent == nullptr || !Handle.IsValid())
+	{
+		return false;
+	}
+
+	return AbilitySystemComponent->TryActivateAbility(Handle);
+}
+
+bool ARogueEnemy::HasTouchingPlayer() const
+{
+	TArray<ARogueCharacter*, TInlineAllocator<4>> Players;
+	GatherAlivePlayers(Players);
+
+	const UCapsuleComponent* MyCapsule = GetCapsuleComponent();
+	const float MyRadius = MyCapsule != nullptr ? MyCapsule->GetScaledCapsuleRadius() : 34.0f;
+	const FVector MyLocation = GetActorLocation();
+
+	for (const ARogueCharacter* PlayerCharacter : Players)
+	{
+		const UCapsuleComponent* PlayerCapsule = PlayerCharacter->GetCapsuleComponent();
+		const float PlayerRadius = PlayerCapsule != nullptr ? PlayerCapsule->GetScaledCapsuleRadius() : 34.0f;
+		const float DamageDistance = MyRadius + PlayerRadius + 8.0f;
+		if (FVector::DistSquared2D(MyLocation, PlayerCharacter->GetActorLocation()) <= FMath::Square(DamageDistance))
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+// ===========================================================
+//  攻击决策（AI 侧）
+// ===========================================================
+
+void ARogueEnemy::DecideContactAttack(float DeltaSeconds)
+{
+	ContactTimer = FMath::Max(0.0f, ContactTimer - DeltaSeconds);
+	if (ContactTimer > 0.0f)
+	{
+		return;
+	}
+
+	// 决策判据只有距离：没人在身上就什么都不做（改造前 TouchPlayer 也是先判距离，
+	// 区别是它在同一个函数里接着把伤害结算了）。
+	if (!HasTouchingPlayer())
+	{
+		return;
+	}
+
+	RogueEnemyAttackStats::CountContactAttempt();
+	if (TryActivateAttackAbility(ContactAttackAbilityHandle))
+	{
+		ContactTimer = ContactInterval;
+	}
+}
+
+void ARogueEnemy::DecideRangedAttack(ARogueCharacter* PlayerCharacter, float DistanceToPlayer, float DeltaSeconds)
+{
+	if (!IsValid(PlayerCharacter))
+	{
+		return;
+	}
+
+	const FRogueEnemyRangedArchetype& RangedArchetype = CurrentArchetype.Ranged;
+	if (!RangedArchetype.bUsesRangedAttack)
+	{
+		return;
+	}
+
+	RangedAttackTimer = FMath::Max(0.0f, RangedAttackTimer - DeltaSeconds);
+	if (RangedAttackTimer > 0.0f)
+	{
+		return;
+	}
+
+	const bool bInAttackRange =
+		DistanceToPlayer >= RangedArchetype.MinimumRange * RangedArchetype.AttackRangeMinFactor &&
+		DistanceToPlayer <= RangedArchetype.MaximumRange;
+	if (!bInAttackRange)
+	{
+		return;
+	}
+
+	RogueEnemyAttackStats::CountRangedAttempt();
+	if (TryActivateAttackAbility(RangedAttackAbilityHandle))
+	{
+		RangedAttackTimer = RangedArchetype.NextShotCooldown;
+	}
+}
+
+void ARogueEnemy::DecideGroundWaveAttack(ARogueCharacter* PlayerCharacter, float DistanceToPlayer, float DeltaSeconds)
+{
+	if (!CurrentArchetype.GroundWave.bUsesGroundWave || !IsValid(PlayerCharacter))
+	{
+		return;
+	}
+
+	// 波在扩散期间由能力逐帧推进，AI 完全不参与 —— 只有"没在放波"时才考虑起新的一波。
+	if (bGroundWaveActive)
+	{
+		return;
+	}
+
+	GroundWaveAttackTimer = FMath::Max(0.0f, GroundWaveAttackTimer - DeltaSeconds);
+	if (GroundWaveAttackTimer > 0.0f)
+	{
+		return;
+	}
+
+	const float EffectiveMaxRadius = CalculateFullMapGroundWaveRadius(*this, CurrentArchetype.GroundWave.MaxRadius);
+	if (DistanceToPlayer > EffectiveMaxRadius + 220.0f)
+	{
+		return;
+	}
+
+	// 冷却在"波结束"时由能力给（改造前是 UpdateGroundWave 结束分支里设 GroundWaveAttackTimer），
+	// 所以这里激活成功后不动计时器 —— 动了就会变成"起波即冷却"。
+	RogueEnemyAttackStats::CountGroundWaveAttempt();
+	TryActivateAttackAbility(GroundWaveAttackAbilityHandle);
+}
+
+// ===========================================================
+//  攻击执行（能力侧调用）
+// ===========================================================
+
+bool ARogueEnemy::ExecuteContactAttack()
+{
+	// 接触伤害对**所有**贴身的玩家结算，而不是只对当前锁定的目标。
+	// 单机时这与原来等价；联机时如果只看目标，
+	// 敌人从队友身上直接穿过去是不掉血的（"我怎么没被打"的来源之一）。
+	TArray<ARogueCharacter*, TInlineAllocator<4>> Players;
+	GatherAlivePlayers(Players);
+
+	const UCapsuleComponent* MyCapsule = GetCapsuleComponent();
+	const float MyRadius = MyCapsule != nullptr ? MyCapsule->GetScaledCapsuleRadius() : 34.0f;
+	const FVector MyLocation = GetActorLocation();
+	bool bDamagedAnyone = false;
+
+	for (ARogueCharacter* PlayerCharacter : Players)
+	{
+		const UCapsuleComponent* PlayerCapsule = PlayerCharacter->GetCapsuleComponent();
+		const float PlayerRadius = PlayerCapsule != nullptr ? PlayerCapsule->GetScaledCapsuleRadius() : 34.0f;
+		const float DamageDistance = MyRadius + PlayerRadius + 8.0f;
+		if (FVector::DistSquared2D(MyLocation, PlayerCharacter->GetActorLocation()) > FMath::Square(DamageDistance))
+		{
+			continue;
+		}
+
+		// 接触伤害是"贴到玩家身上"造成的，Tag 用 Damage.Source.Contact
+		RogueAbilitySystem::ApplyDamageToTarget(this, PlayerCharacter, ContactDamage, RogueGameplayTags::Damage_Source_Contact);
+		bDamagedAnyone = true;
+	}
+
+	return bDamagedAnyone;
+}
+
+bool ARogueEnemy::ExecuteRangedAttack()
+{
+	ARogueCharacter* PlayerCharacter = GetPlayerCharacter();
+	if (!IsValid(PlayerCharacter) || GetWorld() == nullptr)
+	{
+		return false;
+	}
+
+	FireRangedShot(PlayerCharacter);
+	return true;
+}
+
+void ARogueEnemy::ExecuteStartGroundWave()
+{
+	StartGroundWave();
+}
+
+void ARogueEnemy::ExecuteAdvanceGroundWave(float DeltaSeconds)
+{
+	UpdateGroundWave(DeltaSeconds);
 }
 
 // ===========================================================
@@ -731,6 +952,15 @@ void ARogueEnemy::InitializeEnemy(const FRogueEnemyProfile& InProfile)
 
 	// 通知蓝图子类初始化完成
 	OnEnemyInitialized(InProfile);
+
+	// ⚠️ 攻击能力必须**在这里**授予，而不是 ActivatePooledEnemy 里：
+	//    生成方的调用顺序是 ActivatePooledEnemy() → InitializeEnemy()
+	//    （见 URogueSpawnSubsystem::SpawnEnemy），而 CurrentArchetype 是本函数上面才赋值的。
+	//    在 ActivatePooledEnemy 里授予会照着**上一只怪**的原型发技能
+	//    （第一次生成时甚至是默认原型）—— 症状是"远程怪不会远程、震荡柱不起波"，
+	//    而且因为技能列表看起来正常，日志里一点报错都没有。
+	//    ASC->ResetForPool() 已经在 ActivatePooledEnemy 里跑过，所以这里是干净的。
+	GrantAttackAbilities();
 }
 
 void ARogueEnemy::ActivatePooledEnemy(AActor* InOwner, const FVector& SpawnLocation, const FRotator& SpawnRotation)
@@ -753,6 +983,10 @@ void ARogueEnemy::ActivatePooledEnemy(AActor* InOwner, const FVector& SpawnLocat
 	{
 		AbilitySystemComponent->ResetForPool();
 	}
+
+	// 攻击能力的授予**不在这里**：本函数由生成方在 InitializeEnemy() **之前**调用
+	// （见 URogueSpawnSubsystem::SpawnEnemy），这时 CurrentArchetype 还是上一只留下的值，
+	// 照着它授予会得到"错的攻击组合"。所以授予放在 InitializeEnemy() 的末尾。
 
 	if (UCapsuleComponent* Capsule = GetCapsuleComponent())
 	{
@@ -815,6 +1049,11 @@ void ARogueEnemy::DeactivateToPool()
 	ContactTimer = 0.0f;
 	RangedAttackTimer = 0.0f;
 	GroundWaveAttackTimer = 0.0f;
+	// 攻击能力句柄一并作废：技能列表已经在下次激活时被 ResetForPool 清掉，
+	// 留着旧句柄只会在日志里出现"激活了一个不存在的技能"这种噪音。
+	ContactAttackAbilityHandle = FGameplayAbilitySpecHandle();
+	RangedAttackAbilityHandle = FGameplayAbilitySpecHandle();
+	GroundWaveAttackAbilityHandle = FGameplayAbilitySpecHandle();
 	GroundWaveElapsed = 0.0f;
 	GroundWaveCurrentRadius = 0.0f;
 	GroundWaveAlpha = 0.0f;
@@ -964,16 +1203,28 @@ void ARogueEnemy::MoveInDirection(const FVector& Direction, float SpeedMultiplie
 
 void ARogueEnemy::PerformContactDamage(float DeltaSeconds)
 {
-	TouchPlayer(DeltaSeconds);
+	// 行为树 / 蓝图入口（`OnBehaviorTick` 被蓝图重写的敌人不走基类默认行为，需要它）。
+	// 语义与改造前一致：决策 + **直接**结算。
+	// 基类默认行为走的是另一条路（DecideContactAttack → 接触攻击能力），
+	// 两者共用同一个结算函数 ExecuteContactAttack()，所以伤害口径只有一份。
+	ContactTimer = FMath::Max(0.0f, ContactTimer - DeltaSeconds);
+	if (ContactTimer > 0.0f)
+	{
+		return;
+	}
+
+	if (ExecuteContactAttack())
+	{
+		// 计时器是**整只怪共享**的：同时贴住两个玩家时两人一起挨打，
+		// 而不是"第一个人吃掉这次攻击、第二个人白嫖"。
+		ContactTimer = ContactInterval;
+	}
 }
 
 void ARogueEnemy::FireProjectileAtPlayer()
 {
-	ARogueCharacter* PlayerCharacter = GetPlayerCharacter();
-	if (IsValid(PlayerCharacter))
-	{
-		FireRangedShot(PlayerCharacter);
-	}
+	// 行为树 / 蓝图入口：立即打一发（不看冷却），与改造前语义一致。
+	ExecuteRangedAttack();
 }
 
 FVector ARogueEnemy::CalculateArchetypeMovement(float DeltaSeconds)
@@ -1068,86 +1319,6 @@ void ARogueEnemy::OnGroundWaveFinished_Implementation()
 	// 默认空实现，震荡柱蓝图可重写
 }
 
-// ===========================================================
-//  内部逻辑：接触伤害
-// ===========================================================
-
-void ARogueEnemy::TouchPlayer(float DeltaSeconds)
-{
-	ContactTimer -= DeltaSeconds;
-	if (ContactTimer > 0.0f)
-	{
-		return;
-	}
-
-	// 接触伤害对**所有**贴身的玩家结算，而不是只对当前锁定的目标。
-	// 单机时这与原来等价；联机时如果只看目标，
-	// 敌人从队友身上直接穿过去是不掉血的（"我怎么没被打"的来源之一）。
-	TArray<ARogueCharacter*, TInlineAllocator<4>> Players;
-	GatherAlivePlayers(Players);
-
-	const float MyRadius = GetCapsuleComponent()->GetScaledCapsuleRadius();
-	const FVector MyLocation = GetActorLocation();
-	bool bDamagedAnyone = false;
-
-	for (ARogueCharacter* PlayerCharacter : Players)
-	{
-		const UCapsuleComponent* PlayerCapsule = PlayerCharacter->GetCapsuleComponent();
-		const float PlayerRadius = PlayerCapsule != nullptr ? PlayerCapsule->GetScaledCapsuleRadius() : 34.0f;
-		const float DamageDistance = MyRadius + PlayerRadius + 8.0f;
-		if (FVector::DistSquared2D(MyLocation, PlayerCharacter->GetActorLocation()) > FMath::Square(DamageDistance))
-		{
-			continue;
-		}
-
-		// 接触伤害是"贴到玩家身上"造成的，Tag 用 Damage.Source.Contact
-		RogueAbilitySystem::ApplyDamageToTarget(this, PlayerCharacter, ContactDamage, RogueGameplayTags::Damage_Source_Contact);
-		bDamagedAnyone = true;
-	}
-
-	// 计时器是**整只怪共享**的：同时贴住两个玩家时两人一起挨打，
-	// 而不是"第一个人吃掉这次攻击、第二个人白嫖"。
-	if (bDamagedAnyone)
-	{
-		ContactTimer = ContactInterval;
-	}
-}
-
-// ===========================================================
-//  内部逻辑：远程攻击
-// ===========================================================
-
-void ARogueEnemy::HandleRangedAttack(ARogueCharacter* PlayerCharacter, float DistanceToPlayer, float DeltaSeconds)
-{
-	if (!IsValid(PlayerCharacter))
-	{
-		return;
-	}
-
-	const FRogueEnemyRangedArchetype& RangedArchetype = CurrentArchetype.Ranged;
-	if (!RangedArchetype.bUsesRangedAttack)
-	{
-		return;
-	}
-
-	RangedAttackTimer = FMath::Max(0.0f, RangedAttackTimer - DeltaSeconds);
-	if (RangedAttackTimer > 0.0f)
-	{
-		return;
-	}
-
-	const bool bInAttackRange =
-		DistanceToPlayer >= RangedArchetype.MinimumRange * RangedArchetype.AttackRangeMinFactor &&
-		DistanceToPlayer <= RangedArchetype.MaximumRange;
-	if (!bInAttackRange)
-	{
-		return;
-	}
-
-	FireRangedShot(PlayerCharacter);
-	RangedAttackTimer = RangedArchetype.NextShotCooldown;
-}
-
 void ARogueEnemy::FireRangedShot(ARogueCharacter* PlayerCharacter)
 {
 	if (!IsValid(PlayerCharacter) || GetWorld() == nullptr)
@@ -1229,32 +1400,13 @@ void ARogueEnemy::FireRangedShot(ARogueCharacter* PlayerCharacter)
 	}
 }
 
+
 // ===========================================================
-//  内部逻辑：地面波攻击
+//  地面波的起波与推进
 // ===========================================================
-
-void ARogueEnemy::HandleGroundWaveAttack(ARogueCharacter* PlayerCharacter, float DistanceToPlayer, float DeltaSeconds)
-{
-	if (!CurrentArchetype.GroundWave.bUsesGroundWave || !IsValid(PlayerCharacter))
-	{
-		return;
-	}
-
-	if (!bGroundWaveActive)
-	{
-		GroundWaveAttackTimer = FMath::Max(0.0f, GroundWaveAttackTimer - DeltaSeconds);
-		const float EffectiveMaxRadius = CalculateFullMapGroundWaveRadius(*this, CurrentArchetype.GroundWave.MaxRadius);
-		if (GroundWaveAttackTimer <= 0.0f && DistanceToPlayer <= EffectiveMaxRadius + 220.0f)
-		{
-			StartGroundWave();
-		}
-	}
-
-	if (bGroundWaveActive)
-	{
-		UpdateGroundWave(DeltaSeconds);
-	}
-}
+//  ⚠️ 这两个函数现在**只被地面波攻击能力调用**（ExecuteStartGroundWave / ExecuteAdvanceGroundWave）。
+//  改造前是 AI 的 HandleGroundWaveAttack 每帧自己判断"该不该起波、要不要推进"，
+//  现在 AI 只决定"起不起一波"，推进由持续激活的能力逐帧驱动。
 
 void ARogueEnemy::StartGroundWave()
 {

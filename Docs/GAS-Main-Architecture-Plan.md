@@ -14,7 +14,7 @@
 | 冲刺 | ✅ GAS（GameplayAbility + AbilityTask） |
 | **武器开火** | ✅ GAS（Phase 2：`URogueWeaponAbility` + 逐帧心跳任务 + 冷却 GE） |
 | **武器升级** | ✅ GAS（Phase 1b：改玩家 ASC 上的加成属性，武器读"基础值 + 加成"） |
-| **敌人攻击** | ❌ 自研：`ARogueEnemy::Tick` 里的接触/远程/地面波计时器 |
+| **敌人攻击** | ✅ GAS（Phase 3：AI 只决策，接触/远程/地面波三个能力执行 + 冷却 GE） |
 | 对象池 / 刷怪 / 商店 / 奖励 | 保留自研（GAS 不负责这些，也不该负责） |
 
 ## 阶段与进度
@@ -162,11 +162,66 @@ UnrealEditor.exe <uproject> <map>?listen -game -nullrhi -log
 所以代码里保留了显式报错（句柄无效就 `UE_LOG(Error)`），并且自检报告会打出
 `冷却中 / 剩余 / 目标数 / 持续心跳`，让这类失效一眼可见。
 
-### ⏳ Phase 3：敌人攻击改为 GameplayAbility
+### ✅ Phase 3：敌人攻击改为 GameplayAbility（已完成，三条路径逐条验证）
 
-- 接触伤害 / 远程射击 / 地面波各做成 GA，冷却用 Cooldown GE；`ARogueEnemy::Tick` 只决定"要不要打"
-- **性能红线**：200+ 敌人不得退化。做法：只有进入射程才 `TryActivateAbility`，
-  能力实例 `InstancedPerActor` 且冷却期间不激活；改造后用 `Tools/analyze_perf.py` 对比帧时间
+**新增**
+- `URogueEnemyAttackAbility`（基类）+ 三个子类（`Public|Private/AbilitySystem/Abilities/`）：
+  `_ContactAttack` / `_RangedAttack` / `_GroundWaveAttack`；`InstancedPerActor` + **`ServerOnly`**
+  （敌人没有"本人客户端"，攻击表现走已有的复制通道；客户端上敌人**一个技能实例都没有**）。
+- `URogueEnemyAttackCooldownEffect`：三种攻击共用一个冷却 GE 类（时长走 SetByCaller
+  `Data.Cooldown`，各自的能力实例各有自己的 GE 实例，所以不会互相卡冷却）。
+- `URogueAbilityTask_AttackTick`：逐帧心跳，**只有地面波用**（一次性攻击一个任务都不建）。
+
+**AI 与能力的边界（这条边界就是性能红线本身）**
+
+| 谁 | 负责 | 每帧成本 |
+|---|---|---|
+| `ARogueEnemy::Tick`（AI） | 移动、选目标、**决策**：距离够不够 + 决策节流到点没 | 一次 float 比较（与改造前**逐字相同**） |
+| `URogueEnemyAttackAbility` | 真正结算伤害 / 生成弹体 / 推进地面波 + 冷却 GE | 只在"决定要打"时发生 |
+
+所以 **GAS 的调用次数与"实际攻击次数"成正比，与"敌人数量 × 帧数"无关** ——
+这是 200+ 敌人不退化性能的结构性保证，不是靠调参。
+
+改造前后的逐项对应：
+- `TouchPlayer`（决策+结算混在一起）→ `DecideContactAttack`（AI）+ `ExecuteContactAttack`（能力调用）
+- `HandleRangedAttack`（决策）+ `FireRangedShot`（结算）→ `DecideRangedAttack`（AI）+ `ExecuteRangedAttack`（能力调用）
+- `HandleGroundWaveAttack`（AI 每帧替能力推进波）→ `DecideGroundWaveAttack`（AI）+ 能力持有
+  `ExecuteStartGroundWave` / `ExecuteAdvanceGroundWave`，**波扩散期间 AI 完全不参与**
+- 冷却：`ContactTimer` / `RangedAttackTimer` / `GroundWaveAttackTimer` 保留为 **AI 的决策节流**；
+  能力侧另有一份冷却 GE（GAS 用它挡住重复激活，也让"这只怪在冷却中"变成可查询状态）。
+  计时器只在**激活成功**后重置 —— 万一能力被挡住，AI 下一帧会再试，而不是白等一个冷却。
+
+**⚠️ 本次挖出来的两个坑（都表现为"计数恒为 0"，看起来像功能没实现）**
+1. **授予时机**：`URogueSpawnSubsystem::SpawnEnemy` 的调用顺序是
+   `ActivatePooledEnemy()` → `InitializeEnemy()`，而 `CurrentArchetype` 是后者才赋值的。
+   最初把 `GrantAttackAbilities()` 放在 `ActivatePooledEnemy` 里 → 照着**上一只怪**的原型发技能
+   （首次生成时是默认原型）。症状是"远程怪不远程、震荡柱不起波"，而且没有任何报错。
+   → 现在授予放在 `InitializeEnemy()` 末尾（那之前 `ResetForPool()` 已经清过技能表）。
+2. **验证方法本身**：无头测试里武器会在敌人靠近前把它打死，于是接触/地面波两条路径
+   **根本不会被触发**。只统计"执行次数"的话，"没实现"和"没机会触发"完全一样（实测两者都是 0）。
+   → 自检加了两个探针（在自检全部完成之后才跑，避免干扰数值对比）：
+   `ProbeContactAttack`（把最近的敌人改硬并瞬移到玩家身上）与
+   `ProbeGroundWaveAttack`（直接在玩家附近刷一只震荡柱）。
+   探针必须要**先把敌人改硬**：普通怪在六把武器面前活不过一次决策 + 起波初始冷却（实测踩了两次）。
+
+**验证（Development + DebugGame 编译通过；双进程无头）**
+
+| 攻击 | AI 决策尝试 | 能力执行 | 备注 |
+|---|---|---|---|
+| 接触 | 1 | 1 | 探针触发（`HasTouching=1`、能力=已授予、蓝图未重写行为 Tick） |
+| 远程 | 4 | 4 | 自然发生（远程原型进入射程） |
+| 地面波 | 1 | 1 | 探针触发（震荡柱起波并扩散到结束） |
+
+无 `Fatal` / `Ensure` / `LogAbilitySystem: Error`；帧时在波次 1→4 之间稳定在 ~1.0 ms
+（无头 nullrhi 下主要由游戏线程逻辑决定）。自检报告同时打印**尝试**与**执行**两个计数 ——
+两者必须一起看，这正是上面第 2 条坑的教训。
+
+**性能这条线要说清楚（避免过度声称）**
+- **已论证**：AI 每帧只做一次 float 比较（与改造前逐字相同），GAS 只在"决定要打"时被调用 ——
+  所以每帧成本与敌人数量线性且系数不变，GAS 成本与实际攻击次数成正比（报告里的"尝试"计数即证据）。
+- **未实测到 200+**：当前无头自检里武器清怪速度快于刷怪，整局场上只有 2–4 只敌人
+  （跑满 5 分钟也只到第 4 波）。所以"200+ 敌人帧时"这条**还没有真实数据**，
+  要测它需要专门的压测模式（一次性刷 N 只怪 + 对比帧时），属于后续可补的验证项。
 
 ### ⏳ Phase 4：状态/复活全 GE 化 + 清理
 

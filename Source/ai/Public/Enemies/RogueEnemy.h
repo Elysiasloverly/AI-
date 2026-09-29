@@ -6,6 +6,8 @@
 #include "GameFramework/Character.h"
 #include "AbilitySystemInterface.h"
 #include "GameplayTagContainer.h"
+// 攻击能力的句柄：AI 侧只保存句柄、用 TryActivateAbility 激活（见下面的"攻击能力接口"）。
+#include "GameplayAbilitySpec.h"
 #include "Core/RogueTypes.h"
 #include "RogueEnemy.generated.h"
 
@@ -224,6 +226,43 @@ public:
 	/** 设置远程攻击冷却时间 */
 	UFUNCTION(BlueprintCallable, Category = "Enemy|Action")
 	void SetRangedAttackCooldown(float NewCooldown);
+
+	// ===========================================================
+	//  攻击能力接口（Phase 3：AI 只决定"要不要打"，能力负责"怎么打"）
+	// ===========================================================
+	//
+	// 为什么要分这层：`ARogueEnemy::Tick` 每帧都要为 200+ 敌人跑一遍，
+	// 而 GAS 的一次激活（标签检查、冷却查询、实例取用）比一次距离比较贵得多。
+	// 所以决策留在 AI（纯 float + 距离判断），只有**真的决定要打**时才进 GAS；
+	// GAS 的调用次数因此与"实际攻击次数"成正比，而不是"敌人数量 × 帧数"。
+
+	/** 本敌人能用的攻击能力句柄（服务端授予后填写；无效句柄 = 这种攻击不适用）。 */
+	FGameplayAbilitySpecHandle ContactAttackAbilityHandle;
+	FGameplayAbilitySpecHandle RangedAttackAbilityHandle;
+	FGameplayAbilitySpecHandle GroundWaveAttackAbilityHandle;
+
+	/** 按当前原型授予攻击能力。**只在服务端**调用，且必须在 ASC->ResetForPool() 之后
+	 *  （出池时会清空技能列表，见 ActivatePooledEnemy）。 */
+	void GrantAttackAbilities();
+
+	/** 尝试激活某个攻击能力。返回是否真的激活了。 */
+	bool TryActivateAttackAbility(const FGameplayAbilitySpecHandle& Handle);
+
+	/** 是否有玩家处在接触伤害距离内（AI 的决策判据，只算距离、不结算伤害）。 */
+	bool HasTouchingPlayer() const;
+
+	// ---- 攻击执行（由 URogueEnemyAttackAbility 调用）----
+	// 这些是"打出去"的那几步；决策在 DecideXAttack 里，两者刻意分开。
+
+	/** 接触攻击：对**所有**贴身玩家各结算一次。返回是否打到了人。 */
+	bool ExecuteContactAttack();
+
+	/** 远程攻击：对当前锁定目标打一发。返回是否真的打出去了。 */
+	bool ExecuteRangedAttack();
+
+	/** 地面波：起一波 / 推进一帧（推进由持续型能力逐帧调用）。 */
+	void ExecuteStartGroundWave();
+	void ExecuteAdvanceGroundWave(float DeltaSeconds);
 
 	// ===========================================================
 	//  蓝图可重写的事件/钩子（BlueprintNativeEvent）
@@ -469,9 +508,17 @@ protected:
 private:
 	/** 基类默认行为 */
 	void HandleDefaultBehavior(float DeltaSeconds);
-	void TouchPlayer(float DeltaSeconds);
-	void HandleRangedAttack(ARogueCharacter* PlayerCharacter, float DistanceToPlayer, float DeltaSeconds);
-	void HandleGroundWaveAttack(ARogueCharacter* PlayerCharacter, float DistanceToPlayer, float DeltaSeconds);
+
+	// ---- 攻击决策（AI 侧：只判断"要不要打"，打出去由能力做）----
+	//
+	// 三个函数都保持与改造前完全相同的判据（节流计时器 + 距离），
+	// 区别只在于"决定要打"之后不是直接结算，而是 TryActivateAttackAbility()。
+	// 计时器只在**激活成功**后重置：这样万一能力被挡住（例如将来加了沉默标签），
+	// AI 下一帧会再试，而不是白白等一整个冷却。
+	void DecideContactAttack(float DeltaSeconds);
+	void DecideRangedAttack(ARogueCharacter* PlayerCharacter, float DistanceToPlayer, float DeltaSeconds);
+	void DecideGroundWaveAttack(ARogueCharacter* PlayerCharacter, float DistanceToPlayer, float DeltaSeconds);
+
 	void StartGroundWave();
 	void UpdateGroundWave(float DeltaSeconds);
 	void UpdateGroundWaveRingVisual(float Radius);
