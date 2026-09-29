@@ -3,6 +3,8 @@
 #include "Player/RogueCharacter.h"
 #include "Enemies/RogueEnemy.h"
 #include "Core/RogueGameMode.h"
+#include "Core/RogueGameState.h"
+#include "Player/RoguePlayerState.h"
 #include "UI/RogueMenuWidgetBases.h"
 #include "Subsystems/RogueEnemyTrackerSubsystem.h"
 #include "AudioDevice.h"
@@ -75,22 +77,67 @@ void ARogueHUD::BeginPlay()
 	InitializeMenuWidgets();
 }
 
+namespace
+{
+	/**
+	 * 取"这个 HUD 所服务的那个本地玩家"的角色。
+	 *
+	 * ⚠️ 绝对不能用 UGameplayStatics::GetPlayerCharacter(this, 0)：
+	 * 索引 0 是**这个进程里的第一个本地玩家**。在 PIE 的 2 人模式下（默认 Run Under One Process）
+	 * 或者分屏下，两个玩家共用一个进程 —— 于是第二个窗口的 HUD 会拿到**主机**的角色，
+	 * 表现是"UI 显示的是别人的数据"，甚至因为判断不到自己的角色而整个 HUD 不刷新。
+	 * 只有"每个玩家一个独立进程"（真正的联机、打包后多开）时索引 0 才恰好等于自己。
+	 */
+	ARogueCharacter* GetLocalPlayerCharacter(const AHUD* HUD)
+	{
+		if (HUD == nullptr)
+		{
+			return nullptr;
+		}
+
+		APlayerController* OwningPlayerController = HUD->GetOwningPlayerController();
+		return OwningPlayerController != nullptr ? Cast<ARogueCharacter>(OwningPlayerController->GetPawn()) : nullptr;
+	}
+}
+
 void ARogueHUD::DrawHUD()
 {
 	Super::DrawHUD();
 
-	ARogueCharacter* PlayerCharacter = Cast<ARogueCharacter>(UGameplayStatics::GetPlayerCharacter(this, 0));
-	ARogueGameMode* RogueGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ARogueGameMode>() : nullptr;
-	if (!IsValid(PlayerCharacter) || !IsValid(RogueGameMode) || Canvas == nullptr)
+	ARogueCharacter* PlayerCharacter = GetLocalPlayerCharacter(this);
+	if (!IsValid(PlayerCharacter))
 	{
 		return;
 	}
 
-	UpdateShopWidget(RogueGameMode, PlayerCharacter);
-	UpdateUpgradeSelectionWidget(RogueGameMode);
+	// ⚠️ 这里**不能**把 GameMode 放进早退条件（连"取出来备用"都不要，免得后人又拿它当判据）。
+	// GetWorld()->GetAuthGameMode() 在客户端恒为 nullptr（GameMode 是服务端独占对象），
+	// 一旦把它当成"初始化没完成"的判据，客户端就会每帧从这里 return ——
+	// 表现是客户端玩家**整个 HUD 都是死的**：商店、升级选卡、暂停菜单、设置、
+	// 死亡结算、连血条/FPS 都不画。而它偏偏在单机与主机上完全正常，所以极难发现。
+	// HUD 需要的一切都从 GameState / 本地 PlayerState / 本地角色上读（它们客户端都有）。
+
+	// 菜单/界面更新与 Canvas 无关：先把状态推给 widget。
+	// 顺序上放在 Canvas 判空之前，这样无头/nullrhi 运行时菜单逻辑仍然是活的
+	// （否则"界面不刷新"的 bug 会被无头测试掩盖掉）。
+	UpdateShopWidget(PlayerCharacter);
+	UpdateUpgradeSelectionWidget();
 	UpdatePauseWidget();
 	UpdateSettingsWidget();
-	UpdateDeathWidget(RogueGameMode);
+	UpdateDeathWidget();
+
+	// 输入模式（光标/UI 捕获）：按本地可见状态推导，见函数注释
+	UpdateInteractionInputMode(PlayerCharacter);
+
+	// 复活倒计时界面（倒地等待时可见；不抢输入，见 widget 基类的说明）
+	UpdateReviveCountdownWidget(PlayerCharacter);
+
+	// 以下是纯画布绘制（血条、伤害数字、FPS 文本…）。
+	// 没有 Canvas（无头运行、专用服务器）就没有可画的地方，直接结束。
+	if (Canvas == nullptr)
+	{
+		return;
+	}
 
 	UFont* Font = GEngine != nullptr ? GEngine->GetSmallFont() : nullptr;
 	UFont* AccentFont = GEngine != nullptr ? GEngine->GetMediumFont() : Font;
@@ -113,9 +160,16 @@ void ARogueHUD::DrawHUD()
 	DrawEnemyHealthBars(Font);
 	DrawDamageNumbers(Font);
 
-	DrawText(FString::Printf(TEXT("第 %d 波"), RogueGameMode->GetCurrentWave()), FLinearColor::White, Left, Top, Font, 1.4f, false);
+	// 整局状态从 **GameState** 读，而不是 GameMode。
+	// GameMode 是服务端独占对象：客户端调 GetAuthGameMode() 得到 nullptr，
+	// 于是客户端 HUD 画不出波次/击败数。GameState 会复制到所有客户端。
+	const ARogueGameState* RogueGameState = GetRogueGameState();
+	const int32 DisplayWave = RogueGameState != nullptr ? RogueGameState->GetCurrentWave() : 0;
+	const int32 DisplayKills = RogueGameState != nullptr ? RogueGameState->GetEnemiesDefeated() : 0;
+
+	DrawText(FString::Printf(TEXT("第 %d 波"), DisplayWave), FLinearColor::White, Left, Top, Font, 1.4f, false);
 	Top += 24.0f;
-	DrawText(FString::Printf(TEXT("击败 %d"), RogueGameMode->GetEnemiesDefeated()), FLinearColor::White, Left, Top, Font, 1.1f, false);
+	DrawText(FString::Printf(TEXT("击败 %d"), DisplayKills), FLinearColor::White, Left, Top, Font, 1.1f, false);
 	Top += 24.0f;
 	DrawText(FString::Printf(TEXT("等级 %d"), PlayerCharacter->GetPlayerLevel()), FLinearColor::White, Left, Top, Font, 1.1f, false);
 	Top += 24.0f;
@@ -145,10 +199,20 @@ void ARogueHUD::DrawHUD()
 	Top += 20.0f;
 	DrawText(TEXT("移动 WASD  |  冲刺 Shift  |  旋转 鼠标  |  缩放 滚轮"), FLinearColor(0.8f, 0.85f, 0.9f), Left, Top, Font, 0.9f, false);
 
-	if (!PlayerCharacter->IsDead() && !RogueGameMode->IsAwaitingUpgradeChoice() && !RogueGameMode->IsShopOpen() && PauseMenuPage == ERoguePauseMenuPage::None)
+	// "是否正在选升级"改读本地玩家的 PlayerState（每玩家一份）。
+	// 原来读 GameMode：客户端拿不到 GameMode，而且联机下这个状态本来就是每玩家独立的。
+	const ARoguePlayerState* LocalPlayerState = GetLocalRoguePlayerState();
+	const bool bAwaitingUpgrade = LocalPlayerState != nullptr && LocalPlayerState->IsAwaitingUpgradeChoice();
+
+	// 商店是否打开读本地 PlayerState（客户端可读；GameMode 在客户端拿不到）
+	const bool bShopOpen = LocalPlayerState != nullptr && LocalPlayerState->IsShopOpen();
+
+	if (!PlayerCharacter->IsDead() && !bAwaitingUpgrade && !bShopOpen && PauseMenuPage == ERoguePauseMenuPage::None)
 	{
 		FVector PromptWorldLocation = FVector::ZeroVector;
-		if (RogueGameMode->GetShopPromptWorldLocation(PromptWorldLocation))
+		// 靠近商店的交互提示：直接问角色（基于商店终端的重叠检测，终端已复制到客户端）。
+		// 原来走 GameMode，客户端拿不到 → 提示永远不显示。
+		if (PlayerCharacter->GetShopPromptWorldLocation(PromptWorldLocation))
 		{
 			FVector2D PromptScreenPosition = FVector2D(Canvas->SizeX * 0.43f, Canvas->SizeY * 0.84f);
 			if (APlayerController* PlayerController = GetOwningPlayerController();
@@ -202,7 +266,9 @@ void ARogueHUD::AddDamageNumber(const FVector& WorldLocation, float Damage, bool
 	DamageNumber.Lifetime = bIsBossDamage ? 0.95f : 0.72f;
 	DamageNumber.Color = bIsBossDamage ? FLinearColor(1.0f, 0.55f, 0.25f, 1.0f) : FLinearColor(1.0f, 0.92f, 0.55f, 1.0f);
 	DamageNumber.bScreenPositionValid = false;
-	DamageNumbers.Add(DamageNumber);
+	// 文本在这里算一次（数值之后不会再变，见 FRogueDamageNumber::CachedText 的说明）
+	DamageNumber.CachedText = FString::Printf(TEXT("%.0f"), Damage);
+	DamageNumbers.Add(MoveTemp(DamageNumber));
 }
 
 void ARogueHUD::OpenPauseMenu()
@@ -218,44 +284,50 @@ void ARogueHUD::ClosePauseMenu()
 
 void ARogueHUD::RequestSelectOfferFromShop(int32 OfferIndex)
 {
-	if (ARogueGameMode* RogueGameMode = GetRogueGameMode())
+	// 走本地玩家 PlayerState 的 ServerRPC —— 服务端与客户端都可用
+	if (ARoguePlayerState* RoguePlayerState = GetLocalRoguePlayerState())
 	{
-		RogueGameMode->TryBuyShopOffer(OfferIndex);
+		RoguePlayerState->Server_RequestBuyShopOffer(OfferIndex);
 	}
 }
 
 void ARogueHUD::RequestRefreshFromShop()
 {
-	if (ARogueGameMode* RogueGameMode = GetRogueGameMode())
+	if (ARoguePlayerState* RoguePlayerState = GetLocalRoguePlayerState())
 	{
-		RogueGameMode->TryRefreshShop();
+		RoguePlayerState->Server_RequestRefreshShop();
 	}
 }
 
 void ARogueHUD::RequestCloseFromShop()
 {
-	if (ARogueGameMode* RogueGameMode = GetRogueGameMode())
+	if (ARoguePlayerState* RoguePlayerState = GetLocalRoguePlayerState())
 	{
-		RogueGameMode->CloseShop();
+		RoguePlayerState->Server_RequestCloseShop();
 	}
 }
 
 void ARogueHUD::RequestSelectUpgradeFromWidget(int32 UpgradeIndex)
 {
-	if (ARogueGameMode* RogueGameMode = GetRogueGameMode())
+	// 走本地玩家 PlayerState 的 ServerRPC —— 这样服务端与客户端都能正确请求。
+	// 旧写法调 GetRogueGameMode()->TrySelectUpgrade(...)，而 GetRogueGameMode() 在客户端是 nullptr。
+	if (APlayerController* OwningPlayerController = GetOwningPlayerController())
 	{
-		RogueGameMode->TrySelectUpgrade(UpgradeIndex);
+		if (ARoguePlayerState* RoguePlayerState = OwningPlayerController->GetPlayerState<ARoguePlayerState>())
+		{
+			RoguePlayerState->Server_RequestUpgradeSelection(UpgradeIndex);
+		}
 	}
 }
 
 void ARogueHUD::RequestResumeFromPauseMenu()
 {
 	ClosePauseMenu();
-	if (ARogueCharacter* PlayerCharacter = Cast<ARogueCharacter>(UGameplayStatics::GetPlayerCharacter(this, 0)))
+	if (ARogueCharacter* PlayerCharacter = GetLocalPlayerCharacter(this))
 	{
 		PlayerCharacter->SetUpgradeSelectionInput(false);
 	}
-	UGameplayStatics::SetGamePaused(this, false);
+	// 不再调 SetGamePaused —— 暂停菜单本身就不暂停世界（见 ARogueCharacter::TogglePauseMenu）
 }
 
 void ARogueHUD::RequestOpenSettingsFromPauseMenu()
@@ -314,18 +386,24 @@ void ARogueHUD::RequestToggleDisplayModeFromSettingsMenu()
 void ARogueHUD::RequestRestartAfterDeath()
 {
 	PauseMenuPage = ERoguePauseMenuPage::None;
+	// 这两处 SetGamePaused(false) 是**离开关卡前的防御性清理**，不是"恢复游戏"。
+	// 万一世界因为别的原因处于暂停（控制台 pause、将来某个功能），
+	// 带着暂停状态切关卡/退出会留下坏状态。保留它们成本为零。
 	UGameplayStatics::SetGamePaused(this, false);
 
-	const FString CurrentLevelName = UGameplayStatics::GetCurrentLevelName(this, true);
-	if (!CurrentLevelName.IsEmpty())
+	// 重开必须由**服务端**执行：客户端自己 OpenLevel 只会加载出一份单机关卡副本，
+	// 表现为"点了重开之后队友全没了"。所以这里只发一个请求，
+	// 服务端会校验"本局是否已结束"再决定要不要 OpenLevel（server travel 把所有人一起带走）。
+	if (ARoguePlayerState* LocalPlayerState = GetLocalRoguePlayerState())
 	{
-		UGameplayStatics::OpenLevel(this, FName(*CurrentLevelName));
+		LocalPlayerState->Server_RequestRestartRun();
 	}
 }
 
 void ARogueHUD::RequestQuitAfterDeath()
 {
 	PauseMenuPage = ERoguePauseMenuPage::None;
+	// 同 RequestRestartAfterDeath：离开前的防御性清理
 	UGameplayStatics::SetGamePaused(this, false);
 	UKismetSystemLibrary::QuitGame(this, GetOwningPlayerController(), EQuitPreference::Quit, false);
 }
@@ -372,7 +450,15 @@ void ARogueHUD::DrawEnemyHealthBars(UFont* Font)
 		const float BarX = ScreenPosition.X - BarWidth * 0.5f;
 		const float BarY = ScreenPosition.Y;
 		const FLinearColor FillColor = CachedBar.bBoss ? FLinearColor(0.95f, 0.30f, 0.20f, 0.95f) : FLinearColor(0.95f, 0.15f, 0.20f, 0.90f);
-		const float HealthPercent = Enemy->GetHealthPercent();
+		// 钳制后再乘宽度。
+		// 为什么必须钳：只要比例是 NaN（MaxHealth 还没复制到客户端 → 除零）或大于 1
+		// （当前值暂时超过上限、镜像未同步），`BarWidth * HealthPercent` 就会变成一个
+		// 巨长甚至非法的宽度 —— 表现正是"怪物血条突然变得很长"。
+		// 这里只保证"画出来的东西永远合法"，根因（比例来源）另外处理。
+		const float RawHealthPercent = Enemy->GetHealthPercent();
+		const float HealthPercent = FMath::IsFinite(RawHealthPercent)
+			? FMath::Clamp(RawHealthPercent, 0.0f, 1.0f)
+			: 0.0f;
 
 		DrawRect(FLinearColor(0.04f, 0.04f, 0.05f, 0.70f), BarX - 2.0f, BarY - 2.0f, BarWidth + 4.0f, BarHeight + 4.0f);
 		DrawRect(FLinearColor(0.10f, 0.10f, 0.12f, 0.90f), BarX, BarY, BarWidth, BarHeight);
@@ -429,7 +515,7 @@ void ARogueHUD::DrawDamageNumbers(UFont* Font)
 		FLinearColor TextColor = DamageNumber.Color;
 		TextColor.A = Alpha;
 		const float Scale = FMath::Lerp(1.25f, 0.9f, Age / DamageNumber.Lifetime);
-		const FString DamageText = FString::Printf(TEXT("%.0f"), DamageNumber.Damage);
+		const FString& DamageText = DamageNumber.CachedText;
 		DrawText(DamageText, FLinearColor(0.02f, 0.02f, 0.02f, Alpha * 0.65f), DamageNumber.CachedScreenPosition.X - 1.0f, DamageNumber.CachedScreenPosition.Y - 1.0f, Font, Scale, false);
 		DrawText(DamageText, TextColor, DamageNumber.CachedScreenPosition.X, DamageNumber.CachedScreenPosition.Y, Font, Scale, false);
 	}
@@ -543,6 +629,9 @@ void ARogueHUD::InitializeMenuWidgets()
 		PauseMenuWidget = CreateRogueMenuWidget(PlayerController, PauseMenuWidgetClass, this, 65);
 		SettingsMenuWidget = CreateRogueMenuWidget(PlayerController, SettingsMenuWidgetClass, this, 66);
 		DeathScreenWidget = CreateRogueMenuWidget(PlayerController, DeathScreenWidgetClass, this, 70);
+
+		// 复活倒计时（Z 序介于其它菜单之下：它是"等待中"的提示，不应该盖住暂停/商店界面）
+		ReviveCountdownWidget = CreateRogueMenuWidget(PlayerController, ReviveCountdownWidgetClass, this, 60);
 	}
 }
 
@@ -551,20 +640,73 @@ ARogueGameMode* ARogueHUD::GetRogueGameMode() const
 	return GetWorld() != nullptr ? GetWorld()->GetAuthGameMode<ARogueGameMode>() : nullptr;
 }
 
-void ARogueHUD::UpdateShopWidget(const ARogueGameMode* RogueGameMode, const ARogueCharacter* PlayerCharacter)
+const ARogueGameState* ARogueHUD::GetRogueGameState() const
+{
+	// 与 GameMode 不同，GameState 在服务端与客户端**都存在**（客户端拿到的是复制副本），
+	// 所以它是客户端 HUD 读取整局状态的正确入口。
+	return GetWorld() != nullptr ? GetWorld()->GetGameState<ARogueGameState>() : nullptr;
+}
+
+void ARogueHUD::UpdateInteractionInputMode(const ARogueCharacter* PlayerCharacter)
+{
+	APlayerController* PlayerController = GetOwningPlayerController();
+	if (PlayerController == nullptr || PlayerCharacter == nullptr)
+	{
+		return;
+	}
+
+	// 这些状态的真相源全部是**本地可读的复制状态**（暂停菜单是本机的 HUD 状态）：
+	//   · PlayerState->IsShopOpen() / IsAwaitingUpgradeChoice()  —— COND_OwnerOnly 复制给拥有者
+	//   · PlayerCharacter->IsDead()                              —— 由复制的 State.Dead 推导
+	//   · PauseMenuPage                                          —— 纯本地
+	// 所以不需要任何 RPC，每台机器自己就能得出正确结论。
+	const ARoguePlayerState* LocalPlayerState = GetLocalRoguePlayerState();
+	const bool bWantUIInput = PauseMenuPage != ERoguePauseMenuPage::None
+		|| PlayerCharacter->IsDead()
+		|| (LocalPlayerState != nullptr && (LocalPlayerState->IsShopOpen() || LocalPlayerState->IsAwaitingUpgradeChoice()));
+
+	const int32 NewState = bWantUIInput ? 1 : 0;
+	if (NewState == LastAppliedUIInputState)
+	{
+		return;
+	}
+	LastAppliedUIInputState = NewState;
+
+	PlayerController->bShowMouseCursor = bWantUIInput;
+	PlayerController->bEnableClickEvents = bWantUIInput;
+	PlayerController->bEnableMouseOverEvents = bWantUIInput;
+
+	if (bWantUIInput)
+	{
+		// GameAndUI：既能点卡片，也不至于把角色完全冻住（开商店时游戏本来就不暂停）。
+		FInputModeGameAndUI InputMode;
+		InputMode.SetHideCursorDuringCapture(false);
+		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		PlayerController->SetInputMode(InputMode);
+	}
+	else
+	{
+		PlayerController->SetInputMode(FInputModeGameOnly());
+	}
+}
+
+void ARogueHUD::UpdateShopWidget(const ARogueCharacter* PlayerCharacter)
 {
 	if (ShopWidget == nullptr)
 	{
 		return;
 	}
 
-	const bool bVisible = RogueGameMode != nullptr && PlayerCharacter != nullptr && RogueGameMode->IsShopOpen();
-	const int32 AutoRefreshSeconds = bVisible ? FMath::CeilToInt(RogueGameMode->GetShopSecondsUntilRefresh()) : INDEX_NONE;
+	// 商店的全部读数据都来自本地 PlayerState（客户端可读）
+	const ARoguePlayerState* LocalPlayerState = GetLocalRoguePlayerState();
+
+	const bool bVisible = PlayerCharacter != nullptr && LocalPlayerState != nullptr && LocalPlayerState->IsShopOpen();
+	const int32 AutoRefreshSeconds = bVisible ? FMath::CeilToInt(LocalPlayerState->GetShopSecondsUntilRefresh()) : INDEX_NONE;
 	FString Signature = bVisible ? TEXT("Shop|Visible") : TEXT("Shop|Hidden");
 	if (bVisible)
 	{
-		Signature += FString::Printf(TEXT("|Money=%d|Refresh=%d"), PlayerCharacter->GetMoney(), RogueGameMode->GetShopRefreshCost());
-		const TArray<FRogueShopOffer>& Offers = RogueGameMode->GetShopOffers();
+		Signature += FString::Printf(TEXT("|Money=%d|Refresh=%d"), PlayerCharacter->GetMoney(), LocalPlayerState->GetShopRefreshCost());
+		const TArray<FRogueShopOffer>& Offers = LocalPlayerState->GetShopOffers();
 		for (const FRogueShopOffer& Offer : Offers)
 		{
 			const bool bAffordable = PlayerCharacter->GetMoney() >= Offer.GetCost();
@@ -599,12 +741,17 @@ void ARogueHUD::UpdateShopWidget(const ARogueGameMode* RogueGameMode, const ARog
 		ViewData.MoneyText = FText::FromString(FString::Printf(TEXT("金币 %d"), PlayerCharacter->GetMoney()));
 	}
 	ViewData.HintText = FText::FromString(TEXT("点击卡牌购买强化"));
-	if (RogueGameMode != nullptr)
+
+	// 注意这里**不能**再写 `if (RogueGameMode != nullptr)`：
+	// 客户端恒为 nullptr，那样商品列表、刷新按钮、倒计时在客户端全是空的
+	// ——表现就是"客户端打开商店只有一个空框"，而主机一切正常。
+	// 下面用到的每个字段都在本地 PlayerState 上。
+	if (bVisible && LocalPlayerState != nullptr)
 	{
 		ViewData.AutoRefreshText = GetAutoRefreshText(AutoRefreshSeconds);
-		ViewData.RefreshButtonText = FText::FromString(FString::Printf(TEXT("立即刷新 (%d)"), RogueGameMode->GetShopRefreshCost()));
+		ViewData.RefreshButtonText = FText::FromString(FString::Printf(TEXT("立即刷新 (%d)"), LocalPlayerState->GetShopRefreshCost()));
 
-		const TArray<FRogueShopOffer>& Offers = RogueGameMode->GetShopOffers();
+		const TArray<FRogueShopOffer>& Offers = LocalPlayerState->GetShopOffers();
 		for (const FRogueShopOffer& Offer : Offers)
 		{
 			FRogueShopOfferViewData& OfferView = ViewData.Offers.AddDefaulted_GetRef();
@@ -620,22 +767,29 @@ void ARogueHUD::UpdateShopWidget(const ARogueGameMode* RogueGameMode, const ARog
 	ShopWidget->UpdateShopView(ViewData);
 }
 
-void ARogueHUD::UpdateUpgradeSelectionWidget(const ARogueGameMode* RogueGameMode)
+void ARogueHUD::UpdateUpgradeSelectionWidget()
 {
 	if (UpgradeSelectionWidget == nullptr)
 	{
 		return;
 	}
 
-	const bool bVisible = RogueGameMode != nullptr && RogueGameMode->IsAwaitingUpgradeChoice();
+	// 待选卡牌改从**本地玩家的 PlayerState** 读，而不是 GameMode。
+	// 原因：GameMode 是服务端独占对象，客户端 `GetAuthGameMode()` 返回 nullptr，
+	// 结果就是"客户端玩家看不到升级界面"（迁移前的真实故障）。
+	// PlayerState 会被复制到拥有者客户端，而且每个玩家有自己的卡牌。
+	const ARoguePlayerState* LocalPlayerState = GetLocalRoguePlayerState();
+	// 用静态空数组而不是临时对象：下面按引用使用，且生命周期要跨过函数体
+	static const TArray<FRogueUpgradeOption> EmptyUpgradeOptions;
+	const TArray<FRogueUpgradeOption>& Options =
+		LocalPlayerState != nullptr ? LocalPlayerState->GetPendingUpgrades() : EmptyUpgradeOptions;
+
+	const bool bVisible = LocalPlayerState != nullptr && LocalPlayerState->IsAwaitingUpgradeChoice();
+
 	FString Signature = bVisible ? TEXT("Upgrade|Visible") : TEXT("Upgrade|Hidden");
-	if (bVisible)
+	for (const FRogueUpgradeOption& Option : Options)
 	{
-		const TArray<FRogueUpgradeOption>& Options = RogueGameMode->GetPendingUpgrades();
-		for (const FRogueUpgradeOption& Option : Options)
-		{
-			Signature += FString::Printf(TEXT("|%d:%s:%s"), static_cast<int32>(Option.Type), *Option.Title, *Option.Description);
-		}
+		Signature += FString::Printf(TEXT("|%d:%s:%s"), static_cast<int32>(Option.Type), *Option.Title, *Option.Description);
 	}
 
 	if (!UpdateCachedSignature(LastUpgradeWidgetSignature, Signature))
@@ -646,18 +800,20 @@ void ARogueHUD::UpdateUpgradeSelectionWidget(const ARogueGameMode* RogueGameMode
 	FRogueUpgradeSelectionViewData ViewData;
 	ViewData.bVisible = bVisible;
 	ViewData.TitleText = FText::FromString(TEXT("请选择升级"));
-	if (RogueGameMode != nullptr)
+	for (const FRogueUpgradeOption& Option : Options)
 	{
-		const TArray<FRogueUpgradeOption>& Options = RogueGameMode->GetPendingUpgrades();
-		for (const FRogueUpgradeOption& Option : Options)
-		{
-			FRogueUpgradeCardViewData& Card = ViewData.Cards.AddDefaulted_GetRef();
-			Card.TitleText = FText::FromString(Option.Title);
-			Card.DescriptionText = FText::FromString(Option.Description);
-		}
+		FRogueUpgradeCardViewData& Card = ViewData.Cards.AddDefaulted_GetRef();
+		Card.TitleText = FText::FromString(Option.Title);
+		Card.DescriptionText = FText::FromString(Option.Description);
 	}
 
 	UpgradeSelectionWidget->UpdateUpgradeSelectionView(ViewData);
+}
+
+ARoguePlayerState* ARogueHUD::GetLocalRoguePlayerState() const
+{
+	APlayerController* OwningPlayerController = GetOwningPlayerController();
+	return OwningPlayerController != nullptr ? OwningPlayerController->GetPlayerState<ARoguePlayerState>() : nullptr;
 }
 
 void ARogueHUD::UpdatePauseWidget()
@@ -744,19 +900,85 @@ void ARogueHUD::UpdateSettingsWidget()
 	SettingsMenuWidget->UpdateSettingsView(ViewData);
 }
 
-void ARogueHUD::UpdateDeathWidget(ARogueGameMode* RogueGameMode)
+void ARogueHUD::UpdateReviveCountdownWidget(const ARogueCharacter* PlayerCharacter)
+{
+	if (ReviveCountdownWidget == nullptr)
+	{
+		return;
+	}
+
+	// 可见条件：本地玩家处于"倒地等待"——已倒下、且复活还没到期、且本局尚未结束。
+	// 本局结束（全员同时倒下）时改由死亡结算界面接管，两个界面不会同时出现。
+	const ARoguePlayerState* LocalPlayerState = GetLocalRoguePlayerState();
+	const ARogueGameState* RogueGameState = GetRogueGameState();
+
+	const bool bDowned = PlayerCharacter != nullptr && PlayerCharacter->IsDead();
+	const bool bRunOver = RogueGameState != nullptr && RogueGameState->IsGameOver();
+	const int32 SecondsRemaining = LocalPlayerState != nullptr ? FMath::CeilToInt(LocalPlayerState->GetReviveSecondsRemaining()) : 0;
+
+	const bool bVisible = bDowned && !bRunOver && SecondsRemaining > 0;
+
+	// 只在内容变化时推送（秒数每秒变一次，代价可忽略；避免每帧刷 UI）
+	static int32 LastPushedSeconds = INDEX_NONE;
+	static bool bLastPushedVisible = false;
+	if (bVisible == bLastPushedVisible && SecondsRemaining == LastPushedSeconds)
+	{
+		return;
+	}
+	LastPushedSeconds = SecondsRemaining;
+	bLastPushedVisible = bVisible;
+
+	// 只在状态真正变化时打一行（每秒最多一条）：下次联机自测时，
+	// "主机/客户端到底有没有拿到倒计时界面"可以直接从日志判断，不用靠肉眼盯。
+	UE_LOG(LogTemp, Log, TEXT("[Rogue] 复活倒计时界面：%s（剩余 %d 秒，本机角色 IsDead=%d）"),
+		bVisible ? TEXT("显示") : TEXT("隐藏"), SecondsRemaining,
+		(PlayerCharacter != nullptr && PlayerCharacter->IsDead()) ? 1 : 0);
+
+	ReviveCountdownWidget->UpdateReviveCountdown(SecondsRemaining, bVisible);
+}
+
+void ARogueHUD::UpdateDeathWidget()
 {
 	if (DeathScreenWidget == nullptr)
 	{
 		return;
 	}
 
-	const ARogueCharacter* PlayerCharacter = Cast<ARogueCharacter>(UGameplayStatics::GetPlayerCharacter(this, 0));
+	const ARogueCharacter* PlayerCharacter = GetLocalPlayerCharacter(this);
 	const bool bPlayerDead = PlayerCharacter != nullptr && PlayerCharacter->IsDead();
-	FString Signature = bPlayerDead ? TEXT("Death|Visible") : TEXT("Death|Hidden");
-	if (bPlayerDead && RogueGameMode != nullptr)
+
+	// 结算数据也来自 GameState（客户端可读）。
+	// 注意"玩家死了"与"整局结束"是两件事：联机下别人还活着时这里仍要显示本地玩家的结算。
+	const ARogueGameState* RogueGameState = GetRogueGameState();
+	const float SummaryRunTime = RogueGameState != nullptr ? RogueGameState->GetRunTimeSeconds() : 0.0f;
+	const int32 SummaryKills = RogueGameState != nullptr ? RogueGameState->GetEnemiesDefeated() : 0;
+
+	// 整局是否已经结束（= 全员阵亡）。这决定结算界面是"本轮结束"还是"你已阵亡，队友还在打"。
+	// 服务端只在全员阵亡时才把它置真（见 ARogueGameMode::NotifyPlayerDied）。
+	const bool bRunOver = RogueGameState != nullptr && RogueGameState->IsGameOver();
+
+	// 复活倒计时（联机合作：死亡 = 倒地等待，而不是出局）。
+	// 读的是本地 PlayerState 上复制的"复活截止时刻"，各端自己换算剩余秒数。
+	const ARoguePlayerState* LocalStateForRevive = GetLocalRoguePlayerState();
+	const int32 ReviveSeconds = LocalStateForRevive != nullptr ? FMath::CeilToInt(LocalStateForRevive->GetReviveSecondsRemaining()) : 0;
+
+	// 结算界面 = "本局结束"的界面。
+	//
+	// 触发条件**只有 bRunOver**（= 全员同时倒下过一次，见 ARogueGameMode::NotifyPlayerDied），
+	// 不再额外要求"本机此刻还躺着"：
+	//   规则 A 下全员倒地只意味着本局结束（不再刷怪），10 秒后每个人仍然会回出生点复活。
+	//   如果界面跟着"复活"消失，玩家就会停在一个"没有怪、也没有重开按钮"的空场里
+	//   （实测反馈正是"复活了但不会再刷怪"）。所以它一直留到点"重开"为止。
+	//
+	// 单人倒地（队友还在打）依然由独立的倒计时界面负责，不会弹结算界面。
+	const bool bVisible = bRunOver;
+
+	FString Signature = bVisible ? TEXT("Death|Visible") : TEXT("Death|Hidden");
+	if (bVisible || bPlayerDead)
 	{
-		Signature += FString::Printf(TEXT("|Time=%.0f|Kills=%d"), RogueGameMode->GetRunTimeSeconds(), RogueGameMode->GetEnemiesDefeated());
+		// 签名里必须带上 bPlayerDead / 复活倒计时：本局从"队友还在打"变成"全员阵亡"、
+		// 或倒计时每秒变化时，界面都要跟着刷新。
+		Signature += FString::Printf(TEXT("|Time=%.0f|Kills=%d|Dead=%d|Revive=%d"), SummaryRunTime, SummaryKills, bPlayerDead ? 1 : 0, ReviveSeconds);
 	}
 
 	if (!UpdateCachedSignature(LastDeathWidgetSignature, Signature))
@@ -765,14 +987,40 @@ void ARogueHUD::UpdateDeathWidget(ARogueGameMode* RogueGameMode)
 	}
 
 	FRogueDeathViewData ViewData;
-	ViewData.bVisible = bPlayerDead;
-	if (bPlayerDead)
+	ViewData.bVisible = bVisible;
+	if (bVisible || bPlayerDead)
 	{
-		ViewData.TitleText = FText::FromString(TEXT("本轮结束"));
-		if (RogueGameMode != nullptr)
+		const FString RunSummary = FString::Printf(TEXT("存活 %.0f 秒  |  击败 %d 个敌人"), SummaryRunTime, SummaryKills);
+		if (bVisible)
 		{
-			ViewData.SummaryText = FText::FromString(
-				FString::Printf(TEXT("存活 %.0f 秒  |  击败 %d 个敌人"), RogueGameMode->GetRunTimeSeconds(), RogueGameMode->GetEnemiesDefeated()));
+			ViewData.TitleText = FText::FromString(TEXT("本轮结束"));
+			if (bPlayerDead && ReviveSeconds > 0)
+			{
+				// 已经团灭但个人还在倒地等待：把"还会复活"说清楚，免得以为要一直躺着。
+				ViewData.SummaryText = FText::FromString(FString::Printf(
+					TEXT("%s\n%d 秒后回到出生点复活（本局已结束，可随时重开）"), *RunSummary, ReviveSeconds));
+			}
+			else
+			{
+				ViewData.SummaryText = FText::FromString(FString::Printf(
+					TEXT("%s\n本局已结束 —— 点\"重开\"开始新一轮"), *RunSummary));
+			}
+		}
+		else
+		{
+			// 还没团灭：这是"倒地等待复活"，把倒计时明确告诉玩家
+			//（否则界面看起来像卡死，而玩家不知道还要等多久、会回到哪里）。
+			ViewData.TitleText = FText::FromString(TEXT("你已阵亡"));
+			if (ReviveSeconds > 0)
+			{
+				ViewData.SummaryText = FText::FromString(FString::Printf(
+					TEXT("%s\n%d 秒后回到出生点复活（队友仍在战斗）"), *RunSummary, ReviveSeconds));
+			}
+			else
+			{
+				ViewData.SummaryText = FText::FromString(FString::Printf(
+					TEXT("%s\n等待队友 —— 全员阵亡后才会结束本轮"), *RunSummary));
+			}
 		}
 	}
 

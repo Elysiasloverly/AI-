@@ -8,7 +8,10 @@ public class ai : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 	
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "AIModule", "GameplayTasks", "UMG" });
+		// GAS 迁移：GameplayAbilities（ASC / AttributeSet / GameplayEffect / GameplayAbility）
+		// GameplayTags 提供 FGameplayTag 体系；GameplayTasks 是 UAbilityTask 的依赖（本来就有）。
+		// 联机化还需要 "NetCore"（FGameplayTagContainer 的网络序列化与 RPC 参数）。
+		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "AIModule", "GameplayTasks", "UMG", "GameplayAbilities", "GameplayTags", "NetCore" });
 
 		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
 		

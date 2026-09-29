@@ -1,6 +1,8 @@
 #include "Enemies/RogueEnemyProjectile.h"
 
 #include "Player/RogueCharacter.h"
+#include "AbilitySystem/RogueAbilitySystemLibrary.h"
+#include "Core/RogueGameplayTags.h"
 #include "Subsystems/RogueEnemyTrackerSubsystem.h"
 #include "Combat/RogueImpactEffect.h"
 #include "Components/PointLightComponent.h"
@@ -437,7 +439,18 @@ void ARogueEnemyProjectile::ResolveImpact(AActor* OtherActor, const FVector& Imp
 
 	if (ARogueCharacter* PlayerCharacter = Cast<ARogueCharacter>(OtherActor))
 	{
-		UGameplayStatics::ApplyDamage(PlayerCharacter, Damage, InstigatorController, DamageCauser, UDamageType::StaticClass());
+		// 倒地（濒死）的玩家不结算伤害，也不生成命中特效。
+		//
+		// 这里和 FireRangedShot 是**两道独立的闸门**，故意冗余：
+		// 测试日志里出现过"玩家倒地后仍被怪物弹体每秒命中一次"，
+		// 当时无法从调用链上确认弹体是哪一发（可能是开火→命中的时序差，也可能是池复用的旧弹体），
+		// 而在命中点再判一次，任何来源的弹体都伤不到倒地的人。
+		// （即便漏到这里，ApplyDamageToTarget 的 State.Dead 闸门仍会挡下伤害，只是会白跑一趟。）
+		if (!PlayerCharacter->IsDead())
+		{
+			// 敌方弹体：Tag 用 Damage.Source.Projectile（与玩家弹体同一个来源分类）
+			RogueAbilitySystem::ApplyDamageToTarget(DamageCauser, PlayerCharacter, Damage, RogueGameplayTags::Damage_Source_Projectile);
+		}
 	}
 
 	DeactivateToPool();

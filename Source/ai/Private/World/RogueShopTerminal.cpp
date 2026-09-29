@@ -13,6 +13,13 @@ ARogueShopTerminal::ARogueShopTerminal()
 {
 	PrimaryActorTick.bCanEverTick = false;
 
+	// ── 复制 ──
+	// 商店终端由 **GameMode 在 BeginPlay 里 SpawnActor** —— 那会儿只有服务端在跑，
+	// 不开复制的话客户端世界里**根本没有这个终端**：看不到它，
+	// 重叠检测也不会触发，于是角色的 NearbyShopTerminal 永远为空 →
+	// 交互提示不出现、商店打不开。这是"客户端按 E 没反应"的根因之一。
+	bReplicates = true;
+
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
 	RootComponent = SceneRoot;
 

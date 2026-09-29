@@ -5,6 +5,7 @@
 #include "Subsystems/WorldSubsystem.h"
 #include "Core/RogueEnemyTracker.h"
 #include "Core/RogueGameModeConfig.h"
+#include "Core/RogueTypes.h"
 #include "RogueEnemyTrackerSubsystem.generated.h"
 
 class ARogueEnemy;
@@ -37,6 +38,11 @@ public:
 	// ---- 查询接口 ----
 	const TArray<TWeakObjectPtr<ARogueEnemy>>& GetActiveEnemies() const { return EnemyTracker.GetActiveEnemies(); }
 	int32 GetActiveEnemyCount() const { return EnemyTracker.GetActiveEnemyCount(); }
+
+	/** 统计当前"存活"的某类型敌人数量（用于"同时存活上限"判据）。
+	 *  bIncludeBoss = false 时不计入 Boss —— Boss 有独立的生成条件，不该占用普通怪的名额。 */
+	int32 GetActiveEnemyCountOfType(ERogueEnemyType EnemyType, bool bIncludeBoss = false) const;
+
 	bool ShouldCullCombatEffects() const;
 
 private:

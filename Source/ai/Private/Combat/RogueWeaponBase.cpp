@@ -156,4 +156,40 @@ void ARogueWeaponBase::SpawnLaserBeam(const FVector& Start, const FVector& End, 
 	{
 		Beam->ActivatePooledBeam(OwnerCharacter, Start, End, bInfernoStyle, bImpactEffect, Lifetime);
 	}
+
+	// 光束是"事件型"表现：服务端这一发必须广播出去。
+	// 否则队友看不到激光/地狱塔的光束 —— 客户端已经不再自己跑别人的武器了。
+	// （在客户端调用 SpawnLaserBeam 时这里会直接返回：BroadcastCosmeticFire 只在服务端有效。）
+	FRogueWeaponCosmeticFire Fire;
+	Fire.Start = Start;
+	Fire.End = End;
+	Fire.Param = Lifetime;
+	Fire.bAlternateStyle = bInfernoStyle;
+	BroadcastCosmeticFire(Fire);
+}
+
+void ARogueWeaponBase::BroadcastCosmeticFire(const FRogueWeaponCosmeticFire& Fire) const
+{
+	if (OwnerCharacter == nullptr || !OwnerCharacter->HasAuthority())
+	{
+		// 客户端不广播：它本来就是这条广播的接收方，
+		// 而且客户端这一发是本地预测，没有权威性。
+		return;
+	}
+
+	OwnerCharacter->BroadcastWeaponCosmetic(this, Fire);
+}
+
+void ARogueWeaponBase::PlayCosmeticFire(const FRogueWeaponCosmeticFire& Fire)
+{
+	// 默认什么都不做：事件型武器各自重写（子弹/火箭/迫击炮/刀片）。
+	// 光束类武器的重写就是转调 PlayCosmeticBeam。
+}
+
+void ARogueWeaponBase::PlayCosmeticBeam(const FRogueWeaponCosmeticFire& Fire)
+{
+	// 用广播过来的起点/终点把这条光束画出来。
+	// 这里生成的 Beam 只负责好看：它不索敌、不结算伤害
+	// （伤害在服务端那一发里早就算完了）。
+	SpawnLaserBeam(Fire.Start, Fire.End, Fire.bAlternateStyle, /*bImpactEffect=*/true, Fire.Param);
 }

@@ -59,3 +59,8 @@ ARogueOrbitingBlade* URogueCombatPoolSubsystem::AcquireOrbitingBlade(TSubclassOf
 {
 	return CombatPools.AcquireOrbitingBlade(GetWorld(), BladeClass, OwnerActor, SpawnLocation, SpawnRotation);
 }
+
+void URogueCombatPoolSubsystem::LogPoolDiagnostics()
+{
+	CombatPools.LogPoolDiagnostics();
+}

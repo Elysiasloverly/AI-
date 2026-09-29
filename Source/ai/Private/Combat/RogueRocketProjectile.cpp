@@ -2,6 +2,8 @@
 
 #include "Combat/RogueImpactEffect.h"
 #include "Enemies/RogueEnemy.h"
+#include "AbilitySystem/RogueAbilitySystemLibrary.h"
+#include "Core/RogueGameplayTags.h"
 #include "Subsystems/RogueEnemyTrackerSubsystem.h"
 // #include "Components/PointLightComponent.h"
 #include "Components/SphereComponent.h"
@@ -439,7 +441,8 @@ void ARogueRocketProjectile::Explode()
 			continue;
 		}
 
-		UGameplayStatics::ApplyDamage(Enemy, PendingDamages[Index], InstigatorController, DamageCauser, UDamageType::StaticClass());
+		// 爆炸是范围伤害，Tag 用 Damage.Source.Area
+		RogueAbilitySystem::ApplyDamageToTarget(DamageCauser, Enemy, PendingDamages[Index], RogueGameplayTags::Damage_Source_Area);
 	}
 
 	DeactivateToPool();

@@ -429,6 +429,24 @@ struct AI_API FRogueEnemyArchetypeRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Base", meta = (DisplayName = "基础移动倍率"))
 	float BaseMoveMultiplier = 1.0f;
 
+	/** 同时存活上限：场上这一种敌人**同时**最多存在多少只，死掉才会腾出名额。
+	 *  **不填 / 填 0 = 不限制**。
+	 *  与 `MaxSpawnPerWave` 的区别：
+	 *    MaxAlive        —— 动态闸门，敌人死掉名额就回来了，管的是"瞬间压力"；
+	 *    MaxSpawnPerWave —— 静态预算，本波刷够就没了，死了也不补，管的是"这一波的资源总量"。
+	 *  两个字段可以同时填，谁先满足谁生效。Boss 不计入（Boss 有独立的生成条件）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Base", meta = (DisplayName = "同时存活上限(0=不限)", ClampMin = "0"))
+	int32 MaxAlive = 0;
+
+	/** 每波刷新上限：一个波次内这一种敌人**总共**最多刷出多少只（死了也不补）。
+	 *  **不填 / 填 0 = 不限制**。
+	 *  与权重（`EnemyWaveEntries` 里的 Weight）的分工：
+	 *    Weight    —— 决定"抽中的概率"，管不住总数，抽中多少次就刷多少只；
+	 *    本字段    —— 是硬闸门，达到后本次波次内该类型直接从抽签池里移除（权重也不计入）。
+	 *  计数在每次波次切换时归零；Boss 不算在内（Boss 有独立的生成条件与波次间隔）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Base", meta = (DisplayName = "每波刷新上限(0=不限)", ClampMin = "0"))
+	int32 MaxSpawnPerWave = 0;
+
 	// ===== 各敌人专属属性（仅对应类型生效） =====
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpecialParams|Charger", meta = (DisplayName = "冲锋者专属参数"))
 	FRogueChargerSpecialParams ChargerParams;

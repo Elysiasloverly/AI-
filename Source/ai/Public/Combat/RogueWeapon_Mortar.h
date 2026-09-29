@@ -17,6 +17,9 @@ public:
 	virtual void ApplySharedDamageBonus(float Magnitude) override;
 	virtual void ApplySharedSpeedBonus(float Magnitude) override;
 	virtual void ApplySharedRangeBonus(float Magnitude) override;
+
+	/** 队友客户端收到服务端广播后，照着补画这一发（纯表现迫击炮弹，伤害恒为 0） */
+	virtual void PlayCosmeticFire(const FRogueWeaponCosmeticFire& Fire) override;
 	
 	float GetExplosionRadius() const
 	{

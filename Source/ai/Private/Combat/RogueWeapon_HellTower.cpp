@@ -3,6 +3,8 @@
 
 #include "Player/RogueCharacter.h"
 #include "Enemies/RogueEnemy.h"
+#include "AbilitySystem/RogueAbilitySystemLibrary.h"
+#include "Core/RogueGameplayTags.h"
 #include "Kismet/GameplayStatics.h"
 
 void ARogueWeapon_HellTower::WeaponTick(float DeltaSeconds)
@@ -107,11 +109,16 @@ void ARogueWeapon_HellTower::WeaponTick(float DeltaSeconds)
 		}
 
 		// 伤害 tick
+		// ⚠️ 防御：DamageTickInterval 来自 DataTable，若被填成 0（批量填表时很常见），
+		//    原来的 `while (Timer >= Interval) { Timer -= Interval; }` 会因"条件恒真 + 自减 0"
+		//    变成同帧死循环、直接卡死主线程。这里钳到下限，保证每轮至少推进 0.01s。
+		const float SafeDamageTickInterval = FMath::Max(Config.DamageTickInterval, 0.01f);
 		HellTowerDamageTickTimers[TowerIndex] += SimulatedDelta;
-		while (HellTowerDamageTickTimers[TowerIndex] >= Config.DamageTickInterval)
+		while (HellTowerDamageTickTimers[TowerIndex] >= SafeDamageTickInterval)
 		{
-			HellTowerDamageTickTimers[TowerIndex] -= Config.DamageTickInterval;
-			UGameplayStatics::ApplyDamage(TargetEnemy, HellTowerCurrentDamages[TowerIndex], nullptr, OwnerChar, UDamageType::StaticClass());
+			HellTowerDamageTickTimers[TowerIndex] -= SafeDamageTickInterval;
+			// 地狱塔是持续光束伤害，Tag 用 Damage.Source.Beam
+			RogueAbilitySystem::ApplyDamageToTarget(OwnerChar, TargetEnemy, HellTowerCurrentDamages[TowerIndex], RogueGameplayTags::Damage_Source_Beam);
 			HellTowerCurrentDamages[TowerIndex] += Config.DamageRampPerTick;
 		}
 
@@ -164,4 +171,18 @@ void ARogueWeapon_HellTower::ApplySharedSpeedBonus(float Magnitude)
 void ARogueWeapon_HellTower::ApplySharedRangeBonus(float Magnitude)
 {
 	Config.Range += Magnitude * 0.70f;
+}
+
+void ARogueWeapon_HellTower::PlayCosmeticFire(const FRogueWeaponCosmeticFire& Fire)
+{
+	// 地狱塔每刷新一次光束，服务端的 SpawnLaserBeam 就会广播一条新的起终点，
+	// 队友那边照着重画即可 —— 锁定目标、伤害递增这些状态都不用复现，
+	// 因为光束只是"这一段时间里连到了哪"的画面。
+	// 这里**不要**补 BroadcastCosmeticFire：SpawnLaserBeam 内部已经广播过了。
+	//
+	// 注意参数要与权威那一次**逐项对齐**（RogueWeapon_HellTower.cpp 里的权威调用）：
+	// 权威是 bInfernoStyle=true、bImpactEffect=**false**。
+	// 不能图省事转调 PlayCosmeticBeam —— 基类那个辅助函数固定 bImpactEffect=true，
+	// 会让队友那一屏每段光束都多出一个命中特效（本人和主机都看不到，最难对比的那种不一致）。
+	SpawnLaserBeam(Fire.Start, Fire.End, /*bInfernoStyle=*/true, /*bImpactEffect=*/false, Fire.Param);
 }

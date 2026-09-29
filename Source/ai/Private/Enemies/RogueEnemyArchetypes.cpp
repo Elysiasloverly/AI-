@@ -307,3 +307,32 @@ FRogueEnemyArchetype RogueEnemyArchetypes::BuildEnemyArchetypeFromDataTable(cons
 	UE_LOG(LogTemp, Verbose, TEXT("[RogueEnemyArchetypes] DataTable 中未找到敌人类型 %d 的配置行，回退到硬编码"), static_cast<int32>(Type));
 	return BuildEnemyArchetype(Type, bIsBoss);
 }
+
+namespace
+{
+	/** 按敌人类型取原型表里的那一行；表为空或没有对应行时返回 nullptr */
+	const FRogueEnemyArchetypeRow* FindArchetypeRow(const UDataTable* DataTable, ERogueEnemyType Type, const TCHAR* Context)
+	{
+		if (DataTable == nullptr)
+		{
+			return nullptr;
+		}
+
+		const FName RowName = RogueEnemyArchetypes::FindRowNameForEnemyType(DataTable, Type);
+		return RowName.IsNone() ? nullptr : DataTable->FindRow<FRogueEnemyArchetypeRow>(RowName, Context);
+	}
+}
+
+int32 RogueEnemyArchetypes::GetMaxSpawnPerWave(const UDataTable* DataTable, ERogueEnemyType Type)
+{
+	// 表没配 / 表里没这一行 / 行里没填 → 一律返回 0（不限）。
+	// 这里刻意不做"表里查不到就封杀"的处理：漏配一行不该把一种怪直接禁掉。
+	const FRogueEnemyArchetypeRow* Row = FindArchetypeRow(DataTable, Type, TEXT("GetMaxSpawnPerWave"));
+	return Row != nullptr ? FMath::Max(0, Row->MaxSpawnPerWave) : 0;
+}
+
+int32 RogueEnemyArchetypes::GetMaxAlive(const UDataTable* DataTable, ERogueEnemyType Type)
+{
+	const FRogueEnemyArchetypeRow* Row = FindArchetypeRow(DataTable, Type, TEXT("GetMaxAlive"));
+	return Row != nullptr ? FMath::Max(0, Row->MaxAlive) : 0;
+}

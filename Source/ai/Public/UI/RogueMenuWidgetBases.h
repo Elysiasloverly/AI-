@@ -455,3 +455,48 @@ protected:
 private:
 	TWeakObjectPtr<ARogueHUD> OwningRogueHUD;
 };
+
+/** 复活倒计时界面的视图数据（C++ 每帧组装，蓝图只读） */
+USTRUCT(BlueprintType)
+struct FRogueReviveCountdownViewData
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Revive")
+	bool bVisible = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Revive")
+	int32 SecondsRemaining = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Revive")
+	FText HintText = FText::GetEmpty();
+};
+
+/**
+ * 复活倒计时界面基类（联机合作：倒下后等待复活的 10 秒）。
+ *
+ * 与死亡结算界面**刻意分开**：
+ *   · 这个界面表示"我暂时倒下、还会回来"——只显示倒计时与提示，不带结算/重开按钮；
+ *   · WBP_DeathScreen 只在**全员同时倒下**（本局结束）时出现。
+ * 数据全部由 C++ 每帧推送（秒数来自复制的复活截止时刻），蓝图只负责样式与动画。
+ */
+UCLASS(Abstract, Blueprintable)
+class AI_API URogueReviveCountdownWidgetBase : public UUserWidget
+{
+	GENERATED_BODY()
+
+public:
+	/** 由 HUD 每帧推送：剩余秒数 + 是否可见。 */
+	void UpdateReviveCountdown(int32 SecondsRemaining, bool bVisible);
+
+	/** HUD 创建菜单 widget 的统一入口（CreateRogueMenuWidget 会对每个 widget 调它）。
+	 *  倒计时界面不需要回指 HUD，这里保留空实现以复用同一套创建流程。 */
+	void SetOwningRogueHUD(ARogueHUD* InOwningHUD) { (void)InOwningHUD; }
+
+protected:
+	/** 蓝图实现：刷新样式（大号秒数、入场动画等）。
+	 *  刻意用**两个普通参数**而不是结构体：蓝图里直接就是两个引脚，
+	 *  不需要先 Break Struct —— 少一步、也不容易接错。 */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Rogue|Revive")
+	void OnReviveCountdownUpdated(int32 SecondsRemaining, bool bVisible);
+};

@@ -13,6 +13,17 @@
 ARogueArena::ARogueArena()
 {
 	PrimaryActorTick.bCanEverTick = false;
+
+	// ── 复制 ──
+	// 竞技场由 **GameMode 在 BeginPlay 里 SpawnActor**，只有服务端会执行那段。
+	// 不开复制的话客户端世界里**没有地板、墙壁、灯光** —— 玩家会站在一片虚空里。
+	//
+	// 本类的几何全部在构造函数里配置（BeginPlay 是空的），
+	// 所以复制 Actor 本身就够了：客户端构造出同一个 CDO 派生的 Actor，几何自然一致。
+	bReplicates = true;
+	// 竞技场只有一个、且覆盖整个战斗区域 —— 用距离相关性裁剪它没有意义，
+	// 一旦被裁掉客户端就会看到虚空，所以标记为始终相关。
+	bAlwaysRelevant = true;
 	/*
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
 	RootComponent = SceneRoot;

@@ -20,8 +20,10 @@ public:
 	virtual void ApplySharedSpeedBonus(float Magnitude) override;
 	virtual void ApplySharedRangeBonus(float Magnitude) override;
 
+	/** 队友客户端收到服务端广播后，照着补画这一发（纯表现火箭，伤害恒为 0） */
+	virtual void PlayCosmeticFire(const FRogueWeaponCosmeticFire& Fire) override;
+
 	float GetExplosionRadius() const { return GetConfig().ExplosionRadius; }
-	float GetRocketSpeed() const { return GetConfig().RocketSpeed; }
 
 private:
 	void FireRocketVolley(const TArray<ARogueEnemy*>& Enemies);

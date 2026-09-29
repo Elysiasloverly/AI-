@@ -70,6 +70,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "刷怪", meta = (DisplayName = "Boss存活时敌人上限减少量"))
 	int32 BossAliveMaxEnemyReduction = 12;
 
+	/** 存活上限随波次增长：每波增加多少只（0 = 关闭增长，退回固定上限） */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "刷怪", meta = (DisplayName = "每波存活上限增长", ClampMin = "0"))
+	int32 MaxAliveEnemiesPerWave = 8;
+
+	/** 存活上限的硬顶（0 = 不设上限，随波次持续增长）
+	 *  留这个开关是为了随时能把曲线收回来：先放开了玩，卡了就填个数。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "刷怪", meta = (DisplayName = "存活上限硬顶(0=不设上限)", ClampMin = "0"))
+	int32 MaxAliveEnemiesHardLimit = 0;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "刷怪", meta = (DisplayName = "双倍刷怪开始波次"))
 	int32 DoubleSpawnWave = 5;
 

@@ -35,7 +35,7 @@
 - `RogueUpgradeSystemRules.*`
 - `RogueUpgradeDefinitionAsset.*`
 - `RogueUpgradeRuleAsset.*`
-- `RogueUpgradeEffectApplier.*`
+- `RogueStateEffects.*`（三个"授予状态标签"的 GE：死亡 / 刚受伤 / 冲刺冷却）
 - `RogueShopSystem.*`
 - `RogueCombatPools.*`
 - `RogueEnemyTracker.*`
@@ -48,8 +48,10 @@
 
 - `RogueCharacter.*`
 - `RogueCharacterVisualComponent.*`
-- `RogueWeaponConfig.h`
 - `RoguePlayerBalanceAsset.*`
+
+> 武器参数不在这里：已迁到 `Source/ai/Public/Combat/RogueWeaponBase.h`（行结构 `FRogueWeaponTableRow`）+ 数据表 `Content/DataTable/DT_WeaponConfig`。
+> 旧的 `RogueWeaponConfig.h` 已删除（删除前确认全源码、752 个资产、cooked 数据均 0 引用）。
 
 ### `Source/ai/Public/Enemies` / `Source/ai/Private/Enemies`
 
@@ -152,8 +154,8 @@
 
 这些值决定“武器怎么玩”，应该放在：
 
-- `RogueWeaponConfig.h`
-- `URoguePlayerBalanceAsset`
+- `DT_WeaponConfig`（每把武器一行，行结构 `FRogueWeaponTableRow`）
+- `URoguePlayerBalanceAsset`（**只放玩家自身属性**：生命/护甲/移速/冲刺/跳跃；不含武器字段）
 - 必要时再配合升级系统和效果应用器
 
 典型例子：
@@ -222,7 +224,7 @@
 
 ##### 激光
 
-- 激光武器玩法参数放在 `FRogueLaserWeaponConfig`
+- 激光武器玩法参数放在 `DT_WeaponConfig` 的 `Laser` 行（行结构 `FRogueWeaponTableRow`）
 - 激光 Beam 的视觉厚度、环大小、最短显示时间放在 `ARogueLaserBeam`
 
 ##### 普通子弹
@@ -261,9 +263,8 @@
 
 它们共同特点是：
 
-- 武器参数由 `RogueWeaponConfig.h` 定义
+- 武器参数由 `DT_WeaponConfig` 的数据行定义（行结构 `FRogueWeaponTableRow`，声明在 `Combat/RogueWeaponBase.h`）
 - 玩家运行时由 `ARogueCharacter` 调度
-- 武器基础数值可由 `URoguePlayerBalanceAsset` 覆盖
 - 升级入口由 `ERogueUpgradeType`、升级规则、升级定义共同驱动
 
 ---
@@ -283,7 +284,7 @@
 1. 新增 `ERogueUpgradeType`
 2. 新增升级定义
 3. 新增升级出现规则
-4. 在 `FRogueUpgradeEffectApplier` 里处理效果
+4. 在 `ARogueCharacter::ApplyUpgrade()` 里处理效果
 5. 在该武器对应的运行逻辑里消耗这个新参数
 
 #### 情况 B：这是一个全新的武器族
@@ -303,16 +304,20 @@
 
 #### 第一步：定义武器配置结构
 
+武器配置**不是新建一个结构体**，而是往已有的行结构里加字段，再在数据表里加一行。
+
 文件：
 
-- `Source/ai/Public/Player/RogueWeaponConfig.h`
+- `Source/ai/Public/Combat/RogueWeaponBase.h` —— 行结构 `FRogueWeaponTableRow`
+- `Content/DataTable/DT_WeaponConfig` —— 每把武器一行的数据
 
 做法：
 
-1. 新增一个 `USTRUCT(BlueprintType)` 配置结构。
-2. 把这把武器的基础参数都放进去。
+1. 在 `FRogueWeaponTableRow` 里新增这把武器专属的 `UPROPERTY`（按现有惯例用 `Category = "武器名"` + 中文 `DisplayName`）。
+2. 在 `DT_WeaponConfig` 里**新增一行**（行名用武器族语义名，现有：`Projectile` / `Rocket` / `Mortar` / `Laser` / `HellTower` / `Scythe`）。
+3. 填这一行的 `WeaponClass`（留空则回退到 `ARogueCharacter::WeaponClasses[Index]`，**按行顺序**对应，所以新增行要同步在 BP 上补数组元素）。
 
-例如：
+例如这类字段：
 
 - `Count`
 - `Cooldown`
@@ -520,21 +525,22 @@
 
 - `XxxCount` 同时承担“解锁”和“数量 +1”
 
-#### D. 在升级效果应用器里落地
+#### D. 在 `ARogueCharacter::ApplyUpgrade()` 里落地
 
 文件：
 
-- `Source/ai/Private/Core/RogueUpgradeEffectApplier.cpp`
+- `Source/ai/Private/Player/RogueCharacter.cpp`
 
-这里是升级真正生效的地方。
+这里是升级真正生效的地方（属性类走 GE、武器类走 NetMulticast、联动效果就地处理）。
 
-建议保持现有边界：
+边界：
 
-- `UpgradeSystem` 负责发牌
-- `UpgradeEffectApplier` 负责解释效果
-- `Character` 负责提供被修改的运行时状态
+- `RogueUpgradeSystem` 负责发牌
+- `ARogueCharacter::ApplyUpgrade()` 负责解释效果并落地
+- `URogueAttributeSet` / 武器 Actor 负责持有被修改的运行时状态
 
-不要重新把升级逻辑写回 `ARogueCharacter::ApplyUpgrade()` 里。
+> 历史：这里原来是 `FRogueUpgradeEffectApplier`，但它只是 `ApplyUpgrade` 的一行转发，
+> 而且转发回来还要用 `friend` 访问角色私有成员（互相调用成环）。已合并进角色。
 
 ---
 
@@ -563,13 +569,13 @@
 
 如果你想最省事地加一把新武器，推荐顺序是：
 
-1. `RogueWeaponConfig.h` 新增配置结构
-2. `RoguePlayerBalanceAsset.h` 挂接配置
+1. `Combat/RogueWeaponBase.h` 的 `FRogueWeaponTableRow` 里加专属字段
+2. `DT_WeaponConfig` 加一行并填好数值与 `WeaponClass`（留空则同步 BP 上的 `WeaponClasses` 数组）
 3. 新建 `Combat/XxxWeaponActor`
-4. `ARogueCharacter` 中增加配置、计时器、处理函数
+4. `ARogueCharacter` 中增加计时器、处理函数
 5. `RogueTypes.h` 增加升级类型
 6. `RogueUpgradeSystemRules.cpp` 增加定义和出现规则
-7. `RogueUpgradeEffectApplier.cpp` 增加应用逻辑
+7. `ARogueCharacter::ApplyUpgrade()` 增加应用逻辑
 8. `RogueHUD.cpp` 增加显示
 9. 如有必要，把它接进 `RogueCombatPools`
 
@@ -630,7 +636,7 @@
 
 文件：
 
-- `Source/ai/Private/Core/RogueUpgradeEffectApplier.cpp`
+- `Source/ai/Private/Player/RogueCharacter.cpp`
 
 这里必须加，否则卡牌会“能抽到但没效果”。
 
@@ -896,11 +902,11 @@
 
 ### 添加武器最常改的文件
 
-- `Source/ai/Public/Player/RogueWeaponConfig.h`
-- `Source/ai/Public/Player/RoguePlayerBalanceAsset.h`
+- `Source/ai/Public/Combat/RogueWeaponBase.h`（行结构 `FRogueWeaponTableRow`）
+- `Content/DataTable/DT_WeaponConfig`（数据行）
+- `Source/ai/Public/Player/RoguePlayerBalanceAsset.h`（只放玩家自身属性）
 - `Source/ai/Public/Core/RogueTypes.h`
 - `Source/ai/Private/Core/RogueUpgradeSystemRules.cpp`
-- `Source/ai/Private/Core/RogueUpgradeEffectApplier.cpp`
 - `Source/ai/Public/Player/RogueCharacter.h`
 - `Source/ai/Private/Player/RogueCharacter.cpp`
 - `Source/ai/Public/Combat/*.h`
@@ -912,7 +918,7 @@
 
 - `Source/ai/Public/Core/RogueTypes.h`
 - `Source/ai/Private/Core/RogueUpgradeSystemRules.cpp`
-- `Source/ai/Private/Core/RogueUpgradeEffectApplier.cpp`
+- `Source/ai/Private/Player/RogueCharacter.cpp`
 - `Source/ai/Public/Core/RogueUpgradeDefinitionAsset.h`
 - `Source/ai/Public/Core/RogueUpgradeRuleAsset.h`
 

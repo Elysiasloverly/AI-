@@ -44,42 +44,6 @@ namespace
 	}
 }
 
-void FRogueUpgradeSystem::Reset()
-{
-	PendingUpgrades.Reset();
-	QueuedSelections = 0;
-	bAwaitingChoice = false;
-}
-
-void FRogueUpgradeSystem::QueueSelections(int32 Count)
-{
-	if (Count > 0)
-	{
-		QueuedSelections += Count;
-	}
-}
-
-bool FRogueUpgradeSystem::OpenNextSelection(const ARogueCharacter* Character)
-{
-	if (Character == nullptr || Character->IsDead() || QueuedSelections <= 0)
-	{
-		Reset();
-		return false;
-	}
-
-	BuildRandomUpgradeOptions(Character, 3, PendingUpgrades);
-
-	if (PendingUpgrades.Num() == 0)
-	{
-		Reset();
-		return false;
-	}
-
-	--QueuedSelections;
-	bAwaitingChoice = true;
-	return true;
-}
-
 void FRogueUpgradeSystem::BuildRandomUpgradeOptions(const ARogueCharacter* Character, int32 DesiredCount, TArray<FRogueUpgradeOption>& OutOptions) const
 {
 	OutOptions.Reset();
@@ -96,19 +60,6 @@ void FRogueUpgradeSystem::BuildRandomUpgradeOptions(const ARogueCharacter* Chara
 		OutOptions.Add(MakeUpgradeOption(Types[PickedIndex]));
 		Types.RemoveAt(PickedIndex);
 	}
-}
-
-bool FRogueUpgradeSystem::TryConsumeChoice(int32 UpgradeIndex, FRogueUpgradeOption& OutUpgrade)
-{
-	if (!bAwaitingChoice || !PendingUpgrades.IsValidIndex(UpgradeIndex))
-	{
-		return false;
-	}
-
-	OutUpgrade = PendingUpgrades[UpgradeIndex];
-	PendingUpgrades.Reset();
-	bAwaitingChoice = false;
-	return true;
 }
 
 FRogueUpgradeOption FRogueUpgradeSystem::MakeUpgradeOption(ERogueUpgradeType Type) const

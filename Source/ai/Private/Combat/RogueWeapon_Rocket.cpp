@@ -113,6 +113,51 @@ void ARogueWeapon_Rocket::FireRocketVolley(const TArray<ARogueEnemy*>& Enemies)
 		if (Rocket != nullptr)
 		{
 			Rocket->ActivatePooledRocket(OwnerChar, OwnerChar, SpawnLocation, Direction.Rotation(), Direction, FinalRocketSpeed, Config.Damage, Config.ExplosionRadius);
+
+			// 权威那一发已经生成，再把"画出来需要什么"广播给队友。
+			// 逐发广播：偏转角与弹速随机是每发单独掷的；客户端调用它是空操作。
+			// Param 传爆炸半径 —— 队友那台机器上爆炸特效的大小是按半径算的
+			// （见 ARogueRocketProjectile::Explode），不传的话队友看到的爆炸会偏小。
+			FRogueWeaponCosmeticFire Fire;
+			Fire.Start = SpawnLocation;
+			Fire.Direction = Direction;
+			Fire.Speed = FinalRocketSpeed;
+			Fire.Param = Config.ExplosionRadius;
+			BroadcastCosmeticFire(Fire);
 		}
 	}
+}
+
+void ARogueWeapon_Rocket::PlayCosmeticFire(const FRogueWeaponCosmeticFire& Fire)
+{
+	// 只在"既非服务端、也非本人"的机器上被调用（见 Multicast_WeaponCosmetic）。
+	// 与 ARogueEnemy::Multicast_SpawnCosmeticProjectile 同形：
+	// 同一个池函数、同一套参数，只把伤害换成 0（伤害已在服务端结算）。
+	if (GetWorld() == nullptr)
+	{
+		return;
+	}
+
+	ARogueCharacter* OwnerChar = GetOwnerCharacter();
+	if (OwnerChar == nullptr)
+	{
+		return;
+	}
+
+	URogueCombatPoolSubsystem* Pools = GetWorld()->GetSubsystem<URogueCombatPoolSubsystem>();
+	if (Pools == nullptr)
+	{
+		return;
+	}
+
+	UClass* RocketClassToSpawn = Config.RocketClass ? Config.RocketClass.Get() : ARogueRocketProjectile::StaticClass();
+	ARogueRocketProjectile* Rocket = Pools->AcquireRocketProjectile(
+		RocketClassToSpawn, OwnerChar, OwnerChar, Fire.Start, Fire.Direction.Rotation());
+	if (Rocket == nullptr)
+	{
+		return;
+	}
+
+	Rocket->ActivatePooledRocket(
+		OwnerChar, OwnerChar, Fire.Start, Fire.Direction.Rotation(), Fire.Direction, Fire.Speed, /*InDamage=*/0.0f, Fire.Param);
 }

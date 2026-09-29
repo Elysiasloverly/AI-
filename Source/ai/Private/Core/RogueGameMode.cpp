@@ -2,6 +2,9 @@
 
 #include "World/RogueArena.h"
 #include "Player/RogueCharacter.h"
+#include "Player/RoguePlayerState.h"
+#include "Player/RoguePlayerController.h"
+#include "EngineUtils.h"
 #include "Enemies/RogueEnemy.h"
 #include "World/RogueExperiencePickup.h"
 #include "World/RogueShopTerminal.h"
@@ -10,6 +13,8 @@
 #include "Core/RogueUpgradeDefinitionAsset.h"
 #include "Core/RogueUpgradeRuleAsset.h"
 #include "Core/RogueGameModeRules.h"
+#include "Core/RogueGameState.h"
+#include "Core/RoguePlayerQuery.h"
 #include "Core/RogueUpgradeSystem.h"
 #include "Combat/RogueMortarProjectile.h"
 #include "Combat/RogueWeaponBase.h"
@@ -27,6 +32,7 @@ namespace
 	const TCHAR* DefaultGameBalanceAssetPath = TEXT("/Game/DataTable/AS_RogueGameBalanceAsse.AS_RogueGameBalanceAsse");
 	const TCHAR* DefaultUpgradeDefinitionAssetPath = TEXT("/Game/DataTable/AS_UpgradeDefinitionAsset.AS_UpgradeDefinitionAsset");
 	const TCHAR* DefaultUpgradeRuleAssetPath = TEXT("/Game/DataTable/AS_RogueUpgradeRuleAsset.AS_RogueUpgradeRuleAsset");
+	const TCHAR* DefaultEnemyArchetypeTablePath = TEXT("/Game/DataTable/DT_FRogueEnemyArchetypeRow.DT_FRogueEnemyArchetypeRow");
 
 	template <typename AssetType>
 	AssetType* LoadConfiguredOrDefaultAsset(const TSoftObjectPtr<AssetType>& ConfiguredAsset, const TCHAR* DefaultAssetPath)
@@ -50,6 +56,20 @@ ARogueGameMode::ARogueGameMode()
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.bTickEvenWhenPaused = true;
 	DefaultPawnClass = ARogueCharacter::StaticClass();
+
+	// 整局运行状态走 GameState（会复制到所有客户端）。
+	// GameMode 是服务端独占对象，客户端拿不到 —— 所以 HUD 要显示的东西不能只放在这里。
+	GameStateClass = ARogueGameState::StaticClass();
+
+	// ASC 挂在 PlayerState 上（联机 GAS 的标准做法，详见 ARoguePlayerState 的注释）。
+	// 注意：这是在 C++ 里设的，如果 BP_RogueGameMode 覆盖过 PlayerStateClass，
+	// 需要同步改成 BP 或清掉那个覆盖。
+	PlayerStateClass = ARoguePlayerState::StaticClass();
+
+	// 用项目自己的 PlayerController：它记录"曾经拥有的 Pawn"，供下面的归属自愈认领回原角色。
+	// （详见 ARoguePlayerController 与 RepairPlayerPawnOwnership 的注释）
+	PlayerControllerClass = ARoguePlayerController::StaticClass();
+
 	HUDClass = ARogueHUD::StaticClass();
 	ArenaClass = ARogueArena::StaticClass();
 	ShopTerminalClass = ARogueShopTerminal::StaticClass();
@@ -67,12 +87,13 @@ void ARogueGameMode::BeginPlay()
 
 void ARogueGameMode::SpawnRuntimeWorldActors()
 {
+	//生成竞技场
 	if (!SpawnedArena.IsValid())
 	{
 		UClass* ArenaToSpawn = ArenaClass ? ArenaClass.Get() : ARogueArena::StaticClass();
 		SpawnedArena = GetWorld()->SpawnActor<ARogueArena>(ArenaToSpawn, FVector::ZeroVector, FRotator::ZeroRotator);
 	}
-
+	//生成商店终端
 	if (!SpawnedShopTerminal.IsValid())
 	{
 		UClass* ShopTerminalToSpawn = ShopTerminalClass ? ShopTerminalClass.Get() : ARogueShopTerminal::StaticClass();
@@ -96,13 +117,12 @@ void ARogueGameMode::SpawnRuntimeWorldActors()
 void ARogueGameMode::ConfigureRuntimeAssets()
 {
 	LoadedGameBalanceAsset = LoadConfiguredOrDefaultAsset(GameBalanceAsset, DefaultGameBalanceAssetPath);
+	LoadedEnemyArchetypeTable = LoadConfiguredOrDefaultAsset(EnemyArchetypeTable, DefaultEnemyArchetypeTablePath);
 	UpgradeSystem.SetDefinitionAsset(LoadConfiguredOrDefaultAsset(UpgradeDefinitionAsset, DefaultUpgradeDefinitionAssetPath));
 	UpgradeSystem.SetRuleAsset(LoadConfiguredOrDefaultAsset(UpgradeRuleAsset, DefaultUpgradeRuleAssetPath));
-	ShopSystem.Configure(
-		RogueGameModeRules::GetShopOfferCount(LoadedGameBalanceAsset),
-		RogueGameModeRules::GetShopOfferCost(LoadedGameBalanceAsset),
-		RogueGameModeRules::GetShopRefreshCost(LoadedGameBalanceAsset),
-		RogueGameModeRules::GetShopAutoRefreshInterval(LoadedGameBalanceAsset));
+
+	// 注：商店配置不在这里做。商店是**每玩家一份**（挂在各自的 PlayerState 上），
+	// 每个玩家第一次打开商店时用同一份平衡资产配置自己那份（见 TryOpenShop）。
 }
 
 void ARogueGameMode::ConfigureRuntimeSubsystems()
@@ -116,7 +136,7 @@ void ARogueGameMode::ConfigureRuntimeSubsystems()
 	// 配置生成子系统
 	if (URogueSpawnSubsystem* SpawnSubsystem = GetWorld()->GetSubsystem<URogueSpawnSubsystem>())
 	{
-		SpawnSubsystem->Configure(DefaultEnemyClass, EnemyClassMap, SpawnSettings, BossSettings, LoadedGameBalanceAsset);
+		SpawnSubsystem->Configure(DefaultEnemyClass, EnemyClassMap, SpawnSettings, BossSettings, LoadedGameBalanceAsset, LoadedEnemyArchetypeTable);
 	}
 }
 
@@ -169,9 +189,64 @@ void ARogueGameMode::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
+	// 把整局状态推进 GameState（服务端权威 → 自动复制给所有客户端）。
+	// 刻意放在所有早退分支**之前**：游戏结束、暂停、正在选卡时客户端同样需要正确数据
+	// （否则结算界面会停在"结束前一帧"的数值上）。
+	//
+	// ⚠️ 这一行曾经被"加看门狗"的编辑意外覆盖掉（只剩注释）：后果是整局快照（存活时间、
+	// 击杀数、波次、是否结束）**从来没有推给 GameState** —— HUD 永远显示"存活 0 秒"，
+	// 客户端也永远收不到 bGameOver。改这一带代码时务必确认它还在。
+	PushRunStateToGameState();
+
+	// 暂停看门狗：本作**任何时候都不该暂停世界** —— 暂停菜单、商店、选卡、死亡界面都不暂停
+	// （见 TogglePauseMenu / TryOpenShop 的注释；C++ 里也没有任何 SetGamePaused(true)）。
+	//
+	// 关于"整局停住"的历史结论（别再重复排查一遍）：
+	//   · 实测 `World->IsPaused()` 一直是 0、全局时间膨胀也没变，本看门狗与角色侧的冻结探针
+	//     在整个测试期都没有触发过；
+	//   · 真正的现象是"编辑器窗口失去焦点后，PIE 世界停止推进"（会话日志里出现过大段
+	//     只属于编辑器的行、游戏侧一行都没有），来自编辑器设置 bThrottleCPUWhenNotForeground；
+	//   · 所以这段看门狗只是兜底（防某个蓝图真的调 Set Game Paused），不是那个现象的解法。
+	//     注意它必须靠 `PrimaryActorTick.bTickEvenWhenPaused`（构造函数里已设）才能在暂停时运行。
+	{
+		UWorld* WatchdogWorld = GetWorld();
+		if (WatchdogWorld != nullptr && WatchdogWorld->IsPaused())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[Rogue] 世界被暂停（本作设计里不应发生）：已强制恢复。若你在用控制台 pause 调试，请临时注释掉这段看门狗"));
+			UGameplayStatics::SetGamePaused(this, false);
+		}
+	}
+
+	// 归属自愈（每 0.5 秒一次）：
+	// 引擎登录流程会让在场 PC 抢走新玩家的 Pawn，随后才纠正 —— 代价是在场 PC 失去自己的 Pawn
+	// （主机失控）。PostLogin 时机太早（那时抢还没发生），所以放在 Tick 里周期性检查。
+	// 正常对局里这个检查什么也不会做（每个 PC 都有 Pawn），只有异常时才动手。
+	{
+		static double LastPawnRepairTime = 0.0;
+		const double NowSeconds = GetWorld() != nullptr ? GetWorld()->GetTimeSeconds() : 0.0;
+		if (NowSeconds - LastPawnRepairTime > 0.5)
+		{
+			LastPawnRepairTime = NowSeconds;
+			RepairPlayerPawnOwnership();
+		}
+	}
+	PushShopStateToPlayers();
+
+	// 倒地等待 → 复活的**兜底驱动**。
+	//
+	// 为什么 GameMode 也要管这件事：复活原本只靠两处（角色 Tick 的截止时刻轮询 + 角色身上的定时器），
+	// 实测这两处都不生效（日志里 "进入倒地等待" 有、"已复活" 一次都没有），
+	// 而"倒下的角色自己不会再动"恰恰是最容易让 Tick 轮询失效的场景。
+	// GameMode 是服务端唯一确定每帧都在跑的东西（连暂停看门狗都靠它），
+	// 所以这里再放一条独立的路：谁到点了就复活谁。
+	//
+	// ⚠️ 必须放在 `if (RunState.bGameOver) return;` **之前**：
+	// 按设计（规则 A）全员同时倒地只意味着"本局结束、不再刷怪"，
+	// 每个人的 10 秒倒地等待仍然要照常结束 —— 否则最后倒下的人会永远躺着。
+	TickReviveQueue();
+
 	if (RunState.bGameOver)
 	{
-		LastShopAutoRefreshRealTimeSeconds = 0.0f;
 		return;
 	}
 
@@ -180,7 +255,13 @@ void ARogueGameMode::Tick(float DeltaSeconds)
 
 	AdvanceShopAutoRefresh(DeltaSeconds, bWorldPaused);
 
-	if (UpgradeSystem.IsAwaitingChoice() || ShopSystem.IsOpen() || bWorldPaused)
+	// 只有"世界真的被暂停"才冻结整局。
+	//
+	// 这里原来还有 `IsAwaitingUpgradeChoice() || ShopSystem.IsOpen()`：
+	// 那是为"开商店/选升级会暂停游戏"的旧设计服务的。现在两者都不再暂停，
+	// 波次计时与刷怪必须继续推进 —— 否则玩家一开商店，整局节奏就被人为停住了
+	// （联机下更糟：一个人开商店，其他人的波次也跟着不走）。
+	if (bWorldPaused)
 	{
 		return;
 	}
@@ -188,40 +269,139 @@ void ARogueGameMode::Tick(float DeltaSeconds)
 	TickRunSystems(DeltaSeconds);
 }
 
-ARogueCharacter* ARogueGameMode::GetCachedCharacter()
+void ARogueGameMode::PushRunStateToGameState()
 {
-	if (!CachedCharacter.IsValid())
+	ARogueGameState* RogueGameState = GetGameState<ARogueGameState>();
+	if (RogueGameState == nullptr)
 	{
-		CachedCharacter = Cast<ARogueCharacter>(UGameplayStatics::GetPlayerCharacter(this, 0));
+		return;
 	}
 
-	return CachedCharacter.Get();
+	// 一次性写整份快照，而不是逐个字段设 —— 避免客户端读到"波次已更新、击杀数还没更"的中间态。
+	RogueGameState->SetRunStateSnapshot(
+		RunState.CurrentWave,
+		RunState.EnemiesDefeated,
+		RunState.RunTimeSeconds,
+		RunState.bGameOver,
+		RunState.bBossAlive);
+}
+
+void ARogueGameMode::CollectAlivePlayers(TArray<ARogueCharacter*, TInlineAllocator<4>>& OutPlayers) const
+{
+	// 实现统一在 RoguePlayerQuery 里（敌人索敌、刷怪点检查、经验球磁吸共用同一份口径）
+	RoguePlayerQuery::CollectAlivePlayers(GetWorld(), OutPlayers);
+}
+
+void ARogueGameMode::TickReviveQueue()
+{
+	const UWorld* World = GetWorld();
+	if (World == nullptr)
+	{
+		return;
+	}
+
+	// 注意变量名不要叫 GameState —— AGameModeBase 自己有一个同名成员，会被 C4458 拦下。
+	const AGameStateBase* WorldGameState = World->GetGameState();
+	const float NowServerTime = WorldGameState != nullptr
+		? WorldGameState->GetServerWorldTimeSeconds()
+		: World->GetTimeSeconds();
+
+	// 遍历 PlayerState 而不是"遍历 PC 找 Pawn"：
+	// 复活截止时刻本来就记在 PlayerState 上，而 Pawn 有可能在归属自愈的瞬间为空
+	// （那时也不能把倒计时丢掉，否则这个人就永远躺着了）。
+	for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
+	{
+		const APlayerController* PlayerController = It->Get();
+		ARoguePlayerState* RoguePlayerState = PlayerController != nullptr
+			? PlayerController->GetPlayerState<ARoguePlayerState>()
+			: nullptr;
+		if (RoguePlayerState == nullptr)
+		{
+			continue;
+		}
+
+		const float Deadline = RoguePlayerState->GetReviveServerTime();
+		if (Deadline <= 0.0f || NowServerTime < Deadline)
+		{
+			continue;
+		}
+
+		ARogueCharacter* Character = Cast<ARogueCharacter>(RoguePlayerState->GetPawn());
+		if (Character != nullptr && Character->IsDead())
+		{
+			Character->Revive();
+		}
+		else
+		{
+			// 人已经不倒了（或 Pawn 暂时为空）：把倒计时清掉，
+			// 否则 HUD 会一直显示一个永远不结束的"倒地等待"。
+			RoguePlayerState->SetReviveServerTime(0.0f);
+		}
+	}
+}
+
+ARogueCharacter* ARogueGameMode::FindNearestAlivePlayer(const FVector& Location) const
+{
+	TArray<ARogueCharacter*, TInlineAllocator<4>> AlivePlayers;
+	CollectAlivePlayers(AlivePlayers);
+
+	ARogueCharacter* Nearest = nullptr;
+	float NearestDistanceSquared = TNumericLimits<float>::Max();
+	for (ARogueCharacter* Candidate : AlivePlayers)
+	{
+		const float DistanceSquared = FVector::DistSquared2D(Location, Candidate->GetActorLocation());
+		if (DistanceSquared < NearestDistanceSquared)
+		{
+			NearestDistanceSquared = DistanceSquared;
+			Nearest = Candidate;
+		}
+	}
+
+	return Nearest;
+}
+
+ARogueCharacter* ARogueGameMode::GetSpawnReferenceCharacter() const
+{
+	// 随机取一个活着的玩家当刷怪参照点（为什么不固定用玩家 0，见头文件里的说明）。
+	TArray<ARogueCharacter*, TInlineAllocator<4>> AlivePlayers;
+	CollectAlivePlayers(AlivePlayers);
+
+	if (AlivePlayers.Num() == 0)
+	{
+		// 全员阵亡（或还没生成角色）：返回 nullptr。
+		// SpawnEnemy 会因 !IsValid(Character) 直接拒绝 —— 这正是想要的"团灭就别刷了"。
+		return nullptr;
+	}
+
+	return AlivePlayers[FMath::RandRange(0, AlivePlayers.Num() - 1)];
 }
 
 void ARogueGameMode::AdvanceShopAutoRefresh(float DeltaSeconds, bool bWorldPaused)
 {
-	UWorld* World = GetWorld();
-	float ShopDeltaSeconds = DeltaSeconds;
-	if (bWorldPaused && ShopSystem.IsOpen())
+	// 世界暂停时商店计时冻结。
+	// 这里原来还有一条"商店打开 + 世界暂停就用真实时间继续推进"的分支 ——
+	// 那是为"开商店会暂停游戏"的旧设计准备的；现在商店不再暂停游戏，
+	// 而暂停菜单又不能和商店同时打开（TogglePauseMenu 里挡了），所以那条分支已不可达。
+	if (bWorldPaused)
 	{
-		const float CurrentRealTimeSeconds = World != nullptr ? World->GetRealTimeSeconds() : 0.0f;
-		if (LastShopAutoRefreshRealTimeSeconds > 0.0f)
-		{
-			ShopDeltaSeconds = FMath::Max(0.0f, CurrentRealTimeSeconds - LastShopAutoRefreshRealTimeSeconds);
-		}
-		else
-		{
-			ShopDeltaSeconds = 0.0f;
-		}
-		LastShopAutoRefreshRealTimeSeconds = CurrentRealTimeSeconds;
-	}
-	else
-	{
-		ShopDeltaSeconds = bWorldPaused ? 0.0f : DeltaSeconds;
-		LastShopAutoRefreshRealTimeSeconds = 0.0f;
+		return;
 	}
 
-	ShopSystem.AdvanceAutoRefresh(ShopDeltaSeconds, CachedCharacter.Get(), UpgradeSystem);
+	// 每个玩家推进自己的商店（每玩家一份运行态）
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+	{
+		if (const APlayerController* PlayerController = It->Get())
+		{
+			if (ARoguePlayerState* RoguePlayerState = PlayerController->GetPlayerState<ARoguePlayerState>())
+			{
+				// 用**该玩家自己的 Pawn**：商店报价要按这个玩家的构筑来算
+				RoguePlayerState->GetShopRuntime().AdvanceAutoRefresh(
+					DeltaSeconds,
+					Cast<ARogueCharacter>(PlayerController->GetPawn()),
+					UpgradeSystem);
+			}
+		}
+	}
 }
 
 void ARogueGameMode::TickRunSystems(float DeltaSeconds)
@@ -231,7 +411,7 @@ void ARogueGameMode::TickRunSystems(float DeltaSeconds)
 	// 生成调度 —— 委托给 SpawnSubsystem
 	if (URogueSpawnSubsystem* SpawnSubsystem = GetWorld()->GetSubsystem<URogueSpawnSubsystem>())
 	{
-		SpawnSubsystem->TickSpawning(DeltaSeconds, RunState, GetCachedCharacter(), SpawnedArena.Get());
+		SpawnSubsystem->TickSpawning(DeltaSeconds, RunState, GetSpawnReferenceCharacter(), SpawnedArena.Get());
 	}
 }
 
@@ -249,7 +429,7 @@ void ARogueGameMode::HandleEnemyKilled(ARogueEnemy* Enemy, AActor* Killer)
 
 	if (IsValid(Enemy))
 	{
-		AwardEnemyCurrency(Enemy, ResolveRewardCharacter(Killer));
+		AwardEnemyCurrency(Enemy, ResolveRewardCharacter(Killer, Enemy));
 		SpawnExperienceReward(Enemy, Tracker, Pools);
 
 		if (Enemy->IsBoss())
@@ -259,11 +439,13 @@ void ARogueGameMode::HandleEnemyKilled(ARogueEnemy* Enemy, AActor* Killer)
 	}
 }
 
-ARogueCharacter* ARogueGameMode::ResolveRewardCharacter(AActor* Killer) const
+ARogueCharacter* ARogueGameMode::ResolveRewardCharacter(AActor* Killer, const AActor* RewardOrigin) const
 {
+	// 1) 击杀者本身就是玩家
 	ARogueCharacter* RewardCharacter = Cast<ARogueCharacter>(Killer);
 	if (RewardCharacter == nullptr && IsValid(Killer))
 	{
+		// 2) 击杀者是弹体 / 刀片 / 地狱塔这类"玩家的延伸物" → 顺着 Owner / Instigator 找回玩家
 		RewardCharacter = Cast<ARogueCharacter>(Killer->GetOwner());
 		if (RewardCharacter == nullptr)
 		{
@@ -271,7 +453,15 @@ ARogueCharacter* ARogueGameMode::ResolveRewardCharacter(AActor* Killer) const
 		}
 	}
 
-	return RewardCharacter != nullptr ? RewardCharacter : CachedCharacter.Get();
+	if (RewardCharacter != nullptr)
+	{
+		return RewardCharacter;
+	}
+
+	// 3) 兜底：离现场最近的存活玩家。
+	// 旧实现回退到 CachedCharacter（= 玩家 0 / 主机），玩家 2 打死的怪赏金会进主机口袋。
+	// 单机时两者结果一致（场上只有一个人）。
+	return FindNearestAlivePlayer(RewardOrigin != nullptr ? RewardOrigin->GetActorLocation() : FVector::ZeroVector);
 }
 
 void ARogueGameMode::AwardEnemyCurrency(const ARogueEnemy* Enemy, ARogueCharacter* RewardCharacter)
@@ -317,20 +507,23 @@ void ARogueGameMode::SpawnExperienceReward(ARogueEnemy* Enemy, URogueEnemyTracke
 void ARogueGameMode::HandleBossKilledReward()
 {
 	RunState.bBossAlive = false;
-	QueueUpgradeSelections(BossSettings.BossBonusSelections, GetCachedCharacter());
-}
 
-bool ARogueGameMode::GetShopPromptWorldLocation(FVector& OutLocation) const
-{
-	const ARogueShopTerminal* ShopTerminal = SpawnedShopTerminal.Get();
-	if (!IsValid(ShopTerminal))
+	// Boss 奖励是**每个玩家都有份**的。
+	// 旧实现只发给 GetCachedCharacter()（联机下就等于主机），
+	// 结果是打完 Boss 只有主机能选升级，其他玩家什么都没弹。
+	// 阵亡玩家不弹选择：他已经出局，弹一个点不了的框只会让人以为是 bug。
+	TArray<ARogueCharacter*, TInlineAllocator<4>> AlivePlayers;
+	CollectAlivePlayers(AlivePlayers);
+	for (ARogueCharacter* Character : AlivePlayers)
 	{
-		return false;
+		QueueUpgradeSelections(BossSettings.BossBonusSelections, Character);
 	}
-
-	OutLocation = ShopTerminal->GetPromptWorldLocation();
-	return true;
 }
+
+// 注：原 ARogueGameMode::GetShopPromptWorldLocation 已删除。
+// 它读的是 GameMode 上的 SpawnedShopTerminal，客户端拿不到 GameMode 也就永远拿不到提示。
+// 现在 HUD 直接问角色（ARogueCharacter::GetShopPromptWorldLocation），
+// 走的是商店终端的重叠检测 —— 终端本身是复制到客户端的。
 
 void ARogueGameMode::StartUpgradeSelection(ARogueCharacter* Character)
 {
@@ -339,143 +532,486 @@ void ARogueGameMode::StartUpgradeSelection(ARogueCharacter* Character)
 
 void ARogueGameMode::TryOpenShop(ARogueCharacter* Character)
 {
-	if (RunState.bGameOver || UpgradeSystem.IsAwaitingChoice() || ShopSystem.IsOpen() || !IsValid(Character) || Character->IsDead())
+	if (RunState.bGameOver || !IsValid(Character) || Character->IsDead())
 	{
 		return;
 	}
 
-	CachedCharacter = Character;
-	ShopSystem.Configure(
+	ARoguePlayerState* PlayerState = Character->GetPlayerState<ARoguePlayerState>();
+	if (PlayerState == nullptr)
+	{
+		return;
+	}
+
+	// ── 每玩家一份商店 ──
+	// 商店运行态挂在玩家自己的 PlayerState 上：商品列表、刷新价格、自动刷新计时、
+	// 各升级的已购次数都是独立的。旧实现是 GameMode 上一个共享 ShopSystem，
+	// 联机下所有玩家抢同一批货，而且"谁买的"还会算错人。
+	FRogueShopSystem& Shop = PlayerState->GetShopRuntime();
+	if (Shop.IsOpen())
+	{
+		return;
+	}
+
+	Shop.Configure(
 		RogueGameModeRules::GetShopOfferCount(LoadedGameBalanceAsset),
 		RogueGameModeRules::GetShopOfferCost(LoadedGameBalanceAsset),
 		RogueGameModeRules::GetShopRefreshCost(LoadedGameBalanceAsset),
 		RogueGameModeRules::GetShopAutoRefreshInterval(LoadedGameBalanceAsset));
 
-	if (!ShopSystem.OpenShop(Character, UpgradeSystem))
+	if (!Shop.OpenShop(Character, UpgradeSystem))
 	{
 		return;
 	}
 
 	Character->SetMenuInteractionInput(true);
-	UGameplayStatics::SetGamePaused(this, true);
+
+	// 立刻推一次快照：不然客户端要等到下一帧 Tick 才看到商店界面
+	PushShopSnapshotForPlayer(PlayerState);
+
+	// 注意：这里**不暂停游戏**。
+	// 旧设计是"开商店 → SetGamePaused(true)"（单机写法）。联机下暂停是全局的，
+	// 一个玩家开商店会把所有人的世界冻住。现在改成非模态：
+	// 世界继续跑、敌人继续打，玩家可以边逛边躲（SetMenuInteractionInput 用的是
+	// FInputModeGameAndUI，游戏输入仍然有效）。
 }
 
-void ARogueGameMode::CloseShop()
+void ARogueGameMode::CloseShop(ARogueCharacter* Requester)
 {
-	if (!ShopSystem.IsOpen())
+	ARoguePlayerState* PlayerState = IsValid(Requester) ? Requester->GetPlayerState<ARoguePlayerState>() : nullptr;
+	if (PlayerState == nullptr || !PlayerState->GetShopRuntime().IsOpen())
 	{
 		return;
 	}
 
-	ShopSystem.CloseShop();
-	if (CachedCharacter.IsValid() && !UpgradeSystem.IsAwaitingChoice() && !RunState.bGameOver)
-	{
-		CachedCharacter->SetMenuInteractionInput(false);
-	}
-	UGameplayStatics::SetGamePaused(this, false);
+	PlayerState->GetShopRuntime().CloseShop();
+	Requester->SetMenuInteractionInput(false);
+	PushShopSnapshotForPlayer(PlayerState);
+
+	// 同样不涉及暂停（见 TryOpenShop 的说明）
 }
 
-void ARogueGameMode::TryBuyShopOffer(int32 OfferIndex)
+void ARogueGameMode::TryBuyShopOffer(int32 OfferIndex, ARogueCharacter* Purchaser)
 {
-	if (!ShopSystem.IsOpen() || !CachedCharacter.IsValid())
+	ARoguePlayerState* PlayerState = IsValid(Purchaser) ? Purchaser->GetPlayerState<ARoguePlayerState>() : nullptr;
+	if (PlayerState == nullptr)
+	{
+		return;
+	}
+
+	// 与 TryOpenShop 对齐：局已结束或人已经死了就不许再买东西。
+	// 原来这里只判 Shop.IsOpen()，安全性全靠"死亡时会有人去关店"这条路兜底 ——
+	// 一旦将来多出一条漏关店的路径（结算、换人、暂停…），客户端就能在死亡后继续消费。
+	if (RunState.bGameOver || Purchaser->IsDead())
+	{
+		return;
+	}
+
+	FRogueShopSystem& Shop = PlayerState->GetShopRuntime();
+	if (!Shop.IsOpen())
 	{
 		return;
 	}
 
 	FRogueUpgradeOption PurchasedUpgrade;
-	if (ShopSystem.TryBuyOffer(OfferIndex, CachedCharacter.Get(), PurchasedUpgrade))
+	if (Shop.TryBuyOffer(OfferIndex, Purchaser, PurchasedUpgrade))
 	{
-		CachedCharacter->ApplyUpgrade(PurchasedUpgrade);
+		// 升级施加给**购买者**（旧实现固定给 CachedCharacter，联机下会把玩家 2 的购买算到玩家 1 头上）
+		Purchaser->ApplyUpgrade(PurchasedUpgrade);
+		// 购买会改变"已购"标记与刷新价格，立刻同步
+		PushShopSnapshotForPlayer(PlayerState);
 	}
 }
 
-void ARogueGameMode::TryRefreshShop()
+void ARogueGameMode::TryRefreshShop(ARogueCharacter* Requester)
 {
-	if (!ShopSystem.IsOpen() || !CachedCharacter.IsValid())
+	ARoguePlayerState* PlayerState = IsValid(Requester) ? Requester->GetPlayerState<ARoguePlayerState>() : nullptr;
+	if (PlayerState == nullptr)
 	{
 		return;
 	}
 
-	ShopSystem.TryRefresh(CachedCharacter.Get(), UpgradeSystem);
+	// 同 TryBuyShopOffer：结算后 / 死亡后都不允许再刷新商店
+	if (RunState.bGameOver || Requester->IsDead())
+	{
+		return;
+	}
+
+	FRogueShopSystem& Shop = PlayerState->GetShopRuntime();
+	if (!Shop.IsOpen())
+	{
+		return;
+	}
+
+	Shop.TryRefresh(Requester, UpgradeSystem);
+	PushShopSnapshotForPlayer(PlayerState);
 }
 
-void ARogueGameMode::TrySelectUpgrade(int32 UpgradeIndex)
+void ARogueGameMode::PushShopSnapshotForPlayer(ARoguePlayerState* PlayerState)
 {
-	if (!CachedCharacter.IsValid())
+	if (PlayerState == nullptr)
 	{
 		return;
 	}
 
-	FRogueUpgradeOption SelectedUpgrade;
-	if (!UpgradeSystem.TryConsumeChoice(UpgradeIndex, SelectedUpgrade))
+	// 复制的是**自动刷新的截止时刻**而不是倒计时：倒计时每帧都在变，
+	// 会把 PlayerState 的复制频率打满；截止时刻只在刷新时变化。
+	const FRogueShopSystem& Shop = PlayerState->GetShopRuntime();
+
+	float AutoRefreshDeadline = 0.0f;
+	if (Shop.IsOpen())
 	{
-		return;
+		const float RemainingSeconds = Shop.GetSecondsUntilAutoRefresh();
+		if (RemainingSeconds > 0.0f)
+		{
+			const AGameStateBase* CurrentGameState = GetWorld() != nullptr ? GetWorld()->GetGameState() : nullptr;
+			const float ServerTime = CurrentGameState != nullptr
+				? CurrentGameState->GetServerWorldTimeSeconds()
+				: (GetWorld() != nullptr ? GetWorld()->GetTimeSeconds() : 0.0f);
+			AutoRefreshDeadline = ServerTime + RemainingSeconds;
+		}
 	}
 
-	CachedCharacter->ApplyUpgrade(SelectedUpgrade);
-
-	if (UpgradeSystem.GetQueuedSelections() > 0)
-	{
-		OpenNextUpgradeSelection();
-		return;
-	}
-
-	CachedCharacter->SetUpgradeSelectionInput(false);
-	UGameplayStatics::SetGamePaused(this, false);
+	PlayerState->ApplyShopSnapshot(
+		Shop.IsOpen(),
+		Shop.GetOffers(),
+		Shop.GetRefreshCost(),
+		AutoRefreshDeadline);
 }
 
-void ARogueGameMode::NotifyPlayerDied()
+void ARogueGameMode::PushShopStateToPlayers()
 {
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+	{
+		if (const APlayerController* PlayerController = It->Get())
+		{
+			PushShopSnapshotForPlayer(PlayerController->GetPlayerState<ARoguePlayerState>());
+		}
+	}
+}
+
+void ARogueGameMode::HandlePlayerUpgradeSelected(ARoguePlayerState* PlayerState, const FRogueUpgradeOption& SelectedUpgrade)
+{
+	ARogueCharacter* Character = PlayerState != nullptr ? Cast<ARogueCharacter>(PlayerState->GetPawn()) : nullptr;
+	if (!IsValid(Character))
+	{
+		return;
+	}
+
+	Character->ApplyUpgrade(SelectedUpgrade);
+
+	// 这个玩家还有排队的选择 → 继续给他开下一轮
+	if (PlayerState->GetQueuedUpgradeSelections() > 0)
+	{
+		OpenNextUpgradeSelectionForPlayer(PlayerState);
+		return;
+	}
+
+	PlayerState->CloseUpgradeSelection();
+	Character->SetUpgradeSelectionInput(false);
+
+	// 不暂停游戏：联机下暂停是全局的，一个玩家在选卡不该冻住其他人。
+	// 世界继续跑意味着选卡时要自己找安全位置 —— 这是刻意的玩法张力。
+}
+
+bool ARogueGameMode::IsAwaitingUpgradeChoice() const
+{
+	// 遍历 PlayerController 而不是 GameState->PlayerArray：
+	// 前者在服务端任何时刻都可靠，也不依赖 GameState 的复制时机。
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+	{
+		if (const APlayerController* PlayerController = It->Get())
+		{
+			if (const ARoguePlayerState* RoguePlayerState = PlayerController->GetPlayerState<ARoguePlayerState>())
+			{
+				if (RoguePlayerState->IsAwaitingUpgradeChoice())
+				{
+					return true;
+				}
+			}
+		}
+	}
+	return false;
+}
+
+void ARogueGameMode::NotifyPlayerDied(ARogueCharacter* DeadCharacter)
+{
+	// 强制纠偏：有人死亡**绝不能暂停世界**。
+	//
+	// C++ 侧早已清掉了所有 SetGamePaused(true)，但实测仍有"一个玩家死后整局停住"的现象 ——
+	// 那是死亡界面的蓝图（为旧的单机设计写的）在调 Set Game Paused。
+	// 这里每次有人死亡都无条件恢复运行：不管是谁暂停的，都不允许它影响队友。
+	// （暂停菜单与商店本身也不暂停世界，见 TogglePauseMenu / TryOpenShop 的注释。）
+	if (UWorld* World = GetWorld())
+	{
+		if (World->IsPaused())
+		{
+			UGameplayStatics::SetGamePaused(this, false);
+			UE_LOG(LogTemp, Warning, TEXT("[Rogue] 检测到死亡时世界处于暂停：已强制恢复（暂停很可能来自死亡界面蓝图，建议改掉）"));
+		}
+	}
+	// 先判断"这一局是不是所有人都死了"。
+	// 时机很关键：ARogueCharacter::Die() 会先把自己标成 bDead 再调这里，
+	// 所以 CollectAlivePlayers 不会把刚死的这个人算进去。
+	TArray<ARogueCharacter*, TInlineAllocator<4>> AlivePlayers;
+	CollectAlivePlayers(AlivePlayers);
+	const bool bRunOver = AlivePlayers.Num() == 0;
+
+	// 死者的收尾：他没选的升级卡作废（人已经出局），商店关掉，
+	// 并给他 UI 输入模式，让他能点结算界面。
+	//
+	// 注意**只处理他自己**：旧实现顺手把所有人的升级/商店状态一起清了，
+	// 于是队友还活着却平白丢掉排队的升级。
+	if (IsValid(DeadCharacter))
+	{
+		if (ARoguePlayerState* DeadPlayerState = DeadCharacter->GetPlayerState<ARoguePlayerState>())
+		{
+			DeadPlayerState->ResetUpgradeState();
+			DeadPlayerState->GetShopRuntime().CloseShop();
+			DeadPlayerState->ApplyShopSnapshot(false, TArray<FRogueShopOffer>(), 0, 0.0f);
+		}
+
+		DeadCharacter->SetMenuInteractionInput(true);
+	}
+
+	if (!bRunOver)
+	{
+		// 还有队友活着 → 本局继续（波次、刷怪、商店、升级照常）。
+		return;
+	}
+
+	// 全员阵亡：整局结束。
 	RunState.bGameOver = true;
 	RunState.bBossAlive = false;
-	UpgradeSystem.Reset();
-	ShopSystem.CloseShop();
-	UGameplayStatics::SetGamePaused(this, false);
 
-	if (CachedCharacter.IsValid())
+	// 这时才清所有人的状态 —— 大家都出局了，没有"队友的进度"需要保。
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
 	{
-		CachedCharacter->SetMenuInteractionInput(true);
+		if (const APlayerController* PlayerController = It->Get())
+		{
+			if (ARoguePlayerState* RoguePlayerState = PlayerController->GetPlayerState<ARoguePlayerState>())
+			{
+				RoguePlayerState->ResetUpgradeState();
+				RoguePlayerState->GetShopRuntime().CloseShop();
+				RoguePlayerState->ApplyShopSnapshot(false, TArray<FRogueShopOffer>(), 0, 0.0f);
+			}
+
+			// 注意：这里**不再取消**待复活。
+			// 设计上"倒下"是一个 10 秒的等待状态（无法控制、不被索敌、也会被队友看到躺在地上），
+			// 到时一定回到正常状态；一旦取消，最后倒下的人就会永远躺在地上，
+			// 观感正是之前反复报的"卡死/暂停"。
+			// 本局"结束"只意味着不再刷怪 + 显示结算，玩家仍然可以各自复活，也可以点重开。
+		}
 	}
+}
+
+bool ARogueGameMode::SetPause(APlayerController* PC, FCanUnpause CanUnpauseDelegate)
+{
+	// 拒绝一切暂停请求（详见头文件）。打日志是为了把"谁在暂停"暴露出来 ——
+	// 这条日志里的 PC 名（或为空）就是定位那个蓝图的线索。
+	UE_LOG(LogTemp, Warning, TEXT("[Rogue] 收到暂停请求（PC=%s）：本作不支持暂停，已拒绝。若你看到这条日志，请在蓝图里搜索 Set Game Paused / SetPause 节点并删除"),
+		PC != nullptr ? *PC->GetName() : TEXT("未知（可能来自控制台或关卡蓝图）"));
+	return false;
+}
+
+void ARogueGameMode::PostLogin(APlayerController* NewPlayer)
+{
+	Super::PostLogin(NewPlayer);
+
+	// 见头文件说明：引擎登录流程会让在场 PC 短暂抢走新玩家的 Pawn，
+	// 导致在场 PC 自己失去 Pawn（主机失控）。这里做一次权威校正。
+	RepairPlayerPawnOwnership();
+}
+
+void ARogueGameMode::RepairPlayerPawnOwnership()
+{
+	UWorld* World = GetWorld();
+	if (World == nullptr)
+	{
+		return;
+	}
+
+	for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
+	{
+		APlayerController* PlayerController = It->Get();
+		if (PlayerController == nullptr || PlayerController->GetPawn() != nullptr)
+		{
+			// 已经有 Pawn 的不用管（正常情况）
+			continue;
+		}
+
+		APlayerState* OwningPlayerState = PlayerController->PlayerState;
+
+		// 首选：把"被抢走又被还回来"的那个 Pawn 直接认领回来。
+		// 这比重新生成更对：既不留下没人控制的孤儿角色，也不会让玩家位置突变。
+		if (const ARoguePlayerController* RoguePlayerController = Cast<ARoguePlayerController>(PlayerController))
+		{
+			APawn* ReclaimCandidate = RoguePlayerController->GetLastUnpossessedPawn();
+			if (IsValid(ReclaimCandidate) && ReclaimCandidate->GetController() == nullptr)
+			{
+				PlayerController->Possess(ReclaimCandidate);
+				UE_LOG(LogTemp, Warning, TEXT("[Rogue] 归属校正：%s 认领回原角色 %s"),
+					*PlayerController->GetName(), *ReclaimCandidate->GetName());
+				continue;
+			}
+		}
+
+		if (OwningPlayerState == nullptr)
+		{
+			continue;
+		}
+
+		// 找"本命角色"：同一份 PlayerState、且当前没有控制器
+		for (TActorIterator<ARogueCharacter> CharacterIt(World); CharacterIt; ++CharacterIt)
+		{
+			ARogueCharacter* Candidate = *CharacterIt;
+			if (Candidate == nullptr || Candidate->GetController() != nullptr)
+			{
+				continue;
+			}
+
+			if (Candidate->GetPlayerState() != OwningPlayerState)
+			{
+				continue;
+			}
+
+			PlayerController->Possess(Candidate);
+			UE_LOG(LogTemp, Warning, TEXT("[Rogue] 归属校正：%s 重新接管 %s"),
+				*PlayerController->GetName(), *Candidate->GetName());
+			break;
+		}
+
+		// ⚠️ 这里**故意不再调 RestartPlayer**。
+		//
+		// 实测教训：RestartPlayer 会**再生成一个新角色**，而那个 PC 原来的角色会变成
+		// "没有控制器的孤儿"。于是服务端上所有"通过 PlayerController->GetPawn() 取玩家"的代码
+		// —— 敌人的目标选择 GatherAlivePlayers、以及本类的 CollectAlivePlayers ——
+		// 从此看到的是新角色，玩家实际操控/被瞄准的链条错位，表现为：
+		//   · 客户端死亡后怪物仍锁着尸体（存活列表里找不到他）
+		//   · 主机死亡后被误判成"全员阵亡"，整局停摆（看起来像暂停）
+		// 而"某个 PC 暂时没有 Pawn"最坏只是暂时没有控制权（下次登录/接管会恢复），
+		// 危害远小于制造孤儿角色。所以这里只记录，不动手。
+		if (PlayerController->GetPawn() == nullptr)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[Rogue] 归属校正：%s 目前没有 Pawn 且无可认领的原角色（按设计不做重生，避免制造孤儿角色）"),
+				*PlayerController->GetName());
+		}
+	}
+}
+
+void ARogueGameMode::HandleRestartRequest(ARoguePlayerState* Requester)
+{
+	// 只有整局结束（全员阵亡）才允许重开。
+	//
+	// 为什么服务端必须挡这一下：客户端那个按钮是蓝图界面上摆着的，
+	// 只靠 UI 约束等于没有约束 —— 一个已阵亡的玩家在队友还在打的时候点它，
+	// 会把整局连人一起重开。
+	if (!RunState.bGameOver)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Rogue] 拒绝重开请求：本局尚未结束（请求者=%s）"),
+			Requester != nullptr ? *Requester->GetPlayerName() : TEXT("未知"));
+		return;
+	}
+
+	// 一次性闸门：OpenLevel/ServerTravel 是很重的操作，
+	// 结算界面上的按钮如果被连点（或被改过的客户端反复调 RPC），
+	// 服务端会不停切图/卡在加载。第一次请求之后就不再受理。
+	if (bRestartRequested)
+	{
+		return;
+	}
+	bRestartRequested = true;
+
+	// 由**服务端**执行 OpenLevel：listen server 会顺带把所有客户端一起带到新关卡
+	// （server travel），所有人一起重开。
+	//
+	// 客户端绝不能自己 OpenLevel：那样只会加载出一份单机的关卡副本，
+	// 表现为"点了重开之后队友全没了"—— 这正是旧实现（HUD 里直接 OpenLevel）的毛病。
+	// 取"可安全 travel 的关卡名"。
+	//
+	// ⚠️ 这里踩过一个很隐蔽的坑：`GetCurrentLevelName()` 在**联网 PIE** 下会返回带主机前缀的
+	// 字符串（实测形如 "127.0.0.1:17777/Game/GameAssets/.../Minimal_Default"）。
+	// 直接丢给 OpenLevel，服务器就会去 **Browse 那个地址** —— 结果是整个会话被踢掉：
+	// 客户端掉线后收不到任何更新（画面冻结、怪物不动），看起来像"整局暂停"。
+	//
+	// 注意要**保留包路径、只剥掉主机前缀**：本工程里存在两个都叫 Minimal_Default 的地图
+	// （Content/StarterContent 与 Content/GameAssets/StarterContent 各一份），
+	// 用最后一段短名会撞名、OpenLevel 可能找不到或找错图。
+	FString LevelName = UGameplayStatics::GetCurrentLevelName(this, true);
+	const int32 ColonIndex = LevelName.Find(TEXT(":"), ESearchCase::IgnoreCase);
+	if (ColonIndex != INDEX_NONE)
+	{
+		// 形如 "127.0.0.1:17777/Game/..." → 从主机端口后的第一个 '/' 起截断（保留开头的 '/'）
+		const int32 SlashAfterHostIndex = LevelName.Find(TEXT("/"), ESearchCase::IgnoreCase, ESearchDir::FromStart, ColonIndex);
+		if (SlashAfterHostIndex != INDEX_NONE)
+		{
+			LevelName = LevelName.RightChop(SlashAfterHostIndex);
+		}
+	}
+
+	if (LevelName.IsEmpty())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Rogue] 重开失败：拿不到当前关卡名"));
+		return;
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[Rogue] 重开关卡：%s"), *LevelName);
+	UGameplayStatics::OpenLevel(this, FName(*LevelName));
 }
 
 void ARogueGameMode::QueueUpgradeSelections(int32 Count, ARogueCharacter* Character)
 {
-	if (Count <= 0 || RunState.bGameOver)
+	if (Count <= 0 || RunState.bGameOver || !IsValid(Character))
 	{
 		return;
 	}
 
-	if (IsValid(Character))
-	{
-		CachedCharacter = Character;
-	}
+	CachedCharacter = Character;
 
-	if (!CachedCharacter.IsValid() || CachedCharacter->IsDead())
+	// 升级状态是**每玩家一份**的：写入该玩家的 PlayerState（会自动复制给他的客户端）。
+	ARoguePlayerState* PlayerState = Character->GetPlayerState<ARoguePlayerState>();
+	if (PlayerState == nullptr)
 	{
 		return;
 	}
 
-	UpgradeSystem.QueueSelections(Count);
-	if (!UpgradeSystem.IsAwaitingChoice())
+	PlayerState->QueueUpgradeSelections(Count);
+	if (!PlayerState->IsAwaitingUpgradeChoice())
 	{
-		OpenNextUpgradeSelection();
+		OpenNextUpgradeSelectionForPlayer(PlayerState);
 	}
 }
 
-void ARogueGameMode::OpenNextUpgradeSelection()
+void ARogueGameMode::OpenNextUpgradeSelectionForPlayer(ARoguePlayerState* PlayerState)
 {
-	if (!CachedCharacter.IsValid() || CachedCharacter->IsDead())
+	ARogueCharacter* Character = PlayerState != nullptr ? Cast<ARogueCharacter>(PlayerState->GetPawn()) : nullptr;
+	if (!IsValid(Character) || Character->IsDead())
 	{
+		if (PlayerState != nullptr)
+		{
+			PlayerState->CloseUpgradeSelection();
+		}
 		return;
 	}
 
-	if (!UpgradeSystem.OpenNextSelection(CachedCharacter.Get()))
+	if (!PlayerState->ConsumeQueuedSelection())
 	{
-		CachedCharacter->SetUpgradeSelectionInput(false);
-		UGameplayStatics::SetGamePaused(this, false);
+		PlayerState->CloseUpgradeSelection();
+		Character->SetUpgradeSelectionInput(false);
 		return;
 	}
 
-	CachedCharacter->SetUpgradeSelectionInput(true);
-	UGameplayStatics::SetGamePaused(this, true);
+	// 卡池由 GameMode 持有的配置（升级定义表 + 规则资产）生成 —— 这些是服务端资产，不复制。
+	TArray<FRogueUpgradeOption> Options;
+	UpgradeSystem.BuildRandomUpgradeOptions(Character, 3, Options);
+	if (Options.Num() == 0)
+	{
+		PlayerState->CloseUpgradeSelection();
+		Character->SetUpgradeSelectionInput(false);
+		return;
+	}
+
+	PlayerState->OpenUpgradeSelection(Options);
+	Character->SetUpgradeSelectionInput(true);
+	// 不暂停（见 HandlePlayerUpgradeSelected 的说明）
 }

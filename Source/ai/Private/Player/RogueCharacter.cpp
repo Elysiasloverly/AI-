@@ -10,10 +10,15 @@
 #include "Combat/RogueMortarProjectile.h"
 #include "Combat/RogueRocketProjectile.h"
 #include "Enemies/RogueEnemy.h"
-#include "Core/RogueUpgradeEffectApplier.h"
 #include "Core/RogueGameMode.h"
 #include "Player/RoguePlayerBalanceAsset.h"
-#include "Player/RoguePlayerAttributeSet.h"
+#include "Player/RoguePlayerState.h"
+#include "GameFramework/GameStateBase.h"
+#include "AbilitySystem/RogueAbilitySystemComponent.h"
+#include "AbilitySystem/RogueAbilitySystemLibrary.h"
+#include "AbilitySystem/RogueAttributeSet.h"
+#include "AbilitySystem/RogueAttributeUpgradeEffect.h"
+#include "Core/RogueGameplayTags.h"
 #include "World/RogueShopTerminal.h"
 #include "UI/RogueHUD.h"
 #include "Combat/RogueImpactEffect.h"
@@ -26,6 +31,7 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "Net/UnrealNetwork.h"
 #include "UObject/SoftObjectPath.h"
 
 namespace
@@ -81,6 +87,15 @@ ARogueCharacter::ARogueCharacter()
 {
 	PrimaryActorTick.bCanEverTick = true;
 
+	// 玩家角色必须复制（与敌人同理，见 ARogueEnemy 构造函数里的长注释）：
+	// ACharacter / APawn 都**不会**自动打开 bReplicates，AActor 默认是 false。
+	// 当前之所以能用，是因为 BP_RogueCharacter 上勾了 Replicates —— 那是隐性依赖，
+	// 换个蓝图或新建子类就会静默失效（表现：客户端收不到任何 pawn，完全无法操作）。
+	// 在 C++ 里显式声明，让"必须复制"这件事跟着代码走。
+	// （蓝图默认值在构造之后应用：若某个 BP 手动取消勾选，仍会覆盖这里，需要在 BP 里勾回来。）
+	bReplicates = true;
+	SetReplicatingMovement(true);
+
 	GetCapsuleComponent()->InitCapsuleSize(42.0f, 96.0f);
 	bUseControllerRotationYaw = false;
 
@@ -110,28 +125,23 @@ ARogueCharacter::ARogueCharacter()
 	DefaultMortarWeaponClass = ARogueWeapon_Mortar::StaticClass();
 	DefaultMortarProjectileClass = ARogueMortarProjectile::StaticClass();
 
-	AttributeSystem = new FRoguePlayerAttributeSystem();
-
 	AutoPossessPlayer = EAutoReceiveInput::Player0;
-}
-
-void ARogueCharacter::BeginDestroy()
-{
-	if (AttributeSystem)
-	{
-		delete AttributeSystem;
-		AttributeSystem = nullptr;
-	}
-	Super::BeginDestroy();
 }
 
 void ARogueCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 	ApplyBalanceAsset();
-	SyncAttributesFromSystem();
-	CurrentHealth = MaxHealth;
-	CurrentArmor = MaxArmor;
+
+	// 血量/护甲的开局补满，正式路径是 PossessedBy → InitializeGASAttributes()（真相源是属性集）。
+	// 这里只给"GAS 尚未就绪"的情况兜底（例如 Pawn 不是由 GameMode 生成、拿不到 PlayerState），
+	// 避免出现"属性集是 0、HUD 却显示满血"这种半迁移状态 ——
+	// 那种状态下玩家会被一次普通伤害直接打死。
+	if (GetRogueAttributeSet() == nullptr)
+	{
+		CurrentHealth = MaxHealth;
+		CurrentArmor = MaxArmor;
+	}
 
 	if (APlayerController* PlayerController = Cast<APlayerController>(GetController()))
 	{
@@ -144,19 +154,281 @@ void ARogueCharacter::BeginPlay()
 	InitializeWeapons();
 }
 
-void ARogueCharacter::ApplyBalanceAsset()
+void ARogueCharacter::BindAbilitySystemEvents()
 {
-	LoadedPlayerBalanceAsset = LoadConfiguredOrDefaultPlayerBalanceAsset(PlayerBalanceAsset);
-	if (LoadedPlayerBalanceAsset == nullptr)
+	URogueAbilitySystemComponent* ASC = GetRogueAbilitySystemComponent();
+	if (ASC == nullptr || bAbilitySystemEventsBound)
+	{
+		return;
+	}
+	bAbilitySystemEventsBound = true;
+
+	// 只订阅死亡标签。
+	// 属性数值不走委托而是每帧轮询（见 SyncAttributeMirrors）：
+	//   · 属性有 14 个，逐个绑委托是纯样板；
+	//   · 轮询读的是 FGameplayAttributeData 的属性值（直接属性读取，不是查表），成本可以忽略；
+	//   · 只有"死亡"必须事件驱动 —— 它要在标签出现的当下被捕获，等下一帧就晚了。
+	ASC->RegisterGameplayTagEvent(RogueGameplayTags::State_Dead, EGameplayTagEventType::NewOrRemoved)
+		.AddUObject(this, &ARogueCharacter::HandleDeathTagChanged);
+}
+
+void ARogueCharacter::SyncAttributeMirrors()
+{
+	const URogueAttributeSet* AttrSet = GetRogueAttributeSet();
+	if (AttrSet == nullptr)
 	{
 		return;
 	}
 
-	const FRoguePlayerBaseStatConfig& BaseStats = LoadedPlayerBalanceAsset->BaseStats;
+	// 运行时字段是属性集的**只读缓存**（不是可以调的数值）。
+	// 好处：HUD / 武器 / 移动组件这些高频读取点不必每次都走 GAS 的属性查找，
+	// 而且调用点一行都不用改。
+	// 约定：这些 float 只在这里被写；任何"改数值"都必须改属性集（初始化 / 升级 GE / SetCurrentXxx）。
+	// 所以它们在头文件里是**不可编辑**的（曾经标了 EditDefaultsOnly，在蓝图里改毫无效果 —— 很坑）。
+	//
+	// 注意：这里只同步**真的有人读**的字段。HealthRegenPerSecond / ArmorRechargeDelay /
+	// ArmorRechargeRate / DamageReductionPercent 这几项曾经也各留了一份镜像，
+	// 但从来没有任何代码读过它们（属性集才是消费方），已删除。
+	MaxHealth = AttrSet->GetMaxHealth();
+	MaxArmor = AttrSet->GetMaxArmor();
+	CurrentHealth = AttrSet->GetHealth();
+	CurrentArmor = AttrSet->GetArmor();
+	MoveSpeed = AttrSet->GetMoveSpeed();
+	PickupRadius = AttrSet->GetPickupRadius();
+	ExperienceMultiplier = AttrSet->GetExperienceMultiplier();
+	DashCooldownDuration = AttrSet->GetDashCooldownDuration();
+	DashMinCooldown = AttrSet->GetMinDashCooldown();
+	DashDuration = AttrSet->GetDashDuration();
+	DashSpeed = AttrSet->GetDashSpeed();
 
-	// 非属性系统管理的字段仍然直接赋值
+	if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
+	{
+		MoveComp->MaxWalkSpeed = MoveSpeed;
+	}
+}
+
+void ARogueCharacter::SetCurrentHealth(float NewHealth)
+{
+	// 写属性集，再由上面的回调刷新 CurrentHealth —— 单一写入点
+	if (URogueAttributeSet* AttrSet = GetRogueAttributeSet())
+	{
+		AttrSet->SetHealth(FMath::Max(0.0f, NewHealth));
+	}
+}
+
+void ARogueCharacter::SetCurrentArmor(float NewArmor)
+{
+	if (URogueAttributeSet* AttrSet = GetRogueAttributeSet())
+	{
+		AttrSet->SetArmor(FMath::Max(0.0f, NewArmor));
+	}
+}
+
+void ARogueCharacter::ClearRecentlyDamagedState()
+{
+	URogueAbilitySystemComponent* ASC = GetRogueAbilitySystemComponent();
+	if (ASC == nullptr)
+	{
+		return;
+	}
+
+	FGameplayTagContainer RecentlyDamagedTag;
+	RecentlyDamagedTag.AddTag(RogueGameplayTags::State_RecentlyDamaged);
+	ASC->RemoveActiveEffectsWithGrantedTags(RecentlyDamagedTag);
+}
+
+void ARogueCharacter::ClearDashCooldown()
+{
+	URogueAbilitySystemComponent* ASC = GetRogueAbilitySystemComponent();
+	if (ASC == nullptr)
+	{
+		return;
+	}
+
+	FGameplayTagContainer DashCooldownTag;
+	DashCooldownTag.AddTag(RogueGameplayTags::Cooldown_Dash);
+	ASC->RemoveActiveEffectsWithGrantedTags(DashCooldownTag);
+}
+
+bool ARogueCharacter::ApplyUpgradeEffectViaGAS(ERogueUpgradeType UpgradeType, float Magnitude)
+{
+	// 升级是服务端权威操作：客户端只收属性同步结果
+	URogueAbilitySystemComponent* ASC = GetRogueAbilitySystemComponent();
+	if (ASC == nullptr || !ASC->IsOwnerActorAuthoritative())
+	{
+		return false;
+	}
+
+	const FGameplayTag PayloadTag = RogueGameplayTags::GetUpgradeAttributeTag(UpgradeType);
+	if (!PayloadTag.IsValid())
+	{
+		// 不是属性类升级（武器类升级直接分发给武器，不走 GE）
+		return false;
+	}
+
+	FGameplayEffectContextHandle Context = ASC->MakeEffectContext();
+	Context.AddSourceObject(this);
+
+	FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(URogueAttributeUpgradeEffect::StaticClass(), 1.0f, Context);
+	if (!SpecHandle.IsValid())
+	{
+		return false;
+	}
+
+	// 载荷："这次改哪个属性"。用动态资源 Tag 传 —— SetByCaller 只能传 float，传不了"是哪个属性"。
+	SpecHandle.Data->AddDynamicAssetTag(PayloadTag);
+	// 数值。冲刺冷却是负向升级，调用方传负数（符号语义由数据决定，不写死在 Execution 里）。
+	SpecHandle.Data->SetSetByCallerMagnitude(RogueGameplayTags::Data_Magnitude, Magnitude);
+
+	const bool bApplied = ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get()).WasSuccessfullyApplied();
+
+	if (bApplied)
+	{
+		UE_LOG(LogTemp, Verbose, TEXT("[GAS] 升级已施加：类型=%d 数值=%.2f 载荷=%s"),
+			static_cast<int32>(UpgradeType), Magnitude, *PayloadTag.ToString());
+	}
+
+	return bApplied;
+}
+
+void ARogueCharacter::HandleDeathTagChanged(FGameplayTag Tag, int32 NewCount)
+{
+	if (NewCount <= 0 || bDead || bPendingDeath)
+	{
+		return;
+	}
+
+	bPendingDeath = true;
+
+	// 与敌人同样的问题：这个回调正在"施加授予 State.Dead 的 GE"过程中执行，
+	// 而死亡善后会去移除/清理效果，在它自己的标签回调里做属于重入。
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimerForNextTick(this, &ARogueCharacter::ProcessDeath);
+	}
+}
+
+void ARogueCharacter::ProcessDeath()
+{
+	bPendingDeath = false;
+
+	if (bDead)
+	{
+		return;
+	}
+
+	Die();
+}
+
+void ARogueCharacter::PossessedBy(AController* NewController)
+{
+	Super::PossessedBy(NewController);
+
+	// ── 服务端侧 ──
+	// 两条顺序不能颠倒：必须先把 ASC 的 Owner/Avatar 设好，
+	// 属性集才会被 ASC 登记进 SpawnedAttributes；
+	// 之后再写基础值，SetXxx() 内部才能拿到 AbilitySystemComponent。
+	if (ARoguePlayerState* RoguePS = GetPlayerState<ARoguePlayerState>())
+	{
+		RoguePS->RefreshAbilityActorInfo(this);
+		InitializeGASAttributes();
+		BindAbilitySystemEvents();
+	}
+}
+
+void ARogueCharacter::OnRep_PlayerState()
+{
+	Super::OnRep_PlayerState();
+
+	// ── 客户端侧 ──
+	// PlayerState（连同它上面的 ASC）刚刚复制到位，把 Avatar 指到这个 Pawn。
+	// 这里**不**初始化属性：基础值是服务端权威数据，等它同步过来。
+	// 少了这一步，客户端会出现"技能按不出来 / 属性全是 0"，而单机测试完全正常。
+	if (ARoguePlayerState* RoguePS = GetPlayerState<ARoguePlayerState>())
+	{
+		RoguePS->RefreshAbilityActorInfo(this);
+		BindAbilitySystemEvents();
+	}
+}
+
+URogueAbilitySystemComponent* ARogueCharacter::GetRogueAbilitySystemComponent() const
+{
+	const ARoguePlayerState* RoguePS = GetPlayerState<ARoguePlayerState>();
+	return RoguePS != nullptr ? RoguePS->GetRogueAbilitySystemComponent() : nullptr;
+}
+
+URogueAttributeSet* ARogueCharacter::GetRogueAttributeSet() const
+{
+	const ARoguePlayerState* RoguePS = GetPlayerState<ARoguePlayerState>();
+	return RoguePS != nullptr ? RoguePS->GetAttributeSet() : nullptr;
+}
+
+void ARogueCharacter::InitializeGASAttributes()
+{
+	// SetNumericAttributeBase 会改属性的 BaseValue —— 这是服务端权威操作
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	URogueAttributeSet* AttributeSet = GetRogueAttributeSet();
+	if (AttributeSet == nullptr)
+	{
+		return;
+	}
+
+	// 数据源和旧系统保持同一份：URoguePlayerBalanceAsset::BaseStats。
+	// 加载失败时用结构体默认值兜底 —— 旧系统在这里踩过坑（兜底缺失会导致玩家数值全 0，无法移动）。
+	const FRoguePlayerBaseStatConfig DefaultBaseStats;
+	const FRoguePlayerBaseStatConfig& BaseStats =
+		LoadedPlayerBalanceAsset ? LoadedPlayerBalanceAsset->BaseStats : DefaultBaseStats;
+
+	// 先写上限，再写当前值。
+	// 原因：PreAttributeChange 里 Health 的上界取的是 GetMaxHealth()，
+	// 顺序反了会被旧上限钳住（例如 MaxHealth 从 100 提到 200 时 Health 只能到 100）。
+	AttributeSet->SetMaxHealth(BaseStats.MaxHealth);
+	AttributeSet->SetMaxArmor(BaseStats.MaxArmor);
+	AttributeSet->SetHealthRegenPerSecond(BaseStats.HealthRegenPerSecond);
+	AttributeSet->SetArmorRechargeDelay(BaseStats.ArmorRechargeDelay);
+	AttributeSet->SetArmorRechargeRate(BaseStats.ArmorRechargeRate);
+	AttributeSet->SetDamageReductionPercent(BaseStats.DamageReductionPercent);
+	AttributeSet->SetMoveSpeed(BaseStats.MoveSpeed);
+	AttributeSet->SetPickupRadius(BaseStats.PickupRadius);
+	AttributeSet->SetExperienceMultiplier(BaseStats.ExperienceMultiplier);
+	AttributeSet->SetDashCooldownDuration(BaseStats.DashCooldownDuration);
+	AttributeSet->SetMinDashCooldown(BaseStats.DashMinCooldown);
+	AttributeSet->SetDashDuration(BaseStats.DashDuration);
+	AttributeSet->SetDashSpeed(BaseStats.DashSpeed);
+
+	// 当前值开局补满（与旧逻辑 BeginPlay 里 CurrentHealth = MaxHealth / CurrentArmor = MaxArmor 一致）
+	AttributeSet->SetHealth(BaseStats.MaxHealth);
+	AttributeSet->SetArmor(BaseStats.MaxArmor);
+
+	// 元属性必须是 0，否则第一次结算会带上一个凭空多出来的伤害
+	AttributeSet->SetDamage(0.0f);
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[GAS] 玩家属性初始化完成：Health=%.1f/%.1f  Armor=%.1f/%.1f  MoveSpeed=%.1f  DashCD=%.2f"),
+		AttributeSet->GetHealth(), AttributeSet->GetMaxHealth(),
+		AttributeSet->GetArmor(), AttributeSet->GetMaxArmor(),
+		AttributeSet->GetMoveSpeed(), AttributeSet->GetDashCooldownDuration());
+}
+
+void ARogueCharacter::ApplyBalanceAsset()
+{
+	LoadedPlayerBalanceAsset = LoadConfiguredOrDefaultPlayerBalanceAsset(PlayerBalanceAsset);
+
+	// ⚠️ 兜底：属性集字段现在是"纯累加器"（默认值全 0），BaseGroup 是绝对值的唯一来源。
+	//    因此即使平衡资产加载失败，也必须用一份默认配置把基础值灌进 BaseGroup，
+	//    否则玩家数值会全部为 0（无法移动、无生命值）。
+	const FRoguePlayerBaseStatConfig DefaultBaseStats;
+	const FRoguePlayerBaseStatConfig& BaseStats =
+		LoadedPlayerBalanceAsset ? LoadedPlayerBalanceAsset->BaseStats : DefaultBaseStats;
+
+	// 非属性管理的字段仍然直接赋值
 	ExperienceToNextLevel = BaseStats.ExperienceToNextLevel;
-	DashMinCooldown = BaseStats.DashMinCooldown;
+	// DashMinCooldown 不再在这里赋值：它是 MinDashCooldown 属性的镜像
+	//（冲刺冷却的下限现在由属性集在 PreAttributeChange 里执行，见 URogueAttributeSet）。
 	JumpZVelocity = BaseStats.JumpZVelocity;
 	AirControl = BaseStats.AirControl;
 	GravityScale = BaseStats.GravityScale;
@@ -166,55 +438,14 @@ void ARogueCharacter::ApplyBalanceAsset()
 	GetCharacterMovement()->GravityScale = GravityScale;
 	JumpMaxCount = FMath::Max(0, JumpMaxCountConfig);
 
-	// 属性系统管理的字段：写入基础修饰器组（Additive 阶段 = 基础值）
-	if (AttributeSystem)
-	{
-		FRoguePlayerModifierGroup* Base = AttributeSystem->GetBaseGroup();
-		Base->ClearAll();
-		Base->Add(BaseStats.MaxHealth,               EAttributesOperation::Additive, &FRoguePlayerAttributeSet::MaxHealth);
-		Base->Add(BaseStats.MaxArmor,                EAttributesOperation::Additive, &FRoguePlayerAttributeSet::MaxArmor);
-		Base->Add(BaseStats.MoveSpeed,               EAttributesOperation::Additive, &FRoguePlayerAttributeSet::MoveSpeed);
-		Base->Add(BaseStats.PickupRadius,            EAttributesOperation::Additive, &FRoguePlayerAttributeSet::PickupRadius);
-		Base->Add(BaseStats.HealthRegenPerSecond,    EAttributesOperation::Additive, &FRoguePlayerAttributeSet::HealthRegenPerSecond);
-		Base->Add(BaseStats.DamageReductionPercent,  EAttributesOperation::Additive, &FRoguePlayerAttributeSet::DamageReductionPercent);
-		Base->Add(BaseStats.ExperienceMultiplier,    EAttributesOperation::Additive, &FRoguePlayerAttributeSet::ExperienceMultiplier);
-		Base->Add(BaseStats.ArmorRechargeDelay,      EAttributesOperation::Additive, &FRoguePlayerAttributeSet::ArmorRechargeDelay);
-		Base->Add(BaseStats.ArmorRechargeRate,       EAttributesOperation::Additive, &FRoguePlayerAttributeSet::ArmorRechargeRate);
-		Base->Add(BaseStats.DashCooldownDuration,    EAttributesOperation::Additive, &FRoguePlayerAttributeSet::DashCooldownDuration);
-		Base->Add(BaseStats.DashDuration,            EAttributesOperation::Additive, &FRoguePlayerAttributeSet::DashDuration);
-		Base->Add(BaseStats.DashSpeed,               EAttributesOperation::Additive, &FRoguePlayerAttributeSet::DashSpeed);
-	}
-
-	// 同步属性系统计算后的值到角色运行时字段
-	SyncAttributesFromSystem();
-}
-
-void ARogueCharacter::SyncAttributesFromSystem()
-{
-	if (!AttributeSystem)
-	{
-		return;
-	}
-
-	const FRoguePlayerAttributeSet* Attr = AttributeSystem->GetFinalAttributes();
-	MaxHealth = Attr->MaxHealth;
-	MaxArmor = Attr->MaxArmor;
-	MoveSpeed = Attr->MoveSpeed;
-	PickupRadius = Attr->PickupRadius;
-	HealthRegenPerSecond = Attr->HealthRegenPerSecond;
-	DamageReductionPercent = Attr->DamageReductionPercent;
-	ExperienceMultiplier = Attr->ExperienceMultiplier;
-	ArmorRechargeDelay = Attr->ArmorRechargeDelay;
-	ArmorRechargeRate = Attr->ArmorRechargeRate;
-	DashCooldownDuration = Attr->DashCooldownDuration;
-	DashDuration = Attr->DashDuration;
-	DashSpeed = Attr->DashSpeed;
-
-	// 应用移动速度到角色
-	if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
-	{
-		MoveComp->MaxWalkSpeed = MoveSpeed;
-	}
+	// 属性类字段不再在这里赋值。
+	// 它们的唯一真相源是 GAS 属性集，由 InitializeGASAttributes()（PossessedBy 时）
+	// 从同一份 URoguePlayerBalanceAsset::BaseStats 灌入，之后由升级 GE 修改，
+	// 最后经 SyncAttributeMirrors() 每帧缓存回运行时字段。
+	//
+	// 旧的自研属性系统（FRoguePlayerAttributeSystem / BaseGroup / UpgradeGroup）已整体移除，
+	// 连同它那套"累加器复位再补 Base"的结算方式 —— 那套机制曾经导致属性翻倍的 P0 级 bug，
+	// 而 GAS 的 BaseValue + 修饰器模型在结构上就不会出现重复计数。
 }
 
 void ARogueCharacter::InitializeWeapons()
@@ -344,23 +575,77 @@ void ARogueCharacter::InitializeWeapons()
 
 void ARogueCharacter::TickWeapons(float DeltaSeconds)
 {
+	// 武器模拟的联机分工（这是"联机手感"的核心决定）：
+	//   · 服务端：**所有人**的武器都权威地跑 —— 索敌、开火、伤害结算都在这里；
+	//   · 本人客户端：只跑**自己**的武器，作为本地预测，开火零延迟。
+	//     它造成的伤害会被 ApplyDamageToTarget 的权限闸挡掉，所以不会双份；
+	//   · 其他客户端：不再本地模拟别人的武器。
+	//     旧行为是每台机器都跑所有人的武器，各算一份，于是弹道与锁敌目标
+	//     "各显示各的"（伤害仍然只有服务端算，所以是观感问题）。
+	//     别人的弹道改由服务端 Multicast_WeaponCosmetic 广播的"纯表现那一发"补上。
+	//
+	// 例外是持续型表现武器（环绕刀片）：它在谁那儿都要 tick，
+	// 因为它没有"某一发"这种事件可供广播，见 NeedsCosmeticTick。
+	const bool bAuthoritative = HasAuthority();
+	const bool bLocallyControlled = IsLocallyControlled();
+
 	for (ARogueWeaponBase* Weapon : Weapons)
 	{
-		if (IsValid(Weapon))
+		if (IsValid(Weapon) && (bAuthoritative || bLocallyControlled || Weapon->NeedsCosmeticTick()))
 		{
 			Weapon->WeaponTick(DeltaSeconds);
 		}
 	}
+
+	// 本帧所有武器表现合成一条 RPC 发出（见 BroadcastWeaponCosmetic 的说明）。
+	// 放在这里而不是每发即发：一次齐射（5 连发）从 5 条 RPC 降成 1 条。
+	FlushWeaponCosmetics();
 }
 
 void ARogueCharacter::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
+	// 属性镜像同步放在最前面，且**在 bDead 早退之前** ——
+	// 死亡后 HUD 仍要能读到最终血量（归零），所以这里不能因为死亡就跳过。
+	SyncAttributeMirrors();
+
+	// ── 倒地等待 → 复活：**必须在 `if (bDead) return;` 之前** ──
+	//
+	// ⚠️⚠️ 这里踩过一个很贵的坑，务必不要再把这段挪到早退后面：
+	//   复活轮询最初写在 `if (bDead) return;` **之后**，而 bDead 为真时函数在到达它之前就返回了，
+	//   于是轮询代码**永远执行不到**。实测日志表现完全吻合：
+	//     · "进入倒地等待：10.0 秒后回出生点复活" → 有
+	//     · "已复活"                              → 一次都没有
+	//   观感就是"倒下之后再也不会起来，整局像卡住了"。
+	//   同一局里定时器那条路（SetTimer → Revive）也没触发，所以两条路都不通；
+	//   现在"复活到点"由三处独立驱动：本函数、GameMode 的 TickReviveQueue()、以及角色身上的定时器。
+	//
+	// 判据用"服务器世界的截止时刻"（复制在 PlayerState 上），不依赖任何定时器状态。
+	if (bDead && IsAuthoritySide())
+	{
+		if (const ARoguePlayerState* RoguePlayerState = GetPlayerState<ARoguePlayerState>())
+		{
+			const float Deadline = RoguePlayerState->GetReviveServerTime();
+			const UWorld* ReviveWorld = GetWorld();
+			const AGameStateBase* ReviveGameState = ReviveWorld != nullptr ? ReviveWorld->GetGameState() : nullptr;
+			const float NowServerTime = ReviveGameState != nullptr
+				? ReviveGameState->GetServerWorldTimeSeconds()
+				: (ReviveWorld != nullptr ? ReviveWorld->GetTimeSeconds() : 0.0f);
+			if (Deadline > 0.0f && NowServerTime >= Deadline)
+			{
+				Revive();
+			}
+		}
+	}
+
 	if (bDead)
 	{
 		return;
 	}
+
+	// 复活无敌的到期检查（服务端自己算，不需要复制字段：伤害只在服务端结算）。
+	TickReviveInvulnerability();
 
 	HandleDash(DeltaSeconds);
 	HandleArmorRecharge(DeltaSeconds);
@@ -396,45 +681,34 @@ void ARogueCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComp
 	UpgradeThreeBinding.bExecuteWhenPaused = true;
 }
 
-float ARogueCharacter::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
+void ARogueCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
-	if (bDead)
-	{
-		return 0.0f;
-	}
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-	const float IncomingDamage = FMath::Max(0.0f, DamageAmount);
-	const float MitigatedDamage = IncomingDamage * (1.0f - DamageReductionPercent);
-	float RemainingDamage = MitigatedDamage;
+	// 成长数据只发给拥有者：击杀奖励、升级抽卡、商店扣费都在服务端结算，
+	// 客户端只负责显示。COND_OwnerOnly 既够用又不把钱包广播给别人。
+	DOREPLIFETIME_CONDITION(ARogueCharacter, CurrentExperience, COND_OwnerOnly);
+	DOREPLIFETIME_CONDITION(ARogueCharacter, PlayerLevel, COND_OwnerOnly);
+	DOREPLIFETIME_CONDITION(ARogueCharacter, Money, COND_OwnerOnly);
+	DOREPLIFETIME_CONDITION(ARogueCharacter, ExperienceToNextLevel, COND_OwnerOnly);
 
-	if (RemainingDamage > 0.0f)
-	{
-		ArmorRechargeDelayRemaining = ArmorRechargeDelay;
-	}
-
-	if (CurrentArmor > 0.0f && RemainingDamage > 0.0f)
-	{
-		const float ArmorAbsorbedDamage = FMath::Min(CurrentArmor, RemainingDamage);
-		CurrentArmor -= ArmorAbsorbedDamage;
-		RemainingDamage -= ArmorAbsorbedDamage;
-	}
-
-	if (RemainingDamage > 0.0f)
-	{
-		CurrentHealth -= FMath::Min(CurrentHealth, RemainingDamage);
-	}
-
-	if (CurrentHealth <= KINDA_SMALL_NUMBER)
-	{
-		Die();
-	}
-
-	return MitigatedDamage;
+	// 倒地状态发给**所有人**（不是 OwnerOnly）：队友要能看见你躺在地上，
+	// 而本机的 HUD / 输入模式 / 死亡界面全都读它。漏了它就等于客户端永远不知道自己死了
+	// （实测症状：客户端死后依然能操作、没有倒计时、死亡界面不弹）。
+	DOREPLIFETIME(ARogueCharacter, bDead);
 }
 
 void ARogueCharacter::AddExperience(int32 ExperienceAmount)
 {
 	if (bDead)
+	{
+		return;
+	}
+
+	// 成长数据是**服务端权威**：经验球可能在客户端本地存在，
+	// 但"加经验"必须只由服务端做，否则客户端会自己涨经验（服务端不知道，
+	// 而成长字段是复制的 → 客户端本地值会被下一帧的复制覆盖回去，表现为"经验乱跳"）。
+	if (!HasAuthority())
 	{
 		return;
 	}
@@ -455,6 +729,12 @@ void ARogueCharacter::AddExperience(int32 ExperienceAmount)
 
 void ARogueCharacter::AddMoney(int32 Amount)
 {
+	// 同样只在服务端加钱（金额是复制的，客户端本地加会被覆盖）
+	if (!HasAuthority())
+	{
+		return;
+	}
+
 	Money += FMath::Max(0, Amount);
 }
 
@@ -465,6 +745,12 @@ void ARogueCharacter::SetNearbyShopTerminal(ARogueShopTerminal* ShopTerminal)
 
 bool ARogueCharacter::TrySpendMoney(int32 Amount)
 {
+	// 扣钱是权威操作：客户端不能自己扣（会被复制覆盖），更不能自己"少扣"
+	if (!HasAuthority())
+	{
+		return false;
+	}
+
 	if (Amount < 0 || Money < Amount)
 	{
 		return false;
@@ -496,7 +782,158 @@ bool ARogueCharacter::GetShopPromptWorldLocation(FVector& OutLocation) const
 
 void ARogueCharacter::ApplyUpgrade(const FRogueUpgradeOption& Upgrade)
 {
-	FRogueUpgradeEffectApplier::ApplyToCharacter(*this, Upgrade);
+	// 升级落地只走这一条路（原来是 ApplyUpgrade → FRogueUpgradeEffectApplier::ApplyToCharacter
+	// 再转一手，纯粹多一层跳转，已合并进来）。分三类：
+	//   · 属性类 → GAS 的 GameplayEffect（URogueAttributeUpgradeEffect + ExecutionCalculation）
+	//   · 武器类 → NetMulticast，让服务端与所有客户端各自更新本地武器副本
+	//   · 联动效果 → 护甲上限提升后立刻开始回复、冲刺冷却缩短后不必等旧冷却
+
+	// 记录升级前的上限，用于护甲上限提升后的"立即开始回复"联动
+	const float PreviousMaxArmor = MaxArmor;
+
+	switch (Upgrade.Type)
+	{
+	// ---- 属性类升级：统一通过 GAS 的 GameplayEffect 施加 ----
+	// 一份 URogueAttributeUpgradeEffect 承载全部 8 种属性升级：
+	// 枚举 → 载荷 Tag（Upgrade.Attribute.*）→ ExecutionCalculation 决定改哪个属性，
+	// 数值走 SetByCaller(Data.Magnitude)。
+	//
+	// 迁移前的做法是把 Magnitude 塞进自研的 UpgradeGroup 再整表重算，
+	// 那条路径已经整体删除 —— 属性现在只有一个真相源（GAS 属性集），
+	// 而且升级结果会随属性复制自动同步到客户端。
+	//
+	// 注意"等量回血/回甲"这条联动**没有丢**：它搬到了
+	// URogueAttributeSet::PostGameplayEffectExecute（MaxHealth/MaxArmor 变化时按增量补当前值），
+	// 所以这里不再需要 PreviousMaxHealth 那套前后差值计算。
+	case ERogueUpgradeType::MaxHealth:
+	case ERogueUpgradeType::MoveSpeed:
+	case ERogueUpgradeType::ArmorCapacity:
+	case ERogueUpgradeType::PickupRadius:
+	case ERogueUpgradeType::Recovery:
+	case ERogueUpgradeType::Armor:
+	case ERogueUpgradeType::ExperienceGain:
+		ApplyUpgradeEffectViaGAS(Upgrade.Type, Upgrade.Magnitude);
+		break;
+
+	case ERogueUpgradeType::DashCooldown:
+		// 冲刺冷却是**负向**升级：数值取负表达"减少冷却"。
+		// 属性的下限钳制在 URogueAttributeSet::PreAttributeChange（读 MinDashCooldown 属性）。
+		ApplyUpgradeEffectViaGAS(Upgrade.Type, -Upgrade.Magnitude);
+		// 让玩家不必继续等旧的更长冷却
+		ClearDashCooldown();
+		break;
+
+	// ---- 武器类升级：通过 NetMulticast 广播，让服务器与所有客户端各自更新本地武器副本 ----
+	// 注意这里**不能**再直接调 ApplySharedWeapon*：
+	// 广播本身会在服务端也执行一次，直接调的话服务端会应用两遍（数量/伤害翻倍）。
+	case ERogueUpgradeType::AttackPower:
+	case ERogueUpgradeType::AttackSpeed:
+	case ERogueUpgradeType::AttackRange:
+	case ERogueUpgradeType::ProjectileSpeed:
+	case ERogueUpgradeType::ProjectileCount:
+	case ERogueUpgradeType::ScytheCount:
+	case ERogueUpgradeType::RocketCount:
+	case ERogueUpgradeType::LaserCount:
+	case ERogueUpgradeType::HellTowerCount:
+	case ERogueUpgradeType::LaserRefraction:
+	case ERogueUpgradeType::MortarCount:
+	case ERogueUpgradeType::MortarBlastRadius:
+		Multicast_ApplyWeaponUpgrade(Upgrade.Type, Upgrade.Magnitude);
+		break;
+
+	default:
+		break;
+	}
+
+	// 属性镜像平时是每帧在 Tick 里同步的，但这里必须**立刻**同步一次：
+	// 升级刚改完属性集，镜像还停留在上一帧的值 ——
+	// 下面的联动判断（MaxArmor 是否变大）如果读旧镜像就永远为假，联动会静默失效。
+	// 顺带也让 HUD 在升级的当帧就显示新数值，而不是等下一帧。
+	SyncAttributeMirrors();
+
+	// 护甲上限提升后立即开始回复（清掉"刚受伤"状态）。
+	// 其余联动（回血/回甲、冲刺冷却收缩）已分别由属性集与 ClearDashCooldown 处理。
+	if (Upgrade.Type == ERogueUpgradeType::ArmorCapacity && MaxArmor > PreviousMaxArmor)
+	{
+		ClearRecentlyDamagedState();
+	}
+}
+
+void ARogueCharacter::Multicast_ApplyWeaponUpgrade_Implementation(ERogueUpgradeType UpgradeType, float Magnitude)
+{
+	// 这个函数在**服务端与所有客户端**都会执行（NetMulticast），
+	// 所以它会同时更新服务器与各客户端的本地武器副本 —— 不需要在别处再调一次。
+	switch (UpgradeType)
+	{
+	case ERogueUpgradeType::AttackPower:
+		ApplySharedWeaponDamageBonus(Magnitude);
+		break;
+	case ERogueUpgradeType::AttackSpeed:
+		ApplySharedWeaponSpeedBonus(Magnitude);
+		break;
+	case ERogueUpgradeType::AttackRange:
+		ApplySharedWeaponRangeBonus(Magnitude);
+		break;
+	default:
+		DispatchWeaponUpgrade(UpgradeType, Magnitude);
+		break;
+	}
+}
+
+void ARogueCharacter::BroadcastWeaponCosmetic(const ARogueWeaponBase* Weapon, const FRogueWeaponCosmeticFire& Fire)
+{
+	if (!HasAuthority() || Weapon == nullptr)
+	{
+		return;
+	}
+
+	const int32 WeaponIndex = Weapons.IndexOfByKey(Weapon);
+	if (WeaponIndex == INDEX_NONE)
+	{
+		return;
+	}
+
+	// 只入队不发送：本帧所有武器（含一次齐射的多发）会在 TickWeapons 末尾合成一条 RPC。
+	FRogueWeaponCosmeticBatchEntry& Entry = PendingWeaponCosmetics.AddDefaulted_GetRef();
+	Entry.WeaponIndex = WeaponIndex;
+	Entry.Fire = Fire;
+}
+
+void ARogueCharacter::FlushWeaponCosmetics()
+{
+	if (!HasAuthority() || PendingWeaponCosmetics.Num() == 0)
+	{
+		return;
+	}
+
+	// 一条 RPC 承载整帧的表现。Unreliable 是有意的：这是纯表现，
+	// 丢一帧只是"少看见一两发"，不影响任何结算。
+	Multicast_WeaponCosmetics(PendingWeaponCosmetics);
+	PendingWeaponCosmetics.Reset();
+}
+
+void ARogueCharacter::Multicast_WeaponCosmetics_Implementation(const TArray<FRogueWeaponCosmeticBatchEntry>& Fires)
+{
+	// 两类机器跳过（它们各自已经有"真实/预测"的那一份了）：
+	//   · 服务端：权威那一发就是它自己生成的；
+	//   · 本人：自己那一发是本地预测。
+	if (HasAuthority() || IsLocallyControlled())
+	{
+		return;
+	}
+
+	for (const FRogueWeaponCosmeticBatchEntry& Entry : Fires)
+	{
+		if (!Weapons.IsValidIndex(Entry.WeaponIndex))
+		{
+			continue;
+		}
+
+		if (ARogueWeaponBase* Weapon = Weapons[Entry.WeaponIndex])
+		{
+			Weapon->PlayCosmeticFire(Entry.Fire);
+		}
+	}
 }
 
 float ARogueCharacter::GetHealthPercent() const
@@ -652,18 +1089,43 @@ int32 ARogueCharacter::GetLaserRefractionCount() const
 
 void ARogueCharacter::HandleArmorRecharge(float DeltaSeconds)
 {
-	if (MaxArmor <= 0.0f || CurrentArmor >= MaxArmor)
+	// 护甲回复是**服务端权威**逻辑：客户端只显示复制过来的数值。
+	//
+	// 为什么必须挡住客户端：SetCurrentArmor 会直接写 AttributeSet
+	// （ATTRIBUTE_ACCESSORS 生成的 setter 内部是 ASC->SetNumericAttributeBase），
+	// 在客户端照样生效 —— 于是客户端自己也在回甲，而服务端下一次复制又把它盖回去，
+	// 表现为护甲条在两个值之间来回跳；更糟的是"受伤后不回复"的依据
+	// （State.RecentlyDamaged 标签）在客户端本来就晚一步，本地回甲会提前生效。
+	if (!HasAuthority())
 	{
 		return;
 	}
 
-	ArmorRechargeDelayRemaining = FMath::Max(0.0f, ArmorRechargeDelayRemaining - DeltaSeconds);
-	if (ArmorRechargeDelayRemaining > 0.0f)
+	// 数值全部从属性集读（真相源），并且用 State.RecentlyDamaged 标签代替旧的
+	// ArmorRechargeDelayRemaining 计时器来判断"是否还在受伤冷却中"。
+	const URogueAttributeSet* AttrSet = GetRogueAttributeSet();
+	if (AttrSet == nullptr)
 	{
 		return;
 	}
 
-	CurrentArmor = FMath::Min(MaxArmor, CurrentArmor + ArmorRechargeRate * DeltaSeconds);
+	const float MaxArmorValue = AttrSet->GetMaxArmor();
+	const float CurrentArmorValue = AttrSet->GetArmor();
+	if (MaxArmorValue <= 0.0f || CurrentArmorValue >= MaxArmorValue)
+	{
+		return;
+	}
+
+	// 刚受过伤 → 护甲不回复（这个状态由 AttributeSet 在结算伤害时挂上，带时长）
+	if (const URogueAbilitySystemComponent* ASC = GetRogueAbilitySystemComponent())
+	{
+		if (ASC->HasMatchingGameplayTag(RogueGameplayTags::State_RecentlyDamaged))
+		{
+			return;
+		}
+	}
+
+	SetCurrentArmor(FMath::Min(MaxArmorValue, CurrentArmorValue + AttrSet->GetArmorRechargeRate() * DeltaSeconds));
 }
 
 void ARogueCharacter::MoveForward(float Value)
@@ -770,9 +1232,12 @@ void ARogueCharacter::TogglePauseMenu()
 		return;
 	}
 
-	if (ARogueGameMode* RogueGameMode = GetWorld()->GetAuthGameMode<ARogueGameMode>())
+	// 守卫改用本地 PlayerState 读"是否正在选卡/在商店"——这两个状态是每玩家的、且已复制到客户端。
+	// 原来用 GetAuthGameMode()：客户端返回 nullptr → 守卫整个被跳过 →
+	// 客户端玩家能在选升级卡的时候打开暂停菜单（服务端玩家不会）。
+	if (ARoguePlayerState* RoguePlayerState = GetPlayerState<ARoguePlayerState>())
 	{
-		if (RogueGameMode->IsAwaitingUpgradeChoice() || RogueGameMode->IsShopOpen())
+		if (RoguePlayerState->IsAwaitingUpgradeChoice() || RoguePlayerState->IsShopOpen())
 		{
 			return;
 		}
@@ -794,14 +1259,19 @@ void ARogueCharacter::TogglePauseMenu()
 	{
 		RogueHUD->ClosePauseMenu();
 		SetUpgradeSelectionInput(false);
-		UGameplayStatics::SetGamePaused(this, false);
 	}
 	else
 	{
 		RogueHUD->OpenPauseMenu();
 		SetUpgradeSelectionInput(true);
-		UGameplayStatics::SetGamePaused(this, true);
 	}
+
+	// 注意：这里**不暂停游戏**。
+	// 联机下 SetGamePaused 是全连接生效的 —— 一个人按 Esc 就会把所有人的世界冻住。
+	// 现在 Esc 只是一个"非模态覆盖菜单"：菜单照常显示、鼠标照常出来
+	// （SetUpgradeSelectionInput 用的是 FInputModeGameAndUI），但世界继续跑。
+	// 单人游玩时如果需要"真正的暂停"，那应该做成一个显式的开关（比如只在
+	// 玩家人数为 1 时才暂停），而不是默认行为。
 }
 
 void ARogueCharacter::Interact()
@@ -811,46 +1281,48 @@ void ARogueCharacter::Interact()
 		return;
 	}
 
-	ARogueGameMode* RogueGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ARogueGameMode>() : nullptr;
-	if (RogueGameMode == nullptr)
+	// 走 PlayerState 的 ServerRPC —— 客户端同样可用。
+	// 旧写法用 `GetWorld()->GetAuthGameMode()`，在客户端返回 nullptr，
+	// 于是客户端玩家**根本打不开商店**（连交互提示也不会出现，见 HUD 的同类修正）。
+	ARoguePlayerState* RoguePlayerState = GetPlayerState<ARoguePlayerState>();
+	if (RoguePlayerState == nullptr)
 	{
 		return;
 	}
 
-	if (RogueGameMode->IsShopOpen())
+	if (RoguePlayerState->IsShopOpen())
 	{
-		RogueGameMode->CloseShop();
+		RoguePlayerState->Server_RequestCloseShop();
 		return;
 	}
 
+	// 这两个判断是"本地意图"的前置条件，服务端还会再校一遍
 	if (GetWorld()->IsPaused() || !NearbyShopTerminal.IsValid())
 	{
 		return;
 	}
 
-	RogueGameMode->TryOpenShop(this);
+	RoguePlayerState->Server_RequestOpenShop();
 }
 
 void ARogueCharacter::Dash()
 {
-	if (bDead || bDashActive || GetWorld()->IsPaused() || DashCooldownRemaining > 0.0f)
+	if (bDead || GetWorld() == nullptr || GetWorld()->IsPaused())
 	{
 		return;
 	}
 
-	DashDirection = GetDashDirection();
-	if (DashDirection.IsNearlyZero())
+	// 输入 → GAS。
+	// "能不能冲刺"（是否死亡 / 是否已在冲刺 / 冷却是否走完）全部交给技能判定，
+	// 见 URogueGameplayAbility_Dash 的 ActivationBlockedTags 与 CooldownTags。
+	// 项目目前用的是旧版 InputComponent 绑定，所以在这里按 Tag 激活；
+	// 将来迁到 Enhanced Input 后应改为 AbilityLocalInputPressed。
+	if (URogueAbilitySystemComponent* ASC = GetRogueAbilitySystemComponent())
 	{
-		return;
+		FGameplayTagContainer DashAbilityTag;
+		DashAbilityTag.AddTag(RogueGameplayTags::Ability_Dash);
+		ASC->TryActivateAbilitiesByTag(DashAbilityTag);
 	}
-
-	bDashActive = true;
-	DashTimeRemaining = DashDuration;
-	DashCooldownRemaining = DashCooldownDuration;
-	GetCharacterMovement()->StopMovementImmediately();
-	SetActorRotation(DashDirection.Rotation());
-
-	ARogueImpactEffect::SpawnImpactEffect(GetWorld(), GetActorLocation() + FVector(0.0f, 0.0f, 38.0f), DashDirection.Rotation(), ERogueImpactVisualStyle::Laser, FVector(0.42f, 0.42f, 0.20f), 0.18f, this);
 }
 
 void ARogueCharacter::StartJump()
@@ -868,62 +1340,107 @@ void ARogueCharacter::StopJump()
 	StopJumping();
 }
 
+void ARogueCharacter::RequestUpgradeSelection(int32 UpgradeIndex)
+{
+	// 联机正确路径：请求发到 PlayerState 的 ServerRPC，由服务端校验并施加。
+	// 旧写法是直接调 `GetWorld()->GetAuthGameMode()->TrySelectUpgrade(...)`，
+	// 而 GetAuthGameMode() 在客户端返回 nullptr —— 客户端玩家选了也没用。
+	//
+	// 注意这个函数在**服务端与客户端都可用**：
+	//   · 客户端调用 → 走 RPC 到服务端；
+	//   · 服务端（含 Listen Server 的主机玩家）调用 → RPC 在本机直接执行。
+	if (ARoguePlayerState* RoguePlayerState = GetPlayerState<ARoguePlayerState>())
+	{
+		RoguePlayerState->Server_RequestUpgradeSelection(UpgradeIndex);
+	}
+}
+
 void ARogueCharacter::ChooseUpgradeOne()
 {
-	if (ARogueGameMode* RogueGameMode = GetWorld()->GetAuthGameMode<ARogueGameMode>())
-	{
-		RogueGameMode->TrySelectUpgrade(0);
-	}
+	RequestUpgradeSelection(0);
 }
 
 void ARogueCharacter::ChooseUpgradeTwo()
 {
-	if (ARogueGameMode* RogueGameMode = GetWorld()->GetAuthGameMode<ARogueGameMode>())
-	{
-		RogueGameMode->TrySelectUpgrade(1);
-	}
+	RequestUpgradeSelection(1);
 }
 
 void ARogueCharacter::ChooseUpgradeThree()
 {
-	if (ARogueGameMode* RogueGameMode = GetWorld()->GetAuthGameMode<ARogueGameMode>())
-	{
-		RogueGameMode->TrySelectUpgrade(2);
-	}
+	RequestUpgradeSelection(2);
 }
 
 void ARogueCharacter::HandleDash(float DeltaSeconds)
 {
-	DashCooldownRemaining = FMath::Max(0.0f, DashCooldownRemaining - DeltaSeconds);
-
-	if (!bDashActive)
+	// 迁移后这里**不再自己推进冲刺位移**（位移已交给 URogueAbilityTask_Dash），
+	// 也不再用本地 float 当冷却账本。这个函数只剩两件事：
+	//   1) 把"是否在冲刺中"从技能的 State.Dashing 标签同步过来 —— 表现层与
+	//      移动/跳跃的守卫仍然读 bDashActive，但它们现在读的是一个**全局可查询的状态**，
+	//      而不是一个只有本地知道的 bool；
+	//   2) 把冷却剩余时间从冷却 GE 上查出来，供 HUD 画冷却条。
+	URogueAbilitySystemComponent* ASC = GetRogueAbilitySystemComponent();
+	if (ASC == nullptr)
 	{
+		// PlayerState 还没复制到位（或还没接上 GAS）——退化为"没有冲刺状态"
+		bDashActive = false;
+		DashTimeRemaining = 0.0f;
 		return;
 	}
 
-	DashTimeRemaining -= DeltaSeconds;
+	const bool bWasDashing = bDashActive;
+	bDashActive = ASC->HasMatchingGameplayTag(RogueGameplayTags::State_Dashing);
 
-	FHitResult HitResult;
-	AddActorWorldOffset(DashDirection * DashSpeed * DeltaSeconds, true, &HitResult);
-	if (HitResult.bBlockingHit)
+	if (bDashActive)
+	{
+		// 刚进入冲刺时用属性里的时长做起点，之后逐帧倒数（纯表现用）
+		if (!bWasDashing)
+		{
+			DashTimeRemaining = DashDuration;
+		}
+		else
+		{
+			DashTimeRemaining = FMath::Max(0.0f, DashTimeRemaining - DeltaSeconds);
+		}
+	}
+	else
 	{
 		DashTimeRemaining = 0.0f;
 	}
 
-	if (DashTimeRemaining <= 0.0f)
-	{
-		bDashActive = false;
-	}
+	// 冷却剩余时间：直接向 GAS 查询"身上还挂着多久的 Cooldown.Dash 效果"。
+	// 这样冷却的唯一真相源就是那个 GE，而不是角色上的一个 float。
+	FGameplayTagContainer CooldownTagContainer;
+	CooldownTagContainer.AddTag(RogueGameplayTags::Cooldown_Dash);
+	const TArray<float> RemainingTimes = ASC->GetActiveEffectsTimeRemaining(
+		FGameplayEffectQuery::MakeQuery_MatchAnyOwningTags(CooldownTagContainer));
+	DashCooldownRemaining = RemainingTimes.Num() > 0 ? RemainingTimes[0] : 0.0f;
 }
 
 void ARogueCharacter::HandleRecovery(float DeltaSeconds)
 {
-	if (HealthRegenPerSecond <= 0.0f || CurrentHealth >= MaxHealth)
+	// 同 HandleArmorRecharge：回血也是服务端权威，客户端写本地属性只会和复制结果打架。
+	if (!HasAuthority())
 	{
 		return;
 	}
 
-	CurrentHealth = FMath::Min(MaxHealth, CurrentHealth + HealthRegenPerSecond * DeltaSeconds);
+	// 回复速率与上限都取自属性集（真相源）；写回也走 SetCurrentHealth，
+	// 由属性变化回调用刷新镜像 —— 角色侧不再直接改 CurrentHealth。
+	const URogueAttributeSet* AttrSet = GetRogueAttributeSet();
+	if (AttrSet == nullptr)
+	{
+		return;
+	}
+
+	const float RegenRate = AttrSet->GetHealthRegenPerSecond();
+	const float MaxHealthValue = AttrSet->GetMaxHealth();
+	const float CurrentHealthValue = AttrSet->GetHealth();
+	if (RegenRate <= 0.0f || CurrentHealthValue >= MaxHealthValue)
+	{
+		return;
+	}
+
+	SetCurrentHealth(FMath::Min(MaxHealthValue, CurrentHealthValue + RegenRate * DeltaSeconds));
 }
 
 FVector ARogueCharacter::GetDashDirection() const
@@ -968,8 +1485,157 @@ void ARogueCharacter::LevelUp()
 	}
 }
 
-void ARogueCharacter::SetMenuInteractionInput(bool bEnabled)
+UAbilitySystemComponent* ARogueCharacter::GetAbilitySystemComponent() const
 {
+	// 本项目的 ASC 挂在 PlayerState 上（玩家侧），这里转发过去。
+	// 实现这个接口之后，"通过 Actor 找 ASC"的所有引擎/项目代码（含 ApplyDamageToTarget）
+	// 都能正确拿到玩家的 ASC —— 这正是"怪物打玩家不掉血"的根因所在，详见头文件。
+	const ARoguePlayerState* RoguePlayerState = GetPlayerState<ARoguePlayerState>();
+	return RoguePlayerState != nullptr ? RoguePlayerState->GetAbilitySystemComponent() : nullptr;
+}
+
+void ARogueCharacter::ScheduleRevive(float DelaySeconds)
+{
+	// 只有权威侧能排复活。判据用 IsAuthoritySide()（GetNetMode）而不是 HasAuthority()：
+	// 客户端上本机拥有的角色 HasAuthority() 也是 true，
+	// 那会让客户端给自己排一个本地复活（本地改血/传送），和服务端的复制打架。
+	if (!IsAuthoritySide() || GetWorld() == nullptr)
+	{
+		return;
+	}
+
+	GetWorldTimerManager().ClearTimer(ReviveTimerHandle);
+
+	// 把"复活截止时刻"写进 PlayerState（复制给拥有者，客户端据此显示倒计时）。
+	// 时钟与消费端 GetReviveSecondsRemaining 保持一致：都用 GameState 的服务器世界时间。
+	const AGameStateBase* GameState = GetWorld() != nullptr ? GetWorld()->GetGameState() : nullptr;
+	const float NowServerTime = GameState != nullptr
+		? GameState->GetServerWorldTimeSeconds()
+		: GetWorld()->GetTimeSeconds();
+	if (ARoguePlayerState* RoguePlayerState = GetPlayerState<ARoguePlayerState>())
+	{
+		RoguePlayerState->SetReviveServerTime(DelaySeconds > 0.0f ? NowServerTime + DelaySeconds : 0.0f);
+	}
+
+	// 负值 / 0 = 取消（团灭时由 GameMode 调用来取消待复活）
+	if (DelaySeconds <= 0.0f)
+	{
+		return;
+	}
+
+	GetWorldTimerManager().SetTimer(ReviveTimerHandle, this, &ARogueCharacter::Revive, DelaySeconds, false);
+
+	UE_LOG(LogTemp, Log, TEXT("[Rogue] %s 进入倒地等待：%.1f 秒后回出生点复活"), *GetName(), DelaySeconds);
+}
+
+void ARogueCharacter::Revive()
+{
+	// 复活是权威操作：只有服务端能做（判据见 ScheduleRevive 的注释）
+	if (!IsAuthoritySide() || !bDead)
+	{
+		return;
+	}
+
+	// 1) 清死亡标签 —— 它是"是否已死"的唯一真相源。
+	//    注意这会触发 HandleDeathTagChanged(NewCount=0)，那边的实现对新标签数 <= 0 直接返回，
+	//    所以不会和本函数打架。
+	if (URogueAbilitySystemComponent* ASC = GetRogueAbilitySystemComponent())
+	{
+		FGameplayTagContainer DeadTag;
+		DeadTag.AddTag(RogueGameplayTags::State_Dead);
+		ASC->RemoveActiveEffectsWithGrantedTags(DeadTag);
+	}
+
+	// 2) 解除"已死"标记，并回血到上限的 50%
+	bDead = false;
+
+	// 清掉 PlayerState 上的复活倒计时（客户端 HUD 随之从"倒地等待"切回正常显示）
+	if (ARoguePlayerState* RoguePlayerState = GetPlayerState<ARoguePlayerState>())
+	{
+		RoguePlayerState->SetReviveServerTime(0.0f);
+	}
+	if (const URogueAttributeSet* AttrSet = GetRogueAttributeSet())
+	{
+		SetCurrentHealth(AttrSet->GetMaxHealth() * 0.5f);
+	}
+
+	// 3) 清掉"刚受伤"状态，让护甲能正常回复
+	ClearRecentlyDamagedState();
+
+	// 3.5) 复活保护：1.5 秒无敌（设计：刚回出生点的玩家不该被瞬间再打死）。
+	//      用 **loose tag**（不是 GE）：判定只在服务端（ApplyDamageToTarget 里的 State.Invulnerable 闸门），
+	//      到期由 Tick 里的 TickReviveInvulnerability() 直接比对服务器时间戳解除，
+	//      不依赖任何定时器 —— 与本次"复活定时器不触发"的教训保持一致。
+	if (URogueAbilitySystemComponent* ReviveASC = GetRogueAbilitySystemComponent())
+	{
+		ReviveASC->SetLooseGameplayTagCount(RogueGameplayTags::State_Invulnerable, 1);
+		ReviveInvulnerableUntilTime = GetServerTimeSeconds() + ReviveInvulnerableSeconds;
+	}
+
+	// 4) 回出生点（与 GameMode 开局摆放玩家的落点一致）
+	SetActorLocation(FVector(0.0f, 0.0f, 120.0f), false, nullptr, ETeleportType::TeleportPhysics);
+
+	// 5) 恢复输入 / 移动 / 碰撞（客户端由 bDead 复制的 OnRep 走同一个函数）
+	ApplyDownedState();
+
+	// 6) 关掉死亡界面的 UI 输入模式（HUD 每帧的推导也会随之切回 GameOnly）
+	SetUpgradeSelectionInput(false);
+
+	UE_LOG(LogTemp, Log, TEXT("[Rogue] %s 已复活（回到出生点，生命 %.0f%%，%.1f 秒无敌）"),
+		*GetName(),
+		(GetRogueAttributeSet() != nullptr && GetRogueAttributeSet()->GetMaxHealth() > 0.0f)
+			? (GetRogueAttributeSet()->GetHealth() / GetRogueAttributeSet()->GetMaxHealth() * 100.0f)
+			: 0.0f,
+		ReviveInvulnerableSeconds);
+}
+
+float ARogueCharacter::GetServerTimeSeconds() const
+{
+	const UWorld* World = GetWorld();
+	if (World == nullptr)
+	{
+		return 0.0f;
+	}
+
+	// 统一用 GameState 的"服务器世界时间"：客户端上的这个值也是同步过的服务器时钟，
+	// 而 World->GetTimeSeconds() 是各机器自己的世界时间，两边并不同源。
+	if (const AGameStateBase* GameState = World->GetGameState())
+	{
+		return GameState->GetServerWorldTimeSeconds();
+	}
+
+	return World->GetTimeSeconds();
+}
+
+void ARogueCharacter::TickReviveInvulnerability()
+{
+	if (ReviveInvulnerableUntilTime <= 0.0f)
+	{
+		return;
+	}
+
+	if (GetServerTimeSeconds() < ReviveInvulnerableUntilTime)
+	{
+		return;
+	}
+
+	ClearReviveInvulnerability();
+	UE_LOG(LogTemp, Verbose, TEXT("[Rogue] %s 复活无敌结束"), *GetName());
+}
+
+void ARogueCharacter::ClearReviveInvulnerability()
+{
+	ReviveInvulnerableUntilTime = 0.0f;
+
+	if (URogueAbilitySystemComponent* ASC = GetRogueAbilitySystemComponent())
+	{
+		// SetLooseGameplayTagCount(0) 而不是 RemoveLooseGameplayTag：
+		// 前者是幂等的（重复调用不会把计数减成负数），后者每次只减 1。
+		ASC->SetLooseGameplayTagCount(RogueGameplayTags::State_Invulnerable, 0);
+	}
+}
+
+void ARogueCharacter::SetMenuInteractionInput(bool bEnabled){
 	APlayerController* PlayerController = Cast<APlayerController>(GetController());
 	if (PlayerController == nullptr)
 	{
@@ -996,7 +1662,32 @@ void ARogueCharacter::SetMenuInteractionInput(bool bEnabled)
 
 void ARogueCharacter::Die()
 {
+	// 死亡表现由复制驱动：客户端不在这里做任何"权威"动作。
+	//
+	// ⚠️ 判据必须是 GetNetMode()，**不能是 HasAuthority()**：
+	//   客户端上"本机拥有"的角色 Role 也是 ROLE_Authority（本地控制的 Pawn 由客户端自己模拟），
+	//   用 HasAuthority() 会让客户端给自己排一个"10 秒后复活"、
+	//   甚至在本地把血量改回 50%（这些值都是服务端复制的，会被立刻覆盖，表现为抖动）。
+	if (IsAuthoritySide() == false)
+	{
+		ApplyDownedState();
+		return;
+	}
+
 	bDead = true;
+
+	// 死了就不该再带着"复活无敌"标签（否则尸体在伤害闸门那里是"无敌"，
+	// 排查时会看到 Dead=1 Invul=1 这种自相矛盾的状态）。
+	ClearReviveInvulnerability();
+
+	// 联机合作：死亡不是出局，而是**倒地等待**（默认 10 秒后回出生点复活）。
+	//
+	// ⚠️ 这里对延迟做了下限保护：ReviveDelaySeconds 是 EditDefaultsOnly，
+	// 而**蓝图子类是早于这个属性存在的**——BP 里该字段可能是 0。
+	// 一旦传 0 就会走 ScheduleRevive 的"取消"分支，后果是死后永远躺着、
+	// 死亡界面也永远不显示倒计时（实测正是如此：日志里没有任何"已复活"记录）。
+	const float EffectiveReviveDelay = ReviveDelaySeconds > 0.0f ? ReviveDelaySeconds : 10.0f;
+	ScheduleRevive(EffectiveReviveDelay);
 	SetUpgradeSelectionInput(true);
 
 	// 通知所有武器角色死亡
@@ -1008,11 +1699,57 @@ void ARogueCharacter::Die()
 		}
 	}
 
-	DisableInput(Cast<APlayerController>(GetController()));
-	GetCharacterMovement()->DisableMovement();
+	// 本机表现：关输入、关移动、关碰撞。客户端由 OnRep_Dead 走同一个函数。
+	ApplyDownedState();
 
 	if (ARogueGameMode* RogueGameMode = GetWorld()->GetAuthGameMode<ARogueGameMode>())
 	{
-		RogueGameMode->NotifyPlayerDied();
+		RogueGameMode->NotifyPlayerDied(this);
 	}
+}
+
+void ARogueCharacter::ApplyDownedState()
+{
+	if (bDead)
+	{
+		DisableInput(Cast<APlayerController>(GetController()));
+		if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+		{
+			Movement->DisableMovement();
+		}
+
+		// 濒死状态：**取消碰撞**。
+		// 理由：倒下的玩家不该再和世界发生任何物理/查询交互 ——
+		// 怪物不能撞到他（配合"不索敌"）、他也捡不到经验球、不会挡住队友与弹体。
+		// 复活时由 OnRep_Dead / Revive() 恢复。
+		SetActorEnableCollision(false);
+	}
+	else
+	{
+		if (APlayerController* PlayerController = Cast<APlayerController>(GetController()))
+		{
+			EnableInput(PlayerController);
+		}
+		SetActorEnableCollision(true);
+		if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+		{
+			Movement->SetMovementMode(MOVE_Walking);
+		}
+	}
+}
+
+void ARogueCharacter::OnRep_Dead()
+{
+	// 服务端改了 bDead → 所有端在这里切换"倒地/正常"表现。
+	// ⚠️ 位置/血量不在这里改：那些只由服务端的 Revive() 决定，客户端等复制。
+	ApplyDownedState();
+
+	UE_LOG(LogTemp, Log, TEXT("[Rogue] %s %s（复制同步）"),
+		*GetName(), bDead ? TEXT("进入倒地等待") : TEXT("已复活"));
+}
+
+bool ARogueCharacter::IsAuthoritySide() const
+{
+	const UWorld* World = GetWorld();
+	return World != nullptr && World->GetNetMode() != NM_Client;
 }

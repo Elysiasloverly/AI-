@@ -19,12 +19,17 @@ namespace
 		{ 6, ERogueEnemyType::Shooter, 1 },
 		{ 6, ERogueEnemyType::Spitter, 1 },
 		{ 6, ERogueEnemyType::Orbiter, 1 },
+		// 震荡柱：站桩 + 地面波（跳跃可躲），属于"走位检查"型敌人。
+		// 之前这张表漏了它 —— 数值表里配了倍率、原型/视觉/地面波也都实现了，
+		// 但因为没有任何波次条目，加权抽取时永远抽不到，导致它从不刷新。
+		{ 7, ERogueEnemyType::ShockPillar, 1 },
 		{ 8, ERogueEnemyType::Tank, 1 },
 		{ 8, ERogueEnemyType::Artillery, 1 },
 		{ 8, ERogueEnemyType::Charger, 1 },
 		{ 10, ERogueEnemyType::Artillery, 1 },
 		{ 10, ERogueEnemyType::Spitter, 1 },
-		{ 10, ERogueEnemyType::Skirmisher, 1 }
+		{ 10, ERogueEnemyType::Skirmisher, 1 },
+		{ 13, ERogueEnemyType::ShockPillar, 1 }
 	};
 
 	static const FRogueEnemyBalanceRow DefaultEnemyBalanceRows[] =
@@ -71,47 +76,31 @@ namespace
 		return FindDefaultBalanceRow(Type);
 	}
 
+	// 注意：权重求和已内联进 PickWeightedEnemyTypeInternal。
+	// 因为"可用类型"（CanSpawnType）依赖运行时存活数，求和必须和抽取用同一套过滤条件，
+	// 否则被上限挡住的类型仍会占权重 → 抽到它就会被丢弃 → 实际刷新变稀疏。
 	template <typename EntryType>
-	int32 AccumulateWaveWeights(int32 Wave, const TArray<EntryType>& Entries)
+	ERogueEnemyType PickWeightedEnemyTypeInternal(int32 Wave, const TArray<EntryType>& Entries,
+		TFunctionRef<bool(ERogueEnemyType)> CanSpawnType)
 	{
 		int32 TotalWeight = 0;
 		for (const EntryType& Entry : Entries)
 		{
-			if (Wave >= Entry.MinWave)
+			if (Wave >= Entry.MinWave && CanSpawnType(Entry.EnemyType))
 			{
 				TotalWeight += Entry.Weight;
 			}
 		}
-		return TotalWeight;
-	}
 
-	template <typename EntryType, uint32 N>
-	int32 AccumulateWaveWeights(int32 Wave, const EntryType (&Entries)[N])
-	{
-		int32 TotalWeight = 0;
-		for (const EntryType& Entry : Entries)
-		{
-			if (Wave >= Entry.MinWave)
-			{
-				TotalWeight += Entry.Weight;
-			}
-		}
-		return TotalWeight;
-	}
-
-	template <typename EntryType>
-	ERogueEnemyType PickWeightedEnemyTypeInternal(int32 Wave, const TArray<EntryType>& Entries)
-	{
-		int32 TotalWeight = AccumulateWaveWeights(Wave, Entries);
 		if (TotalWeight <= 0)
 		{
-			return ERogueEnemyType::Hunter;
+			return ERogueEnemyType::Hunter;   // 兜底值；调用方需自行复核 CanSpawnType
 		}
 
 		int32 Pick = FMath::RandRange(1, TotalWeight);
 		for (const EntryType& Entry : Entries)
 		{
-			if (Wave < Entry.MinWave)
+			if (Wave < Entry.MinWave || !CanSpawnType(Entry.EnemyType))
 			{
 				continue;
 			}
@@ -127,18 +116,27 @@ namespace
 	}
 
 	template <typename EntryType, uint32 N>
-	ERogueEnemyType PickWeightedEnemyTypeInternal(int32 Wave, const EntryType (&Entries)[N])
+	ERogueEnemyType PickWeightedEnemyTypeInternal(int32 Wave, const EntryType (&Entries)[N],
+		TFunctionRef<bool(ERogueEnemyType)> CanSpawnType)
 	{
-		int32 TotalWeight = AccumulateWaveWeights(Wave, Entries);
+		int32 TotalWeight = 0;
+		for (const EntryType& Entry : Entries)
+		{
+			if (Wave >= Entry.MinWave && CanSpawnType(Entry.EnemyType))
+			{
+				TotalWeight += Entry.Weight;
+			}
+		}
+
 		if (TotalWeight <= 0)
 		{
-			return ERogueEnemyType::Hunter;
+			return ERogueEnemyType::Hunter;   // 兜底值；调用方需自行复核 CanSpawnType
 		}
 
 		int32 Pick = FMath::RandRange(1, TotalWeight);
 		for (const EntryType& Entry : Entries)
 		{
-			if (Wave < Entry.MinWave)
+			if (Wave < Entry.MinWave || !CanSpawnType(Entry.EnemyType))
 			{
 				continue;
 			}
@@ -156,18 +154,30 @@ namespace
 
 ERogueEnemyType RogueGameModeRules::PickWeightedEnemyTypeForWave(int32 Wave, const URogueGameBalanceAsset* BalanceAsset)
 {
+	// 无约束版本：Boss 生成走这条（Boss 不应该被"普通敌人的存活上限"挡住）。
+	// 注意：TFunctionRef 只能绑定左值，所以这里的"永远放行"必须是一个具名变量，不能写临时 lambda。
+	auto AllowAll = [](ERogueEnemyType) { return true; };
+	return PickWeightedEnemyTypeForWave(Wave, BalanceAsset, AllowAll);
+}
+
+ERogueEnemyType RogueGameModeRules::PickWeightedEnemyTypeForWave(int32 Wave, const URogueGameBalanceAsset* BalanceAsset,
+	TFunctionRef<bool(ERogueEnemyType)> CanSpawnType)
+{
 	if (const TArray<FRogueEnemyWaveEntryRow>* AssetEntries = GetWaveEntries(BalanceAsset))
 	{
-		return PickWeightedEnemyTypeInternal(Wave, *AssetEntries);
+		return PickWeightedEnemyTypeInternal(Wave, *AssetEntries, CanSpawnType);
 	}
 
-	return PickWeightedEnemyTypeInternal(Wave, DefaultEnemyWaveEntries);
+	return PickWeightedEnemyTypeInternal(Wave, DefaultEnemyWaveEntries, CanSpawnType);
 }
 
 FRogueSpawnCadence RogueGameModeRules::BuildSpawnCadence(int32 Wave, int32 AliveEnemies, int32 MaxAliveEnemies, bool bBossAlive, float BaseSpawnInterval, const URogueGameBalanceAsset* BalanceAsset)
 {
+	//数据资产优先，代码兜底
 	const int32 BossAliveMinMaxEnemies = BalanceAsset != nullptr ? BalanceAsset->BossAliveMinMaxEnemies : 20;
 	const int32 BossAliveMaxEnemyReduction = BalanceAsset != nullptr ? BalanceAsset->BossAliveMaxEnemyReduction : 12;
+	const int32 MaxAliveEnemiesPerWave = BalanceAsset != nullptr ? BalanceAsset->MaxAliveEnemiesPerWave : 8;
+	const int32 MaxAliveEnemiesHardLimit = BalanceAsset != nullptr ? BalanceAsset->MaxAliveEnemiesHardLimit : 0;
 	const int32 DoubleSpawnWave = BalanceAsset != nullptr ? BalanceAsset->DoubleSpawnWave : 5;
 	const int32 DoubleSpawnSlack = BalanceAsset != nullptr ? BalanceAsset->DoubleSpawnSlack : 10;
 	const int32 TripleSpawnWave = BalanceAsset != nullptr ? BalanceAsset->TripleSpawnWave : 10;
@@ -180,14 +190,26 @@ FRogueSpawnCadence RogueGameModeRules::BuildSpawnCadence(int32 Wave, int32 Alive
 	const float MinimumSpawnDelay = BalanceAsset != nullptr ? BalanceAsset->MinimumSpawnDelay : 0.18f;
 
 	FRogueSpawnCadence Cadence;
-	Cadence.EffectiveMaxAliveEnemies = bBossAlive ? FMath::Max(BossAliveMinMaxEnemies, MaxAliveEnemies - BossAliveMaxEnemyReduction) : MaxAliveEnemies;
-	Cadence.SpawnBatchSize = 1;
 
+	// 存活上限随波次逐级增长： 基础上限 + 每波增长 × (波次 - 1)
+	// HardLimit > 0 时才封顶；默认 0 = 不设上限（持续增长）。
+	int32 WaveScaledMaxAlive = MaxAliveEnemies + MaxAliveEnemiesPerWave * FMath::Max(0, Wave - 1);
+	if (MaxAliveEnemiesHardLimit > 0)
+	{
+		WaveScaledMaxAlive = FMath::Min(WaveScaledMaxAlive, MaxAliveEnemiesHardLimit);
+	}
+
+	// Boss 在场时仍然压低上限，给它留性能预算
+	Cadence.EffectiveMaxAliveEnemies = bBossAlive
+		? FMath::Max(BossAliveMinMaxEnemies, WaveScaledMaxAlive - BossAliveMaxEnemyReduction)
+		: WaveScaledMaxAlive;
+	
+	//单次生成批量
+	Cadence.SpawnBatchSize = 1;
 	if (Wave >= DoubleSpawnWave && AliveEnemies <= Cadence.EffectiveMaxAliveEnemies - DoubleSpawnSlack)
 	{
 		Cadence.SpawnBatchSize = 2;
 	}
-
 	if (Wave >= TripleSpawnWave && AliveEnemies <= Cadence.EffectiveMaxAliveEnemies - TripleSpawnSlack)
 	{
 		Cadence.SpawnBatchSize = 3;
@@ -195,7 +217,8 @@ FRogueSpawnCadence RogueGameModeRules::BuildSpawnCadence(int32 Wave, int32 Alive
 
 	const float DifficultyScale = 1.0f / FMath::Clamp(1.0f + static_cast<float>(Wave - 1) * DifficultyScalePerWave, 1.0f, MaxDifficultyScale);
 	const float EarlyWaveSpawnMultiplier = Wave <= EarlyWaveSlowdownEndWave
-		? FMath::GetMappedRangeValueClamped(FVector2D(1.0f, static_cast<float>(EarlyWaveSlowdownEndWave)), FVector2D(EarlyWaveSpawnMultiplierAtWaveOne, EarlyWaveSpawnMultiplierAtEnd), static_cast<float>(Wave))
+		? FMath::GetMappedRangeValueClamped(FVector2D(1.0f, static_cast<float>(EarlyWaveSlowdownEndWave)), 
+			FVector2D(EarlyWaveSpawnMultiplierAtWaveOne, EarlyWaveSpawnMultiplierAtEnd), static_cast<float>(Wave))
 		: 1.0f;
 	Cadence.NextSpawnDelay = FMath::Max(MinimumSpawnDelay, BaseSpawnInterval * DifficultyScale * EarlyWaveSpawnMultiplier);
 	return Cadence;
@@ -203,6 +226,7 @@ FRogueSpawnCadence RogueGameModeRules::BuildSpawnCadence(int32 Wave, int32 Alive
 
 FRogueEnemyProfile RogueGameModeRules::BuildEnemyProfile(int32 Wave, ERogueEnemyType EnemyType, const URogueGameBalanceAsset* BalanceAsset)
 {
+	//数据资产优先，代码兜底
 	const float BaseEnemyHealth = BalanceAsset != nullptr ? BalanceAsset->BaseEnemyHealth : 35.0f;
 	const float EnemyHealthPerWave = BalanceAsset != nullptr ? BalanceAsset->EnemyHealthPerWave : 10.0f;
 	const float BaseEnemySpeed = BalanceAsset != nullptr ? BalanceAsset->BaseEnemySpeed : 240.0f;

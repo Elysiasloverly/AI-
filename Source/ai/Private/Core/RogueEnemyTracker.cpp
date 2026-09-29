@@ -243,7 +243,18 @@ void FRogueEnemyTracker::CompactPickupRegistry()
 
 void FRogueEnemyTracker::RebuildEnemySpatialHash(float CellSize)
 {
-	EnemySpatialHash.Reset();
+	// 保留容量地清空每个格子。
+	//
+	// 为什么不是 Reset()：Reset() 会把每个格子的 TArray **连同已分配内存一起释放**，
+	// 而这个哈希每 0.15s 就整体重建一次 —— 250 只怪散在几百个格子里时，
+	// 每次重建是 150~250 次堆分配（约 1000~1700 次/秒），而且重建发生在
+	// "某个武器/弹体发起查询"的调用栈里，会变成周期性尖峰。
+	// SetNum(0, EAllowShrinking::No) 只把长度归零、保留缓冲，
+	// 稳态下（格子集合基本不变）几乎不再产生分配。
+	for (auto& Cell : EnemySpatialHash)
+	{
+		Cell.Value.SetNum(0, EAllowShrinking::No);
+	}
 
 	for (int32 Index = ActiveEnemies.Num() - 1; Index >= 0; --Index)
 	{
@@ -255,6 +266,16 @@ void FRogueEnemyTracker::RebuildEnemySpatialHash(float CellSize)
 		}
 
 		EnemySpatialHash.FindOrAdd(GetEnemySpatialCell(Enemy->GetActorLocation(), CellSize)).Add(Enemy);
+	}
+
+	// 剔除本轮没用到的空格子：敌人会移动，格子集合会漂移，
+	// 不清理的话 TMap 会随对局时间无限增长（那是真的泄漏，不只是浪费）。
+	for (auto It = EnemySpatialHash.CreateIterator(); It; ++It)
+	{
+		if (It.Value().Num() == 0)
+		{
+			It.RemoveCurrent();
+		}
 	}
 
 	ActiveEnemyCount = ActiveEnemies.Num();

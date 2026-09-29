@@ -36,7 +36,7 @@ flowchart TD
     GM --> ARENA["ARogueArena<br/>竞技场"]
     GM --> SHOPTERM["ARogueShopTerminal<br/>商店终端"]
 
-    PLAYER --> WCFG["RogueWeaponConfig<br/>武器配置"]
+    PLAYER --> WCFG["DT_WeaponConfig<br/>武器配置表"]
     PLAYER --> PVIS["URogueCharacterVisualComponent<br/>玩家表现"]
     PLAYER --> PBAL["URoguePlayerBalanceAsset<br/>玩家资产"]
 
@@ -299,22 +299,25 @@ Core 层是当前工程最重要的“组织层”，它决定了项目后面是
 
 ---
 
-### 4.8 `FRogueUpgradeEffectApplier`
+### 4.8 升级效果落地：`ARogueCharacter::ApplyUpgrade()`
 
 文件：
 
-- `Source/ai/Public/Core/RogueUpgradeEffectApplier.h`
-- `Source/ai/Private/Core/RogueUpgradeEffectApplier.cpp`
+- `Source/ai/Public/Player/RogueCharacter.h`（`ApplyUpgrade`）
+- `Source/ai/Private/Player/RogueCharacter.cpp`
 
 职责：
 
-- 把 `FRogueUpgradeOption` 真正应用到玩家角色
+- 把 `FRogueUpgradeOption` 真正应用到玩家角色：属性类走 GE、武器类走 NetMulticast、联动效果就地处理
 
-这层的意义很大：
+这层的意义：
 
-- 避免 `ARogueCharacter` 自己维护大段升级 `switch`
-- 升级系统不需要知道玩家内部字段
-- 新增技能卡时有一个固定落点
+- 升级系统（`FRogueUpgradeSystem` / 商店）不需要知道玩家内部字段，也不需要知道"哪类升级该怎么落地"
+- 新增技能卡时有一个固定落点（`ApplyUpgrade` 的 `switch` 多一个 case）
+- 落地方式的分流（属性 GE / 武器广播 / 联动）集中在一处，不会散到发牌侧
+
+> 历史：这里原来是 `FRogueUpgradeEffectApplier` 这个 struct。它只是 `ApplyUpgrade` 的一行转发，
+> 转发回来还要用 `friend` 访问角色私有成员（两边互相调用成环），已合并进 `ARogueCharacter`。
 
 ---
 
@@ -450,24 +453,32 @@ Core 层是当前工程最重要的“组织层”，它决定了项目后面是
 
 ---
 
-### 5.2 `RogueWeaponConfig`
+### 5.2 `DT_WeaponConfig` / `FRogueWeaponTableRow`
 
 文件：
 
-- `Source/ai/Public/Player/RogueWeaponConfig.h`
+- `Content/DataTable/DT_WeaponConfig.uasset`（数据）
+- `Source/ai/Public/Combat/RogueWeaponBase.h`（行结构 `FRogueWeaponTableRow`）
 
 职责：
 
-- 定义玩家各武器族的基础参数结构
+- 定义玩家各武器族的基础参数（每把武器一行）
 
 为什么重要：
 
 - 新武器扩展时有明确入口
 - 不会再把数值散落在 `Character.cpp`
 
+装载链路：
+
+1. `ARogueCharacter::InitializeWeapons()` 遍历 `DT_WeaponConfig` 的所有行
+2. 每行取 `WeaponClass`；为空时按**行顺序**回退到 `ARogueCharacter::WeaponClasses[Index]`（BP 上配置）
+3. `SpawnWeaponInstance()` → `ARogueWeaponBase::InitializeWeapon()`，整个行结构被拷进武器的 `Config`
+4. 之后升级/商店只改这份 `Config`，不再回读数据表
+
 这里要特别注意一条边界：
 
-- `RogueWeaponConfig` 负责**玩法参数**
+- 武器配置层负责**玩法参数**
 - 不负责具体战斗对象自己的**表现参数**
 
 也就是说，像下面这些应该继续放在武器配置层：
@@ -500,8 +511,7 @@ Core 层是当前工程最重要的“组织层”，它决定了项目后面是
 
 职责：
 
-- 覆盖玩家基础属性
-- 覆盖武器基础参数
+- 覆盖玩家基础属性（**只含玩家自身，不含武器**）
 
 这层适合调：
 
@@ -509,7 +519,9 @@ Core 层是当前工程最重要的“组织层”，它决定了项目后面是
 - 护甲
 - 移速
 - 冲刺
-- 各武器默认冷却、伤害、数量
+- 跳跃
+
+注意：**武器参数不在这个资产里**（`RoguePlayerBalanceAsset.h` 结尾的注释写明了“武器配置已迁移到 DataTable（DT_WeaponConfig），此处不再包含武器字段”）。
 
 ---
 
@@ -685,7 +697,7 @@ Combat 层是玩家和敌人的“短命战斗对象层”。
 
 而真正影响平衡的玩法参数，仍然留在：
 
-- `RogueWeaponConfig`
+- `DT_WeaponConfig`
 - `URoguePlayerBalanceAsset`
 - 升级系统
 - 规则层
@@ -854,7 +866,6 @@ sequenceDiagram
     participant GM as ARogueGameMode
     participant U as FRogueUpgradeSystem
     participant Rules as RogueUpgradeSystemRules
-    participant Applier as FRogueUpgradeEffectApplier
 
     C->>C: LevelUp()
     C->>GM: StartUpgradeSelection()
@@ -866,7 +877,7 @@ sequenceDiagram
     C->>GM: TrySelectUpgrade()
     GM->>U: TryConsumeChoice()
     GM->>C: ApplyUpgrade()
-    C->>Applier: ApplyToCharacter()
+    C->>C: ApplyUpgrade() → GE / 武器 Multicast
 ```
 
 ---

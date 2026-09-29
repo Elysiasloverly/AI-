@@ -20,6 +20,9 @@ public:
 	virtual void ApplySharedSpeedBonus(float Magnitude) override;
 	virtual void ApplySharedRangeBonus(float Magnitude) override;
 
+	/** 队友客户端收到服务端广播后，把这束地狱塔光束再画一遍（不索敌、不结算伤害） */
+	virtual void PlayCosmeticFire(const FRogueWeaponCosmeticFire& Fire) override;
+
 private:
 	TArray<TWeakObjectPtr<ARogueEnemy>> HellTowerTargets;
 	TArray<float> HellTowerCurrentDamages;

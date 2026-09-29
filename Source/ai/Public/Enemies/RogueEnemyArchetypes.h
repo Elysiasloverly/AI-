@@ -253,4 +253,13 @@ namespace RogueEnemyArchetypes
 
 	/** 在 DataTable 中查找指定敌人类型的行名（RowName） */
 	AI_API FName FindRowNameForEnemyType(const UDataTable* DataTable, ERogueEnemyType Type);
+
+	/** 读取该敌人类型的"每波刷新上限"（一整个波次内的累计刷出只数上限）。
+	 *  返回 0 表示**不限制**，包括下面三种情况：DataTable 为空、表里没有这个类型的行、
+	 *  行里该字段没填（默认就是 0）。 */
+	AI_API int32 GetMaxSpawnPerWave(const UDataTable* DataTable, ERogueEnemyType Type);
+
+	/** 读取该敌人类型的"同时存活上限"（场上同时存在的只数上限）。
+	 *  返回 0 表示**不限制**（判定口径与 GetMaxSpawnPerWave 一致）。 */
+	AI_API int32 GetMaxAlive(const UDataTable* DataTable, ERogueEnemyType Type);
 }

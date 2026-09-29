@@ -19,6 +19,9 @@ public:
 	virtual void ApplySharedSpeedBonus(float Magnitude) override;
 	virtual void ApplySharedRangeBonus(float Magnitude) override;
 
+	/** 队友客户端收到服务端广播后，把这条光束再画一遍（不索敌、不结算伤害） */
+	virtual void PlayCosmeticFire(const FRogueWeaponCosmeticFire& Fire) override;
+
 	int32 GetRefractionCount() const { return GetConfig().RefractionCount; }
 
 private:

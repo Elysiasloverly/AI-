@@ -53,8 +53,13 @@ struct AI_API FRoguePoolSettings
 	UPROPERTY(EditAnywhere, Category = "Pools")
 	int32 InitialEnemyProjectilePoolSize = 96;
 
+	/** 敌人池预热量。
+	 *  定值依据：存活上限 = 40 + 每波 8 × (波次-1)（见 RogueGameModeRules::BuildSpawnCadence）。
+	 *  160 约等于第 16 波的存活上限；更后期的缺口由池的运行时扩容兜底，
+	 *  并会打 Warning 提示（可调 FRogueCombatPools::LogPoolDiagnostics 查看实际峰值）。
+	 *  注意：预热是启动期一次性成本（每个敌人 ≈ 亚毫秒级），不要为了"永不扩容"而盲目调大。 */
 	UPROPERTY(EditAnywhere, Category = "Pools")
-	int32 InitialEnemyPoolSize = 112;
+	int32 InitialEnemyPoolSize = 160;
 
 	UPROPERTY(EditAnywhere, Category = "Pools")
 	int32 InitialRocketProjectilePoolSize = 40;
@@ -86,8 +91,11 @@ struct AI_API FRogueSpawnSettings
 	UPROPERTY(EditAnywhere, Category = "Spawning")
 	float WaveDuration = 25.0f;
 
+	/** 第 1 波的存活敌人上限（基础上限）。
+	 *  实际上限 = 这里 + "每波存活上限增长" × (波次-1)，见 RogueGameModeRules::BuildSpawnCadence。
+	 *  增长系数与硬顶在 URogueGameBalanceAsset 上配。 */
 	UPROPERTY(EditAnywhere, Category = "Spawning")
-	int32 MaxAliveEnemies = 92;
+	int32 MaxAliveEnemies = 40;
 
 	UPROPERTY(EditAnywhere, Category = "Spawning")
 	float EnemySpawnMinimumDistance = 1100.0f;

@@ -112,6 +112,52 @@ void ARogueWeapon_Projectile::FireAtTarget(AActor* TargetActor)
 		if (Projectile != nullptr)
 		{
 			Projectile->ActivatePooledProjectile(OwnerChar, OwnerChar, SpawnLocation, ShotDirection.Rotation(), ShotDirection, FinalSpeed, Config.Damage);
+
+			// 权威那一发已经生成，再把"画出来需要什么"广播给队友。
+			// 必须**逐发**广播：偏转角度和弹速随机都是每一发单独掷的，
+			// 一次广播整轮齐射的话，队友看到的弹道会和这里对不上。
+			// 客户端调用它是空操作（见 BroadcastCosmeticFire），所以这里可以无条件调。
+			FRogueWeaponCosmeticFire Fire;
+			Fire.Start = SpawnLocation;
+			Fire.Direction = ShotDirection;
+			Fire.Speed = FinalSpeed;
+			BroadcastCosmeticFire(Fire);
 		}
 	}
+}
+
+void ARogueWeapon_Projectile::PlayCosmeticFire(const FRogueWeaponCosmeticFire& Fire)
+{
+	// 只会在这里是"既非服务端、也非本人"的机器上被调用（见 Multicast_WeaponCosmetic）。
+	// 形状与 ARogueEnemy::Multicast_SpawnCosmeticProjectile 一致：
+	// 用同一个池函数、同一套参数生成一个纯表现弹体。
+	// 唯一的区别是伤害传 0 —— 伤害早已在服务端那一发里结算完，
+	// 这里再算一次就是双份扣血。
+	if (GetWorld() == nullptr)
+	{
+		return;
+	}
+
+	ARogueCharacter* OwnerChar = GetOwnerCharacter();
+	if (OwnerChar == nullptr)
+	{
+		return;
+	}
+
+	URogueCombatPoolSubsystem* Pools = GetWorld()->GetSubsystem<URogueCombatPoolSubsystem>();
+	if (Pools == nullptr)
+	{
+		return;
+	}
+
+	UClass* ProjectileToSpawn = Config.ProjectileClass ? Config.ProjectileClass.Get() : ARogueProjectile::StaticClass();
+	ARogueProjectile* Projectile = Pools->AcquirePlayerProjectile(
+		ProjectileToSpawn, OwnerChar, OwnerChar, Fire.Start, Fire.Direction.Rotation());
+	if (Projectile == nullptr)
+	{
+		return;
+	}
+
+	Projectile->ActivatePooledProjectile(
+		OwnerChar, OwnerChar, Fire.Start, Fire.Direction.Rotation(), Fire.Direction, Fire.Speed, /*InDamage=*/0.0f);
 }

@@ -2,6 +2,8 @@
 
 #include "Combat/RogueImpactEffect.h"
 #include "Enemies/RogueEnemy.h"
+#include "AbilitySystem/RogueAbilitySystemLibrary.h"
+#include "Core/RogueGameplayTags.h"
 #include "Subsystems/RogueEnemyTrackerSubsystem.h"
 #include "Components/PointLightComponent.h"
 #include "Components/SphereComponent.h"
@@ -314,7 +316,8 @@ void ARogueProjectile::HandleOverlap(UPrimitiveComponent* OverlappedComponent, A
 	{
 		ARogueImpactEffect::SpawnImpactEffect(World, ImpactLocation, SweepResult.ImpactNormal.Rotation(), ERogueImpactVisualStyle::Spark, VisualConfig.ImpactEffectScale, VisualConfig.ImpactEffectLifetime, this);
 	}
-	UGameplayStatics::ApplyDamage(Enemy, Damage, nullptr, DamageCauser, UDamageType::StaticClass());
+	// 走统一的 GAS 伤害入口（内部会构建 Damage GE Spec 并施加到目标的 ASC）
+	RogueAbilitySystem::ApplyDamageToTarget(DamageCauser, Enemy, Damage, RogueGameplayTags::Damage_Source_Projectile);
 	DeactivateToPool();
 }
 

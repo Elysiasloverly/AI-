@@ -27,6 +27,19 @@ struct AI_API FRogueCombatPoolPrewarmClasses
 	TArray<TSubclassOf<ARogueOrbitingBlade>> OrbitingBladeClasses;
 };
 
+/** 单个池的运行时诊断数据（不参与反射，纯 C++ 统计） */
+struct FRoguePoolRuntime
+{
+	/** 环形扫描起点：上次命中位置 +1。避免每次都从池尾重扫整个池 */
+	int32 Cursor = 0;
+
+	/** 累计"池内未命中 → 运行时新建"的次数。>0 就说明预热不够，需要调高预热量 */
+	int32 RuntimeSpawnCount = 0;
+
+	/** 池达到过的最大长度，用来反推"到底该预热多少" */
+	int32 PeakSize = 0;
+};
+
 USTRUCT()
 struct AI_API FRogueCombatPools
 {
@@ -49,6 +62,10 @@ public:
 	ARogueImpactEffect* AcquireImpactEffect(UWorld* World, AActor* OwnerActor, const FVector& SpawnLocation, const FRotator& SpawnRotation);
 	ARogueLaserBeam* AcquireLaserBeam(UWorld* World, TSubclassOf<ARogueLaserBeam> BeamClass, AActor* OwnerActor, const FVector& SpawnLocation, const FRotator& SpawnRotation);
 	ARogueOrbitingBlade* AcquireOrbitingBlade(UWorld* World, TSubclassOf<ARogueOrbitingBlade> BladeClass, AActor* OwnerActor, const FVector& SpawnLocation, const FRotator& SpawnRotation);
+
+	/** 打印所有池的运行时诊断（池大小 / 峰值 / 运行时新建次数）。
+	 *  排查"池够不够"用：RuntimeSpawnCount > 0 就说明该调高对应的预热量。 */
+	void LogPoolDiagnostics();
 
 private:
 	UPROPERTY()
@@ -74,4 +91,14 @@ private:
 
 	UPROPERTY()
 	TArray<TObjectPtr<ARogueOrbitingBlade>> OrbitingBladePool;
+
+	// ---- 每个池的运行时诊断数据（非反射成员） ----
+	FRoguePoolRuntime EnemyPoolRuntime;
+	FRoguePoolRuntime PlayerProjectilePoolRuntime;
+	FRoguePoolRuntime EnemyProjectilePoolRuntime;
+	FRoguePoolRuntime RocketProjectilePoolRuntime;
+	FRoguePoolRuntime ExperiencePickupPoolRuntime;
+	FRoguePoolRuntime ImpactEffectPoolRuntime;
+	FRoguePoolRuntime LaserBeamPoolRuntime;
+	FRoguePoolRuntime OrbitingBladePoolRuntime;
 };

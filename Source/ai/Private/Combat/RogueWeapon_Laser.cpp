@@ -3,6 +3,8 @@
 
 #include "Player/RogueCharacter.h"
 #include "Enemies/RogueEnemy.h"
+#include "AbilitySystem/RogueAbilitySystemLibrary.h"
+#include "Core/RogueGameplayTags.h"
 #include "Kismet/GameplayStatics.h"
 
 void ARogueWeapon_Laser::WeaponTick(float DeltaSeconds)
@@ -90,7 +92,7 @@ void ARogueWeapon_Laser::FireLaserBurst(const TArray<ARogueEnemy*>& Enemies)
 		const float LateralOffset = EffectiveCount % 2 == 0 ? (OffsetIndex + 0.5f) * BeamSpacing : OffsetIndex * BeamSpacing;
 		const FVector BeamOrigin = BeamOriginBase + LateralDirection * LateralOffset;
 		const FVector TargetLocation = TargetEnemy->GetActorLocation() + FVector(0.0f, 0.0f, 40.0f);
-		UGameplayStatics::ApplyDamage(TargetEnemy, Config.Damage, nullptr, OwnerChar, UDamageType::StaticClass());
+		RogueAbilitySystem::ApplyDamageToTarget(OwnerChar, TargetEnemy, Config.Damage, RogueGameplayTags::Damage_Source_Beam);
 		SpawnLaserBeam(BeamOrigin, TargetLocation);
 
 		if (Config.RefractionCount > 0)
@@ -129,11 +131,21 @@ void ARogueWeapon_Laser::FireLaserRefractionChain(ARogueEnemy* InitialTarget, co
 		}
 
 		const FVector NextImpactLocation = NextTarget->GetActorLocation() + FVector(0.0f, 0.0f, 40.0f);
-		UGameplayStatics::ApplyDamage(NextTarget, CurrentDamage, nullptr, OwnerChar, UDamageType::StaticClass());
+		// 折射段：同样属于光束伤害
+		RogueAbilitySystem::ApplyDamageToTarget(OwnerChar, NextTarget, CurrentDamage, RogueGameplayTags::Damage_Source_Beam);
 		SpawnLaserBeam(CurrentStartLocation, NextImpactLocation);
 
 		HitEnemies.Add(NextTarget);
 		CurrentTarget = NextTarget;
 		CurrentStartLocation = NextImpactLocation;
 	}
+}
+
+void ARogueWeapon_Laser::PlayCosmeticFire(const FRogueWeaponCosmeticFire& Fire)
+{
+	// 光束没有弹体要复现，要的只是"从哪到哪再画一条线"（含折射的每一段，
+	// 服务端每段都会各自广播一次）。
+	// 这里**不要**补 BroadcastCosmeticFire：SpawnLaserBeam 内部已经广播过了，
+	// 而且本函数本来就只在不权威的客户端上跑。
+	PlayCosmeticBeam(Fire);
 }

@@ -97,8 +97,15 @@ struct AI_API FRogueWeaponTableRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "镰刀", meta = (DisplayName = "刀片类"))
 	TSubclassOf<ARogueOrbitingBlade> BladeClass;
 
+	/** 环绕半径。默认 120（原为 220）。
+	 *  为什么改小：刀片环能打到的径向范围 = 半径 ± (刀片球半径 46 + 敌人胶囊半径 34)，
+	 *  220 时是 141…299；但敌人（Direct 模型）没有保持距离，会一路贴到玩家身上（径向≈0），
+	 *  也就是**刀片环整个落在敌群外面**，镰刀几乎砍不到人。120 时范围是 41…199，
+	 *  刚好罩住贴脸的敌群，同时 120 − 46 = 74 > 玩家胶囊半径 42，不会打到玩家自己。
+	 *  ⚠️ 注意：这个值在 `DT_WeaponConfig` 的每一行里都被显式存了一份（行值优先于这里的默认值），
+	 *  所以只改这里不会生效——还要把表里 Scythe 行的"环绕半径"一起改成 120。 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "镰刀", meta = (DisplayName = "环绕半径"))
-	float OrbitRadius = 220.0f;
+	float OrbitRadius = 120.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "镰刀", meta = (DisplayName = "旋转速度"))
 	float RotationSpeed = 130.0f;
@@ -174,6 +181,35 @@ public:
 	/** 角色死亡时调用，子类可重写做清理 */
 	virtual void OnOwnerDied();
 
+	// ---- 联机表现：本人预测 + 服务端广播给别人 ----
+
+	/**
+	 * 服务端：把"我刚开了这一发"广播给其他客户端。
+	 *
+	 * 调用点应该在**权威那一发已经生成之后**（服务端自己有一份真实体，
+	 * 本人客户端自己预测了一份），所以广播只用于补上"队友那一屏"。
+	 * 在客户端调用它什么也不会发生（客户端本来就是接收方）。
+	 */
+	void BroadcastCosmeticFire(const FRogueWeaponCosmeticFire& Fire) const;
+
+	/**
+	 * 客户端：把这一发**纯表现**地画出来，不结算任何伤害。
+	 * 只有"既不是服务端、也不是本人"的客户端会走到这里。
+	 * 默认空实现 —— 事件型武器各自重写（见 NeedsCosmeticTick 的说明）。
+	 */
+	virtual void PlayCosmeticFire(const FRogueWeaponCosmeticFire& Fire);
+
+	/**
+	 * 本武器在"既不权威、也不是本人"的机器上是否仍需要 tick。
+	 *
+	 * · 事件型武器（子弹 / 火箭 / 迫击炮 / 光束）：返回 false。
+	 *   它们的表现是"一发"，服务端广播一发就够了，本地再算一遍只会各显示各的。
+	 * · 持续型武器（环绕刀片）：返回 true。
+	 *   它的表现是一条**连续轨道**，没有"某一发"可以让服务端广播；
+	 *   而且它的伤害走 ApplyDamageToTarget（服务端权威），本地跑只影响视觉。
+	 */
+	virtual bool NeedsCosmeticTick() const { return false; }
+
 	// ---- 升级接口 ----
 
 	/** 武器专属升级（数量 +1 等），返回 true 表示本武器消费了该升级 */
@@ -197,22 +233,10 @@ public:
 	int32 GetEffectiveCount() const { return FMath::Max(0, Config.Count); }
 
 	UFUNCTION(BlueprintPure)
-	bool IsWeaponActive() const { return GetEffectiveCount() > 0; }
-
-	UFUNCTION(BlueprintPure)
 	float GetDamage() const { return Config.Damage; }
 
 	UFUNCTION(BlueprintPure)
-	float GetCooldown() const { return Config.Cooldown; }
-
-	UFUNCTION(BlueprintPure)
 	float GetRange() const { return Config.Range; }
-
-	UFUNCTION(BlueprintPure)
-	const FString& GetDisplayName() const { return Config.DisplayName; }
-
-	UFUNCTION(BlueprintPure)
-	ERogueUpgradeType GetCountUpgradeType() const { return Config.CountUpgradeType; }
 
 	/** 获取当前武器的完整配置（可读写） */
 	FRogueWeaponTableRow& GetConfig() { return Config; }
@@ -244,6 +268,9 @@ protected:
 
 	/** 生成激光 Beam（通用辅助） */
 	void SpawnLaserBeam(const FVector& Start, const FVector& End, bool bInfernoStyle = false, bool bImpactEffect = true, float Lifetime = 0.10f);
+
+	/** 光束类武器（Laser / HellTower）共用的表现回放实现，子类 PlayCosmeticFire 直接转调它 */
+	void PlayCosmeticBeam(const FRogueWeaponCosmeticFire& Fire);
 
 	/** 武器配置数据 */
 	FRogueWeaponTableRow Config;
