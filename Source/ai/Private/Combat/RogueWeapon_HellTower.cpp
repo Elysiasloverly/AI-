@@ -1,5 +1,6 @@
 // 地狱塔武器 —— 持续锁定 + 伤害递增逻辑
 #include "Combat/RogueWeapon_HellTower.h"
+#include "AbilitySystem/RogueAttributeSet.h"
 
 #include "Player/RogueCharacter.h"
 #include "Enemies/RogueEnemy.h"
@@ -43,7 +44,7 @@ void ARogueWeapon_HellTower::WeaponTick(float DeltaSeconds)
 	HellTowerBeamTimers.SetNum(EffectiveCount);
 
 	const FVector PlayerLocation = OwnerChar->GetActorLocation();
-	const float RangeSquared = FMath::Square(Config.Range);
+	const float RangeSquared = FMath::Square(GetEffectiveRange());
 	TArray<TObjectPtr<ARogueEnemy>> LockedEnemies;
 	LockedEnemies.Reserve(EffectiveCount);
 
@@ -61,13 +62,13 @@ void ARogueWeapon_HellTower::WeaponTick(float DeltaSeconds)
 		if (!bValid)
 		{
 			HellTowerTargets[TowerIndex] = nullptr;
-			HellTowerCurrentDamages[TowerIndex] = FMath::Max(1.0f, Config.BaseDamage);
+			HellTowerCurrentDamages[TowerIndex] = FMath::Max(1.0f, GetEffectiveBaseDamage());
 			HellTowerDamageTickTimers[TowerIndex] = 0.0f;
 			HellTowerBeamTimers[TowerIndex] = 0.0f;
 		}
 		else
 		{
-			HellTowerCurrentDamages[TowerIndex] = FMath::Max(HellTowerCurrentDamages[TowerIndex], FMath::Max(1.0f, Config.BaseDamage));
+			HellTowerCurrentDamages[TowerIndex] = FMath::Max(HellTowerCurrentDamages[TowerIndex], FMath::Max(1.0f, GetEffectiveBaseDamage()));
 			LockedEnemies.Add(CurrentTarget);
 		}
 	}
@@ -80,14 +81,14 @@ void ARogueWeapon_HellTower::WeaponTick(float DeltaSeconds)
 			continue;
 		}
 
-		ARogueEnemy* NewTarget = FindNearestEnemyExcluding(PlayerLocation, LockedEnemies, Config.Range);
+		ARogueEnemy* NewTarget = FindNearestEnemyExcluding(PlayerLocation, LockedEnemies, GetEffectiveRange());
 		if (!IsValid(NewTarget))
 		{
 			continue;
 		}
 
 		HellTowerTargets[TowerIndex] = NewTarget;
-		HellTowerCurrentDamages[TowerIndex] = FMath::Max(1.0f, Config.BaseDamage);
+		HellTowerCurrentDamages[TowerIndex] = FMath::Max(1.0f, GetEffectiveBaseDamage());
 		HellTowerDamageTickTimers[TowerIndex] = 0.0f;
 		HellTowerBeamTimers[TowerIndex] = 0.0f;
 		LockedEnemies.Add(NewTarget);
@@ -112,14 +113,14 @@ void ARogueWeapon_HellTower::WeaponTick(float DeltaSeconds)
 		// ⚠️ 防御：DamageTickInterval 来自 DataTable，若被填成 0（批量填表时很常见），
 		//    原来的 `while (Timer >= Interval) { Timer -= Interval; }` 会因"条件恒真 + 自减 0"
 		//    变成同帧死循环、直接卡死主线程。这里钳到下限，保证每轮至少推进 0.01s。
-		const float SafeDamageTickInterval = FMath::Max(Config.DamageTickInterval, 0.01f);
+		const float SafeDamageTickInterval = FMath::Max(GetEffectiveDamageTickInterval(), 0.01f);
 		HellTowerDamageTickTimers[TowerIndex] += SimulatedDelta;
 		while (HellTowerDamageTickTimers[TowerIndex] >= SafeDamageTickInterval)
 		{
 			HellTowerDamageTickTimers[TowerIndex] -= SafeDamageTickInterval;
 			// 地狱塔是持续光束伤害，Tag 用 Damage.Source.Beam
 			RogueAbilitySystem::ApplyDamageToTarget(OwnerChar, TargetEnemy, HellTowerCurrentDamages[TowerIndex], RogueGameplayTags::Damage_Source_Beam);
-			HellTowerCurrentDamages[TowerIndex] += Config.DamageRampPerTick;
+			HellTowerCurrentDamages[TowerIndex] += GetEffectiveDamageRampPerTick();
 		}
 
 		// Beam 刷新
@@ -146,31 +147,35 @@ void ARogueWeapon_HellTower::OnOwnerDied()
 	HellTowerBeamTimers.Reset();
 }
 
-bool ARogueWeapon_HellTower::OnUpgradeApplied(ERogueUpgradeType UpgradeType, float Magnitude)
+// 生效数值：地狱塔的换算系数（伤害 ×0.125、每跳递增 ×0.0625、跳间隔 ×0.08/下限 0.03、范围 ×0.70）
+// 全部沿用自研版本；升级只改玩家 ASC 上的加成属性。
+
+float ARogueWeapon_HellTower::GetEffectiveBaseDamage() const
 {
-	// 地狱塔数量升级
-	if (UpgradeType == ERogueUpgradeType::HellTowerCount)
-	{
-		Config.Count = FMath::Max(1, Config.Count + FMath::RoundToInt(Magnitude));
-		return true;
-	}
-	return false;
+	const URogueAttributeSet* BonusSet = GetWeaponBonusSet();
+	const float Bonus = BonusSet != nullptr ? BonusSet->GetAttackPowerBonus() : 0.0f;
+	return GetConfig().BaseDamage + Bonus * 0.125f;
 }
 
-void ARogueWeapon_HellTower::ApplySharedDamageBonus(float Magnitude)
+float ARogueWeapon_HellTower::GetEffectiveDamageRampPerTick() const
 {
-	Config.BaseDamage += Magnitude * 0.125f;
-	Config.DamageRampPerTick += Magnitude * 0.0625f;
+	const URogueAttributeSet* BonusSet = GetWeaponBonusSet();
+	const float Bonus = BonusSet != nullptr ? BonusSet->GetAttackPowerBonus() : 0.0f;
+	return GetConfig().DamageRampPerTick + Bonus * 0.0625f;
 }
 
-void ARogueWeapon_HellTower::ApplySharedSpeedBonus(float Magnitude)
+float ARogueWeapon_HellTower::GetEffectiveDamageTickInterval() const
 {
-	Config.DamageTickInterval = FMath::Max(0.03f, Config.DamageTickInterval - Magnitude * 0.08f);
+	const URogueAttributeSet* BonusSet = GetWeaponBonusSet();
+	const float Bonus = BonusSet != nullptr ? BonusSet->GetAttackSpeedBonus() : 0.0f;
+	return FMath::Max(0.03f, GetConfig().DamageTickInterval - Bonus * 0.08f);
 }
 
-void ARogueWeapon_HellTower::ApplySharedRangeBonus(float Magnitude)
+float ARogueWeapon_HellTower::GetEffectiveRange() const
 {
-	Config.Range += Magnitude * 0.70f;
+	const URogueAttributeSet* BonusSet = GetWeaponBonusSet();
+	const float Bonus = BonusSet != nullptr ? BonusSet->GetAttackRangeBonus() : 0.0f;
+	return GetConfig().Range + Bonus * 0.70f;
 }
 
 void ARogueWeapon_HellTower::PlayCosmeticFire(const FRogueWeaponCosmeticFire& Fire)

@@ -1,5 +1,6 @@
 // 激光武器 —— 激光爆发 + 折射链逻辑
 #include "Combat/RogueWeapon_Laser.h"
+#include "AbilitySystem/RogueAttributeSet.h"
 
 #include "Player/RogueCharacter.h"
 #include "Enemies/RogueEnemy.h"
@@ -21,49 +22,31 @@ void ARogueWeapon_Laser::WeaponTick(float DeltaSeconds)
 	}
 
 	TArray<ARogueEnemy*> Enemies;
-	CollectEnemiesInRange(Config.Range, Enemies, FMath::Max(8, GetEffectiveCount() * 3));
+	CollectEnemiesInRange(GetEffectiveRange(), Enemies, FMath::Max(8, GetEffectiveCount() * 3));
 	if (Enemies.Num() == 0)
 	{
 		return;
 	}
 
 	FireLaserBurst(Enemies);
-	LaserTimer = Config.Cooldown;
+	LaserTimer = GetEffectiveCooldown();
 }
 
-bool ARogueWeapon_Laser::OnUpgradeApplied(ERogueUpgradeType UpgradeType, float Magnitude)
+// 生效数值：激光的换算系数（攻速 ×2.0/下限 0.35、折射范围 ×0.45）沿用自研版本。
+// 升级只改玩家 ASC 上的加成属性，这里负责"基础值 + 加成×本武器系数"。
+
+float ARogueWeapon_Laser::GetEffectiveCooldown() const
 {
-	// 激光数量升级
-	if (UpgradeType == ERogueUpgradeType::LaserCount)
-	{
-		Config.Count = FMath::Max(1, Config.Count + FMath::RoundToInt(Magnitude));
-		return true;
-	}
-
-	// 激光折射升级
-	if (UpgradeType == ERogueUpgradeType::LaserRefraction)
-	{
-		Config.RefractionCount = FMath::Clamp(Config.RefractionCount + FMath::RoundToInt(Magnitude), 0, 8);
-		return true;
-	}
-
-	return false;
+	const URogueAttributeSet* BonusSet = GetWeaponBonusSet();
+	const float Bonus = BonusSet != nullptr ? BonusSet->GetAttackSpeedBonus() : 0.0f;
+	return FMath::Max(0.35f, GetConfig().Cooldown - Bonus * 2.0f);
 }
 
-void ARogueWeapon_Laser::ApplySharedDamageBonus(float Magnitude)
+float ARogueWeapon_Laser::GetEffectiveRefractionRange() const
 {
-	Config.Damage += Magnitude;
-}
-
-void ARogueWeapon_Laser::ApplySharedSpeedBonus(float Magnitude)
-{
-	Config.Cooldown = FMath::Max(0.35f, Config.Cooldown - Magnitude * 2.0f);
-}
-
-void ARogueWeapon_Laser::ApplySharedRangeBonus(float Magnitude)
-{
-	Config.Range += Magnitude;
-	Config.RefractionRange += Magnitude * 0.45f;
+	const URogueAttributeSet* BonusSet = GetWeaponBonusSet();
+	const float Bonus = BonusSet != nullptr ? BonusSet->GetAttackRangeBonus() : 0.0f;
+	return GetConfig().RefractionRange + Bonus * 0.45f;
 }
 
 void ARogueWeapon_Laser::FireLaserBurst(const TArray<ARogueEnemy*>& Enemies)
@@ -92,12 +75,12 @@ void ARogueWeapon_Laser::FireLaserBurst(const TArray<ARogueEnemy*>& Enemies)
 		const float LateralOffset = EffectiveCount % 2 == 0 ? (OffsetIndex + 0.5f) * BeamSpacing : OffsetIndex * BeamSpacing;
 		const FVector BeamOrigin = BeamOriginBase + LateralDirection * LateralOffset;
 		const FVector TargetLocation = TargetEnemy->GetActorLocation() + FVector(0.0f, 0.0f, 40.0f);
-		RogueAbilitySystem::ApplyDamageToTarget(OwnerChar, TargetEnemy, Config.Damage, RogueGameplayTags::Damage_Source_Beam);
+		RogueAbilitySystem::ApplyDamageToTarget(OwnerChar, TargetEnemy, GetEffectiveDamage(), RogueGameplayTags::Damage_Source_Beam);
 		SpawnLaserBeam(BeamOrigin, TargetLocation);
 
-		if (Config.RefractionCount > 0)
+		if (GetEffectiveRefractionCount() > 0)
 		{
-			FireLaserRefractionChain(TargetEnemy, TargetLocation, Config.Damage * 0.5f);
+			FireLaserRefractionChain(TargetEnemy, TargetLocation, GetEffectiveDamage() * 0.5f);
 		}
 	}
 }
@@ -105,7 +88,7 @@ void ARogueWeapon_Laser::FireLaserBurst(const TArray<ARogueEnemy*>& Enemies)
 void ARogueWeapon_Laser::FireLaserRefractionChain(ARogueEnemy* InitialTarget, const FVector& InitialImpactLocation, float InitialDamage)
 {
 	ARogueCharacter* OwnerChar = GetOwnerCharacter();
-	if (!IsValid(InitialTarget) || Config.RefractionCount <= 0 || InitialDamage <= 0.0f || OwnerChar == nullptr)
+	if (!IsValid(InitialTarget) || GetEffectiveRefractionCount() <= 0 || InitialDamage <= 0.0f || OwnerChar == nullptr)
 	{
 		return;
 	}
@@ -117,14 +100,14 @@ void ARogueWeapon_Laser::FireLaserRefractionChain(ARogueEnemy* InitialTarget, co
 	FVector CurrentStartLocation = InitialImpactLocation;
 	float CurrentDamage = InitialDamage;
 
-	for (int32 RefractionIndex = 0; RefractionIndex < Config.RefractionCount; ++RefractionIndex)
+	for (int32 RefractionIndex = 0; RefractionIndex < GetEffectiveRefractionCount(); ++RefractionIndex)
 	{
 		if (!IsValid(CurrentTarget) || CurrentDamage <= 1.0f)
 		{
 			break;
 		}
 
-		ARogueEnemy* NextTarget = FindNearestEnemyExcluding(CurrentTarget->GetActorLocation(), HitEnemies, Config.RefractionRange);
+		ARogueEnemy* NextTarget = FindNearestEnemyExcluding(CurrentTarget->GetActorLocation(), HitEnemies, GetEffectiveRefractionRange());
 		if (!IsValid(NextTarget))
 		{
 			break;

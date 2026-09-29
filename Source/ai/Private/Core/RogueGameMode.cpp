@@ -1,4 +1,8 @@
 #include "Core/RogueGameMode.h"
+#include "Core/RogueSelfTest.h"
+#include "Core/RogueTypes.h"
+#include "AbilitySystem/RogueAttributeSet.h"
+#include "AbilitySystem/RogueAttributeSet.h"
 
 #include "World/RogueArena.h"
 #include "Player/RogueCharacter.h"
@@ -232,6 +236,9 @@ void ARogueGameMode::Tick(float DeltaSeconds)
 	}
 	PushShopStateToPlayers();
 
+	// 开发自检（默认关，见 RunWeaponUpgradeSelfTest）：验证升级 → GAS 属性 → 武器生效值这条链
+	RunWeaponUpgradeSelfTest();
+
 	// 倒地等待 → 复活的**兜底驱动**。
 	//
 	// 为什么 GameMode 也要管这件事：复活原本只靠两处（角色 Tick 的截止时刻轮询 + 角色身上的定时器），
@@ -290,6 +297,114 @@ void ARogueGameMode::CollectAlivePlayers(TArray<ARogueCharacter*, TInlineAllocat
 {
 	// 实现统一在 RoguePlayerQuery 里（敌人索敌、刷怪点检查、经验球磁吸共用同一份口径）
 	RoguePlayerQuery::CollectAlivePlayers(GetWorld(), OutPlayers);
+}
+
+void ARogueGameMode::RunWeaponUpgradeSelfTest()
+{
+	if (!RogueSelfTest::IsWeaponUpgradeChainEnabled() || SelfTestPhase >= 2)
+	{
+		return;
+	}
+
+	TArray<ARogueCharacter*, TInlineAllocator<4>> Players;
+	CollectAlivePlayers(Players);
+	if (Players.Num() == 0)
+	{
+		// 等玩家就绪；下一帧再试
+		return;
+	}
+
+	// ---- 第二阶段：等所有人都连上之后再改一次属性 ----
+	// 目的是区分两种失败：
+	//   · 客户端**从来没有收到**这类属性（连变化也收不到）；
+	//   · 初始同步（bNetInitial）没带，但**后续变化能到**。
+	// 第一阶段发生在客户端连接之前，只能验证前者。
+	if (SelfTestPhase == 1)
+	{
+		const UWorld* World = GetWorld();
+		const float NowSeconds = World != nullptr ? World->GetTimeSeconds() : 0.0f;
+		if (Players.Num() < 2 || NowSeconds < SelfTestPhaseOneTime + 20.0f)
+		{
+			return;
+		}
+
+		SelfTestPhase = 2;
+		FRogueUpgradeOption LateOption;
+		LateOption.Type = ERogueUpgradeType::AttackPower;
+		LateOption.Magnitude = 5.0f;
+		LateOption.Title = TEXT("连接后补一刀");
+		Players[0]->ApplyUpgrade(LateOption);
+		UE_LOG(LogTemp, Log, TEXT("[SelfTest] 第二阶段：客户端已连接，再施加【伤害+5】—— 客户端随后若打出武器加成#2，说明属性变化能复制"));
+		return;
+	}
+
+	SelfTestPhase = 1;
+	SelfTestPhaseOneTime = GetWorld() != nullptr ? GetWorld()->GetTimeSeconds() : 0.0f;
+
+	ARogueCharacter* Character = Players[0];
+
+	const ARoguePlayerState* PlayerState = Character->GetPlayerState<ARoguePlayerState>();
+	const URogueAttributeSet* WeaponSet = PlayerState != nullptr ? PlayerState->GetAttributeSet() : nullptr;
+	if (WeaponSet == nullptr)
+	{
+		UE_LOG(LogTemp, Error, TEXT("[SelfTest] 玩家 ASC 上没有属性集 —— 注册失败（见 RoguePlayerState 构造）"));
+		return;
+	}
+
+	auto DumpWeapons = [Character](const TCHAR* Stage)
+	{
+		for (const ARogueWeaponBase* Weapon : Character->GetWeapons())
+		{
+			if (!IsValid(Weapon))
+			{
+				continue;
+			}
+			UE_LOG(LogTemp, Log, TEXT("[SelfTest] %s | %-26s 数量=%d 伤害=%.2f 冷却=%.2f 范围=%.1f"),
+				Stage, *Weapon->GetClass()->GetName(),
+				Weapon->GetEffectiveCount(), Weapon->GetEffectiveDamage(),
+				Weapon->GetEffectiveCooldown(), Weapon->GetEffectiveRange());
+		}
+	};
+
+	UE_LOG(LogTemp, Log, TEXT("[SelfTest] ==== 武器升级链路自检开始（玩家=%s，武器数=%d）===="),
+		*Character->GetName(), Character->GetWeapons().Num());
+	UE_LOG(LogTemp, Log, TEXT("[SelfTest] 初始加成属性：伤害=%.2f 攻速=%.2f 范围=%.2f 弹速=%.2f 主武器数量=%.2f"),
+		WeaponSet->GetAttackPowerBonus(), WeaponSet->GetAttackSpeedBonus(), WeaponSet->GetAttackRangeBonus(),
+		WeaponSet->GetProjectileSpeedBonus(), WeaponSet->GetProjectileCountBonus());
+	DumpWeapons(TEXT("升级前"));
+
+	// 逐项施加升级：每一项都走真实的 ApplyUpgrade → GE → ExecutionCalculation → 属性集
+	struct FSelfTestCase
+	{
+		ERogueUpgradeType Type;
+		float Magnitude;
+		const TCHAR* Label;
+	};
+	const FSelfTestCase Cases[] =
+	{
+		{ ERogueUpgradeType::AttackPower,      10.0f, TEXT("伤害+10") },
+		{ ERogueUpgradeType::AttackSpeed,       0.1f, TEXT("攻速+0.1") },
+		{ ERogueUpgradeType::AttackRange,     100.0f, TEXT("范围+100") },
+		{ ERogueUpgradeType::ProjectileSpeed, 200.0f, TEXT("弹速+200") },
+		{ ERogueUpgradeType::ProjectileCount,   1.0f, TEXT("数量+1") },
+	};
+
+	for (const FSelfTestCase& TestCase : Cases)
+	{
+		FRogueUpgradeOption Option;
+		Option.Type = TestCase.Type;
+		Option.Magnitude = TestCase.Magnitude;
+		Option.Title = TestCase.Label;
+		Character->ApplyUpgrade(Option);
+
+		UE_LOG(LogTemp, Log, TEXT("[SelfTest] 施加【%s】后 → 加成属性：伤害=%.2f 攻速=%.2f 范围=%.2f 弹速=%.2f 主武器数量=%.2f"),
+			TestCase.Label,
+			WeaponSet->GetAttackPowerBonus(), WeaponSet->GetAttackSpeedBonus(), WeaponSet->GetAttackRangeBonus(),
+			WeaponSet->GetProjectileSpeedBonus(), WeaponSet->GetProjectileCountBonus());
+	}
+
+	DumpWeapons(TEXT("升级后"));
+	UE_LOG(LogTemp, Log, TEXT("[SelfTest] ==== 自检结束：以上数值随升级变化即说明『升级 → GAS 属性 → 武器生效值』链路已通 ===="));
 }
 
 void ARogueGameMode::TickReviveQueue()

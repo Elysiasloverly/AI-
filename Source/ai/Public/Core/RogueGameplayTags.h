@@ -109,10 +109,16 @@ namespace RogueGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Effect_Upgrade);
 
 	/** 走属性系统的升级（最大生命/移速/护甲/冲刺冷却/拾取范围/回复/减伤/经验）。
-	 *  自研系统里这 8 类是写进 UpgradeGroup 再整表重算，迁移后是挂这个 Tag 的 GE。 */
+	 *  自研系统里这 8 类是写进 UpgradeGroup 再整表重算，迁移后是挂这个 Tag 的 GE。
+	 *  这也是**所有升级 GE 实际的族标签**（武器类升级现在也共用同一个 GE 类，见下）。 */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Effect_Upgrade_Attribute);
 
-	/** 走武器分发的升级（攻击力/攻速/攻击范围/弹体速度/各武器数量）。 */
+	/** 武器类升级的族标签。
+	 *  ⚠️ 当前实现里它**没有被授予**：武器升级已经和属性升级合并到同一个 GE 类
+	 *  （`URogueAttributeUpgradeEffect` + `URogueUpgradeExecution`），族标签统一是
+	 *  Effect.Upgrade.Attribute，批量清除用的是父标签 Effect.Upgrade。
+	 *  保留这个 Tag 是为了将来真需要"单独清除/抑制武器类升级"时可以直接用；
+	 *  如果一直用不上，可以连同声明一起删掉。 */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Effect_Upgrade_Weapon);
 
 	// ===========================================================
@@ -133,9 +139,31 @@ namespace RogueGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Upgrade_Attribute_DamageReduction);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Upgrade_Attribute_ExperienceGain);
 
-	/** 升级类型 → 目标属性载荷 Tag。
-	 *  只有 8 种"数值类"升级有映射；武器类升级返回空 Tag（它们不走 GE，直接分发给武器）。
-	 *  放在这里而不是散在调用点，是为了让"哪些升级走属性、哪些走武器"一眼可见。 */
+	// ===========================================================
+	//  升级的"武器加成属性"（Upgrade.Weapon）—— 同样是 GE 载荷
+	// ===========================================================
+	//  历史：这 12 类曾经**不走 GAS** —— 升级时改武器 Actor 上的配置结构体，
+	//  再用一条 NetMulticast 让各端重放一遍（"各端自己把同一个数值加一遍"）。
+	//  现在它们和属性升级走同一条路：改玩家 ASC 上 URogueAttributeSet 里的加成属性，
+	//  武器开火时读"数据表基础值 + 属性加成"。
+	//  好处：升级只在一处（服务端）结算、自动随属性复制、不需要广播重放、顺序问题自然消失。
+
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Upgrade_Weapon_AttackPower);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Upgrade_Weapon_AttackSpeed);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Upgrade_Weapon_AttackRange);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Upgrade_Weapon_ProjectileSpeed);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Upgrade_Weapon_ProjectileCount);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Upgrade_Weapon_ScytheCount);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Upgrade_Weapon_RocketCount);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Upgrade_Weapon_LaserCount);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Upgrade_Weapon_HellTowerCount);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Upgrade_Weapon_LaserRefraction);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Upgrade_Weapon_MortarCount);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Upgrade_Weapon_MortarBlastRadius);
+
+	/** 升级类型 → 目标属性载荷 Tag（属性类与武器类都走这里）。
+	 *  放在这里而不是散在调用点，是为了让"哪个升级改哪个属性"一眼可见。
+	 *  ⚠️ 返回无效 Tag = 该升级不通过 GE 落地，调用方应当报错而不是静默忽略。 */
 	AI_API FGameplayTag GetUpgradeAttributeTag(ERogueUpgradeType UpgradeType);
 
 	// ===========================================================

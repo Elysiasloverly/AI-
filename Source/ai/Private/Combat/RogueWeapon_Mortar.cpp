@@ -1,4 +1,5 @@
 #include "Combat/RogueWeapon_Mortar.h"
+#include "AbilitySystem/RogueAttributeSet.h"
 
 #include "Enemies/RogueEnemy.h"
 #include "Player/RogueCharacter.h"
@@ -20,7 +21,7 @@ void ARogueWeapon_Mortar::WeaponTick(float DeltaSeconds)
 	}
 
 	TArray<ARogueEnemy*> Enemies;
-	CollectEnemiesInRange(GetRange(), Enemies, FMath::Max(8, GetEffectiveCount() * 4));
+	CollectEnemiesInRange(GetEffectiveRange(), Enemies, FMath::Max(8, GetEffectiveCount() * 4));
 	if (Enemies.Num() == 0)
 	{
 		return;
@@ -39,46 +40,35 @@ void ARogueWeapon_Mortar::WeaponTick(float DeltaSeconds)
 	});
 
 	FireMortarVolley(Enemies);
-	FireTimer = Config.Cooldown;
+	FireTimer = GetEffectiveCooldown();
 }
 
-bool ARogueWeapon_Mortar::OnUpgradeApplied(ERogueUpgradeType UpgradeType, float Magnitude)
+// 生效数值：迫击炮的换算系数（攻速 ×2.0/下限 0.7、弹速 ×0.5、爆炸半径 ×0.35）
+// 全部沿用自研版本；升级只改玩家 ASC 上的加成属性。
+
+float ARogueWeapon_Mortar::GetEffectiveCooldown() const
 {
-	if (UpgradeType == ERogueUpgradeType::MortarCount)
-	{
-		Config.Count = FMath::Max(1, Config.Count + FMath::RoundToInt(Magnitude));
-		return true;
-	}
-
-	if (UpgradeType == ERogueUpgradeType::MortarBlastRadius)
-	{
-		ExplosionRadiusBonus += Magnitude;
-		return true;
-	}
-
-	if (UpgradeType == ERogueUpgradeType::ProjectileSpeed)
-	{
-		Config.MortarLaunchSpeed += Magnitude * 0.5f;
-		return true;
-	}
-
-	return false;
+	const URogueAttributeSet* BonusSet = GetWeaponBonusSet();
+	const float Bonus = BonusSet != nullptr ? BonusSet->GetAttackSpeedBonus() : 0.0f;
+	return FMath::Max(0.7f, GetConfig().Cooldown - Bonus * 2.0f);
 }
 
-void ARogueWeapon_Mortar::ApplySharedDamageBonus(float Magnitude)
+float ARogueWeapon_Mortar::GetExplosionRadius() const
 {
-	Config.Damage += Magnitude;
+	const FRogueWeaponTableRow& WeaponConfig = GetConfig();
+	const float BaseRadius = WeaponConfig.MortarExplosionRadius > 0.0f ? WeaponConfig.MortarExplosionRadius : WeaponConfig.ExplosionRadius;
+
+	const URogueAttributeSet* BonusSet = GetWeaponBonusSet();
+	const float RadiusBonus = BonusSet != nullptr ? BonusSet->GetMortarBlastRadiusBonus() : 0.0f;
+	const float RangeBonus = BonusSet != nullptr ? BonusSet->GetAttackRangeBonus() : 0.0f;
+	return BaseRadius + RadiusBonus + RangeBonus * 0.35f;
 }
 
-void ARogueWeapon_Mortar::ApplySharedSpeedBonus(float Magnitude)
+float ARogueWeapon_Mortar::GetProjectileSpeed() const
 {
-	Config.Cooldown = FMath::Max(0.7f, Config.Cooldown - Magnitude * 2.0f);
-}
-
-void ARogueWeapon_Mortar::ApplySharedRangeBonus(float Magnitude)
-{
-	Config.Range += Magnitude;
-	Config.MortarExplosionRadius += Magnitude * 0.35f;
+	const FRogueWeaponTableRow& WeaponConfig = GetConfig();
+	const float BaseSpeed = WeaponConfig.MortarLaunchSpeed > 0.0f ? WeaponConfig.MortarLaunchSpeed : WeaponConfig.RocketSpeed;
+	return GetEffectiveProjectileSpeed(BaseSpeed);
 }
 
 void ARogueWeapon_Mortar::FireMortarVolley(const TArray<ARogueEnemy*>& Enemies)
@@ -140,7 +130,7 @@ void ARogueWeapon_Mortar::FireMortarVolley(const TArray<ARogueEnemy*>& Enemies)
 				OwnerChar,
 				SpawnLocation,
 				TargetLocation,
-				Config.Damage,
+				GetEffectiveDamage(),
 				GetExplosionRadius(),
 				GetProjectileSpeed());
 		}
@@ -161,7 +151,7 @@ void ARogueWeapon_Mortar::FireMortarVolley(const TArray<ARogueEnemy*>& Enemies)
 				Direction.Rotation(),
 				Direction,
 				FinalProjectileSpeed,
-				Config.Damage,
+				GetEffectiveDamage(),
 				GetExplosionRadius());
 		}
 

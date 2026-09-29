@@ -1,5 +1,6 @@
 // 镰刀武器 —— 环绕刀片同步逻辑
 #include "Combat/RogueWeapon_Scythe.h"
+#include "AbilitySystem/RogueAttributeSet.h"
 
 #include "Engine/World.h"
 #include "GameFramework/GameStateBase.h"
@@ -34,7 +35,7 @@ void ARogueWeapon_Scythe::WeaponTick(float /*DeltaSeconds*/)
 	{
 		// 上限 0.25s：长时间没 tick（池回收、卡顿）之后不要让相位一次跳一大段
 		const double ServerDelta = FMath::Clamp(NowSeconds - LastOrbitServerTimeSeconds, 0.0, 0.25);
-		SharedOrbitAngle = FMath::Fmod(SharedOrbitAngle + Config.RotationSpeed * static_cast<float>(ServerDelta), 360.0f);
+		SharedOrbitAngle = FMath::Fmod(SharedOrbitAngle + GetEffectiveRotationSpeed() * static_cast<float>(ServerDelta), 360.0f);
 		if (SharedOrbitAngle < 0.0f)
 		{
 			SharedOrbitAngle += 360.0f;
@@ -60,30 +61,21 @@ void ARogueWeapon_Scythe::OnOwnerDied()
 	OrbitingBlades.Reset();
 }
 
-bool ARogueWeapon_Scythe::OnUpgradeApplied(ERogueUpgradeType UpgradeType, float Magnitude)
+// 生效数值：镰刀的换算系数（转速 +加成×280、环绕半径 +加成×0.12）沿用自研版本。
+// 刀片是持续轨道表现，"攻速"在这里表现为转速而不是冷却。
+
+float ARogueWeapon_Scythe::GetEffectiveRotationSpeed() const
 {
-	// 镰刀数量升级
-	if (UpgradeType == ERogueUpgradeType::ScytheCount)
-	{
-		Config.Count = FMath::Max(1, Config.Count + FMath::RoundToInt(Magnitude));
-		return true;
-	}
-	return false;
+	const URogueAttributeSet* BonusSet = GetWeaponBonusSet();
+	const float Bonus = BonusSet != nullptr ? BonusSet->GetAttackSpeedBonus() : 0.0f;
+	return GetConfig().RotationSpeed + Bonus * 280.0f;
 }
 
-void ARogueWeapon_Scythe::ApplySharedDamageBonus(float Magnitude)
+float ARogueWeapon_Scythe::GetEffectiveOrbitRadius() const
 {
-	Config.Damage += Magnitude;
-}
-
-void ARogueWeapon_Scythe::ApplySharedSpeedBonus(float Magnitude)
-{
-	Config.RotationSpeed += Magnitude * 280.0f;
-}
-
-void ARogueWeapon_Scythe::ApplySharedRangeBonus(float Magnitude)
-{
-	Config.OrbitRadius += Magnitude * 0.12f;
+	const URogueAttributeSet* BonusSet = GetWeaponBonusSet();
+	const float Bonus = BonusSet != nullptr ? BonusSet->GetAttackRangeBonus() : 0.0f;
+	return GetConfig().OrbitRadius + Bonus * 0.12f;
 }
 
 bool ARogueWeapon_Scythe::NeedsCosmeticTick() const
@@ -147,7 +139,7 @@ void ARogueWeapon_Scythe::SyncOrbitingBlades()
 	{
 		if (IsValid(OrbitingBlades[Index]))
 		{
-			OrbitingBlades[Index]->ConfigureBlade(OwnerChar, Index, OrbitingBlades.Num(), Config.OrbitRadius, Config.RotationSpeed, Config.Damage, SharedOrbitAngle);
+			OrbitingBlades[Index]->ConfigureBlade(OwnerChar, Index, OrbitingBlades.Num(), GetEffectiveOrbitRadius(), GetEffectiveRotationSpeed(), GetEffectiveDamage(), SharedOrbitAngle);
 		}
 	}
 }

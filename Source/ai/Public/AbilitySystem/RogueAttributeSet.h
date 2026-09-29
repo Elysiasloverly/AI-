@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "AttributeSet.h"
+#include "AbilitySystem/RogueAttributeMacros.h"
 #include "AbilitySystemComponent.h"
 #include "RogueAttributeSet.generated.h"
 
@@ -24,11 +25,6 @@
  *
  * 属性命名沿用引擎惯例：成对出现 `Xxx`（当前值）/ `MaxXxx`（上限）。
  */
-#define ATTRIBUTE_ACCESSORS(ClassName, PropertyName) \
-	GAMEPLAYATTRIBUTE_PROPERTY_GETTER(ClassName, PropertyName) \
-	GAMEPLAYATTRIBUTE_VALUE_GETTER(PropertyName) \
-	GAMEPLAYATTRIBUTE_VALUE_SETTER(PropertyName) \
-	GAMEPLAYATTRIBUTE_VALUE_INITTER(PropertyName)
 
 UCLASS()
 class AI_API URogueAttributeSet : public UAttributeSet
@@ -156,6 +152,67 @@ public:
 	 *  于是击杀归属（金币/经验/击杀计数）会算到上一只的凶手头上。
 	 *  （调用点在 URogueAbilitySystemComponent::ResetForPool） */
 	void ClearLastDamageCauser() const { LastDamageCauser.Reset(); }
+
+	// ===========================================================
+	//  武器加成（升级的落点）—— 与"生命/护甲"共用这一套属性集
+	// ===========================================================
+	//  为什么放在这里，而不是单独一套 URogueAttributeSet（曾经那么做过，已回退）：
+	//  实测（双进程 + Rogue.SelfTest.WeaponUpgradeChain）**第二套属性集实例的值没有复制到客户端** ——
+	//  客户端上它确实登记进了 ASC 的 SpawnedAttributes，但读到的 12 个值全是 0；
+	//  而主属性集的 BaseValue 改动（开局灌属性）复制正常。
+	//  在没定位清楚根因之前，把加成放进**已验证可复制**的这一套里是更稳的选择。
+	//  代价：敌人也挂这一套，会多带 12 个恒定为 0 的浮点（与类注释里"共用一套属性集"的取舍一致）。
+	//
+	//  语义：全部是**加成增量**（0 = 无加成）；武器侧负责"数据表基础值 + 加成×本武器系数"
+	//  （同一个升级在不同武器上的换算系数不同，见 ARogueWeaponBase::GetEffective*）。
+
+	UPROPERTY(BlueprintReadOnly, Replicated, Category = "Rogue|武器加成")
+	FGameplayAttributeData AttackPowerBonus;
+	ATTRIBUTE_ACCESSORS(URogueAttributeSet, AttackPowerBonus);
+
+	UPROPERTY(BlueprintReadOnly, Replicated, Category = "Rogue|武器加成")
+	FGameplayAttributeData AttackSpeedBonus;
+	ATTRIBUTE_ACCESSORS(URogueAttributeSet, AttackSpeedBonus);
+
+	UPROPERTY(BlueprintReadOnly, Replicated, Category = "Rogue|武器加成")
+	FGameplayAttributeData AttackRangeBonus;
+	ATTRIBUTE_ACCESSORS(URogueAttributeSet, AttackRangeBonus);
+
+	UPROPERTY(BlueprintReadOnly, Replicated, Category = "Rogue|武器加成")
+	FGameplayAttributeData ProjectileSpeedBonus;
+	ATTRIBUTE_ACCESSORS(URogueAttributeSet, ProjectileSpeedBonus);
+
+	UPROPERTY(BlueprintReadOnly, Replicated, Category = "Rogue|武器加成")
+	FGameplayAttributeData ProjectileCountBonus;
+	ATTRIBUTE_ACCESSORS(URogueAttributeSet, ProjectileCountBonus);
+
+	UPROPERTY(BlueprintReadOnly, Replicated, Category = "Rogue|武器加成")
+	FGameplayAttributeData ScytheCountBonus;
+	ATTRIBUTE_ACCESSORS(URogueAttributeSet, ScytheCountBonus);
+
+	UPROPERTY(BlueprintReadOnly, Replicated, Category = "Rogue|武器加成")
+	FGameplayAttributeData RocketCountBonus;
+	ATTRIBUTE_ACCESSORS(URogueAttributeSet, RocketCountBonus);
+
+	UPROPERTY(BlueprintReadOnly, Replicated, Category = "Rogue|武器加成")
+	FGameplayAttributeData LaserCountBonus;
+	ATTRIBUTE_ACCESSORS(URogueAttributeSet, LaserCountBonus);
+
+	UPROPERTY(BlueprintReadOnly, Replicated, Category = "Rogue|武器加成")
+	FGameplayAttributeData HellTowerCountBonus;
+	ATTRIBUTE_ACCESSORS(URogueAttributeSet, HellTowerCountBonus);
+
+	UPROPERTY(BlueprintReadOnly, Replicated, Category = "Rogue|武器加成")
+	FGameplayAttributeData MortarCountBonus;
+	ATTRIBUTE_ACCESSORS(URogueAttributeSet, MortarCountBonus);
+
+	UPROPERTY(BlueprintReadOnly, Replicated, Category = "Rogue|武器加成")
+	FGameplayAttributeData LaserRefractionBonus;
+	ATTRIBUTE_ACCESSORS(URogueAttributeSet, LaserRefractionBonus);
+
+	UPROPERTY(BlueprintReadOnly, Replicated, Category = "Rogue|武器加成")
+	FGameplayAttributeData MortarBlastRadiusBonus;
+	ATTRIBUTE_ACCESSORS(URogueAttributeSet, MortarBlastRadiusBonus);
 
 private:
 	/** 血量归零时给自己施加死亡效果（授予 State.Dead）。幂等：已死则直接返回。 */

@@ -19,42 +19,17 @@ void ARogueWeapon_Projectile::WeaponTick(float DeltaSeconds)
 		return;
 	}
 
-	ARogueEnemy* Target = FindNearestEnemy(Config.Range);
+	ARogueEnemy* Target = FindNearestEnemy(GetEffectiveRange());
 	if (Target != nullptr)
 	{
 		FireAtTarget(Target);
-		AttackTimer = Config.Cooldown;
+		AttackTimer = GetEffectiveCooldown();
 	}
 }
 
-bool ARogueWeapon_Projectile::OnUpgradeApplied(ERogueUpgradeType UpgradeType, float Magnitude)
-{
-	// 弹体数量升级
-	if (UpgradeType == ERogueUpgradeType::ProjectileCount)
-	{
-		Config.Count = FMath::Max(1, Config.Count + FMath::RoundToInt(Magnitude));
-		return true;
-	}
-
-	// 弹速升级
-	if (UpgradeType == ERogueUpgradeType::ProjectileSpeed)
-	{
-		Config.ProjectileSpeed += Magnitude;
-		return true;
-	}
-
-	return false;
-}
-
-void ARogueWeapon_Projectile::ApplySharedDamageBonus(float Magnitude)
-{
-	Config.Damage += Magnitude;
-}
-
-void ARogueWeapon_Projectile::ApplySharedSpeedBonus(float Magnitude)
-{
-	Config.Cooldown = FMath::Max(0.15f, Config.Cooldown - Magnitude);
-}
+// 注：本类**不再有** OnUpgradeApplied / ApplyShared*Bonus。
+// 升级统一落成玩家 ASC 上 URogueAttributeSet 的加成属性，
+// 由上面的 GetEffective*() 在开火时合并（"数据表基础值 + 属性加成"）。
 
 void ARogueWeapon_Projectile::FireAtTarget(AActor* TargetActor)
 {
@@ -95,8 +70,9 @@ void ARogueWeapon_Projectile::FireAtTarget(AActor* TargetActor)
 			ShotDirection = ShotDirection.RotateAngleAxis(RandomDeviation, FVector::UpVector).GetSafeNormal();
 		}
 
-		// 弹速随机增幅
-		float FinalSpeed = Config.ProjectileSpeed;
+		// 弹速随机增幅（基础弹速已含 GAS 加成）
+		const float BaseSpeed = GetEffectiveProjectileSpeed(Config.ProjectileSpeed);
+		float FinalSpeed = BaseSpeed;
 		if (Config.bEnableSpeedRandomization && Config.SpeedRandomizationRatio > 0.0f)
 		{
 			FinalSpeed *= (1.0f + FMath::FRandRange(-Config.SpeedRandomizationRatio, Config.SpeedRandomizationRatio));
@@ -111,7 +87,7 @@ void ARogueWeapon_Projectile::FireAtTarget(AActor* TargetActor)
 			: GetWorld()->SpawnActor<ARogueProjectile>(ProjectileToSpawn, SpawnLocation, ShotDirection.Rotation());
 		if (Projectile != nullptr)
 		{
-			Projectile->ActivatePooledProjectile(OwnerChar, OwnerChar, SpawnLocation, ShotDirection.Rotation(), ShotDirection, FinalSpeed, Config.Damage);
+			Projectile->ActivatePooledProjectile(OwnerChar, OwnerChar, SpawnLocation, ShotDirection.Rotation(), ShotDirection, FinalSpeed, GetEffectiveDamage());
 
 			// 权威那一发已经生成，再把"画出来需要什么"广播给队友。
 			// 必须**逐发**广播：偏转角度和弹速随机都是每一发单独掷的，

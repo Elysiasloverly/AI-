@@ -156,30 +156,16 @@ public:
 		return nullptr;
 	}
 
-	/** 全局武器伤害加成 */
-	void ApplySharedWeaponDamageBonus(float Magnitude);
-
-	/** 全局武器攻速加成 */
-	void ApplySharedWeaponSpeedBonus(float Magnitude);
-
-	/** 全局武器范围加成 */
-	void ApplySharedWeaponRangeBonus(float Magnitude);
-
-	/** 将武器专属升级分发给所有武器 */
-	bool DispatchWeaponUpgrade(ERogueUpgradeType UpgradeType, float Magnitude);
-
-	/** 服务端 → 所有客户端：同步一次武器类升级。
-	 *
-	 *  为什么需要这个广播：武器实例是**每台机器各自生成**的（InitializeWeapons 从同一张
-	 *  DT_WeaponConfig 建），而 `ARogueWeaponBase::Config` 是普通结构体、**没有复制**。
-	 *  升级只改服务器那一份的话，客户端看到/用到的武器数值就永远停在初始值。
-	 *
-	 *  为什么不是"复制 Config"而是"广播升级让各端各自应用"：
-	 *    · Config 结构体很大，整体复制成本高；
-	 *    · 升级序列是确定性的 —— 各端按同样顺序应用同一个升级，结果必然一致。
-	 *  Reliable 保证顺序，不会出现"先加数量后加伤害"被乱序的情况。 */
-	UFUNCTION(NetMulticast, Reliable)
-	void Multicast_ApplyWeaponUpgrade(ERogueUpgradeType UpgradeType, float Magnitude);
+	// ---- 武器升级 ----
+	// 武器升级**不再**有专属的分发/RPC：它们和属性升级走同一条路 ——
+	// 升级 GE 改玩家 ASC 上 URogueAttributeSet 的加成属性，
+	// 武器开火时读「数据表基础值 + 属性加成」（ARogueWeaponBase::GetEffective*）。
+	//
+	// 被删掉的旧路径（保留这段说明，避免有人再"优化"回来）：
+	//   · ApplySharedWeapon{Damage,Speed,Range}Bonus / DispatchWeaponUpgrade
+	//   · Multicast_ApplyWeaponUpgrade（Reliable 多播，各端重放加法）
+	//   它们的代价：武器配置成了第二个数值真相源、顺序/丢包会让各端漂移、
+	//   新增一类升级要同时改分发+多播+每把武器的应用函数。
 
 	/** 服务端 → 非本人客户端：广播一次武器开火的**纯表现**。
 	 *
@@ -547,6 +533,12 @@ private:
 	 *  ⚠️ 它只是"三条路里的一条"：实测这条在 PIE 里没有触发过，
 	 *  真正的保证是 Tick 里的截止时刻轮询 + GameMode::TickReviveQueue()。 */
 	FTimerHandle ReviveTimerHandle;
+
+	/** 开发自检：武器加成的打印次数与上次打印时的值签名（默认关，见 Core/RogueSelfTest.h）。
+	 *  用"值变化才打"而不是"只打一次"：客户端首帧还没收到复制过来的属性值，
+	 *  只打一次会看到全 0 并误判成"属性没复制"。 */
+	int32 WeaponBonusLogCount = 0;
+	float LastLoggedWeaponBonusSignature = -1.0f;
 
 	/** 复活无敌的到期时刻（服务器世界时间）。0 = 当前没有无敌。
 	 *  刻意**不做成复制字段**：伤害只在服务端结算，客户端不需要知道。 */

@@ -9,6 +9,7 @@
 
 class URogueAbilitySystemComponent;
 class URogueAttributeSet;
+class URogueAttributeSet;
 struct FRogueUpgradeOption;
 
 /**
@@ -39,6 +40,10 @@ public:
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
 
 	URogueAbilitySystemComponent* GetRogueAbilitySystemComponent() const { return AbilitySystemComponent; }
+
+	/** 玩家的属性集（生命/护甲/移速 + **武器加成**）。
+	 *  武器加成也在这一套里，没有第二套集：实测第二套集实例的值没有复制到客户端，
+	 *  而主集是已验证可复制的路径 —— 详见 URogueAttributeSet 里"武器加成"那一段。 */
 	URogueAttributeSet* GetAttributeSet() const { return AttributeSet; }
 
 	/** 由 Pawn 在 PossessedBy / OnRep_PlayerState 时调用，把 Avatar 换成当前 Pawn。

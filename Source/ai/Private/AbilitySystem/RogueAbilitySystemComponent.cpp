@@ -28,7 +28,10 @@ void URogueAbilitySystemComponent::ConfigureAsEnemy()
 
 void URogueAbilitySystemComponent::ResetForPool()
 {
-	// 1) 撤销所有已授予的能力（敌人技能是 GiveAbility 上去的）
+	// 1) 撤销所有已授予的能力，避免上一只残留的技能带到下一只身上。
+	//    注：本项目**没有给敌人配 GameplayAbility**（全项目只有冲刺一个 GA，且只授给玩家），
+	//    敌人行为是 ARogueEnemy::Tick 里的自研状态机。这里保留 ClearAllAbilities 是为了
+	//    "池复用后状态干净"这条契约本身成立，将来真给敌人加技能也不用回来补。
 	ClearAllAbilities();
 
 	// 2) 清掉所有激活中的 GE。

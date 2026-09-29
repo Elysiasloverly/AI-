@@ -147,6 +147,30 @@ private:
 	/** 收集当前所有活着的玩家角色（用 TInlineAllocator<4> 避免堆分配：联机上限 4 人）。 */
 	void CollectAlivePlayers(TArray<ARogueCharacter*, TInlineAllocator<4>>& OutPlayers) const;
 
+	/**
+	 * 开发自检：验证「升级 → GAS 加成属性 → 武器生效值」这条链是否真的通。
+	 *
+	 * 为什么需要它：GAS 改造把"升级改武器配置"换成了"升级改玩家 ASC 上的加成属性，
+	 * 武器读 基础值+加成"。这条链跨了 4 层（升级 GE → ExecutionCalculation → 属性集 → 武器），
+	 * 任何一层接错都只表现为"卡牌抽到了但没效果"，靠手玩很难定位。
+	 * 这个自检在服务端跑一次：逐项施加升级、打印加成属性与每把武器的生效数值，
+	 * 用日志证明数值按预期变化（也顺带证明了加成是加在**正确的武器**上的）。
+	 *
+	 * 开关（默认关）：`Rogue.SelfTest.WeaponUpgradeChain 1`
+	 * 例：无头验证
+	 *   UnrealEditor.exe <uproject> <map>?listen -game -nullrhi
+	 *     -ExecCmds="Rogue.SelfTest.WeaponUpgradeChain 1" -log
+	 */
+	void RunWeaponUpgradeSelfTest();
+
+	/** 自检阶段：0=未跑，1=第一阶段已跑（等客户端连接），2=全部跑完。
+	 *  第二阶段刻意在"客户端连上之后"再改一次属性，用来区分
+	 *  "属性从来没复制" 与 "只有初始同步没带、后续变化能到"。 */
+	int32 SelfTestPhase = 0;
+
+	/** 第一阶段完成时的世界时间（第二阶段要等客户端连上且再过 20 秒） */
+	float SelfTestPhaseOneTime = 0.0f;
+
 	/** 倒地等待 → 复活的兜底驱动（服务端每帧，且**不受"本局已结束"影响**）。
 	 *
 	 *  为什么 GameMode 也要管：复活本来只靠"角色 Tick 轮询截止时刻 + 角色身上的定时器"，

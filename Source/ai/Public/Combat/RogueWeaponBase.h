@@ -15,6 +15,7 @@ class ARogueMortarProjectile;
 class ARogueRocketProjectile;
 class ARogueLaserBeam;
 class ARogueOrbitingBlade;
+class URogueAttributeSet;
 struct FRogueCombatPoolPrewarmClasses;
 
 // ============================================================
@@ -211,26 +212,23 @@ public:
 	virtual bool NeedsCosmeticTick() const { return false; }
 
 	// ---- 升级接口 ----
-
-	/** 武器专属升级（数量 +1 等），返回 true 表示本武器消费了该升级 */
-	virtual bool OnUpgradeApplied(ERogueUpgradeType UpgradeType, float Magnitude);
-
-	/** 全局伤害加成 */
-	virtual void ApplySharedDamageBonus(float Magnitude);
-
-	/** 全局攻速加成 */
-	virtual void ApplySharedSpeedBonus(float Magnitude);
-
-	/** 全局范围加成 */
-	virtual void ApplySharedRangeBonus(float Magnitude);
+	// **升级不直接改武器配置**（那是自研版本的做法，已删除）。
+	// 升级统一落成玩家 ASC 上 URogueAttributeSet 的属性加成，
+	// 武器通过上面的 GetEffective* 读取 —— 所以这里没有 OnUpgradeApplied / ApplyShared*Bonus。
+	//
+	// 新增武器时：基础值放 DT_WeaponConfig，加成从 GetWeaponBonusSet() 读，
+	// 若本武器的换算系数与默认不同，重写对应的 GetEffective*（见火箭/迫击炮/激光/地狱塔/镰刀）。
 
 	// ---- 查询接口 ----
 
 	UFUNCTION(BlueprintPure)
 	int32 GetCount() const { return Config.Count; }
 
+	/** 生效数量 = 数据表基础数量 + 武器加成属性（见 GetWeaponBonusSet）。
+	 *  历史：以前升级会直接改 Config.Count，所以这里只读 Config 就够了；
+	 *  现在升级只改 GAS 属性，武器配置**保持数据表原值不变**。 */
 	UFUNCTION(BlueprintPure)
-	int32 GetEffectiveCount() const { return FMath::Max(0, Config.Count); }
+	int32 GetEffectiveCount() const;
 
 	UFUNCTION(BlueprintPure)
 	float GetDamage() const { return Config.Damage; }
@@ -238,9 +236,51 @@ public:
 	UFUNCTION(BlueprintPure)
 	float GetRange() const { return Config.Range; }
 
+	// ---- 生效数值（数据表基础值 + GAS 加成）----
+	// 武器开火一律用这些函数，而不是直接读 Config.X —— 这条约定就是"所有数值都来自 GAS"的落地点。
+	//
+	// 为什么是 virtual：**同一个升级在不同武器上的换算系数不一样**（这是自研版本的行为，必须原样保留）：
+	//   攻速：多数武器是 `冷却 − 加成`（下限 0.15），火箭是 `冷却 − 加成×2.5`（下限 0.55），
+	//         地狱塔是把伤害跳间隔按 0.08 缩放，镰刀是转速 +加成×280
+	//   弹速：主武器全额、火箭 ×0.75、迫击炮 ×0.5
+	//   伤害：地狱塔是 `塔伤害 +加成×0.125`（每跳递增 +加成×0.0625）
+	// 所以"加成数值只有一个来源（玩家 ASC 上的属性集）"，而"怎么用这个加成"由各武器自己决定。
+
+	/** 单发伤害 = Config.Damage + AttackPowerBonus */
+	virtual float GetEffectiveDamage() const;
+
+	/** 攻击间隔 = max(0.15, Config.Cooldown − AttackSpeedBonus)
+	 *  0.15 秒下限沿用自研版本的行为（防止升级堆到 0 冷却）。 */
+	virtual float GetEffectiveCooldown() const;
+
+	/** 索敌范围 = Config.Range + AttackRangeBonus */
+	virtual float GetEffectiveRange() const;
+
+	/** 弹速 = BaseSpeed + ProjectileSpeedBonus × GetProjectileSpeedBonusScale()
+	 *  @param BaseSpeed 该武器自己的基础弹速（主武器 ProjectileSpeed / 火箭 RocketSpeed / 迫击炮 MortarLaunchSpeed） */
+	float GetEffectiveProjectileSpeed(float BaseSpeed) const;
+
+	/** 弹速加成系数：默认全额（1.0），火箭 0.75、迫击炮 0.5。 */
+	virtual float GetProjectileSpeedBonusScale() const { return 1.0f; }
+
+	/** 本武器的"数量升级"类型 —— 决定它读哪一种数量加成。
+	 *
+	 *  ⚠️ 为什么不直接用 `Config.CountUpgradeType`（数据表那一列）：
+	 *  实测（自检日志）里多数行的那一列是**默认值**，于是所有武器都会去读同一个加成 ——
+	 *  一张"弹体数量+1"的卡会一次性给 5 把武器各 +1。
+	 *  自研版本的做法是每把武器**硬编码**自己的数量升级类型（OnUpgradeApplied 里各自判断），
+	 *  这里沿用同一口径：子类重写本函数，数据列只在没重写时兜底。 */
+	virtual ERogueUpgradeType GetCountUpgradeType() const { return Config.CountUpgradeType; }
+
+	/** 激光折射次数 = Config.RefractionCount + LaserRefractionBonus（旧实现夹在 0..8） */
+	int32 GetEffectiveRefractionCount() const;
+
 	/** 获取当前武器的完整配置（可读写） */
 	FRogueWeaponTableRow& GetConfig() { return Config; }
 	const FRogueWeaponTableRow& GetConfig() const { return Config; }
+
+	/** 拥有者的武器加成属性集（没有则 nullptr：例如客户端还没收到复制）。 */
+	const URogueAttributeSet* GetWeaponBonusSet() const;
 
 protected:
 	// ---- 辅助函数（子类可用） ----

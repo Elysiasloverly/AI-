@@ -2,6 +2,7 @@
 
 #include "AbilitySystem/RogueAbilitySystemComponent.h"
 #include "AbilitySystem/RogueAttributeSet.h"
+#include "AbilitySystem/RogueAttributeSet.h"
 #include "AbilitySystem/RogueGameplayCue_Impact.h"
 #include "Core/RogueGameMode.h"
 #include "GameFramework/GameStateBase.h"
@@ -293,6 +294,7 @@ ARoguePlayerState::ARoguePlayerState()
 
 	// AttributeSet 是普通 UObject（不是组件），
 	// 它要被复制必须挂进 Actor 的"已注册子对象列表"（见 PostInitializeComponents）。
+	// 武器加成属性也在这一套里（曾经单独建过第二套，实测值复制不到客户端，已回退）。
 	AttributeSet = CreateDefaultSubobject<URogueAttributeSet>(TEXT("AttributeSet"));
 
 	// 打开 Actor 级的"用注册子对象列表做复制"。

@@ -48,6 +48,20 @@ namespace RogueGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG(Upgrade_Attribute_DamageReduction,  "Upgrade.Attribute.DamageReduction");
 	UE_DEFINE_GAMEPLAY_TAG(Upgrade_Attribute_ExperienceGain,   "Upgrade.Attribute.ExperienceGain");
 
+	// 武器加成：与属性类升级同一条 GE 路径（载荷 Tag → URogueAttributeSet 里的属性）
+	UE_DEFINE_GAMEPLAY_TAG(Upgrade_Weapon_AttackPower,         "Upgrade.Weapon.AttackPower");
+	UE_DEFINE_GAMEPLAY_TAG(Upgrade_Weapon_AttackSpeed,         "Upgrade.Weapon.AttackSpeed");
+	UE_DEFINE_GAMEPLAY_TAG(Upgrade_Weapon_AttackRange,         "Upgrade.Weapon.AttackRange");
+	UE_DEFINE_GAMEPLAY_TAG(Upgrade_Weapon_ProjectileSpeed,     "Upgrade.Weapon.ProjectileSpeed");
+	UE_DEFINE_GAMEPLAY_TAG(Upgrade_Weapon_ProjectileCount,     "Upgrade.Weapon.ProjectileCount");
+	UE_DEFINE_GAMEPLAY_TAG(Upgrade_Weapon_ScytheCount,         "Upgrade.Weapon.ScytheCount");
+	UE_DEFINE_GAMEPLAY_TAG(Upgrade_Weapon_RocketCount,         "Upgrade.Weapon.RocketCount");
+	UE_DEFINE_GAMEPLAY_TAG(Upgrade_Weapon_LaserCount,          "Upgrade.Weapon.LaserCount");
+	UE_DEFINE_GAMEPLAY_TAG(Upgrade_Weapon_HellTowerCount,      "Upgrade.Weapon.HellTowerCount");
+	UE_DEFINE_GAMEPLAY_TAG(Upgrade_Weapon_LaserRefraction,     "Upgrade.Weapon.LaserRefraction");
+	UE_DEFINE_GAMEPLAY_TAG(Upgrade_Weapon_MortarCount,         "Upgrade.Weapon.MortarCount");
+	UE_DEFINE_GAMEPLAY_TAG(Upgrade_Weapon_MortarBlastRadius,   "Upgrade.Weapon.MortarBlastRadius");
+
 	// ---- GameplayCue（表现层）----
 	// 注意根必须是 "GameplayCue"，引擎的 GameplayCueManager 按这个根做路由。
 	UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Impact_Spark,      "GameplayCue.Impact.Spark");
@@ -70,7 +84,20 @@ FGameplayTag RogueGameplayTags::GetUpgradeAttributeTag(ERogueUpgradeType Upgrade
 	case ERogueUpgradeType::Armor:           return Upgrade_Attribute_DamageReduction;
 	case ERogueUpgradeType::ExperienceGain:  return Upgrade_Attribute_ExperienceGain;
 
-	// 武器类升级与其余类型：不走属性 GE
+	// ---- 武器类升级：同样走 GE，只是目标属性在 URogueAttributeSet 里 ----
+	case ERogueUpgradeType::AttackPower:         return Upgrade_Weapon_AttackPower;
+	case ERogueUpgradeType::AttackSpeed:         return Upgrade_Weapon_AttackSpeed;
+	case ERogueUpgradeType::AttackRange:         return Upgrade_Weapon_AttackRange;
+	case ERogueUpgradeType::ProjectileSpeed:     return Upgrade_Weapon_ProjectileSpeed;
+	case ERogueUpgradeType::ProjectileCount:     return Upgrade_Weapon_ProjectileCount;
+	case ERogueUpgradeType::ScytheCount:         return Upgrade_Weapon_ScytheCount;
+	case ERogueUpgradeType::RocketCount:         return Upgrade_Weapon_RocketCount;
+	case ERogueUpgradeType::LaserCount:          return Upgrade_Weapon_LaserCount;
+	case ERogueUpgradeType::HellTowerCount:      return Upgrade_Weapon_HellTowerCount;
+	case ERogueUpgradeType::LaserRefraction:     return Upgrade_Weapon_LaserRefraction;
+	case ERogueUpgradeType::MortarCount:         return Upgrade_Weapon_MortarCount;
+	case ERogueUpgradeType::MortarBlastRadius:   return Upgrade_Weapon_MortarBlastRadius;
+
 	default:                                 return FGameplayTag();
 	}
 }

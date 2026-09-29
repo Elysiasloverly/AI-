@@ -1,8 +1,6 @@
 #include "AbilitySystem/RogueAttributeUpgradeEffect.h"
 
 #include "AbilitySystem/RogueUpgradeExecution.h"
-#include "Core/RogueGameplayTags.h"
-#include "GameplayEffectComponents/TargetTagsGameplayEffectComponent.h"
 
 URogueAttributeUpgradeEffect::URogueAttributeUpgradeEffect()
 {
@@ -10,25 +8,20 @@ URogueAttributeUpgradeEffect::URogueAttributeUpgradeEffect()
 
 	// 用 ExecutionCalculation 而不是固定修饰器：
 	// 修饰器的 Attribute 是烤在 CDO 上的，一份 GE 只能改一个属性；
-	// 而升级要改的属性是运行时才知道的（由载荷 Tag 决定）。
+	// 而升级要改的属性是运行时才知道的（由载荷 Tag 决定，属性类走 URogueAttributeSet、
+	// 武器类走 URogueAttributeSet）。
 	FGameplayEffectExecutionDefinition ExecutionDef;
 	ExecutionDef.CalculationClass = URogueUpgradeExecution::StaticClass();
 	Executions.Add(ExecutionDef);
 
-	// 打上族标签，方便"一次性清空所有升级"（重开一局时用）。
-	// 注意 Instant GE 不会留在身上，所以这个 Tag 主要给"抑制同类 GE"之类的判定用 ——
-	// 真要做"撤销升级"需要改回 BaseValue，那是另一个需求。
+	// ⚠️ 这里**故意没有**授予族标签（曾经有过一个 TargetTagsGameplayEffectComponent，已删除）。
 	//
-	// ⚠️ 同样必须走 GE 组件：往废弃的 InheritableOwnedTagsContainer 里塞标签不会生效
-	// （GetGrantedTags() 读的是由 GEComponents 重建的 CachedGrantedTags）。
-	// 构造期只能用 CreateDefaultSubobject（AddComponent<> 内部走 NewObject，构造函数里非法），
-	// 且必须挂进 GEComponents —— 详见 URogueStateTagEffect 的注释。
-	// （本类没有继承 URogueStateTagEffect：它是 Instant + ExecutionCalculation，
-	//   只有"授予标签"这一段写法与那边相同。）
-	UTargetTagsGameplayEffectComponent* TargetTags = CreateDefaultSubobject<UTargetTagsGameplayEffectComponent>(TEXT("TargetTags"));
-	GEComponents.Add(TargetTags);
-
-	FInheritedTagContainer GrantedTags;
-	GrantedTags.Added.AddTag(RogueGameplayTags::Effect_Upgrade_Attribute);
-	TargetTags->SetAndApplyTargetTagChanges(GrantedTags);
+	// 原因：Instant 的 GE 不会留在身上，GAS 会直接拒绝并报错：
+	//   "GE ... is set to Instant so TargetTagsGameplayEffectComponent will not be able to apply its tags."
+	// 也就是说那个组件从来没生效过，只是在每个进程启动时贡献一条 Error 日志。
+	//
+	// 为什么不需要它：升级是 Instant 效果，改的是属性 BaseValue（永久生效），
+	// 身上根本不存在"待清除的升级 GE" —— 所以既不需要族标签去批量清除，
+	// 也不需要靠标签抑制同类 GE。真要做"撤销升级"，正确做法是把属性改回 BaseValue
+	// （或改用带时长的 Infinite GE + 移除），那是另一个需求，不该靠一个不生效的组件兜着。
 }

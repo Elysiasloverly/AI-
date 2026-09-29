@@ -1,5 +1,6 @@
 // 火箭武器 —— 齐射逻辑
 #include "Combat/RogueWeapon_Rocket.h"
+#include "AbilitySystem/RogueAttributeSet.h"
 
 #include "Engine/World.h"
 
@@ -22,49 +23,31 @@ void ARogueWeapon_Rocket::WeaponTick(float DeltaSeconds)
 	}
 
 	TArray<ARogueEnemy*> Enemies;
-	CollectEnemiesInRange(Config.Range + 700.0f, Enemies, FMath::Max(12, GetEffectiveCount() * 3));
+	CollectEnemiesInRange(GetEffectiveRange() + 700.0f, Enemies, FMath::Max(12, GetEffectiveCount() * 3));
 	if (Enemies.Num() == 0)
 	{
 		return;
 	}
 
 	FireRocketVolley(Enemies);
-	RocketTimer = Config.Cooldown;
+	RocketTimer = GetEffectiveCooldown();
 }
 
-bool ARogueWeapon_Rocket::OnUpgradeApplied(ERogueUpgradeType UpgradeType, float Magnitude)
+// 生效数值：火箭的换算系数与主武器不同，全部沿用自研版本的公式
+//（升级只改玩家 ASC 上的加成属性，这里负责"基础值 + 加成×本武器系数"）。
+
+float ARogueWeapon_Rocket::GetEffectiveCooldown() const
 {
-	// 火箭数量升级
-	if (UpgradeType == ERogueUpgradeType::RocketCount)
-	{
-		Config.Count = FMath::Max(1, Config.Count + FMath::RoundToInt(Magnitude));
-		return true;
-	}
-
-	// 弹速升级（火箭获得 75% 加成）
-	if (UpgradeType == ERogueUpgradeType::ProjectileSpeed)
-	{
-		Config.RocketSpeed += Magnitude * 0.75f;
-		return true;
-	}
-
-	return false;
+	const URogueAttributeSet* BonusSet = GetWeaponBonusSet();
+	const float Bonus = BonusSet != nullptr ? BonusSet->GetAttackSpeedBonus() : 0.0f;
+	return FMath::Max(0.55f, GetConfig().Cooldown - Bonus * 2.5f);
 }
 
-void ARogueWeapon_Rocket::ApplySharedDamageBonus(float Magnitude)
+float ARogueWeapon_Rocket::GetExplosionRadius() const
 {
-	Config.Damage += Magnitude;
-}
-
-void ARogueWeapon_Rocket::ApplySharedSpeedBonus(float Magnitude)
-{
-	Config.Cooldown = FMath::Max(0.55f, Config.Cooldown - Magnitude * 2.5f);
-}
-
-void ARogueWeapon_Rocket::ApplySharedRangeBonus(float Magnitude)
-{
-	Config.Range += Magnitude;
-	Config.ExplosionRadius += Magnitude * 0.25f;
+	const URogueAttributeSet* BonusSet = GetWeaponBonusSet();
+	const float RangeBonus = BonusSet != nullptr ? BonusSet->GetAttackRangeBonus() : 0.0f;
+	return GetConfig().ExplosionRadius + RangeBonus * 0.25f;
 }
 
 void ARogueWeapon_Rocket::FireRocketVolley(const TArray<ARogueEnemy*>& Enemies)
@@ -97,7 +80,7 @@ void ARogueWeapon_Rocket::FireRocketVolley(const TArray<ARogueEnemy*>& Enemies)
 		}
 
 		// 弹速随机增幅
-		float FinalRocketSpeed = Config.RocketSpeed;
+		float FinalRocketSpeed = GetEffectiveProjectileSpeed(Config.RocketSpeed);
 		if (Config.bEnableSpeedRandomization && Config.SpeedRandomizationRatio > 0.0f)
 		{
 			FinalRocketSpeed *= (1.0f + FMath::FRandRange(-Config.SpeedRandomizationRatio, Config.SpeedRandomizationRatio));
@@ -112,7 +95,7 @@ void ARogueWeapon_Rocket::FireRocketVolley(const TArray<ARogueEnemy*>& Enemies)
 			: GetWorld()->SpawnActor<ARogueRocketProjectile>(RocketClassToSpawn, SpawnLocation, Direction.Rotation());
 		if (Rocket != nullptr)
 		{
-			Rocket->ActivatePooledRocket(OwnerChar, OwnerChar, SpawnLocation, Direction.Rotation(), Direction, FinalRocketSpeed, Config.Damage, Config.ExplosionRadius);
+			Rocket->ActivatePooledRocket(OwnerChar, OwnerChar, SpawnLocation, Direction.Rotation(), Direction, FinalRocketSpeed, GetEffectiveDamage(), GetExplosionRadius());
 
 			// 权威那一发已经生成，再把"画出来需要什么"广播给队友。
 			// 逐发广播：偏转角与弹速随机是每发单独掷的；客户端调用它是空操作。
@@ -122,7 +105,7 @@ void ARogueWeapon_Rocket::FireRocketVolley(const TArray<ARogueEnemy*>& Enemies)
 			Fire.Start = SpawnLocation;
 			Fire.Direction = Direction;
 			Fire.Speed = FinalRocketSpeed;
-			Fire.Param = Config.ExplosionRadius;
+			Fire.Param = GetExplosionRadius();
 			BroadcastCosmeticFire(Fire);
 		}
 	}

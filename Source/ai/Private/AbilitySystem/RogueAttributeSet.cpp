@@ -37,6 +37,21 @@ void URogueAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, ArmorRechargeDelay,   COND_None);
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, ArmorRechargeRate,    COND_None);
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, DamageReductionPercent, COND_None);
+
+	// 武器加成（升级落点）。与其它属性一样 COND_None：数值要发给所有端，
+	// 客户端的武器也要按同样的数值算表现（见头文件里"为什么并入主属性集"的说明）。
+	DOREPLIFETIME_CONDITION(URogueAttributeSet, AttackPowerBonus, COND_None);
+	DOREPLIFETIME_CONDITION(URogueAttributeSet, AttackSpeedBonus, COND_None);
+	DOREPLIFETIME_CONDITION(URogueAttributeSet, AttackRangeBonus, COND_None);
+	DOREPLIFETIME_CONDITION(URogueAttributeSet, ProjectileSpeedBonus, COND_None);
+	DOREPLIFETIME_CONDITION(URogueAttributeSet, ProjectileCountBonus, COND_None);
+	DOREPLIFETIME_CONDITION(URogueAttributeSet, ScytheCountBonus, COND_None);
+	DOREPLIFETIME_CONDITION(URogueAttributeSet, RocketCountBonus, COND_None);
+	DOREPLIFETIME_CONDITION(URogueAttributeSet, LaserCountBonus, COND_None);
+	DOREPLIFETIME_CONDITION(URogueAttributeSet, HellTowerCountBonus, COND_None);
+	DOREPLIFETIME_CONDITION(URogueAttributeSet, MortarCountBonus, COND_None);
+	DOREPLIFETIME_CONDITION(URogueAttributeSet, LaserRefractionBonus, COND_None);
+	DOREPLIFETIME_CONDITION(URogueAttributeSet, MortarBlastRadiusBonus, COND_None);
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, MoveSpeed,            COND_None);
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, DashCooldownDuration, COND_None);
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, MinDashCooldown,      COND_None);
@@ -50,6 +65,34 @@ void URogueAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 
 void URogueAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue)
 {
+	// 武器加成：全部不允许为负（负数量会让武器彻底不工作、负范围会让索敌失效）。
+	// 数量类只做取整，最终数量由武器侧"数据表基础值 + 加成"合并后再取整。
+	if (Attribute == GetAttackPowerBonusAttribute()
+		|| Attribute == GetAttackSpeedBonusAttribute()
+		|| Attribute == GetAttackRangeBonusAttribute()
+		|| Attribute == GetProjectileSpeedBonusAttribute()
+		|| Attribute == GetProjectileCountBonusAttribute()
+		|| Attribute == GetScytheCountBonusAttribute()
+		|| Attribute == GetRocketCountBonusAttribute()
+		|| Attribute == GetLaserCountBonusAttribute()
+		|| Attribute == GetHellTowerCountBonusAttribute()
+		|| Attribute == GetMortarCountBonusAttribute()
+		|| Attribute == GetLaserRefractionBonusAttribute()
+		|| Attribute == GetMortarBlastRadiusBonusAttribute())
+	{
+		NewValue = FMath::Max(0.0f, NewValue);
+
+		if (Attribute == GetProjectileCountBonusAttribute()
+			|| Attribute == GetScytheCountBonusAttribute()
+			|| Attribute == GetRocketCountBonusAttribute()
+			|| Attribute == GetLaserCountBonusAttribute()
+			|| Attribute == GetHellTowerCountBonusAttribute()
+			|| Attribute == GetMortarCountBonusAttribute()
+			|| Attribute == GetLaserRefractionBonusAttribute())
+		{
+			NewValue = FMath::RoundToFloat(NewValue);
+		}
+	}
 	Super::PreAttributeChange(Attribute, NewValue);
 
 	// PreAttributeChange 只负责"钳制"，不做任何游戏逻辑（引擎文档明确不建议在这里改别的属性）。

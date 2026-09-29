@@ -1,6 +1,7 @@
 #include "AbilitySystem/RogueUpgradeExecution.h"
 
 #include "AbilitySystem/RogueAttributeSet.h"
+#include "AbilitySystem/RogueAttributeSet.h"
 #include "Core/RogueGameplayTags.h"
 #include "GameplayEffect.h"
 
@@ -21,6 +22,7 @@ namespace
 	{
 		static const TArray<FUpgradeAttributeMapping> Mappings =
 		{
+			// ---- 玩家核心属性（URogueAttributeSet）----
 			{ RogueGameplayTags::Upgrade_Attribute_MaxHealth,       URogueAttributeSet::GetMaxHealthAttribute() },
 			{ RogueGameplayTags::Upgrade_Attribute_MoveSpeed,       URogueAttributeSet::GetMoveSpeedAttribute() },
 			{ RogueGameplayTags::Upgrade_Attribute_MaxArmor,        URogueAttributeSet::GetMaxArmorAttribute() },
@@ -29,6 +31,22 @@ namespace
 			{ RogueGameplayTags::Upgrade_Attribute_HealthRegen,     URogueAttributeSet::GetHealthRegenPerSecondAttribute() },
 			{ RogueGameplayTags::Upgrade_Attribute_DamageReduction, URogueAttributeSet::GetDamageReductionPercentAttribute() },
 			{ RogueGameplayTags::Upgrade_Attribute_ExperienceGain,  URogueAttributeSet::GetExperienceMultiplierAttribute() },
+
+			// ---- 武器加成（URogueAttributeSet）----
+			// 历史：这 12 类曾经不走 GE，而是改武器 Actor 上的配置结构体 + NetMulticast 重放。
+			// 现在与属性升级完全同路：改玩家 ASC 上的加成属性，武器读"基础值 + 加成"。
+			{ RogueGameplayTags::Upgrade_Weapon_AttackPower,        URogueAttributeSet::GetAttackPowerBonusAttribute() },
+			{ RogueGameplayTags::Upgrade_Weapon_AttackSpeed,        URogueAttributeSet::GetAttackSpeedBonusAttribute() },
+			{ RogueGameplayTags::Upgrade_Weapon_AttackRange,        URogueAttributeSet::GetAttackRangeBonusAttribute() },
+			{ RogueGameplayTags::Upgrade_Weapon_ProjectileSpeed,    URogueAttributeSet::GetProjectileSpeedBonusAttribute() },
+			{ RogueGameplayTags::Upgrade_Weapon_ProjectileCount,    URogueAttributeSet::GetProjectileCountBonusAttribute() },
+			{ RogueGameplayTags::Upgrade_Weapon_ScytheCount,        URogueAttributeSet::GetScytheCountBonusAttribute() },
+			{ RogueGameplayTags::Upgrade_Weapon_RocketCount,        URogueAttributeSet::GetRocketCountBonusAttribute() },
+			{ RogueGameplayTags::Upgrade_Weapon_LaserCount,         URogueAttributeSet::GetLaserCountBonusAttribute() },
+			{ RogueGameplayTags::Upgrade_Weapon_HellTowerCount,     URogueAttributeSet::GetHellTowerCountBonusAttribute() },
+			{ RogueGameplayTags::Upgrade_Weapon_LaserRefraction,    URogueAttributeSet::GetLaserRefractionBonusAttribute() },
+			{ RogueGameplayTags::Upgrade_Weapon_MortarCount,        URogueAttributeSet::GetMortarCountBonusAttribute() },
+			{ RogueGameplayTags::Upgrade_Weapon_MortarBlastRadius,  URogueAttributeSet::GetMortarBlastRadiusBonusAttribute() },
 		};
 		return Mappings;
 	}

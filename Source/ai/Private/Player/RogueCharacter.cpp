@@ -1,4 +1,6 @@
 #include "Player/RogueCharacter.h"
+#include "AbilitySystem/RogueAttributeSet.h"
+#include "Core/RogueSelfTest.h"
 
 #include "Combat/RogueWeaponBase.h"
 #include "Combat/RogueWeapon_Projectile.h"
@@ -262,7 +264,10 @@ bool ARogueCharacter::ApplyUpgradeEffectViaGAS(ERogueUpgradeType UpgradeType, fl
 	const FGameplayTag PayloadTag = RogueGameplayTags::GetUpgradeAttributeTag(UpgradeType);
 	if (!PayloadTag.IsValid())
 	{
-		// 不是属性类升级（武器类升级直接分发给武器，不走 GE）
+		// 没有载荷 = 这个升级类型既不是属性类也不是武器类（枚举加了但映射忘了加）。
+		// 静默忽略会让"卡牌能抽到但没效果"，所以打一条 Warning。
+		UE_LOG(LogTemp, Warning, TEXT("[Rogue] 升级类型 %d 没有载荷 Tag，本次升级被忽略（检查 RogueGameplayTags::GetUpgradeAttributeTag）"),
+			static_cast<int32>(UpgradeType));
 		return false;
 	}
 
@@ -639,6 +644,66 @@ void ARogueCharacter::Tick(float DeltaSeconds)
 		}
 	}
 
+	// 开发自检（默认关，见 Core/RogueSelfTest.h）：**每台机器**打印一次本机角色读到的武器加成。
+	// 客户端那一行能打出来，就证明"加成属性确实复制到了客户端" —— 这是"升级只改属性"的前提。
+	//
+	// ⚠️ 位置：必须放在 `if (bDead) return;` **之前**。
+	// 实测踩过：客户端加载完地图时，服务端可能已经把玩家判定倒地（复制过来 bDead=1），
+	// 于是这段自检永远走不到 —— 与上面复活轮询踩的是同一个坑（死亡早退把诊断也一起挡掉了）。
+	if (IsLocallyControlled() && RogueSelfTest::IsWeaponUpgradeChainEnabled() && WeaponBonusLogCount < 6)
+	{
+		// 注意这里**不是"只打一次"**：客户端第一帧通常还没收到复制过来的属性值，
+		// 只打一次会看到全 0 而误判为"没复制"。改成"值一变就打一条"（最多 6 条），
+		// 日志里就能看出 0 → 真值 的变化过程，从而区分"没复制"和"还没到"。
+		if (const ARoguePlayerState* RoguePS = GetPlayerState<ARoguePlayerState>())
+		{
+			const URogueAttributeSet* WeaponSet = RoguePS->GetAttributeSet();
+			if (WeaponSet != nullptr)
+			{
+				const float Damage = WeaponSet->GetAttackPowerBonus();
+				const float Speed = WeaponSet->GetAttackSpeedBonus();
+				const float Range = WeaponSet->GetAttackRangeBonus();
+				const float ProjSpeed = WeaponSet->GetProjectileSpeedBonus();
+				const float Count = WeaponSet->GetProjectileCountBonus();
+
+				const float Signature = Damage * 1.0f + Speed * 100.0f + Range * 1000.0f + ProjSpeed * 10000.0f + Count * 1000000.0f;
+				if (WeaponBonusLogCount == 0 || !FMath::IsNearlyEqual(Signature, LastLoggedWeaponBonusSignature, 0.001f))
+				{
+					++WeaponBonusLogCount;
+					LastLoggedWeaponBonusSignature = Signature;
+					UE_LOG(LogTemp, Log, TEXT("[SelfTest] 本机(%s)读到的武器加成#%d：伤害=%.2f 攻速=%.2f 范围=%.2f 弹速=%.2f 主武器数量=%.2f（世界时间 %.2f）"),
+						HasAuthority() ? TEXT("服务端") : TEXT("客户端"),
+						WeaponBonusLogCount, Damage, Speed, Range, ProjSpeed, Count,
+						GetWorld() != nullptr ? GetWorld()->GetTimeSeconds() : 0.0f);
+
+					// 诊断：ASC 上到底登记了哪几套属性集、各自的值是多少。
+					// 这条能直接区分三种失败：属性集没登记 / 登记了但没复制 / 复制了但值没到。
+					if (const URogueAbilitySystemComponent* ASC = RoguePS->GetRogueAbilitySystemComponent())
+					{
+						const TArray<UAttributeSet*>& Sets = ASC->GetSpawnedAttributes();
+						UE_LOG(LogTemp, Log, TEXT("[SelfTest]   ASC 上登记 %d 套属性集（本地角色 %s）："),
+							Sets.Num(), HasAuthority() ? TEXT("服务端") : TEXT("客户端"));
+						for (const UAttributeSet* Set : Sets)
+						{
+							float HealthValue = -1.0f;
+							float WeaponBonusValue = -1.0f;
+							if (const URogueAttributeSet* MainSet = Cast<URogueAttributeSet>(Set))
+							{
+								HealthValue = MainSet->GetHealth();
+							}
+							if (const URogueAttributeSet* WeaponAttrSet = Cast<URogueAttributeSet>(Set))
+							{
+								WeaponBonusValue = WeaponAttrSet->GetAttackPowerBonus();
+							}
+							UE_LOG(LogTemp, Log, TEXT("[SelfTest]     - %s（生命=%.1f 伤害加成=%.2f）"),
+								*Set->GetClass()->GetName(), HealthValue, WeaponBonusValue);
+						}
+					}
+				}
+			}
+		}
+	}
+
 	if (bDead)
 	{
 		return;
@@ -823,9 +888,15 @@ void ARogueCharacter::ApplyUpgrade(const FRogueUpgradeOption& Upgrade)
 		ClearDashCooldown();
 		break;
 
-	// ---- 武器类升级：通过 NetMulticast 广播，让服务器与所有客户端各自更新本地武器副本 ----
-	// 注意这里**不能**再直接调 ApplySharedWeapon*：
-	// 广播本身会在服务端也执行一次，直接调的话服务端会应用两遍（数量/伤害翻倍）。
+	// ---- 武器类升级：与属性升级**同一条路** ----
+	// 历史：这里原来是 `Multicast_ApplyWeaponUpgrade` —— 让服务端与所有客户端各自把
+	// 同一个数值加到本地武器副本的配置结构体上（"各端重放一遍加法"）。
+	// 那套做法有三个代价：数值出现第二个真相源（武器 Actor 上的 Config）、
+	// 顺序/丢包会让各端数值漂移、加一类新升级要同时改分发+多播+每把武器的应用函数。
+	//
+	// 现在：升级 GE 只改玩家 ASC 上 URogueAttributeSet 里的加成属性，
+	// 武器开火时读「数据表基础值 + 属性加成」（ARogueWeaponBase::GetEffective*）。
+	// 结算只发生在服务端一次，客户端通过属性复制天然一致。
 	case ERogueUpgradeType::AttackPower:
 	case ERogueUpgradeType::AttackSpeed:
 	case ERogueUpgradeType::AttackRange:
@@ -838,7 +909,7 @@ void ARogueCharacter::ApplyUpgrade(const FRogueUpgradeOption& Upgrade)
 	case ERogueUpgradeType::LaserRefraction:
 	case ERogueUpgradeType::MortarCount:
 	case ERogueUpgradeType::MortarBlastRadius:
-		Multicast_ApplyWeaponUpgrade(Upgrade.Type, Upgrade.Magnitude);
+		ApplyUpgradeEffectViaGAS(Upgrade.Type, Upgrade.Magnitude);
 		break;
 
 	default:
@@ -856,27 +927,6 @@ void ARogueCharacter::ApplyUpgrade(const FRogueUpgradeOption& Upgrade)
 	if (Upgrade.Type == ERogueUpgradeType::ArmorCapacity && MaxArmor > PreviousMaxArmor)
 	{
 		ClearRecentlyDamagedState();
-	}
-}
-
-void ARogueCharacter::Multicast_ApplyWeaponUpgrade_Implementation(ERogueUpgradeType UpgradeType, float Magnitude)
-{
-	// 这个函数在**服务端与所有客户端**都会执行（NetMulticast），
-	// 所以它会同时更新服务器与各客户端的本地武器副本 —— 不需要在别处再调一次。
-	switch (UpgradeType)
-	{
-	case ERogueUpgradeType::AttackPower:
-		ApplySharedWeaponDamageBonus(Magnitude);
-		break;
-	case ERogueUpgradeType::AttackSpeed:
-		ApplySharedWeaponSpeedBonus(Magnitude);
-		break;
-	case ERogueUpgradeType::AttackRange:
-		ApplySharedWeaponRangeBonus(Magnitude);
-		break;
-	default:
-		DispatchWeaponUpgrade(UpgradeType, Magnitude);
-		break;
 	}
 }
 
@@ -947,51 +997,9 @@ float ARogueCharacter::GetExperiencePercent() const
 }
 
 // ---- 武器系统方法 ----
-
-void ARogueCharacter::ApplySharedWeaponDamageBonus(float Magnitude)
-{
-	for (ARogueWeaponBase* Weapon : Weapons)
-	{
-		if (IsValid(Weapon))
-		{
-			Weapon->ApplySharedDamageBonus(Magnitude);
-		}
-	}
-}
-
-void ARogueCharacter::ApplySharedWeaponSpeedBonus(float Magnitude)
-{
-	for (ARogueWeaponBase* Weapon : Weapons)
-	{
-		if (IsValid(Weapon))
-		{
-			Weapon->ApplySharedSpeedBonus(Magnitude);
-		}
-	}
-}
-
-void ARogueCharacter::ApplySharedWeaponRangeBonus(float Magnitude)
-{
-	for (ARogueWeaponBase* Weapon : Weapons)
-	{
-		if (IsValid(Weapon))
-		{
-			Weapon->ApplySharedRangeBonus(Magnitude);
-		}
-	}
-}
-
-bool ARogueCharacter::DispatchWeaponUpgrade(ERogueUpgradeType UpgradeType, float Magnitude)
-{
-	for (ARogueWeaponBase* Weapon : Weapons)
-	{
-		if (IsValid(Weapon) && Weapon->OnUpgradeApplied(UpgradeType, Magnitude))
-		{
-			return true;
-		}
-	}
-	return false;
-}
+// 注：ApplySharedWeapon*Bonus 与 DispatchWeaponUpgrade 已删除。
+// 武器升级不再改武器 Actor 上的配置，而是改玩家 ASC 上的 URogueAttributeSet
+// （见 ApplyUpgrade 里武器分支的说明），所以这里没有"把加成推给每把武器"这一步了。
 
 // ---- 向后兼容的武器查询 ----
 

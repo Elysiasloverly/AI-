@@ -15,13 +15,14 @@ class AI_API ARogueWeapon_Scythe : public ARogueWeaponBase
 public:
 	virtual void WeaponTick(float DeltaSeconds) override;
 	virtual void OnOwnerDied() override;
-	virtual bool OnUpgradeApplied(ERogueUpgradeType UpgradeType, float Magnitude) override;
-	virtual void ApplySharedDamageBonus(float Magnitude) override;
-	virtual void ApplySharedSpeedBonus(float Magnitude) override;
-	virtual void ApplySharedRangeBonus(float Magnitude) override;
 
 	/** 持续轨道表现：没有"某一发"可广播，任何机器都得自己 tick（详见基类说明） */
+		virtual ERogueUpgradeType GetCountUpgradeType() const override { return ERogueUpgradeType::ScytheCount; }
 	virtual bool NeedsCosmeticTick() const override;
+
+	// ---- 生效数值：镰刀的"攻速"表现为转速（+加成×280），范围表现为环绕半径（+加成×0.12）----
+	float GetEffectiveRotationSpeed() const;
+	float GetEffectiveOrbitRadius() const;
 
 private:
 	void SyncOrbitingBlades();

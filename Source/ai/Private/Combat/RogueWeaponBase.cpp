@@ -4,6 +4,8 @@
 #include "Engine/World.h"
 
 #include "Player/RogueCharacter.h"
+#include "Player/RoguePlayerState.h"
+#include "AbilitySystem/RogueAttributeSet.h"
 #include "Core/RogueCombatPools.h"
 #include "Enemies/RogueEnemy.h"
 #include "Subsystems/RogueCombatPoolSubsystem.h"
@@ -42,31 +44,90 @@ void ARogueWeaponBase::OnOwnerDied()
 	// 基类默认不做任何事，子类可重写
 }
 
-bool ARogueWeaponBase::OnUpgradeApplied(ERogueUpgradeType UpgradeType, float Magnitude)
+const URogueAttributeSet* ARogueWeaponBase::GetWeaponBonusSet() const
 {
-	// 默认处理：如果升级类型匹配本武器的数量升级类型，则 Count +1
-	if (UpgradeType == Config.CountUpgradeType)
+	// 加成挂在**玩家 ASC** 上（见 URogueAttributeSet 的类注释），
+	// 所以从拥有者的 PlayerState 取；Pawn 本身不持有属性集。
+	if (OwnerCharacter == nullptr)
 	{
-		Config.Count = FMath::Max(1, Config.Count + FMath::RoundToInt(Magnitude));
-		return true;
+		return nullptr;
 	}
-	return false;
+
+	const ARoguePlayerState* RoguePlayerState = OwnerCharacter->GetPlayerState<ARoguePlayerState>();
+	return RoguePlayerState != nullptr ? RoguePlayerState->GetAttributeSet() : nullptr;
 }
 
-void ARogueWeaponBase::ApplySharedDamageBonus(float Magnitude)
+int32 ARogueWeaponBase::GetEffectiveCount() const
 {
-	Config.Damage += Magnitude;
+	const URogueAttributeSet* BonusSet = GetWeaponBonusSet();
+
+	// 只读**本武器自己那一类**数量加成（见 GetCountUpgradeType 的说明）
+	int32 WeaponSpecificBonus = 0;
+	if (BonusSet != nullptr)
+	{
+		switch (GetCountUpgradeType())
+		{
+		case ERogueUpgradeType::ScytheCount:    WeaponSpecificBonus = FMath::RoundToInt(BonusSet->GetScytheCountBonus()); break;
+		case ERogueUpgradeType::RocketCount:    WeaponSpecificBonus = FMath::RoundToInt(BonusSet->GetRocketCountBonus()); break;
+		case ERogueUpgradeType::LaserCount:     WeaponSpecificBonus = FMath::RoundToInt(BonusSet->GetLaserCountBonus()); break;
+		case ERogueUpgradeType::HellTowerCount: WeaponSpecificBonus = FMath::RoundToInt(BonusSet->GetHellTowerCountBonus()); break;
+		case ERogueUpgradeType::MortarCount:    WeaponSpecificBonus = FMath::RoundToInt(BonusSet->GetMortarCountBonus()); break;
+
+		// 主武器以外的武器如果既没重写 GetCountUpgradeType、数据列也没填，
+		// 会落到这里 —— 那时**不算任何加成**，比"读错别人的加成"安全得多。
+		case ERogueUpgradeType::ProjectileCount: WeaponSpecificBonus = FMath::RoundToInt(BonusSet->GetProjectileCountBonus()); break;
+		default: WeaponSpecificBonus = 0; break;
+		}
+	}
+
+	// 基础数量为 0 = 该武器未解锁；此时只有它自己的数量升级能把它拉起来（沿用自研版本的语义：
+	// 那条升级会把 0 变成 1）。
+	if (Config.Count <= 0 && WeaponSpecificBonus <= 0)
+	{
+		return 0;
+	}
+
+	return FMath::Max(1, Config.Count + WeaponSpecificBonus);
 }
 
-void ARogueWeaponBase::ApplySharedSpeedBonus(float Magnitude)
+float ARogueWeaponBase::GetEffectiveDamage() const
 {
-	Config.Cooldown = FMath::Max(0.15f, Config.Cooldown - Magnitude);
+	const URogueAttributeSet* BonusSet = GetWeaponBonusSet();
+	return Config.Damage + (BonusSet != nullptr ? BonusSet->GetAttackPowerBonus() : 0.0f);
 }
 
-void ARogueWeaponBase::ApplySharedRangeBonus(float Magnitude)
+float ARogueWeaponBase::GetEffectiveCooldown() const
 {
-	Config.Range += Magnitude;
+	const URogueAttributeSet* BonusSet = GetWeaponBonusSet();
+	const float Reduced = Config.Cooldown - (BonusSet != nullptr ? BonusSet->GetAttackSpeedBonus() : 0.0f);
+	// 0.15 秒下限与自研版本一致（旧的 ApplySharedSpeedBonus 也是这么夹的）
+	return FMath::Max(0.15f, Reduced);
 }
+
+float ARogueWeaponBase::GetEffectiveRange() const
+{
+	const URogueAttributeSet* BonusSet = GetWeaponBonusSet();
+	return Config.Range + (BonusSet != nullptr ? BonusSet->GetAttackRangeBonus() : 0.0f);
+}
+
+float ARogueWeaponBase::GetEffectiveProjectileSpeed(float BaseSpeed) const
+{
+	const URogueAttributeSet* BonusSet = GetWeaponBonusSet();
+	const float Bonus = BonusSet != nullptr ? BonusSet->GetProjectileSpeedBonus() : 0.0f;
+	return BaseSpeed + Bonus * GetProjectileSpeedBonusScale();
+}
+
+int32 ARogueWeaponBase::GetEffectiveRefractionCount() const
+{
+	const URogueAttributeSet* BonusSet = GetWeaponBonusSet();
+	const int32 Combined = Config.RefractionCount
+		+ (BonusSet != nullptr ? FMath::RoundToInt(BonusSet->GetLaserRefractionBonus()) : 0);
+	// 旧实现的夹取范围（0..8）原样保留
+	return FMath::Clamp(Combined, 0, 8);
+}
+
+// 注：OnUpgradeApplied / ApplyShared*Bonus 已删除 —— 武器升级现在落成玩家 ASC 上的
+// URogueAttributeSet 加成属性，由上面的 GetEffective* 读取（见头文件说明）。
 
 ARogueEnemy* ARogueWeaponBase::FindNearestEnemy(float MaxRange) const
 {
