@@ -1,6 +1,7 @@
 #include "AbilitySystem/RogueStateEffects.h"
 
 #include "AbilitySystem/RogueAttributeSet.h"
+#include "AbilitySystemComponent.h"
 #include "Core/RogueGameplayTags.h"
 #include "GameplayEffectComponents/TargetTagsGameplayEffectComponent.h"
 
@@ -147,4 +148,56 @@ URogueEnemyAttackCooldownEffect::URogueEnemyAttackCooldownEffect()
 	DurationMagnitude = FGameplayEffectModifierMagnitude(DurationFromCaller);
 
 	GrantStateTag(RogueGameplayTags::Cooldown_EnemyAttack);
+}
+
+// ===========================================================
+//  倒地等待：State.Downed（时长 = SetByCaller(Data.Duration)）
+// ===========================================================
+
+URogueDownedEffect::URogueDownedEffect()
+{
+	DurationPolicy = EGameplayEffectDurationType::HasDuration;
+
+	// 时长由施加方给出（= 复活等待秒数，来自角色上的 ReviveDelaySeconds）。
+	FSetByCallerFloat DurationFromCaller;
+	DurationFromCaller.DataTag = RogueGameplayTags::Data_Duration;
+	DurationMagnitude = FGameplayEffectModifierMagnitude(DurationFromCaller);
+
+	GrantStateTag(RogueGameplayTags::State_Downed);
+}
+
+// ===========================================================
+//  复活无敌：State.Invulnerable（时长 = SetByCaller(Data.Duration)）
+// ===========================================================
+
+URogueInvulnerableEffect::URogueInvulnerableEffect()
+{
+	DurationPolicy = EGameplayEffectDurationType::HasDuration;
+
+	FSetByCallerFloat DurationFromCaller;
+	DurationFromCaller.DataTag = RogueGameplayTags::Data_Duration;
+	DurationMagnitude = FGameplayEffectModifierMagnitude(DurationFromCaller);
+
+	GrantStateTag(RogueGameplayTags::State_Invulnerable);
+}
+
+float GetDownedSecondsRemaining(const UAbilitySystemComponent* ASC)
+{
+	if (ASC == nullptr)
+	{
+		return 0.0f;
+	}
+
+	// 按 GE **类**查询：同一个 ASC 上只有一份倒地等待，不需要再区分是谁施加的。
+	FGameplayEffectQuery Query;
+	Query.EffectDefinition = URogueDownedEffect::StaticClass();
+
+	const TArray<float> Remaining = ASC->GetActiveEffectsTimeRemaining(Query);
+	float Longest = 0.0f;
+	for (const float Seconds : Remaining)
+	{
+		Longest = FMath::Max(Longest, Seconds);
+	}
+
+	return FMath::Max(0.0f, Longest);
 }

@@ -223,7 +223,46 @@ UnrealEditor.exe <uproject> <map>?listen -game -nullrhi -log
   （跑满 5 分钟也只到第 4 波）。所以"200+ 敌人帧时"这条**还没有真实数据**，
   要测它需要专门的压测模式（一次性刷 N 只怪 + 对比帧时），属于后续可补的验证项。
 
-### ⏳ Phase 4：状态/复活全 GE 化 + 清理
+### ✅ Phase 4：倒地等待 / 复活无敌改为状态 GE（已完成，双进程验证通过）
+
+**新增两个带时长的状态 GE**（都在 `RogueStateEffects.h`，时长走 SetByCaller `Data.Duration`）
+- `URogueDownedEffect` → 授予 `State.Downed`，时长 = 复活等待秒数。
+  **它是"还剩多久复活"的唯一真相源。**
+- `URogueInvulnerableEffect` → 授予 `State.Invulnerable`，时长 = 复活无敌秒数。
+
+**删掉的旧机制（这才是本阶段的重点）**
+| 迁移前 | 迁移后 |
+|---|---|
+| `ARoguePlayerState::ReviveServerTime`（复制给拥有者的**截止时刻**） | 带时长的 GE 自己会同步给本人，**复制字段直接删除** |
+| HUD 用"截止时刻 − 当前服务器时间"自己换算 | `GetDownedSecondsRemaining(ASC)` 读 GE 剩余时长（实现只有一份） |
+| 复活无敌 = loose tag + 角色上的 float 截止时刻 + Tick 比对时间 | 带时长的 GE，到期由 GAS 移除 |
+| `TickReviveInvulnerability` / `ClearReviveInvulnerability`（loose tag + float 截止时刻 + Tick 比对） | `RemoveInvulnerableEffect()`（按授予标签移除） |
+
+**为什么"移动驱动的清理"必须改掉**：迁移前的无敌到期依赖角色 Tick 在跑，
+而这个项目**已经踩过两次**"倒下的角色不再 Tick → 清理逻辑永远不执行"的坑
+（复活轮询、客户端自检都被 `if (bDead) return;` 挡掉过）。改成带时长的 GE 之后，
+到期由 GAS 负责，与角色是否 Tick 无关。
+
+**保留的三个复活驱动，但判据收成一个闸门**：角色 Tick、`GameMode::TickReviveQueue()`、
+角色上的定时器 —— 三者都调 `ARogueCharacter::TryReviveIfExpired()`，判据是
+"倒地等待 GE 剩余 <= 0"。保留三个驱动是因为本项目踩过"某个驱动不触发 → 人永远躺着"的坑；
+但**真相源只有一个**（GE），所以不会再出现"三个驱动各用一套判据"的问题。
+
+`State.Dead` 与 `State.Downed` 刻意分开：前者 = 已经倒下（伤害闸门、技能阻塞、表现都看它），
+后者 = 正在等待复活（只用于倒计时与触发复活）。
+
+**验证（双进程无头）**
+- 新增探针 `ProbeDeathAndRevive`（对目标玩家施加致命伤害）——
+  原因同 Phase 3：无头自检里武器太强、敌人贴不上来，整局 0 次倒地，不主动打死一个就验证不到。
+- 服务端日志：`进入倒地等待：10.0 秒后回出生点复活（等待状态 = GE RogueDownedEffect）`
+  → `已复活（回到出生点，生命 50%，1.5 秒无敌；无敌 GE=已挂 当前带 State.Invulnerable=1）` ✓
+- 倒计时读数：服务端 两个玩家分别 `复活剩余=4.88 / 4.00`；
+  **客户端 本人 `复活剩余=5.27`** ✓ —— 带时长的 GE 确实同步给了本人（HUD 读的就是它）。
+  别人那一份在客户端读 0，这是 `Mixed` 模式的固有行为（GE 明细只发拥有者），
+  与迁移前 `ReviveServerTime` 的 `COND_OwnerOnly` 完全一致，且 HUD 只用本人那一份。
+- 无 `Fatal` / `Ensure` / `LogAbilitySystem: Error`。
+
+### ⏳ Phase 5：清理旧路径 + 更新结构文档 + 回归验证
 
 - 复活等待用 GE 时长驱动（现在由 PlayerState 上的截止时刻 + 三条路径驱动）
 - 删除过渡期的双路径代码（`OnUpgradeApplied` / `ApplyShared*Bonus` / `Multicast_ApplyWeaponUpgrade`）

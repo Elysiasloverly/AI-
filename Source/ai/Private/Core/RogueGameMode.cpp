@@ -646,6 +646,7 @@ void ARogueGameMode::RunWeaponUpgradeSelfTest()
 				bSelfTestProbesDone = true;
 				ProbeContactAttack(ProbeTargets[0]);
 				ProbeGroundWaveAttack(ProbeTargets[0]);
+				ProbeDeathAndRevive(ProbeTargets[0]);
 			}
 		}
 		return;
@@ -688,6 +689,29 @@ void ARogueGameMode::RunWeaponUpgradeSelfTest()
  *  为什么必须调高：两条攻击路径的触发都需要敌人活到那个时候，而武器一轮齐射就能秒掉普通怪 ——
  *  这个坑实测踩过两次（接触 / 地面波计数都是 0，看起来像"能力没实现"）。 */
 static constexpr float ProbeEnemyHealth = 20000.0f;
+
+void ARogueGameMode::ProbeDeathAndRevive(ARogueCharacter* Target)
+{
+	if (Target == nullptr || Target->IsDead())
+	{
+		UE_LOG(LogTemp, Log, TEXT("[SelfTest] 死亡/复活验证：目标不可用（已倒地或为空），跳过"));
+		return;
+	}
+
+	// 为什么要主动打死一个玩家：现在的无头自检里武器太强，敌人根本贴不上来，
+	// 整局 0 次倒地 —— 于是"倒地等待 GE → 复活 → 复活无敌"这条链路一次都不会被执行，
+	// 改了也验证不到。这里直接施加一次致命伤害，让它走真实的死亡流程
+	// （伤害 → 血量归零 → 死亡 GE → Die() → ScheduleRevive）。
+	RogueAbilitySystem::ApplyDamageToTarget(Target, Target, 1000000.0f, RogueGameplayTags::Damage_Source_Contact);
+
+	const float DownedRemaining = Target->GetReviveSecondsRemaining();
+	UE_LOG(LogTemp, Log,
+		TEXT("[SelfTest] 死亡/复活验证：已对 %s 施加致命伤害 | 倒地=%d 待复活=%d 倒地等待剩余=%.2f 秒（预期后续看到『已复活』）"),
+		Target->GetPlayerState() != nullptr ? *Target->GetPlayerState()->GetPlayerName() : *Target->GetName(),
+		Target->IsDead() ? 1 : 0,
+		Target->IsRevivePending() ? 1 : 0,
+		DownedRemaining);
+}
 
 void ARogueGameMode::ProbeContactAttack(ARogueCharacter* Target)
 {
@@ -820,43 +844,27 @@ void ARogueGameMode::TickReviveQueue()
 		return;
 	}
 
-	// 注意变量名不要叫 GameState —— AGameModeBase 自己有一个同名成员，会被 C4458 拦下。
-	const AGameStateBase* WorldGameState = World->GetGameState();
-	const float NowServerTime = WorldGameState != nullptr
-		? WorldGameState->GetServerWorldTimeSeconds()
-		: World->GetTimeSeconds();
-
-	// 遍历 PlayerState 而不是"遍历 PC 找 Pawn"：
-	// 复活截止时刻本来就记在 PlayerState 上，而 Pawn 有可能在归属自愈的瞬间为空
-	// （那时也不能把倒计时丢掉，否则这个人就永远躺着了）。
+	// 兜底驱动：遍历控制器 → Pawn → 角色，让每个还在倒地等待的角色自己判到期没。
+	//
+	// 迁移前这里读的是"复制在 PlayerState 上的复活截止时刻"。现在"还剩多久"是
+	// 玩家 ASC 上那个带时长的 State.Downed GE，判据统一收在 ARogueCharacter::TryReviveIfExpired()：
+	// 三个驱动（角色 Tick / 本函数 / 角色上的定时器）走同一个闸门，不会再出现
+	// "某个驱动用了另一套判据、于是行为不一致"。
 	for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
 	{
 		const APlayerController* PlayerController = It->Get();
-		ARoguePlayerState* RoguePlayerState = PlayerController != nullptr
-			? PlayerController->GetPlayerState<ARoguePlayerState>()
-			: nullptr;
-		if (RoguePlayerState == nullptr)
+		if (PlayerController == nullptr)
 		{
 			continue;
 		}
 
-		const float Deadline = RoguePlayerState->GetReviveServerTime();
-		if (Deadline <= 0.0f || NowServerTime < Deadline)
+		ARogueCharacter* Character = Cast<ARogueCharacter>(PlayerController->GetPawn());
+		if (Character == nullptr || !Character->IsRevivePending())
 		{
 			continue;
 		}
 
-		ARogueCharacter* Character = Cast<ARogueCharacter>(RoguePlayerState->GetPawn());
-		if (Character != nullptr && Character->IsDead())
-		{
-			Character->Revive();
-		}
-		else
-		{
-			// 人已经不倒了（或 Pawn 暂时为空）：把倒计时清掉，
-			// 否则 HUD 会一直显示一个永远不结束的"倒地等待"。
-			RoguePlayerState->SetReviveServerTime(0.0f);
-		}
+		Character->TryReviveIfExpired();
 	}
 }
 

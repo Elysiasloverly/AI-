@@ -16,6 +16,7 @@ namespace RogueGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG(State_Dashing,                "State.Dashing");
 	UE_DEFINE_GAMEPLAY_TAG(State_Invulnerable,           "State.Invulnerable");
 	UE_DEFINE_GAMEPLAY_TAG(State_RecentlyDamaged,        "State.RecentlyDamaged");
+	UE_DEFINE_GAMEPLAY_TAG(State_Downed,                 "State.Downed");
 
 	// ---- 冷却 ----
 	UE_DEFINE_GAMEPLAY_TAG(Cooldown_Dash,                "Cooldown.Dash");

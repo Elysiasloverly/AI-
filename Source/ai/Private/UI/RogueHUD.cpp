@@ -958,7 +958,9 @@ void ARogueHUD::UpdateDeathWidget()
 	const bool bRunOver = RogueGameState != nullptr && RogueGameState->IsGameOver();
 
 	// 复活倒计时（联机合作：死亡 = 倒地等待，而不是出局）。
-	// 读的是本地 PlayerState 上复制的"复活截止时刻"，各端自己换算剩余秒数。
+	// 读的是本地 PlayerState 的 GetReviveSecondsRemaining()，它内部查的是玩家 ASC 上
+	// 那个带时长的 State.Downed GE 的剩余时长 —— 带时长的 GE 会同步给本人，
+	// 所以客户端读到的就是服务端那一份的剩余时间，不需要再复制一个截止时刻。
 	const ARoguePlayerState* LocalStateForRevive = GetLocalRoguePlayerState();
 	const int32 ReviveSeconds = LocalStateForRevive != nullptr ? FMath::CeilToInt(LocalStateForRevive->GetReviveSecondsRemaining()) : 0;
 

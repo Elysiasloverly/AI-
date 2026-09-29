@@ -57,6 +57,15 @@ namespace RogueGameplayTags
 	 *  而不是散落在角色类里的一个私有计时器。 */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_RecentlyDamaged);
 
+	/** 正在倒地等待复活（由一个带时长的 GE 授予，时长 = 复活等待秒数）。
+	 *
+	 *  与 State.Dead 刻意分开：
+	 *    · `State.Dead`    = 已经倒下 —— 伤害闸门、技能阻塞、表现都看它；
+	 *    · `State.Downed`  = 正在等待复活 —— 只用于"还剩多久"与触发复活。
+	 *  迁移前"还剩多久"是一个复制到 PlayerState 上的截止时刻，
+	 *  现在它是这个 GE 的剩余时长，客户端 HUD 直接读同一个 GE。 */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Downed);
+
 	// ===========================================================
 	//  冷却（Cooldown）—— 由 GameplayEffect 授予
 	// ===========================================================

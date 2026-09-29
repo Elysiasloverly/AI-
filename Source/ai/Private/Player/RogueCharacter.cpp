@@ -20,6 +20,7 @@
 #include "AbilitySystem/RogueAbilitySystemComponent.h"
 #include "AbilitySystem/RogueAbilitySystemLibrary.h"
 #include "AbilitySystem/Abilities/RogueWeaponAbility.h"
+#include "AbilitySystem/RogueStateEffects.h"
 #include "AbilitySystem/Abilities/RogueEnemyAttackAbility.h"
 #include "Subsystems/RogueEnemyTrackerSubsystem.h"
 #include "AbilitySystem/RogueAttributeSet.h"
@@ -812,11 +813,13 @@ void ARogueCharacter::TickWeaponFireReport(float DeltaSeconds)
 
 	const RogueEnemyAttackStats::FCounters& AttackCounters = RogueEnemyAttackStats::Get();
 
-	UE_LOG(LogTemp, Log, TEXT("[SelfTest] 武器技能报告#%d | 本机(%s) 玩家=%s | 波次=%d 击杀=%d 敌人=%d"),
+	UE_LOG(LogTemp, Log, TEXT("[SelfTest] 武器技能报告#%d | 本机(%s) 玩家=%s | 波次=%d 击杀=%d 敌人=%d 倒地=%d 复活剩余=%.2f"),
 		WeaponFireReportCount,
 		IsAuthoritySide() ? TEXT("服务端") : TEXT("客户端"),
 		OwningPlayerState != nullptr ? *OwningPlayerState->GetPlayerName() : TEXT("?"),
-		Wave, Kills, ActiveEnemies);
+		Wave, Kills, ActiveEnemies,
+		IsDead() ? 1 : 0,
+		GetReviveSecondsRemaining());
 
 	if (IsAuthoritySide())
 	{
@@ -889,24 +892,11 @@ void ARogueCharacter::Tick(float DeltaSeconds)
 	//     · "已复活"                              → 一次都没有
 	//   观感就是"倒下之后再也不会起来，整局像卡住了"。
 	//   同一局里定时器那条路（SetTimer → Revive）也没触发，所以两条路都不通；
-	//   现在"复活到点"由三处独立驱动：本函数、GameMode 的 TickReviveQueue()、以及角色身上的定时器。
-	//
-	// 判据用"服务器世界的截止时刻"（复制在 PlayerState 上），不依赖任何定时器状态。
+	//   现在"复活到点"由三处独立驱动（本函数、GameMode 的 TickReviveQueue()、角色身上的定时器），
+	//   三处都走 TryReviveIfExpired() —— 判据是**倒地等待 GE 的剩余时长**，不依赖任何定时器状态。
 	if (bDead && IsAuthoritySide())
 	{
-		if (const ARoguePlayerState* RoguePlayerState = GetPlayerState<ARoguePlayerState>())
-		{
-			const float Deadline = RoguePlayerState->GetReviveServerTime();
-			const UWorld* ReviveWorld = GetWorld();
-			const AGameStateBase* ReviveGameState = ReviveWorld != nullptr ? ReviveWorld->GetGameState() : nullptr;
-			const float NowServerTime = ReviveGameState != nullptr
-				? ReviveGameState->GetServerWorldTimeSeconds()
-				: (ReviveWorld != nullptr ? ReviveWorld->GetTimeSeconds() : 0.0f);
-			if (Deadline > 0.0f && NowServerTime >= Deadline)
-			{
-				Revive();
-			}
-		}
+		TryReviveIfExpired();
 	}
 
 	// 开发自检（默认关，见 Core/RogueSelfTest.h）：**每台机器**打印一次本机角色读到的武器加成。
@@ -1017,7 +1007,6 @@ void ARogueCharacter::Tick(float DeltaSeconds)
 	}
 
 	// 复活无敌的到期检查（服务端自己算，不需要复制字段：伤害只在服务端结算）。
-	TickReviveInvulnerability();
 
 	HandleDash(DeltaSeconds);
 	HandleArmorRecharge(DeltaSeconds);
@@ -1824,16 +1813,38 @@ void ARogueCharacter::ScheduleRevive(float DelaySeconds)
 
 	GetWorldTimerManager().ClearTimer(ReviveTimerHandle);
 
-	// 把"复活截止时刻"写进 PlayerState（复制给拥有者，客户端据此显示倒计时）。
-	// 时钟与消费端 GetReviveSecondsRemaining 保持一致：都用 GameState 的服务器世界时间。
-	const AGameStateBase* GameState = GetWorld() != nullptr ? GetWorld()->GetGameState() : nullptr;
-	const float NowServerTime = GameState != nullptr
-		? GameState->GetServerWorldTimeSeconds()
-		: GetWorld()->GetTimeSeconds();
-	if (ARoguePlayerState* RoguePlayerState = GetPlayerState<ARoguePlayerState>())
+	// ---- 倒地等待 = 一个带时长的 GE（State.Downed，时长 = DelaySeconds）----
+	//
+	// 迁移前这里做的是"把截止时刻复制到 PlayerState，再让三处各自比对时钟"。
+	// 现在"还剩多久"就是 GE 的剩余时长：到期 GAS 自己移除，客户端 HUD 读同一个 GE。
+	// bRevivePending 只回答"有没有排过复活"（团灭时会取消），时长本身仍然只有 GE 一个来源。
+	if (URogueAbilitySystemComponent* ASC = GetRogueAbilitySystemComponent())
 	{
-		RoguePlayerState->SetReviveServerTime(DelaySeconds > 0.0f ? NowServerTime + DelaySeconds : 0.0f);
+		// 先清旧的（重复排程时不应该叠加两个倒计时）
+		RemoveDownedEffect();
+
+		if (DelaySeconds > 0.0f)
+		{
+			FGameplayEffectContextHandle Context = ASC->MakeEffectContext();
+			Context.AddSourceObject(this);
+
+			FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(URogueDownedEffect::StaticClass(), 1.0f, Context);
+			if (SpecHandle.IsValid() && SpecHandle.Data != nullptr)
+			{
+				SpecHandle.Data->SetSetByCallerMagnitude(RogueGameplayTags::Data_Duration, DelaySeconds);
+				ReviveEffectHandle = ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
+			}
+
+			if (!ReviveEffectHandle.IsValid())
+			{
+				// 挂不上的后果是"倒地等待瞬间到期、立刻复活"（下面的轮询会把剩余时间当 0）。
+				// 这比"永远躺着"好，但必须报错 —— 否则表现成"死亡没有代价"，很难定位。
+				UE_LOG(LogTemp, Error, TEXT("[Rogue] %s 的倒地等待 GE 施加失败 —— 会立刻复活，请检查属性集/ASC 是否就绪"), *GetName());
+			}
+		}
 	}
+
+	bRevivePending = DelaySeconds > 0.0f;
 
 	// 负值 / 0 = 取消（团灭时由 GameMode 调用来取消待复活）
 	if (DelaySeconds <= 0.0f)
@@ -1841,9 +1852,54 @@ void ARogueCharacter::ScheduleRevive(float DelaySeconds)
 		return;
 	}
 
-	GetWorldTimerManager().SetTimer(ReviveTimerHandle, this, &ARogueCharacter::Revive, DelaySeconds, false);
+	// 定时器是**兜底驱动之一**，不是真相源：真相源是上面那个 GE 的剩余时长。
+	// 保留它是因为本项目踩过"复活定时器没触发 → 人永远躺着"的坑，
+	// 现在有三处独立驱动（角色 Tick、GameMode 兜底、这个定时器），全部走 TryReviveIfExpired() 这一个闸门。
+	GetWorldTimerManager().SetTimer(ReviveTimerHandle, this, &ARogueCharacter::TryReviveIfExpired, DelaySeconds, false);
 
-	UE_LOG(LogTemp, Log, TEXT("[Rogue] %s 进入倒地等待：%.1f 秒后回出生点复活"), *GetName(), DelaySeconds);
+	UE_LOG(LogTemp, Log, TEXT("[Rogue] %s 进入倒地等待：%.1f 秒后回出生点复活（等待状态 = GE %s）"),
+		*GetName(), DelaySeconds, *URogueDownedEffect::StaticClass()->GetName());
+}
+
+void ARogueCharacter::RemoveDownedEffect()
+{
+	ReviveEffectHandle = FActiveGameplayEffectHandle();
+	bRevivePending = false;
+
+	if (URogueAbilitySystemComponent* ASC = GetRogueAbilitySystemComponent())
+	{
+		FGameplayTagContainer DownedTag;
+		DownedTag.AddTag(RogueGameplayTags::State_Downed);
+		ASC->RemoveActiveEffectsWithGrantedTags(DownedTag);
+	}
+}
+
+float ARogueCharacter::GetReviveSecondsRemaining() const
+{
+	// 服务端与客户端都读同一个 GE（玩家 ASC 是 Mixed 模式，带时长的 GE 会同步给本人）。
+	return GetDownedSecondsRemaining(GetRogueAbilitySystemComponent());
+}
+
+bool ARogueCharacter::IsRevivePending() const
+{
+	return bRevivePending && bDead;
+}
+
+void ARogueCharacter::TryReviveIfExpired()
+{
+	// 唯一的复活闸门：三个驱动（角色 Tick / GameMode 兜底 / 定时器）都调它。
+	// 用"GE 剩余时长 <= 0"作为判据，不依赖任何定时器是否真的触发过。
+	if (!IsAuthoritySide() || !IsRevivePending())
+	{
+		return;
+	}
+
+	if (GetReviveSecondsRemaining() > 0.0f)
+	{
+		return;
+	}
+
+	Revive();
 }
 
 void ARogueCharacter::Revive()
@@ -1867,11 +1923,9 @@ void ARogueCharacter::Revive()
 	// 2) 解除"已死"标记，并回血到上限的 50%
 	bDead = false;
 
-	// 清掉 PlayerState 上的复活倒计时（客户端 HUD 随之从"倒地等待"切回正常显示）
-	if (ARoguePlayerState* RoguePlayerState = GetPlayerState<ARoguePlayerState>())
-	{
-		RoguePlayerState->SetReviveServerTime(0.0f);
-	}
+	// 清掉倒地等待状态（GE 移除 → State.Downed 消失 → 客户端 HUD 从"倒地等待"切回正常显示）
+	RemoveDownedEffect();
+
 	if (const URogueAttributeSet* AttrSet = GetRogueAttributeSet())
 	{
 		SetCurrentHealth(AttrSet->GetMaxHealth() * 0.5f);
@@ -1881,13 +1935,29 @@ void ARogueCharacter::Revive()
 	ClearRecentlyDamagedState();
 
 	// 3.5) 复活保护：1.5 秒无敌（设计：刚回出生点的玩家不该被瞬间再打死）。
-	//      用 **loose tag**（不是 GE）：判定只在服务端（ApplyDamageToTarget 里的 State.Invulnerable 闸门），
-	//      到期由 Tick 里的 TickReviveInvulnerability() 直接比对服务器时间戳解除，
-	//      不依赖任何定时器 —— 与本次"复活定时器不触发"的教训保持一致。
+	//
+	// 迁移前这是"loose tag + 角色上的 float 截止时刻 + Tick 比对服务器时间"。
+	// 现在是一个带时长的 GE：到期由 GAS 移除，不再依赖角色 Tick 是否还在跑
+	// （这个项目已经踩过两次"倒下的角色不再 Tick → 清理逻辑永远不执行"的坑）。
 	if (URogueAbilitySystemComponent* ReviveASC = GetRogueAbilitySystemComponent())
 	{
-		ReviveASC->SetLooseGameplayTagCount(RogueGameplayTags::State_Invulnerable, 1);
-		ReviveInvulnerableUntilTime = GetServerTimeSeconds() + ReviveInvulnerableSeconds;
+		RemoveInvulnerableEffect();
+
+		FGameplayEffectContextHandle Context = ReviveASC->MakeEffectContext();
+		Context.AddSourceObject(this);
+
+		FGameplayEffectSpecHandle SpecHandle = ReviveASC->MakeOutgoingSpec(URogueInvulnerableEffect::StaticClass(), 1.0f, Context);
+		if (SpecHandle.IsValid() && SpecHandle.Data != nullptr)
+		{
+			SpecHandle.Data->SetSetByCallerMagnitude(RogueGameplayTags::Data_Duration, ReviveInvulnerableSeconds);
+			InvulnerableEffectHandle = ReviveASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
+		}
+
+		if (!InvulnerableEffectHandle.IsValid())
+		{
+			// 挂不上的后果是"复活后没有无敌帧"，属于玩法强度问题，必须能看见。
+			UE_LOG(LogTemp, Warning, TEXT("[Rogue] %s 的复活无敌 GE 施加失败 —— 复活后不会有无敌帧"), *GetName());
+		}
 	}
 
 	// 4) 回出生点（与 GameMode 开局摆放玩家的落点一致）
@@ -1899,12 +1969,15 @@ void ARogueCharacter::Revive()
 	// 6) 关掉死亡界面的 UI 输入模式（HUD 每帧的推导也会随之切回 GameOnly）
 	SetUpgradeSelectionInput(false);
 
-	UE_LOG(LogTemp, Log, TEXT("[Rogue] %s 已复活（回到出生点，生命 %.0f%%，%.1f 秒无敌）"),
+	UE_LOG(LogTemp, Log, TEXT("[Rogue] %s 已复活（回到出生点，生命 %.0f%%，%.1f 秒无敌；无敌 GE=%s 当前带 State.Invulnerable=%d）"),
 		*GetName(),
 		(GetRogueAttributeSet() != nullptr && GetRogueAttributeSet()->GetMaxHealth() > 0.0f)
 			? (GetRogueAttributeSet()->GetHealth() / GetRogueAttributeSet()->GetMaxHealth() * 100.0f)
 			: 0.0f,
-		ReviveInvulnerableSeconds);
+		ReviveInvulnerableSeconds,
+		InvulnerableEffectHandle.IsValid() ? TEXT("已挂") : TEXT("未挂"),
+		(GetRogueAbilitySystemComponent() != nullptr
+			&& GetRogueAbilitySystemComponent()->HasMatchingGameplayTag(RogueGameplayTags::State_Invulnerable)) ? 1 : 0);
 }
 
 float ARogueCharacter::GetServerTimeSeconds() const
@@ -1925,31 +1998,18 @@ float ARogueCharacter::GetServerTimeSeconds() const
 	return World->GetTimeSeconds();
 }
 
-void ARogueCharacter::TickReviveInvulnerability()
+void ARogueCharacter::RemoveInvulnerableEffect()
 {
-	if (ReviveInvulnerableUntilTime <= 0.0f)
-	{
-		return;
-	}
-
-	if (GetServerTimeSeconds() < ReviveInvulnerableUntilTime)
-	{
-		return;
-	}
-
-	ClearReviveInvulnerability();
-	UE_LOG(LogTemp, Verbose, TEXT("[Rogue] %s 复活无敌结束"), *GetName());
-}
-
-void ARogueCharacter::ClearReviveInvulnerability()
-{
-	ReviveInvulnerableUntilTime = 0.0f;
+	InvulnerableEffectHandle = FActiveGameplayEffectHandle();
 
 	if (URogueAbilitySystemComponent* ASC = GetRogueAbilitySystemComponent())
 	{
-		// SetLooseGameplayTagCount(0) 而不是 RemoveLooseGameplayTag：
-		// 前者是幂等的（重复调用不会把计数减成负数），后者每次只减 1。
-		ASC->SetLooseGameplayTagCount(RogueGameplayTags::State_Invulnerable, 0);
+		// 按"授予的标签"移除（而不是按 GE 类）：这样将来冲刺无敌帧之类的效果
+		// 只要也授予 State.Invulnerable，死亡时会被一起清掉 —— 与迁移前的语义一致
+		// （迁移前是 SetLooseGameplayTagCount(State.Invulnerable, 0)，同样是按标签清）。
+		FGameplayTagContainer InvulnerableTag;
+		InvulnerableTag.AddTag(RogueGameplayTags::State_Invulnerable);
+		ASC->RemoveActiveEffectsWithGrantedTags(InvulnerableTag);
 	}
 }
 
@@ -1996,7 +2056,7 @@ void ARogueCharacter::Die()
 
 	// 死了就不该再带着"复活无敌"标签（否则尸体在伤害闸门那里是"无敌"，
 	// 排查时会看到 Dead=1 Invul=1 这种自相矛盾的状态）。
-	ClearReviveInvulnerability();
+	RemoveInvulnerableEffect();
 
 	// 联机合作：死亡不是出局，而是**倒地等待**（默认 10 秒后回出生点复活）。
 	//

@@ -122,19 +122,15 @@ public:
 	 *  客户端用 GameState 的服务器时间换算（引擎已做时间同步）。 */
 	float GetShopSecondsUntilRefresh() const;
 
-	// ---- 复活倒计时（服务端权威 → 复制给拥有者，各端自己算剩余秒数）----
-
-	/** 服务端写入"复活截止时刻"（GameState 的服务器世界时间）；传 0 表示取消。 */
-	void SetReviveServerTime(float InServerTime);
-
-	/** 复活截止时刻原值（0 = 没有待复活）。
-	 *  调用方（倒地等待的轮询）需要它来区分"没排程"和"已到期"——
-	 *  GetReviveSecondsRemaining() 在两种情况下都返回 0，分不出来。 */
-	float GetReviveServerTime() const { return ReviveServerTime; }
+	// ---- 复活倒计时（由 ASC 上的 State.Downed GE 承担，HUD 直接读它的剩余时长）----
 
 	/** 距离复活还剩多少秒；<=0 表示当前没有待复活。
-	 *  与商店倒计时同一套做法：复制**截止时刻**而不是倒计时，
-	 *  这样它只在复活被排程/取消时变化一次，不会把复制频率打满。 */
+	 *
+	 *  迁移前这里复制了一个"复活截止时刻"，现在**没有**这样的复制字段了：
+	 *  真相源是玩家 ASC 上那个带时长的 `URogueDownedEffect`（State.Downed），
+	 *  带时长的 GE 本来就会同步给本人，所以 HUD 读的就是服务端那一份的剩余时间。
+	 *  "有没有排过复活"由 ARogueCharacter::IsRevivePending() 回答（两者语义不同：
+	 *  团灭取消等待时 GE 被移除，但角色仍然是倒下的）。 */
 	float GetReviveSecondsRemaining() const;
 
 	/** 客户端 → 服务端：商店操作请求 */
@@ -177,7 +173,7 @@ protected:
 
 	/** 复活截止时刻（GameState 服务器世界时间；0 = 无待复活）。复制给拥有者，
 	 *  客户端据此自己算"还有几秒复活"，服务端不需要每帧推倒计时。 */
-	UPROPERTY(Replicated) float ReviveServerTime = 0.0f;
+	// 已删除：ReviveServerTime（迁移到 State.Downed GE 的剩余时长，见 GetReviveSecondsRemaining）。
 
 	/** 商店运行态本体（服务端）。不复制 —— 客户端只收上面那组镜像。
 	 *  标 UPROPERTY() 是为了让 GC 能追踪它内部的 UObject 引用。 */

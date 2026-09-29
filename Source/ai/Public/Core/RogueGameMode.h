@@ -189,6 +189,10 @@ private:
 	/** 三个攻击路径探针是否已经跑过（自检完成时只跑一次）。 */
 	bool bSelfTestProbesDone = false;
 
+	/** 自检辅助：对目标玩家施加一次致命伤害，用来验证"倒地等待 GE → 复活 → 复活无敌 GE"这条链路。
+	 *  无头自检里武器太强、敌人贴不上来，整局 0 次倒地 —— 不主动打死一个就验证不到。 */
+	void ProbeDeathAndRevive(ARogueCharacter* Target);
+
 	/** 自检阶段机：
 	 *    0 = 未跑
 	 *    1 = 第一阶段已跑（全员施加 5 项升级），等"客户端连上 + 20 秒"

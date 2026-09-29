@@ -5,6 +5,8 @@
 #include "GameplayTagContainer.h"
 #include "RogueStateEffects.generated.h"
 
+class UAbilitySystemComponent;
+
 /**
  * 三个"给持有者授予一个状态标签"的 GameplayEffect 的公共基类。
  *
@@ -133,3 +135,48 @@ class AI_API URogueEnemyAttackCooldownEffect : public URogueStateTagEffect
 public:
 	URogueEnemyAttackCooldownEffect();
 };
+
+/**
+ * 倒地等待：授予 State.Downed，时长 = SetByCaller(Data.Duration) = 复活等待秒数。
+ *
+ * 它是"还剩多久复活"的**唯一真相源**（原先是一个复制到 PlayerState 上的截止时刻 + 三处各自比对）。
+ * 换成 GE 之后：
+ *   · 时长本身随 GE 复制（玩家 ASC 是 Mixed 模式，带时长的 GE 会同步给本人），
+ *     所以客户端 HUD 直接读"这个 GE 还剩多少秒"，不需要再复制一个时间戳；
+ *   · 到期自动消失，"是否还在倒地等待"变成一次标签/GE 查询，而不是"比两个时钟"；
+ *   · 团灭取消等待 = 移除这个 GE。
+ *
+ * ⚠️ 注意它**不**负责"人是不是倒了"：那是 `State.Dead`（URogueDeathEffect）的事。
+ *    两个状态刻意分开：Dead = 已经倒下（伤害闸门、技能阻塞都看它），
+ *    Downed = 正在等待复活（只用于倒计时与复活触发）。
+ */
+UCLASS()
+class AI_API URogueDownedEffect : public URogueStateTagEffect
+{
+	GENERATED_BODY()
+
+public:
+	URogueDownedEffect();
+};
+
+/**
+ * 复活无敌：授予 State.Invulnerable，时长 = SetByCaller(Data.Duration)。
+ *
+ * 原先它是"loose tag + 角色上的一个 float 截止时刻"，靠 Tick 比对服务器时间解除。
+ * 换成带时长的 GE 之后：到期由 GAS 自己移除（不再依赖 Tick 是否在跑 ——
+ * 这个项目已经踩过两次"倒下的角色不再 Tick，于是清理逻辑永远不执行"的坑）。
+ */
+UCLASS()
+class AI_API URogueInvulnerableEffect : public URogueStateTagEffect
+{
+	GENERATED_BODY()
+
+public:
+	URogueInvulnerableEffect();
+};
+
+/** 取"倒地等待"还剩多少秒：读 ASC 上那个带时长的 GE；没有生效中的就返回 0。
+ *
+ *  放在这里的理由：服务端（复活轮询）与客户端（HUD 倒计时）都要问同一个问题，
+ *  而两边用的是同一个 ASC 类型。实现只有一份，就不会出现"两边算法不一致"这种问题。 */
+AI_API float GetDownedSecondsRemaining(const UAbilitySystemComponent* ASC);

@@ -5,6 +5,8 @@
 #include "Player/RogueCharacterVisualComponent.h"
 #include "Core/RogueTypes.h"
 #include "GameplayTagContainer.h"
+// 倒地等待 / 复活无敌两个状态 GE 的句柄（只用于调试与失效报错，不参与判定）。
+#include "GameplayEffectTypes.h"
 #include "AbilitySystemInterface.h"
 #include "RogueCharacter.generated.h"
 
@@ -587,23 +589,41 @@ private:
 	float ReviveInvulnerableSeconds = 1.5f;
 
 	/** 复活用的定时器（服务端）。放在角色上，GameMode 只负责下指令。
-	 *  ⚠️ 它只是"三条路里的一条"：实测这条在 PIE 里没有触发过，
-	 *  真正的保证是 Tick 里的截止时刻轮询 + GameMode::TickReviveQueue()。 */
+	 *  ⚠️ 它只是"三个驱动里的一条"，**不是真相源**：真相源是 ASC 上那个带时长的
+	 *  State.Downed GE。三个驱动（角色 Tick / GameMode::TickReviveQueue / 这个定时器）
+	 *  最终都调 TryReviveIfExpired() 这一个闸门。 */
 	FTimerHandle ReviveTimerHandle;
 
+	/** 是否已经排过复活（团灭时会取消）。它只回答"有没有排过"，
+	 *  "还剩多久"**只有** GE 一个来源（见 ARogueCharacter::GetReviveSecondsRemaining）。 */
+	bool bRevivePending = false;
+
+	/** 本地记录的两个状态 GE 的句柄（只用于调试/失效报错，不参与判定）。 */
+	FActiveGameplayEffectHandle ReviveEffectHandle;
+	FActiveGameplayEffectHandle InvulnerableEffectHandle;
+
+	// ---- 复活 / 无敌：状态全部由带时长的 GE 承担（Phase 4）----
+
+	/** 移除倒地等待 GE（复活时、以及团灭取消等待时调用）。 */
+	void RemoveDownedEffect();
+
+	/** 移除无敌 GE（复活时先清旧的、死亡时清掉"尸体还带无敌"的自相矛盾状态）。 */
+	void RemoveInvulnerableEffect();
+
+public:
+	/** 倒地等待还剩多少秒（服务端与客户端读同一个 GE）。 */
+	float GetReviveSecondsRemaining() const;
+
+	/** 是否正在等待复活（倒了 + 排过复活）。 */
+	bool IsRevivePending() const;
+
+	/** 倒地等待到期就复活。**唯一的复活闸门**，三个驱动都调它，幂等。 */
+	void TryReviveIfExpired();
+
+private:
 	/** 开发自检：武器加成的打印次数与上次打印时的值签名（默认关，见 Core/RogueSelfTest.h）。
 	 *  用"值变化才打"而不是"只打一次"：客户端首帧还没收到复制过来的属性值，
 	 *  只打一次会看到全 0 并误判成"属性没复制"。 */
 	int32 WeaponBonusLogCount = 0;
 	FString LastLoggedSelfTestSignature;
-
-	/** 复活无敌的到期时刻（服务器世界时间）。0 = 当前没有无敌。
-	 *  刻意**不做成复制字段**：伤害只在服务端结算，客户端不需要知道。 */
-	float ReviveInvulnerableUntilTime = 0.0f;
-
-	/** 无敌到期检查（服务端，Tick 调用）。 */
-	void TickReviveInvulnerability();
-
-	/** 立刻结束无敌（死亡时调用，避免"尸体还带无敌标签"）。 */
-	void ClearReviveInvulnerability();
 };
