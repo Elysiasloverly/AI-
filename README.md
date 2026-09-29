@@ -56,11 +56,4 @@ UE5.5 · C++ · Blueprint · Gameplay Framework · WorldSubsystem · DataAsset /
 - [全系统架构图](Docs/CurrentAllSystemsArchitecture.md) — 当前全部系统的 Mermaid 架构图集合
 - [优化架构图](Docs/OptimizedArchitecture.md) — 重构后的职责边界与扩展入口
 
-## 构建
-
-1. 安装 Unreal Engine 5.5
-2. 右键 `ai.uproject` -> Generate Visual Studio project files
-3. 打开 `ai.sln`，以 Development Editor 配置编译
-4. 在 UE 编辑器中打开项目
-
-或直接双击 `ai.uproject` 让 UE 自动编译。
+演示视频地址：【自制肉鸽游戏《AI》v2版--添加了商店系统，增加了游戏难度】https://www.bilibili.com/video/BV1mbQGBkE1v?vd_source=c6d782f1935ad377d9357ef3f965609f
