@@ -20,4 +20,12 @@ namespace RogueSelfTest
 	 *   · 每台机器（本地角色）：打印本机角色读到的加成属性 ——
 	 *     客户端那行能打出来，就证明加成属性确实复制到位了（这是本次改造的关键前提）。 */
 	AI_API bool IsWeaponUpgradeChainEnabled();
+
+	/** 压测敌人数（0 = 关）。>0 时自检完成阶段会一次性刷这么多"很硬、伤害 0"的敌人围在玩家周围，
+	 *  用来量 200+ 敌人时的帧时 —— 常规波次整局只维持个位数敌人，这条红线否则没有数据。 */
+	AI_API int32 GetEnemyStressCount();
+
+	/** 压测对照：是否**不授予**敌人攻击能力。
+	 *  用来把"GAS 给敌人攻击带来的开销"单独分离出来（同一份压测跑两次对比帧时）。 */
+	AI_API bool AreEnemyAttackAbilitiesDisabled();
 }

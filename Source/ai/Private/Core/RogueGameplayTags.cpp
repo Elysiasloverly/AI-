@@ -40,7 +40,6 @@ namespace RogueGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG(Effect_Damage,                "Effect.Damage");
 	UE_DEFINE_GAMEPLAY_TAG(Effect_Upgrade,               "Effect.Upgrade");
 	UE_DEFINE_GAMEPLAY_TAG(Effect_Upgrade_Attribute,     "Effect.Upgrade.Attribute");
-	UE_DEFINE_GAMEPLAY_TAG(Effect_Upgrade_Weapon,        "Effect.Upgrade.Weapon");
 
 	// ---- 升级的目标属性（载荷）----
 	UE_DEFINE_GAMEPLAY_TAG(Upgrade_Attribute_MaxHealth,        "Upgrade.Attribute.MaxHealth");

@@ -118,9 +118,6 @@ public:
 	 *  只在服务端有效（死亡状态是权威的）。 */
 	void Revive();
 
-	/** 当前服务器世界时间。复活/无敌这些截止时刻统一用它，避免客户端拿本机时间比较。 */
-	float GetServerTimeSeconds() const;
-
 	// ---- 武器加成的跨端快照 ----
 	// 真相源是玩家 ASC 上 URogueAttributeSet 的 12 个加成属性（升级 GE 写入，只有服务端能写）；
 	// 这个快照是**同步管道**：实测 PlayerState 上的复制属性（属性集里的那 12 个、以及挂在

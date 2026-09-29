@@ -134,15 +134,7 @@ namespace RogueGameplayTags
 	 *  这也是**所有升级 GE 实际的族标签**（武器类升级现在也共用同一个 GE 类，见下）。 */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Effect_Upgrade_Attribute);
 
-	/** 武器类升级的族标签。
-	 *  ⚠️ 当前实现里它**没有被授予**：武器升级已经和属性升级合并到同一个 GE 类
-	 *  （`URogueAttributeUpgradeEffect` + `URogueUpgradeExecution`），族标签统一是
-	 *  Effect.Upgrade.Attribute，批量清除用的是父标签 Effect.Upgrade。
-	 *  保留这个 Tag 是为了将来真需要"单独清除/抑制武器类升级"时可以直接用；
-	 *  如果一直用不上，可以连同声明一起删掉。 */
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Effect_Upgrade_Weapon);
-
-	// ===========================================================
+		// ===========================================================
 	//  升级的"目标属性"（Upgrade.Attribute）—— 作为 GE 的载荷
 	// ===========================================================
 	//  与上面的 Effect_Upgrade_Attribute 区别：

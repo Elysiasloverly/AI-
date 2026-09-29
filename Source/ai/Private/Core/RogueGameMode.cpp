@@ -475,6 +475,19 @@ void ARogueGameMode::RunWeaponUpgradeSelfTest()
 
 	const int32 PlayerCount = Players.Num();
 
+	// 压测与阶段机**无关**：它只关心"场上敌人有多少"，不需要等客户端连上
+	//（阶段 2 之后的所有步骤都要求 ≥2 玩家，那是给跨端数值对比用的）。
+	// 放在这里才能用单进程跑压测 —— 少一个客户端也少一份噪声。
+	if (!bSelfTestStressSpawned && Players.Num() > 0)
+	{
+		const int32 StressCount = RogueSelfTest::GetEnemyStressCount();
+		if (StressCount > 0)
+		{
+			bSelfTestStressSpawned = true;
+			ProbeEnemyStress(Players[0], StressCount);
+		}
+	}
+
 	// ---- 自检要施加的升级内容 ----
 	//
 	// 每一项都走真实的 ApplyUpgrade → GE → ExecutionCalculation → 属性集。
@@ -834,6 +847,56 @@ void ARogueGameMode::ProbeGroundWaveAttack(ARogueCharacter* Target)
 		FVector::Dist2D(Enemy->GetActorLocation(), Target->GetActorLocation()),
 		Enemy->GetCurrentArchetype().GroundWave.MaxRadius,
 		Enemy->GetCurrentArchetype().GroundWave.bJumpCanDodge ? 1 : 0);
+}
+
+void ARogueGameMode::ProbeEnemyStress(ARogueCharacter* Target, int32 Count)
+{
+	if (Count <= 0 || Target == nullptr || GetWorld() == nullptr)
+	{
+		return;
+	}
+
+	URogueCombatPoolSubsystem* Pools = GetWorld()->GetSubsystem<URogueCombatPoolSubsystem>();
+	URogueEnemyTrackerSubsystem* Tracker = GetWorld()->GetSubsystem<URogueEnemyTrackerSubsystem>();
+	if (Pools == nullptr || Tracker == nullptr)
+	{
+		return;
+	}
+
+	// 压测怪的三条设定都是刻意的（见 RogueSelfTest.h 的说明）：
+	//   · 血厚  → 不会一轮齐射就被清空，敌人数量在一段时间内稳定在 N（否则量不到 200+）
+	//   · 伤害 0 → 玩家不会被打倒，测试过程稳定可比
+	//   · 距离 300–900 → 落在"全速 Tick"档（>950 会被 AI 自己降频，那样量不到最坏情况）
+	FRogueEnemyProfile Profile;
+	Profile.EnemyType = ERogueEnemyType::Hunter;
+	Profile.Health = 100000.0f;
+	Profile.Speed = 120.0f;
+	Profile.Damage = 0.0f;
+	Profile.ExperienceReward = 0;
+	Profile.bIsBoss = false;
+
+	const FVector Center = Target->GetActorLocation();
+	int32 Spawned = 0;
+	for (int32 Index = 0; Index < Count; ++Index)
+	{
+		const float Angle = (2.0f * PI * static_cast<float>(Index)) / static_cast<float>(Count);
+		const float Radius = 300.0f + 600.0f * static_cast<float>(Index % 7) / 7.0f;
+		const FVector SpawnLocation = Center + FVector(FMath::Cos(Angle) * Radius, FMath::Sin(Angle) * Radius, 60.0f);
+
+		ARogueEnemy* Enemy = Pools->AcquireEnemy(ARogueEnemy::StaticClass(), nullptr, SpawnLocation, FRotator::ZeroRotator);
+		if (Enemy == nullptr)
+		{
+			break;
+		}
+
+		Enemy->ActivatePooledEnemy(nullptr, SpawnLocation, FRotator::ZeroRotator);
+		Enemy->InitializeEnemy(Profile);
+		Tracker->RegisterEnemy(Enemy);
+		++Spawned;
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[SelfTest] 压测：已刷 %d/%d 只敌人（攻速很硬、伤害 0），后续报告里的『敌人=N』与『平均帧时』就是 200+ 场景的数据"),
+		Spawned, Count);
 }
 
 void ARogueGameMode::TickReviveQueue()

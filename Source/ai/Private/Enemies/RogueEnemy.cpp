@@ -6,6 +6,7 @@
 #include "AbilitySystem/RogueAttributeSet.h"
 #include "AbilitySystem/Abilities/RogueEnemyAttackAbility.h"
 #include "Core/RogueGameplayTags.h"
+#include "Core/RogueSelfTest.h"
 #include "Core/RogueCombatFeedback.h"
 #include "Enemies/RogueEnemyArchetypes.h"
 #include "Enemies/RogueEnemyProjectile.h"
@@ -692,6 +693,12 @@ void ARogueEnemy::GrantAttackAbilities()
 	RangedAttackAbilityHandle = FGameplayAbilitySpecHandle();
 	GroundWaveAttackAbilityHandle = FGameplayAbilitySpecHandle();
 
+	// 压测对照开关（见 RogueSelfTest.h）：关掉授予就能量出"GAS 这部分到底贵多少"。
+	if (RogueSelfTest::AreEnemyAttackAbilitiesDisabled())
+	{
+		return;
+	}
+
 	// 用地面波的敌人（震荡柱）不贴身打人 —— 改造前 HandleDefaultBehavior 里
 	// `if (bUsesGroundWave) { HandleGroundWaveAttack(); return; }` 就是这个语义。
 	if (!CurrentArchetype.GroundWave.bUsesGroundWave)
@@ -721,6 +728,21 @@ bool ARogueEnemy::TryActivateAttackAbility(const FGameplayAbilitySpecHandle& Han
 	}
 
 	return AbilitySystemComponent->TryActivateAbility(Handle);
+}
+
+void ARogueEnemy::BackOffMissingAttack(float& Timer, const FGameplayAbilitySpecHandle& Handle)
+{
+	// 能力句柄无效 = 这只怪身上根本没有这种攻击能力（结构性问题，不是"这次不能打"）。
+	// 不处理的话 AI 会**每帧**重试一次注定失败的激活：实测在 200 敌人压测里
+	// （用 Rogue.SelfTest.DisableEnemyAttackAbilities 人为关掉授予）跑出了 370 万次空转尝试。
+	// 这里退避半秒，代价是"能力真的缺失时"最多晚半秒才发现，收益是不会有每帧空转。
+	//
+	// ⚠️ 只在**句柄无效**时退避，不在"激活被冷却挡住"时退避 ——
+	// 后者是正常情况（冷却 GE 与 AI 节流可能差一帧），退避会让攻击变慢。
+	if (!Handle.IsValid())
+	{
+		Timer = FMath::Max(Timer, 0.5f);
+	}
 }
 
 bool ARogueEnemy::HasTouchingPlayer() const
@@ -770,6 +792,10 @@ void ARogueEnemy::DecideContactAttack(float DeltaSeconds)
 	{
 		ContactTimer = ContactInterval;
 	}
+	else
+	{
+		BackOffMissingAttack(ContactTimer, ContactAttackAbilityHandle);
+	}
 }
 
 void ARogueEnemy::DecideRangedAttack(ARogueCharacter* PlayerCharacter, float DistanceToPlayer, float DeltaSeconds)
@@ -804,6 +830,10 @@ void ARogueEnemy::DecideRangedAttack(ARogueCharacter* PlayerCharacter, float Dis
 	{
 		RangedAttackTimer = RangedArchetype.NextShotCooldown;
 	}
+	else
+	{
+		BackOffMissingAttack(RangedAttackTimer, RangedAttackAbilityHandle);
+	}
 }
 
 void ARogueEnemy::DecideGroundWaveAttack(ARogueCharacter* PlayerCharacter, float DistanceToPlayer, float DeltaSeconds)
@@ -835,6 +865,10 @@ void ARogueEnemy::DecideGroundWaveAttack(ARogueCharacter* PlayerCharacter, float
 	// 所以这里激活成功后不动计时器 —— 动了就会变成"起波即冷却"。
 	RogueEnemyAttackStats::CountGroundWaveAttempt();
 	TryActivateAttackAbility(GroundWaveAttackAbilityHandle);
+	if (!TryActivateAttackAbility(GroundWaveAttackAbilityHandle))
+	{
+		BackOffMissingAttack(GroundWaveAttackTimer, GroundWaveAttackAbilityHandle);
+	}
 }
 
 // ===========================================================

@@ -101,14 +101,6 @@ private:
 
 	friend class URogueAbilityTask_AttackTick;
 
-	/** 只在自检/调试日志里用：本机这份实例执行了多少次攻击。 */
-	int32 ExecuteCount = 0;
-
-public:
-	int32 GetExecuteCount() const { return ExecuteCount; }
-
-protected:
-	void CountExecution() { ++ExecuteCount; }
 };
 
 /** 接触伤害：对**所有**贴身玩家各结算一次（沿用改造前 TouchPlayer 的口径）。 */

@@ -1980,24 +1980,6 @@ void ARogueCharacter::Revive()
 			&& GetRogueAbilitySystemComponent()->HasMatchingGameplayTag(RogueGameplayTags::State_Invulnerable)) ? 1 : 0);
 }
 
-float ARogueCharacter::GetServerTimeSeconds() const
-{
-	const UWorld* World = GetWorld();
-	if (World == nullptr)
-	{
-		return 0.0f;
-	}
-
-	// 统一用 GameState 的"服务器世界时间"：客户端上的这个值也是同步过的服务器时钟，
-	// 而 World->GetTimeSeconds() 是各机器自己的世界时间，两边并不同源。
-	if (const AGameStateBase* GameState = World->GetGameState())
-	{
-		return GameState->GetServerWorldTimeSeconds();
-	}
-
-	return World->GetTimeSeconds();
-}
-
 void ARogueCharacter::RemoveInvulnerableEffect()
 {
 	InvulnerableEffectHandle = FActiveGameplayEffectHandle();

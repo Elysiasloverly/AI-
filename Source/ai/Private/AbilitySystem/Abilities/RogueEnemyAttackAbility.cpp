@@ -146,7 +146,6 @@ void URogueEnemyContactAttackAbility::ActivateAbility(
 	if (Enemy != nullptr)
 	{
 		Enemy->ExecuteContactAttack();
-		CountExecution();
 		++RogueEnemyAttackStats::GCounters.Contact;
 	}
 
@@ -179,7 +178,6 @@ void URogueEnemyRangedAttackAbility::ActivateAbility(
 	ARogueEnemy* Enemy = GetEnemy();
 	if (Enemy != nullptr && Enemy->ExecuteRangedAttack())
 	{
-		CountExecution();
 		++RogueEnemyAttackStats::GCounters.Ranged;
 		ApplyAttackCooldown();
 	}
@@ -214,7 +212,6 @@ void URogueEnemyGroundWaveAttackAbility::ActivateAbility(
 	}
 
 	Enemy->ExecuteStartGroundWave();
-	CountExecution();
 	++RogueEnemyAttackStats::GCounters.GroundWave;
 
 	// 波一旦开始就由本能力逐帧推进，直到 Enemy 报告"波结束了"（见 TickAttackStep）。

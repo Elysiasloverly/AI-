@@ -189,9 +189,15 @@ private:
 	/** 三个攻击路径探针是否已经跑过（自检完成时只跑一次）。 */
 	bool bSelfTestProbesDone = false;
 
+	/** 压测敌人是否已经刷过（与阶段机无关：压测用单进程跑，不需要等客户端）。 */
+	bool bSelfTestStressSpawned = false;
+
 	/** 自检辅助：对目标玩家施加一次致命伤害，用来验证"倒地等待 GE → 复活 → 复活无敌 GE"这条链路。
 	 *  无头自检里武器太强、敌人贴不上来，整局 0 次倒地 —— 不主动打死一个就验证不到。 */
 	void ProbeDeathAndRevive(ARogueCharacter* Target);
+
+	/** 自检辅助：刷 N 只"很硬、伤害 0"的敌人在玩家周围，用来量 200+ 敌人时的帧时（见 RogueSelfTest.h）。 */
+	void ProbeEnemyStress(ARogueCharacter* Target, int32 Count);
 
 	/** 自检阶段机：
 	 *    0 = 未跑

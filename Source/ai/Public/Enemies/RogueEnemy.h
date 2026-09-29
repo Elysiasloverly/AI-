@@ -248,6 +248,9 @@ public:
 	/** 尝试激活某个攻击能力。返回是否真的激活了。 */
 	bool TryActivateAttackAbility(const FGameplayAbilitySpecHandle& Handle);
 
+	/** 句柄无效（这只怪根本没有这种攻击能力）时给计时器一个退避，避免 AI 每帧重试注定失败的激活。 */
+	static void BackOffMissingAttack(float& Timer, const FGameplayAbilitySpecHandle& Handle);
+
 	/** 是否有玩家处在接触伤害距离内（AI 的决策判据，只算距离、不结算伤害）。 */
 	bool HasTouchingPlayer() const;
 
