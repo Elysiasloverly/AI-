@@ -38,15 +38,15 @@ void ARogueWeapon_Rocket::WeaponTick(float DeltaSeconds)
 
 float ARogueWeapon_Rocket::GetEffectiveCooldown() const
 {
-	const URogueAttributeSet* BonusSet = GetWeaponBonusSet();
-	const float Bonus = BonusSet != nullptr ? BonusSet->GetAttackSpeedBonus() : 0.0f;
+	const FRogueWeaponBonusValues& Bonuses = GetWeaponBonusValues();
+	const float Bonus = Bonuses.AttackSpeed;
 	return FMath::Max(0.55f, GetConfig().Cooldown - Bonus * 2.5f);
 }
 
 float ARogueWeapon_Rocket::GetExplosionRadius() const
 {
-	const URogueAttributeSet* BonusSet = GetWeaponBonusSet();
-	const float RangeBonus = BonusSet != nullptr ? BonusSet->GetAttackRangeBonus() : 0.0f;
+	const FRogueWeaponBonusValues& Bonuses = GetWeaponBonusValues();
+	const float RangeBonus = Bonuses.AttackRange;
 	return GetConfig().ExplosionRadius + RangeBonus * 0.25f;
 }
 

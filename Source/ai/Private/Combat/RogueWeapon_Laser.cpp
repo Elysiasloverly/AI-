@@ -37,15 +37,15 @@ void ARogueWeapon_Laser::WeaponTick(float DeltaSeconds)
 
 float ARogueWeapon_Laser::GetEffectiveCooldown() const
 {
-	const URogueAttributeSet* BonusSet = GetWeaponBonusSet();
-	const float Bonus = BonusSet != nullptr ? BonusSet->GetAttackSpeedBonus() : 0.0f;
+	const FRogueWeaponBonusValues& Bonuses = GetWeaponBonusValues();
+	const float Bonus = Bonuses.AttackSpeed;
 	return FMath::Max(0.35f, GetConfig().Cooldown - Bonus * 2.0f);
 }
 
 float ARogueWeapon_Laser::GetEffectiveRefractionRange() const
 {
-	const URogueAttributeSet* BonusSet = GetWeaponBonusSet();
-	const float Bonus = BonusSet != nullptr ? BonusSet->GetAttackRangeBonus() : 0.0f;
+	const FRogueWeaponBonusValues& Bonuses = GetWeaponBonusValues();
+	const float Bonus = Bonuses.AttackRange;
 	return GetConfig().RefractionRange + Bonus * 0.45f;
 }
 

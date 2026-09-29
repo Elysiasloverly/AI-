@@ -1,5 +1,7 @@
 #include "Core/RogueGameMode.h"
 #include "Core/RogueSelfTest.h"
+#include "Core/RogueGameplayTags.h"
+#include "AbilitySystem/RogueAbilitySystemLibrary.h"
 #include "Core/RogueTypes.h"
 #include "AbilitySystem/RogueAttributeSet.h"
 #include "AbilitySystem/RogueAttributeSet.h"
@@ -236,6 +238,17 @@ void ARogueGameMode::Tick(float DeltaSeconds)
 	}
 	PushShopStateToPlayers();
 
+	// 武器加成快照：把每个玩家属性集里的 12 个加成，推到**他自己角色**身上的复制字段。
+	//
+	// 为什么需要这一层：武器在客户端也要按同样的加成算表现，而客户端读不到服务端算好的
+	// 武器生效值，只能自己重算一遍 —— 所以需要一份跨端一致的"加成输入"。
+	// 真相源仍然是属性集（升级 GE 写入），这里只做"变化才推"的同步：没变化时在
+	// ApplyWeaponBonusSnapshot 的脏检查里直接返回，代价是每帧 O(玩家数) 次 12 浮点比较。
+	//
+	// 载体选角色而不是 PlayerState：角色自己的复制属性能到客户端（bDead 已验证），
+	// 且这份数据本来就是"角色的战斗参数"，放在角色上分层更合理。
+	PushWeaponBonusSnapshots();
+
 	// 开发自检（默认关，见 RunWeaponUpgradeSelfTest）：验证升级 → GAS 属性 → 武器生效值这条链
 	RunWeaponUpgradeSelfTest();
 
@@ -293,6 +306,38 @@ void ARogueGameMode::PushRunStateToGameState()
 		RunState.bBossAlive);
 }
 
+void ARogueGameMode::PushWeaponBonusSnapshots()
+{
+	TArray<ARogueCharacter*, TInlineAllocator<4>> Players;
+	CollectAlivePlayers(Players);
+
+	for (ARogueCharacter* Character : Players)
+	{
+		ARoguePlayerState* PlayerState = Character != nullptr ? Character->GetPlayerState<ARoguePlayerState>() : nullptr;
+		const URogueAttributeSet* AttributeSet = PlayerState != nullptr ? PlayerState->GetAttributeSet() : nullptr;
+		if (PlayerState == nullptr || AttributeSet == nullptr)
+		{
+			continue;
+		}
+
+		FRogueWeaponBonusValues Values;
+		Values.AttackPower = AttributeSet->GetAttackPowerBonus();
+		Values.AttackSpeed = AttributeSet->GetAttackSpeedBonus();
+		Values.AttackRange = AttributeSet->GetAttackRangeBonus();
+		Values.ProjectileSpeed = AttributeSet->GetProjectileSpeedBonus();
+		Values.ProjectileCount = AttributeSet->GetProjectileCountBonus();
+		Values.ScytheCount = AttributeSet->GetScytheCountBonus();
+		Values.RocketCount = AttributeSet->GetRocketCountBonus();
+		Values.LaserCount = AttributeSet->GetLaserCountBonus();
+		Values.HellTowerCount = AttributeSet->GetHellTowerCountBonus();
+		Values.MortarCount = AttributeSet->GetMortarCountBonus();
+		Values.LaserRefraction = AttributeSet->GetLaserRefractionBonus();
+		Values.MortarBlastRadius = AttributeSet->GetMortarBlastRadiusBonus();
+
+		Character->ApplyWeaponBonusSnapshot(Values);
+	}
+}
+
 void ARogueGameMode::CollectAlivePlayers(TArray<ARogueCharacter*, TInlineAllocator<4>>& OutPlayers) const
 {
 	// 实现统一在 RoguePlayerQuery 里（敌人索敌、刷怪点检查、经验球磁吸共用同一份口径）
@@ -301,7 +346,7 @@ void ARogueGameMode::CollectAlivePlayers(TArray<ARogueCharacter*, TInlineAllocat
 
 void ARogueGameMode::RunWeaponUpgradeSelfTest()
 {
-	if (!RogueSelfTest::IsWeaponUpgradeChainEnabled() || SelfTestPhase >= 2)
+	if (!RogueSelfTest::IsWeaponUpgradeChainEnabled() || SelfTestPhase >= 5)
 	{
 		return;
 	}
@@ -314,66 +359,195 @@ void ARogueGameMode::RunWeaponUpgradeSelfTest()
 		return;
 	}
 
-	// ---- 第二阶段：等所有人都连上之后再改一次属性 ----
-	// 目的是区分两种失败：
-	//   · 客户端**从来没有收到**这类属性（连变化也收不到）；
-	//   · 初始同步（bNetInitial）没带，但**后续变化能到**。
-	// 第一阶段发生在客户端连接之前，只能验证前者。
-	if (SelfTestPhase == 1)
+	const UWorld* World = GetWorld();
+	const float NowSeconds = World != nullptr ? World->GetTimeSeconds() : 0.0f;
+
+	// ⚠️⚠️ 这个自检踩过一个很贵的坑，务必保持"每个玩家都施加、且带玩家名"：
+	//
+	//   最初只对 Players[0] 施加升级，而 Players[0] 是**主机**玩家；
+	//   客户端自检打印的是**它自己**那个玩家的属性 —— 那个玩家从来没被升级过，
+	//   于是客户端永远是 0.00。两边比的根本不是同一个玩家，结论"属性没复制到客户端"
+	//   就是这么得出来的（错的）。现在：①全员施加；②每行都带玩家名，
+	//   服务端/客户端的同一玩家可以直接对齐比较。
+	auto PlayerName = [](const ARogueCharacter* InCharacter) -> FString
 	{
-		const UWorld* World = GetWorld();
-		const float NowSeconds = World != nullptr ? World->GetTimeSeconds() : 0.0f;
-		if (Players.Num() < 2 || NowSeconds < SelfTestPhaseOneTime + 20.0f)
+		if (InCharacter == nullptr)
+		{
+			return TEXT("<null>");
+		}
+		const APlayerState* PS = InCharacter->GetPlayerState();
+		return PS != nullptr ? PS->GetPlayerName() : TEXT("?");
+	};
+
+	auto DumpSet = [](const TCHAR* Stage, const ARogueCharacter* InCharacter)
+	{
+		if (InCharacter == nullptr)
 		{
 			return;
 		}
+		const ARoguePlayerState* PS = InCharacter->GetPlayerState<ARoguePlayerState>();
+		const URogueAttributeSet* Set = PS != nullptr ? PS->GetAttributeSet() : nullptr;
+		const FRogueWeaponBonusValues& Snap = InCharacter->GetWeaponBonusSnapshot();
+		const FString Name = InCharacter->GetPlayerState() != nullptr
+			? InCharacter->GetPlayerState()->GetPlayerName() : FString(TEXT("?"));
 
-		SelfTestPhase = 2;
-		FRogueUpgradeOption LateOption;
-		LateOption.Type = ERogueUpgradeType::AttackPower;
-		LateOption.Magnitude = 5.0f;
-		LateOption.Title = TEXT("连接后补一刀");
-		Players[0]->ApplyUpgrade(LateOption);
-		UE_LOG(LogTemp, Log, TEXT("[SelfTest] 第二阶段：客户端已连接，再施加【伤害+5】—— 客户端随后若打出武器加成#2，说明属性变化能复制"));
-		return;
-	}
+		UE_LOG(LogTemp, Log,
+			TEXT("[SelfTest] %s | 玩家=%s 本机主控=%d | 生命=%.1f/%.1f 护甲=%.1f/%.1f"),
+			Stage, *Name, InCharacter->IsLocallyControlled() ? 1 : 0,
+			Set != nullptr ? Set->GetHealth() : -1.0f,
+			Set != nullptr ? Set->GetMaxHealth() : -1.0f,
+			Set != nullptr ? Set->GetArmor() : -1.0f,
+			Set != nullptr ? Set->GetMaxArmor() : -1.0f);
 
-	SelfTestPhase = 1;
-	SelfTestPhaseOneTime = GetWorld() != nullptr ? GetWorld()->GetTimeSeconds() : 0.0f;
+		UE_LOG(LogTemp, Log,
+			TEXT("[SelfTest] %s | 玩家=%s | 属性集加成: 伤害=%.2f 攻速=%.2f 范围=%.2f 弹速=%.2f 数量=%.2f"),
+			Stage, *Name,
+			Set != nullptr ? Set->GetAttackPowerBonus() : -1.0f,
+			Set != nullptr ? Set->GetAttackSpeedBonus() : -1.0f,
+			Set != nullptr ? Set->GetAttackRangeBonus() : -1.0f,
+			Set != nullptr ? Set->GetProjectileSpeedBonus() : -1.0f,
+			Set != nullptr ? Set->GetProjectileCountBonus() : -1.0f);
 
-	ARogueCharacter* Character = Players[0];
+		UE_LOG(LogTemp, Log,
+			TEXT("[SelfTest] %s | 玩家=%s | 角色快照: 伤害=%.2f 攻速=%.2f 范围=%.2f 弹速=%.2f 数量=%.2f"),
+			Stage, *Name,
+			Snap.AttackPower, Snap.AttackSpeed, Snap.AttackRange, Snap.ProjectileSpeed, Snap.ProjectileCount);
+	};
 
-	const ARoguePlayerState* PlayerState = Character->GetPlayerState<ARoguePlayerState>();
-	const URogueAttributeSet* WeaponSet = PlayerState != nullptr ? PlayerState->GetAttributeSet() : nullptr;
-	if (WeaponSet == nullptr)
+	auto DumpWeapons = [](const TCHAR* Stage, const ARogueCharacter* InCharacter)
 	{
-		UE_LOG(LogTemp, Error, TEXT("[SelfTest] 玩家 ASC 上没有属性集 —— 注册失败（见 RoguePlayerState 构造）"));
-		return;
-	}
-
-	auto DumpWeapons = [Character](const TCHAR* Stage)
-	{
-		for (const ARogueWeaponBase* Weapon : Character->GetWeapons())
+		if (InCharacter == nullptr)
+		{
+			return;
+		}
+		const FString Name = InCharacter->GetPlayerState() != nullptr
+			? InCharacter->GetPlayerState()->GetPlayerName() : FString(TEXT("?"));
+		for (const ARogueWeaponBase* Weapon : InCharacter->GetWeapons())
 		{
 			if (!IsValid(Weapon))
 			{
 				continue;
 			}
-			UE_LOG(LogTemp, Log, TEXT("[SelfTest] %s | %-26s 数量=%d 伤害=%.2f 冷却=%.2f 范围=%.1f"),
-				Stage, *Weapon->GetClass()->GetName(),
+			UE_LOG(LogTemp, Log, TEXT("[SelfTest] %s | 玩家=%s | %-26s 数量=%d 伤害=%.2f 冷却=%.2f 范围=%.1f"),
+				Stage, *Name,
+				*Weapon->GetClass()->GetName(),
 				Weapon->GetEffectiveCount(), Weapon->GetEffectiveDamage(),
 				Weapon->GetEffectiveCooldown(), Weapon->GetEffectiveRange());
 		}
 	};
 
-	UE_LOG(LogTemp, Log, TEXT("[SelfTest] ==== 武器升级链路自检开始（玩家=%s，武器数=%d）===="),
-		*Character->GetName(), Character->GetWeapons().Num());
-	UE_LOG(LogTemp, Log, TEXT("[SelfTest] 初始加成属性：伤害=%.2f 攻速=%.2f 范围=%.2f 弹速=%.2f 主武器数量=%.2f"),
-		WeaponSet->GetAttackPowerBonus(), WeaponSet->GetAttackSpeedBonus(), WeaponSet->GetAttackRangeBonus(),
-		WeaponSet->GetProjectileSpeedBonus(), WeaponSet->GetProjectileCountBonus());
-	DumpWeapons(TEXT("升级前"));
+	auto DumpAll = [&Players, &DumpSet, &DumpWeapons](const TCHAR* Stage)
+	{
+		for (const ARogueCharacter* Player : Players)
+		{
+			DumpSet(Stage, Player);
+			DumpWeapons(Stage, Player);
+		}
+	};
 
-	// 逐项施加升级：每一项都走真实的 ApplyUpgrade → GE → ExecutionCalculation → 属性集
+	// 把属性集里的 12 个加成立刻推成角色快照（不然本帧日志看到的快照还是旧值，要等下一帧 Tick）
+	auto PushSnapshots = [&Players]()
+	{
+		for (ARogueCharacter* Player : Players)
+		{
+			const ARoguePlayerState* PS = Player->GetPlayerState<ARoguePlayerState>();
+			const URogueAttributeSet* Set = PS != nullptr ? PS->GetAttributeSet() : nullptr;
+			if (Set == nullptr)
+			{
+				continue;
+			}
+			FRogueWeaponBonusValues Values;
+			Values.AttackPower = Set->GetAttackPowerBonus();
+			Values.AttackSpeed = Set->GetAttackSpeedBonus();
+			Values.AttackRange = Set->GetAttackRangeBonus();
+			Values.ProjectileSpeed = Set->GetProjectileSpeedBonus();
+			Values.ProjectileCount = Set->GetProjectileCountBonus();
+			Values.ScytheCount = Set->GetScytheCountBonus();
+			Values.RocketCount = Set->GetRocketCountBonus();
+			Values.LaserCount = Set->GetLaserCountBonus();
+			Values.HellTowerCount = Set->GetHellTowerCountBonus();
+			Values.MortarCount = Set->GetMortarCountBonus();
+			Values.LaserRefraction = Set->GetLaserRefractionBonus();
+			Values.MortarBlastRadius = Set->GetMortarBlastRadiusBonus();
+			Player->ApplyWeaponBonusSnapshot(Values);
+		}
+	};
+
+	const int32 PlayerCount = Players.Num();
+
+	switch (SelfTestPhase)
+	{
+	// ---- 阶段 2/4：在"所有人都已经连上"之后改属性 ----
+	//
+	// 为什么必须有这一步：客户端总是在第一阶段之后才连上，所以第一阶段只能证明
+	// "初始同步带了这些属性"。只有在一端已经连上、看着数值**变化**，才能证明后续变化能到。
+	case 1:
+	case 3:
+	{
+		const bool bSecondPhase = (SelfTestPhase == 1);
+		const float WaitSeconds = bSecondPhase ? 20.0f : 8.0f;
+		if (PlayerCount < 2 || NowSeconds < SelfTestPhaseTime + WaitSeconds)
+		{
+			return;
+		}
+
+		SelfTestPhase += 1;
+		SelfTestPhaseTime = NowSeconds;
+
+		FRogueUpgradeOption LateOption;
+		LateOption.Type = ERogueUpgradeType::AttackPower;
+		LateOption.Magnitude = 5.0f;
+		LateOption.Title = TEXT("在线补一刀");
+
+		UE_LOG(LogTemp, Log, TEXT("[SelfTest] ==== 第%s阶段：%d 个玩家**都在线** → 全员【伤害加成+5】%s ===="),
+			bSecondPhase ? TEXT("二") : TEXT("三"), PlayerCount,
+			bSecondPhase ? TEXT("并各挨 7 点伤害") : TEXT("（只改加成，不动生命）"));
+
+		for (ARogueCharacter* Player : Players)
+		{
+			Player->ApplyUpgrade(LateOption);
+			if (bSecondPhase)
+			{
+				// 同时改一个**老属性**（生命），作对照组：一次运行就能区分
+				//   · "新属性（武器加成）不复制" —— 生命跟着变、加成不变；
+				//   · "这套属性集的任何变化都到不了客户端" —— 生命也不变。
+				RogueAbilitySystem::ApplyDamageToTarget(Player, Player, 7.0f, RogueGameplayTags::Damage_Source_Contact);
+			}
+		}
+
+		PushSnapshots();
+		DumpAll(bSecondPhase ? TEXT("第二阶段后") : TEXT("第三阶段后"));
+		return;
+	}
+
+	// ---- 阶段 3/5：等复制落定后打印"服务端地面真值"，供与各客户端日志逐行对比 ----
+	case 2:
+	case 4:
+	{
+		if (NowSeconds < SelfTestPhaseTime + 3.0f)
+		{
+			return;
+		}
+
+		SelfTestPhase += 1;
+		SelfTestPhaseTime = NowSeconds;
+
+		DumpAll(SelfTestPhase == 3 ? TEXT("第二阶段落定") : TEXT("第三阶段落定"));
+		if (SelfTestPhase >= 5)
+		{
+			UE_LOG(LogTemp, Log, TEXT("[SelfTest] ==== 自检全部完成 ===="));
+			UE_LOG(LogTemp, Log, TEXT("[SelfTest] 判据：客户端日志里**同名玩家**的『属性集加成』『角色快照』『武器生效值』"));
+			UE_LOG(LogTemp, Log, TEXT("[SelfTest]       必须与服务端此处逐字一致（伤害加成 15→20、武器伤害随之 +5）。"));
+		}
+		return;
+	}
+	}
+
+	// ---- 阶段 0→1：首次运行，逐项施加升级 ----
+	SelfTestPhase = 1;
+	SelfTestPhaseTime = NowSeconds;
+
+	// 逐项施加的升级内容：每一项都走真实的 ApplyUpgrade → GE → ExecutionCalculation → 属性集
 	struct FSelfTestCase
 	{
 		ERogueUpgradeType Type;
@@ -389,22 +563,37 @@ void ARogueGameMode::RunWeaponUpgradeSelfTest()
 		{ ERogueUpgradeType::ProjectileCount,   1.0f, TEXT("数量+1") },
 	};
 
-	for (const FSelfTestCase& TestCase : Cases)
-	{
-		FRogueUpgradeOption Option;
-		Option.Type = TestCase.Type;
-		Option.Magnitude = TestCase.Magnitude;
-		Option.Title = TestCase.Label;
-		Character->ApplyUpgrade(Option);
+	UE_LOG(LogTemp, Log, TEXT("[SelfTest] ==== 武器升级链路自检开始（服务端玩家数=%d）===="), PlayerCount);
+	DumpAll(TEXT("升级前"));
 
-		UE_LOG(LogTemp, Log, TEXT("[SelfTest] 施加【%s】后 → 加成属性：伤害=%.2f 攻速=%.2f 范围=%.2f 弹速=%.2f 主武器数量=%.2f"),
-			TestCase.Label,
-			WeaponSet->GetAttackPowerBonus(), WeaponSet->GetAttackSpeedBonus(), WeaponSet->GetAttackRangeBonus(),
-			WeaponSet->GetProjectileSpeedBonus(), WeaponSet->GetProjectileCountBonus());
+	for (ARogueCharacter* Player : Players)
+	{
+		const ARoguePlayerState* PS = Player->GetPlayerState<ARoguePlayerState>();
+		const URogueAttributeSet* Set = PS != nullptr ? PS->GetAttributeSet() : nullptr;
+		if (Set == nullptr)
+		{
+			UE_LOG(LogTemp, Error, TEXT("[SelfTest] 玩家 %s 的 ASC 上没有属性集 —— 注册失败（见 RoguePlayerState 构造）"), *PlayerName(Player));
+			continue;
+		}
+
+		for (const FSelfTestCase& TestCase : Cases)
+		{
+			FRogueUpgradeOption Option;
+			Option.Type = TestCase.Type;
+			Option.Magnitude = TestCase.Magnitude;
+			Option.Title = TestCase.Label;
+			Player->ApplyUpgrade(Option);
+
+			UE_LOG(LogTemp, Log, TEXT("[SelfTest] 施加【%s】后 | 玩家=%s | 属性集加成：伤害=%.2f 攻速=%.2f 范围=%.2f 弹速=%.2f 数量=%.2f"),
+				TestCase.Label, *PlayerName(Player),
+				Set->GetAttackPowerBonus(), Set->GetAttackSpeedBonus(), Set->GetAttackRangeBonus(),
+				Set->GetProjectileSpeedBonus(), Set->GetProjectileCountBonus());
+		}
 	}
 
-	DumpWeapons(TEXT("升级后"));
-	UE_LOG(LogTemp, Log, TEXT("[SelfTest] ==== 自检结束：以上数值随升级变化即说明『升级 → GAS 属性 → 武器生效值』链路已通 ===="));
+	PushSnapshots();
+	DumpAll(TEXT("升级后"));
+	UE_LOG(LogTemp, Log, TEXT("[SelfTest] ==== 第一阶段完成（等客户端连上后会自动进入第二阶段）===="));
 }
 
 void ARogueGameMode::TickReviveQueue()

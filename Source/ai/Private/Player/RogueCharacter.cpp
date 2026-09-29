@@ -650,7 +650,7 @@ void ARogueCharacter::Tick(float DeltaSeconds)
 	// ⚠️ 位置：必须放在 `if (bDead) return;` **之前**。
 	// 实测踩过：客户端加载完地图时，服务端可能已经把玩家判定倒地（复制过来 bDead=1），
 	// 于是这段自检永远走不到 —— 与上面复活轮询踩的是同一个坑（死亡早退把诊断也一起挡掉了）。
-	if (IsLocallyControlled() && RogueSelfTest::IsWeaponUpgradeChainEnabled() && WeaponBonusLogCount < 6)
+	if (IsLocallyControlled() && RogueSelfTest::IsWeaponUpgradeChainEnabled() && WeaponBonusLogCount < 8)
 	{
 		// 注意这里**不是"只打一次"**：客户端第一帧通常还没收到复制过来的属性值，
 		// 只打一次会看到全 0 而误判为"没复制"。改成"值一变就打一条"（最多 6 条），
@@ -660,44 +660,80 @@ void ARogueCharacter::Tick(float DeltaSeconds)
 			const URogueAttributeSet* WeaponSet = RoguePS->GetAttributeSet();
 			if (WeaponSet != nullptr)
 			{
-				const float Damage = WeaponSet->GetAttackPowerBonus();
-				const float Speed = WeaponSet->GetAttackSpeedBonus();
-				const float Range = WeaponSet->GetAttackRangeBonus();
-				const float ProjSpeed = WeaponSet->GetProjectileSpeedBonus();
-				const float Count = WeaponSet->GetProjectileCountBonus();
+				// 一份完整快照：
+				//   · 生命/护甲/移速/拾取半径 —— **老属性**（已知能复制到客户端，作为对照组）
+				//   · 5 个武器加成 —— 本次新增的属性（疑似不复制）
+				// 两者在同一套属性集、同样的复制声明下表现不同，才能把问题定位到"属性"这一层。
+				const FString Snapshot = FString::Printf(
+					TEXT("生命=%.1f/%.1f 护甲=%.1f/%.1f | 属性加成: 伤害=%.2f 攻速=%.2f 范围=%.2f 弹速=%.2f 数量=%.2f | 快照(武器实际读): 伤害=%.2f 攻速=%.2f 范围=%.2f 弹速=%.2f 数量=%.2f"),
+					WeaponSet->GetHealth(), WeaponSet->GetMaxHealth(),
+					WeaponSet->GetArmor(), WeaponSet->GetMaxArmor(),
+					WeaponSet->GetAttackPowerBonus(), WeaponSet->GetAttackSpeedBonus(),
+					WeaponSet->GetAttackRangeBonus(), WeaponSet->GetProjectileSpeedBonus(),
+					WeaponSet->GetProjectileCountBonus(),
+					GetWeaponBonusSnapshot().AttackPower, GetWeaponBonusSnapshot().AttackSpeed,
+					GetWeaponBonusSnapshot().AttackRange, GetWeaponBonusSnapshot().ProjectileSpeed,
+					GetWeaponBonusSnapshot().ProjectileCount);
 
-				const float Signature = Damage * 1.0f + Speed * 100.0f + Range * 1000.0f + ProjSpeed * 10000.0f + Count * 1000000.0f;
-				if (WeaponBonusLogCount == 0 || !FMath::IsNearlyEqual(Signature, LastLoggedWeaponBonusSignature, 0.001f))
+				if (WeaponBonusLogCount == 0 || Snapshot != LastLoggedSelfTestSignature)
 				{
 					++WeaponBonusLogCount;
-					LastLoggedWeaponBonusSignature = Signature;
-					UE_LOG(LogTemp, Log, TEXT("[SelfTest] 本机(%s)读到的武器加成#%d：伤害=%.2f 攻速=%.2f 范围=%.2f 弹速=%.2f 主武器数量=%.2f（世界时间 %.2f）"),
+					LastLoggedSelfTestSignature = Snapshot;
+					// 带上玩家名：服务端和客户端打的是**各自机器上的同一个玩家**，
+					// 只有名字对上才能两行对比（之前正是拿主机 vs 客户端自己，结论错了）。
+					const FString SelfTestPlayerName = RoguePS->GetPlayerName();
+					UE_LOG(LogTemp, Log, TEXT("[SelfTest] 本机(%s) 玩家=%s #%d %s（世界时间 %.2f）"),
 						HasAuthority() ? TEXT("服务端") : TEXT("客户端"),
-						WeaponBonusLogCount, Damage, Speed, Range, ProjSpeed, Count,
+						*SelfTestPlayerName,
+						WeaponBonusLogCount, *Snapshot,
 						GetWorld() != nullptr ? GetWorld()->GetTimeSeconds() : 0.0f);
 
-					// 诊断：ASC 上到底登记了哪几套属性集、各自的值是多少。
-					// 这条能直接区分三种失败：属性集没登记 / 登记了但没复制 / 复制了但值没到。
+					// 再确认"客户端读到的那套集"与 PlayerState 上登记的是同一个对象
+					//（排除"引擎在客户端另建了一个集实例"这种可能）
 					if (const URogueAbilitySystemComponent* ASC = RoguePS->GetRogueAbilitySystemComponent())
 					{
 						const TArray<UAttributeSet*>& Sets = ASC->GetSpawnedAttributes();
-						UE_LOG(LogTemp, Log, TEXT("[SelfTest]   ASC 上登记 %d 套属性集（本地角色 %s）："),
-							Sets.Num(), HasAuthority() ? TEXT("服务端") : TEXT("客户端"));
-						for (const UAttributeSet* Set : Sets)
+						const bool bSameObject = Sets.Num() > 0 && Sets[0] == RoguePS->GetAttributeSet();
+						UE_LOG(LogTemp, Log, TEXT("[SelfTest]   ASC 登记 %d 套集，[0] 与 PlayerState->GetAttributeSet() 同一对象=%s"),
+							Sets.Num(), bSameObject ? TEXT("是") : TEXT("否"));
+					}
+
+					// 本机武器算出来的**生效值**（这是最终要给玩家看的东西）。
+					// 客户端武器是各自 BeginPlay 里本地生成的，所以这一行就是"客户端算得对不对"的答案：
+					// 与服务端同玩家的同名武器数值一致 → 整条链（属性 → 快照 → 武器系数）两端等价。
+					for (const ARogueWeaponBase* Weapon : Weapons)
+					{
+						if (!IsValid(Weapon))
 						{
-							float HealthValue = -1.0f;
-							float WeaponBonusValue = -1.0f;
-							if (const URogueAttributeSet* MainSet = Cast<URogueAttributeSet>(Set))
-							{
-								HealthValue = MainSet->GetHealth();
-							}
-							if (const URogueAttributeSet* WeaponAttrSet = Cast<URogueAttributeSet>(Set))
-							{
-								WeaponBonusValue = WeaponAttrSet->GetAttackPowerBonus();
-							}
-							UE_LOG(LogTemp, Log, TEXT("[SelfTest]     - %s（生命=%.1f 伤害加成=%.2f）"),
-								*Set->GetClass()->GetName(), HealthValue, WeaponBonusValue);
+							continue;
 						}
+						UE_LOG(LogTemp, Log, TEXT("[SelfTest]   武器 %-26s 数量=%d 伤害=%.2f 冷却=%.2f 范围=%.1f"),
+							*Weapon->GetClass()->GetName(),
+							Weapon->GetEffectiveCount(), Weapon->GetEffectiveDamage(),
+							Weapon->GetEffectiveCooldown(), Weapon->GetEffectiveRange());
+					}
+
+					// 关键诊断：**BaseValue 与 CurrentValue 分开看**。
+					// 访问器（GetXxx）读的是 CurrentValue；若 BaseValue 到了而 CurrentValue 没更新，
+					// 说明"值复制到了、但客户端的聚合值没重算"（另一类问题），而不是"属性没复制"。
+					// 对照一个老属性（护甲）。
+					UE_LOG(LogTemp, Log, TEXT("[SelfTest]   原始结构体：伤害加成(Base=%.2f Cur=%.2f) 护甲(Base=%.2f Cur=%.2f)"),
+						WeaponSet->AttackPowerBonus.GetBaseValue(), WeaponSet->AttackPowerBonus.GetCurrentValue(),
+						WeaponSet->Armor.GetBaseValue(), WeaponSet->Armor.GetCurrentValue());
+
+					// 再查"这两个属性在本机的复制注册状态"。
+					// FProperty::RepIndex 是 UHT/引擎为复制属性分配的索引：
+					// 若是 INDEX_NONE(0xFFFF) 说明**根本没注册进复制系统**（而不是"注册了但没发"）。
+					// 两边打印同一对值，就能区分注册问题与发送/接收问题。
+					{
+						const FProperty* ArmorProp = FindFProperty<FProperty>(URogueAttributeSet::StaticClass(), GET_MEMBER_NAME_CHECKED(URogueAttributeSet, Armor));
+						const FProperty* BonusProp = FindFProperty<FProperty>(URogueAttributeSet::StaticClass(), GET_MEMBER_NAME_CHECKED(URogueAttributeSet, AttackPowerBonus));
+						UE_LOG(LogTemp, Log, TEXT("[SelfTest]   复制注册：Armor 有CPF_Net=%d RepIndex=%d ；AttackPowerBonus 有CPF_Net=%d RepIndex=%d （%d 表示未注册）"),
+							(ArmorProp != nullptr && ArmorProp->HasAnyPropertyFlags(CPF_Net)) ? 1 : 0,
+							ArmorProp != nullptr ? static_cast<int32>(ArmorProp->RepIndex) : -2,
+							(BonusProp != nullptr && BonusProp->HasAnyPropertyFlags(CPF_Net)) ? 1 : 0,
+							BonusProp != nullptr ? static_cast<int32>(BonusProp->RepIndex) : -2,
+							static_cast<int32>(INDEX_NONE));
 					}
 				}
 			}
@@ -761,6 +797,9 @@ void ARogueCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
 	// 而本机的 HUD / 输入模式 / 死亡界面全都读它。漏了它就等于客户端永远不知道自己死了
 	// （实测症状：客户端死后依然能操作、没有倒计时、死亡界面不弹）。
 	DOREPLIFETIME(ARogueCharacter, bDead);
+
+	// 武器加成快照（复制给所有端）：真相源是属性集，这里是跨端同步管道
+	DOREPLIFETIME(ARogueCharacter, WeaponBonusSnapshot);
 }
 
 void ARogueCharacter::AddExperience(int32 ExperienceAmount)
@@ -1760,4 +1799,21 @@ bool ARogueCharacter::IsAuthoritySide() const
 {
 	const UWorld* World = GetWorld();
 	return World != nullptr && World->GetNetMode() != NM_Client;
+}
+
+void ARogueCharacter::ApplyWeaponBonusSnapshot(const FRogueWeaponBonusValues& InValues)
+{
+	// 权威字段：只有服务端能写（客户端写会被下一次复制覆盖）
+	if (!IsAuthoritySide())
+	{
+		return;
+	}
+
+	// 脏检查：12 个值都没变就直接返回（调用方 GameMode 每帧都会推一次）
+	if (WeaponBonusSnapshot.Equals(InValues))
+	{
+		return;
+	}
+
+	WeaponBonusSnapshot = InValues;
 }

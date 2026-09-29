@@ -216,7 +216,7 @@ public:
 	// 升级统一落成玩家 ASC 上 URogueAttributeSet 的属性加成，
 	// 武器通过上面的 GetEffective* 读取 —— 所以这里没有 OnUpgradeApplied / ApplyShared*Bonus。
 	//
-	// 新增武器时：基础值放 DT_WeaponConfig，加成从 GetWeaponBonusSet() 读，
+	// 新增武器时：基础值放 DT_WeaponConfig，加成从 GetWeaponBonusValues() 读，
 	// 若本武器的换算系数与默认不同，重写对应的 GetEffective*（见火箭/迫击炮/激光/地狱塔/镰刀）。
 
 	// ---- 查询接口 ----
@@ -224,7 +224,7 @@ public:
 	UFUNCTION(BlueprintPure)
 	int32 GetCount() const { return Config.Count; }
 
-	/** 生效数量 = 数据表基础数量 + 武器加成属性（见 GetWeaponBonusSet）。
+	/** 生效数量 = 数据表基础数量 + 武器加成（见 GetWeaponBonusValues）。
 	 *  历史：以前升级会直接改 Config.Count，所以这里只读 Config 就够了；
 	 *  现在升级只改 GAS 属性，武器配置**保持数据表原值不变**。 */
 	UFUNCTION(BlueprintPure)
@@ -279,8 +279,9 @@ public:
 	FRogueWeaponTableRow& GetConfig() { return Config; }
 	const FRogueWeaponTableRow& GetConfig() const { return Config; }
 
-	/** 拥有者的武器加成属性集（没有则 nullptr：例如客户端还没收到复制）。 */
-	const URogueAttributeSet* GetWeaponBonusSet() const;
+	/** 武器加成（生效值）：来自拥有者 PlayerState 上的**复制快照**，各端读同一份。
+	 *  拿不到时返回一份全 0 的静态空值 —— 调用方不需要判空。 */
+	const FRogueWeaponBonusValues& GetWeaponBonusValues() const;
 
 protected:
 	// ---- 辅助函数（子类可用） ----

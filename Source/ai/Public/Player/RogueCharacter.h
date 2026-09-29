@@ -119,6 +119,19 @@ public:
 	/** 当前服务器世界时间。复活/无敌这些截止时刻统一用它，避免客户端拿本机时间比较。 */
 	float GetServerTimeSeconds() const;
 
+	// ---- 武器加成的跨端快照 ----
+	// 真相源是玩家 ASC 上 URogueAttributeSet 的 12 个加成属性（升级 GE 写入，只有服务端能写）；
+	// 这个快照是**同步管道**：实测 PlayerState 上的复制属性（属性集里的那 12 个、以及挂在
+	// PlayerState 上的结构体快照）**都到不了客户端**，而**角色自己的复制属性**能到
+	// （bDead 就是这么过去的），所以快照挂在这里。
+	// 详见 FRogueWeaponBonusValues 的注释与 Docs/GAS-Main-Architecture-Plan.md。
+
+	/** 服务端：把当前加成值推进快照（脏检查，变化才赋值）。 */
+	void ApplyWeaponBonusSnapshot(const FRogueWeaponBonusValues& InValues);
+
+	/** 各端：读武器加成快照（武器侧唯一的取值来源）。 */
+	const FRogueWeaponBonusValues& GetWeaponBonusSnapshot() const { return WeaponBonusSnapshot; }
+
 	/** 本机是不是"权威侧"（单机 / 监听服 / 专用服）。
 	 *
 	 *  ⚠️ 绝对不要用 `HasAuthority()` 代替它来判断"该不该做服务端逻辑"：
@@ -517,6 +530,11 @@ private:
 	UPROPERTY(ReplicatedUsing = OnRep_Dead)
 	bool bDead = false;
 
+	/** 武器加成快照（复制给所有端）。服务端每帧从属性集同步、变化才赋值。
+	 *  为什么不让武器直接读属性集：见上面"武器加成的跨端快照"注释。 */
+	UPROPERTY(Replicated)
+	FRogueWeaponBonusValues WeaponBonusSnapshot;
+
 	/** bDead 的客户端回调：只做本机表现（输入 / 移动 / 碰撞），不改数值与位置。 */
 	UFUNCTION()
 	void OnRep_Dead();
@@ -538,7 +556,7 @@ private:
 	 *  用"值变化才打"而不是"只打一次"：客户端首帧还没收到复制过来的属性值，
 	 *  只打一次会看到全 0 并误判成"属性没复制"。 */
 	int32 WeaponBonusLogCount = 0;
-	float LastLoggedWeaponBonusSignature = -1.0f;
+	FString LastLoggedSelfTestSignature;
 
 	/** 复活无敌的到期时刻（服务器世界时间）。0 = 当前没有无敌。
 	 *  刻意**不做成复制字段**：伤害只在服务端结算，客户端不需要知道。 */

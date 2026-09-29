@@ -41,10 +41,12 @@ public:
 
 	URogueAbilitySystemComponent* GetRogueAbilitySystemComponent() const { return AbilitySystemComponent; }
 
-	/** 玩家的属性集（生命/护甲/移速 + **武器加成**）。
-	 *  武器加成也在这一套里，没有第二套集：实测第二套集实例的值没有复制到客户端，
-	 *  而主集是已验证可复制的路径 —— 详见 URogueAttributeSet 里"武器加成"那一段。 */
+	/** 玩家的属性集（生命/护甲/移速 + **武器加成**）。武器加成也在这套里，没有第二套集。 */
 	URogueAttributeSet* GetAttributeSet() const { return AttributeSet; }
+
+	// 注：武器加成的跨端快照**不在这里**，而在 ARogueCharacter 上。
+	// 这份数据本来就是"角色的战斗参数"，挂在角色上分层更合理，也和 bDead 一样走角色的复制通道。
+	// 详见 FRogueWeaponBonusValues 与 ARogueCharacter::GetWeaponBonusSnapshot 的注释。
 
 	/** 由 Pawn 在 PossessedBy / OnRep_PlayerState 时调用，把 Avatar 换成当前 Pawn。
 	 *  服务端在 PossessedBy 调用，客户端在 OnRep_PlayerState（以及 Pawn 复制到达时）调用。 */

@@ -152,29 +152,29 @@ void ARogueWeapon_HellTower::OnOwnerDied()
 
 float ARogueWeapon_HellTower::GetEffectiveBaseDamage() const
 {
-	const URogueAttributeSet* BonusSet = GetWeaponBonusSet();
-	const float Bonus = BonusSet != nullptr ? BonusSet->GetAttackPowerBonus() : 0.0f;
+	const FRogueWeaponBonusValues& Bonuses = GetWeaponBonusValues();
+	const float Bonus = Bonuses.AttackPower;
 	return GetConfig().BaseDamage + Bonus * 0.125f;
 }
 
 float ARogueWeapon_HellTower::GetEffectiveDamageRampPerTick() const
 {
-	const URogueAttributeSet* BonusSet = GetWeaponBonusSet();
-	const float Bonus = BonusSet != nullptr ? BonusSet->GetAttackPowerBonus() : 0.0f;
+	const FRogueWeaponBonusValues& Bonuses = GetWeaponBonusValues();
+	const float Bonus = Bonuses.AttackPower;
 	return GetConfig().DamageRampPerTick + Bonus * 0.0625f;
 }
 
 float ARogueWeapon_HellTower::GetEffectiveDamageTickInterval() const
 {
-	const URogueAttributeSet* BonusSet = GetWeaponBonusSet();
-	const float Bonus = BonusSet != nullptr ? BonusSet->GetAttackSpeedBonus() : 0.0f;
+	const FRogueWeaponBonusValues& Bonuses = GetWeaponBonusValues();
+	const float Bonus = Bonuses.AttackSpeed;
 	return FMath::Max(0.03f, GetConfig().DamageTickInterval - Bonus * 0.08f);
 }
 
 float ARogueWeapon_HellTower::GetEffectiveRange() const
 {
-	const URogueAttributeSet* BonusSet = GetWeaponBonusSet();
-	const float Bonus = BonusSet != nullptr ? BonusSet->GetAttackRangeBonus() : 0.0f;
+	const FRogueWeaponBonusValues& Bonuses = GetWeaponBonusValues();
+	const float Bonus = Bonuses.AttackRange;
 	return GetConfig().Range + Bonus * 0.70f;
 }
 

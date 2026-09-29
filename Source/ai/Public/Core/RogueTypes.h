@@ -73,6 +73,60 @@ struct FRogueEnemyProfile
 	bool bIsBoss = false;
 };
 
+/**
+ * 武器加成的一份**跨端快照**（12 个加成值）。
+ *
+ * 为什么需要它，而不是直接让武器读玩家 ASC 上的属性：
+ *   客户端读到的是**自己**那份属性副本，而武器生效值要按"数据表基础值 + 加成×本武器系数"
+ *   在两端各算一遍，因此需要一份跨端一致的"加成输入"。这份快照就是那个输入。
+ *
+ * ⚠️ 一条踩坑记录（结论已推翻，但教训要留着）：
+ *   早期自检只对 Players[0]（主机）施加升级，而客户端打印的是**它自己**那个玩家的属性 ——
+ *   那个玩家从没被升级过，于是客户端恒为 0.00。两边比的根本不是同一个玩家，
+ *   却被读成"这 12 个加成属性不复制"。现在自检改为**全员施加 + 每行带玩家名**，
+ *   服务端/客户端同一玩家可直接对齐。
+ *
+ * 分层：
+ *   · 真相源：URogueAttributeSet 上的 12 个加成属性（由升级 GE 写入，只有服务端能写）；
+ *   · 同步管道：ARogueCharacter 上的这个快照（服务端每帧比对、变化才推）；
+ *   · 消费方：武器读这个快照算"数据表基础值 + 加成×本武器系数"。
+ */
+USTRUCT()
+struct FRogueWeaponBonusValues
+{
+	GENERATED_BODY()
+
+	UPROPERTY() float AttackPower = 0.0f;
+	UPROPERTY() float AttackSpeed = 0.0f;
+	UPROPERTY() float AttackRange = 0.0f;
+	UPROPERTY() float ProjectileSpeed = 0.0f;
+	UPROPERTY() float ProjectileCount = 0.0f;
+	UPROPERTY() float ScytheCount = 0.0f;
+	UPROPERTY() float RocketCount = 0.0f;
+	UPROPERTY() float LaserCount = 0.0f;
+	UPROPERTY() float HellTowerCount = 0.0f;
+	UPROPERTY() float MortarCount = 0.0f;
+	UPROPERTY() float LaserRefraction = 0.0f;
+	UPROPERTY() float MortarBlastRadius = 0.0f;
+
+	/** 12 个值是否相同（"变化才推"的脏检查，避免每帧无脑复制）。 */
+	bool Equals(const FRogueWeaponBonusValues& Other) const
+	{
+		return FMath::IsNearlyEqual(AttackPower, Other.AttackPower)
+			&& FMath::IsNearlyEqual(AttackSpeed, Other.AttackSpeed)
+			&& FMath::IsNearlyEqual(AttackRange, Other.AttackRange)
+			&& FMath::IsNearlyEqual(ProjectileSpeed, Other.ProjectileSpeed)
+			&& FMath::IsNearlyEqual(ProjectileCount, Other.ProjectileCount)
+			&& FMath::IsNearlyEqual(ScytheCount, Other.ScytheCount)
+			&& FMath::IsNearlyEqual(RocketCount, Other.RocketCount)
+			&& FMath::IsNearlyEqual(LaserCount, Other.LaserCount)
+			&& FMath::IsNearlyEqual(HellTowerCount, Other.HellTowerCount)
+			&& FMath::IsNearlyEqual(MortarCount, Other.MortarCount)
+			&& FMath::IsNearlyEqual(LaserRefraction, Other.LaserRefraction)
+			&& FMath::IsNearlyEqual(MortarBlastRadius, Other.MortarBlastRadius);
+	}
+};
+
 USTRUCT()
 struct FRogueUpgradeOption
 {

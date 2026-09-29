@@ -44,38 +44,43 @@ void ARogueWeaponBase::OnOwnerDied()
 	// 基类默认不做任何事，子类可重写
 }
 
-const URogueAttributeSet* ARogueWeaponBase::GetWeaponBonusSet() const
+const FRogueWeaponBonusValues& ARogueWeaponBase::GetWeaponBonusValues() const
 {
-	// 加成挂在**玩家 ASC** 上（见 URogueAttributeSet 的类注释），
-	// 所以从拥有者的 PlayerState 取；Pawn 本身不持有属性集。
+	// 加成来自拥有者 PlayerState 上的**复制快照**（服务端每帧从属性集同步）。
+	//
+	// 为什么不是直接读 ASC 上的属性集：实测那 12 个加成属性没有复制到客户端
+	// （同一套集里的生命/护甲正常），而武器在各端都要按同样的加成算。
+	// 详见 FRogueWeaponBonusValues 的注释。
+	// 快照挂在**拥有者角色**上（实测 PlayerState 上的复制属性到不了客户端，
+	// 而角色自己的可以）。各端读同一份，所以每台机器算出的武器数值一致。
+	static const FRogueWeaponBonusValues EmptyValues;
+
 	if (OwnerCharacter == nullptr)
 	{
-		return nullptr;
+		return EmptyValues;
 	}
 
-	const ARoguePlayerState* RoguePlayerState = OwnerCharacter->GetPlayerState<ARoguePlayerState>();
-	return RoguePlayerState != nullptr ? RoguePlayerState->GetAttributeSet() : nullptr;
+	return OwnerCharacter->GetWeaponBonusSnapshot();
 }
 
 int32 ARogueWeaponBase::GetEffectiveCount() const
 {
-	const URogueAttributeSet* BonusSet = GetWeaponBonusSet();
+	const FRogueWeaponBonusValues& Bonuses = GetWeaponBonusValues();
 
 	// 只读**本武器自己那一类**数量加成（见 GetCountUpgradeType 的说明）
 	int32 WeaponSpecificBonus = 0;
-	if (BonusSet != nullptr)
 	{
 		switch (GetCountUpgradeType())
 		{
-		case ERogueUpgradeType::ScytheCount:    WeaponSpecificBonus = FMath::RoundToInt(BonusSet->GetScytheCountBonus()); break;
-		case ERogueUpgradeType::RocketCount:    WeaponSpecificBonus = FMath::RoundToInt(BonusSet->GetRocketCountBonus()); break;
-		case ERogueUpgradeType::LaserCount:     WeaponSpecificBonus = FMath::RoundToInt(BonusSet->GetLaserCountBonus()); break;
-		case ERogueUpgradeType::HellTowerCount: WeaponSpecificBonus = FMath::RoundToInt(BonusSet->GetHellTowerCountBonus()); break;
-		case ERogueUpgradeType::MortarCount:    WeaponSpecificBonus = FMath::RoundToInt(BonusSet->GetMortarCountBonus()); break;
+		case ERogueUpgradeType::ScytheCount:    WeaponSpecificBonus = FMath::RoundToInt(Bonuses.ScytheCount); break;
+		case ERogueUpgradeType::RocketCount:    WeaponSpecificBonus = FMath::RoundToInt(Bonuses.RocketCount); break;
+		case ERogueUpgradeType::LaserCount:     WeaponSpecificBonus = FMath::RoundToInt(Bonuses.LaserCount); break;
+		case ERogueUpgradeType::HellTowerCount: WeaponSpecificBonus = FMath::RoundToInt(Bonuses.HellTowerCount); break;
+		case ERogueUpgradeType::MortarCount:    WeaponSpecificBonus = FMath::RoundToInt(Bonuses.MortarCount); break;
 
 		// 主武器以外的武器如果既没重写 GetCountUpgradeType、数据列也没填，
 		// 会落到这里 —— 那时**不算任何加成**，比"读错别人的加成"安全得多。
-		case ERogueUpgradeType::ProjectileCount: WeaponSpecificBonus = FMath::RoundToInt(BonusSet->GetProjectileCountBonus()); break;
+		case ERogueUpgradeType::ProjectileCount: WeaponSpecificBonus = FMath::RoundToInt(Bonuses.ProjectileCount); break;
 		default: WeaponSpecificBonus = 0; break;
 		}
 	}
@@ -92,36 +97,36 @@ int32 ARogueWeaponBase::GetEffectiveCount() const
 
 float ARogueWeaponBase::GetEffectiveDamage() const
 {
-	const URogueAttributeSet* BonusSet = GetWeaponBonusSet();
-	return Config.Damage + (BonusSet != nullptr ? BonusSet->GetAttackPowerBonus() : 0.0f);
+	const FRogueWeaponBonusValues& Bonuses = GetWeaponBonusValues();
+	return Config.Damage + Bonuses.AttackPower;
 }
 
 float ARogueWeaponBase::GetEffectiveCooldown() const
 {
-	const URogueAttributeSet* BonusSet = GetWeaponBonusSet();
-	const float Reduced = Config.Cooldown - (BonusSet != nullptr ? BonusSet->GetAttackSpeedBonus() : 0.0f);
+	const FRogueWeaponBonusValues& Bonuses = GetWeaponBonusValues();
+	const float Reduced = Config.Cooldown - Bonuses.AttackSpeed;
 	// 0.15 秒下限与自研版本一致（旧的 ApplySharedSpeedBonus 也是这么夹的）
 	return FMath::Max(0.15f, Reduced);
 }
 
 float ARogueWeaponBase::GetEffectiveRange() const
 {
-	const URogueAttributeSet* BonusSet = GetWeaponBonusSet();
-	return Config.Range + (BonusSet != nullptr ? BonusSet->GetAttackRangeBonus() : 0.0f);
+	const FRogueWeaponBonusValues& Bonuses = GetWeaponBonusValues();
+	return Config.Range + Bonuses.AttackRange;
 }
 
 float ARogueWeaponBase::GetEffectiveProjectileSpeed(float BaseSpeed) const
 {
-	const URogueAttributeSet* BonusSet = GetWeaponBonusSet();
-	const float Bonus = BonusSet != nullptr ? BonusSet->GetProjectileSpeedBonus() : 0.0f;
+	const FRogueWeaponBonusValues& Bonuses = GetWeaponBonusValues();
+	const float Bonus = Bonuses.ProjectileSpeed;
 	return BaseSpeed + Bonus * GetProjectileSpeedBonusScale();
 }
 
 int32 ARogueWeaponBase::GetEffectiveRefractionCount() const
 {
-	const URogueAttributeSet* BonusSet = GetWeaponBonusSet();
+	const FRogueWeaponBonusValues& Bonuses = GetWeaponBonusValues();
 	const int32 Combined = Config.RefractionCount
-		+ (BonusSet != nullptr ? FMath::RoundToInt(BonusSet->GetLaserRefractionBonus()) : 0);
+		+ FMath::RoundToInt(Bonuses.LaserRefraction);
 	// 旧实现的夹取范围（0..8）原样保留
 	return FMath::Clamp(Combined, 0, 8);
 }

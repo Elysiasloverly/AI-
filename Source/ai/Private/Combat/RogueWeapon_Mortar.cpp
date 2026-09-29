@@ -48,8 +48,8 @@ void ARogueWeapon_Mortar::WeaponTick(float DeltaSeconds)
 
 float ARogueWeapon_Mortar::GetEffectiveCooldown() const
 {
-	const URogueAttributeSet* BonusSet = GetWeaponBonusSet();
-	const float Bonus = BonusSet != nullptr ? BonusSet->GetAttackSpeedBonus() : 0.0f;
+	const FRogueWeaponBonusValues& Bonuses = GetWeaponBonusValues();
+	const float Bonus = Bonuses.AttackSpeed;
 	return FMath::Max(0.7f, GetConfig().Cooldown - Bonus * 2.0f);
 }
 
@@ -58,9 +58,9 @@ float ARogueWeapon_Mortar::GetExplosionRadius() const
 	const FRogueWeaponTableRow& WeaponConfig = GetConfig();
 	const float BaseRadius = WeaponConfig.MortarExplosionRadius > 0.0f ? WeaponConfig.MortarExplosionRadius : WeaponConfig.ExplosionRadius;
 
-	const URogueAttributeSet* BonusSet = GetWeaponBonusSet();
-	const float RadiusBonus = BonusSet != nullptr ? BonusSet->GetMortarBlastRadiusBonus() : 0.0f;
-	const float RangeBonus = BonusSet != nullptr ? BonusSet->GetAttackRangeBonus() : 0.0f;
+	const FRogueWeaponBonusValues& Bonuses = GetWeaponBonusValues();
+	const float RadiusBonus = Bonuses.MortarBlastRadius;
+	const float RangeBonus = Bonuses.AttackRange;
 	return BaseRadius + RadiusBonus + RangeBonus * 0.35f;
 }
 

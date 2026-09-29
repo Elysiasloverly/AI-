@@ -66,15 +66,15 @@ void ARogueWeapon_Scythe::OnOwnerDied()
 
 float ARogueWeapon_Scythe::GetEffectiveRotationSpeed() const
 {
-	const URogueAttributeSet* BonusSet = GetWeaponBonusSet();
-	const float Bonus = BonusSet != nullptr ? BonusSet->GetAttackSpeedBonus() : 0.0f;
+	const FRogueWeaponBonusValues& Bonuses = GetWeaponBonusValues();
+	const float Bonus = Bonuses.AttackSpeed;
 	return GetConfig().RotationSpeed + Bonus * 280.0f;
 }
 
 float ARogueWeapon_Scythe::GetEffectiveOrbitRadius() const
 {
-	const URogueAttributeSet* BonusSet = GetWeaponBonusSet();
-	const float Bonus = BonusSet != nullptr ? BonusSet->GetAttackRangeBonus() : 0.0f;
+	const FRogueWeaponBonusValues& Bonuses = GetWeaponBonusValues();
+	const float Bonus = Bonuses.AttackRange;
 	return GetConfig().OrbitRadius + Bonus * 0.12f;
 }
 

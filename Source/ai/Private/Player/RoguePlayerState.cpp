@@ -32,6 +32,8 @@ void ARoguePlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 
 	// 复活倒计时同样只发给拥有者（别人不需要知道你还剩几秒复活）
 	DOREPLIFETIME_CONDITION(ARoguePlayerState, ReviveServerTime, COND_OwnerOnly);
+
+	// 注：武器加成快照不在这里，在 ARogueCharacter 上（原因见头文件注释）。
 }
 
 void ARoguePlayerState::SetReviveServerTime(float InServerTime)
