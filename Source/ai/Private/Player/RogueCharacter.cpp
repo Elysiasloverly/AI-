@@ -13,11 +13,13 @@
 #include "Combat/RogueRocketProjectile.h"
 #include "Enemies/RogueEnemy.h"
 #include "Core/RogueGameMode.h"
+#include "Core/RogueGameState.h"
 #include "Player/RoguePlayerBalanceAsset.h"
 #include "Player/RoguePlayerState.h"
 #include "GameFramework/GameStateBase.h"
 #include "AbilitySystem/RogueAbilitySystemComponent.h"
 #include "AbilitySystem/RogueAbilitySystemLibrary.h"
+#include "AbilitySystem/Abilities/RogueWeaponAbility.h"
 #include "AbilitySystem/RogueAttributeSet.h"
 #include "AbilitySystem/RogueAttributeUpgradeEffect.h"
 #include "Core/RogueGameplayTags.h"
@@ -580,31 +582,254 @@ void ARogueCharacter::InitializeWeapons()
 
 void ARogueCharacter::TickWeapons(float DeltaSeconds)
 {
-	// 武器模拟的联机分工（这是"联机手感"的核心决定）：
-	//   · 服务端：**所有人**的武器都权威地跑 —— 索敌、开火、伤害结算都在这里；
-	//   · 本人客户端：只跑**自己**的武器，作为本地预测，开火零延迟。
-	//     它造成的伤害会被 ApplyDamageToTarget 的权限闸挡掉，所以不会双份；
-	//   · 其他客户端：不再本地模拟别人的武器。
-	//     旧行为是每台机器都跑所有人的武器，各算一份，于是弹道与锁敌目标
-	//     "各显示各的"（伤害仍然只有服务端算，所以是观感问题）。
-	//     别人的弹道改由服务端 Multicast_WeaponCosmetic 广播的"纯表现那一发"补上。
+	// 这里只剩"纯表现"了 —— 武器开火已经全部搬进 GameplayAbility
+	// （URogueWeaponAbility + URogueAbilityTask_WeaponFireLoop，见 EnsureWeaponAbilities）。
 	//
-	// 例外是持续型表现武器（环绕刀片）：它在谁那儿都要 tick，
-	// 因为它没有"某一发"这种事件可供广播，见 NeedsCosmeticTick。
-	const bool bAuthoritative = HasAuthority();
-	const bool bLocallyControlled = IsLocallyControlled();
-
+	// 为什么还留着这条路径：环绕刀片（镰刀）的表现是一条**连续轨道**，没有"某一发"
+	// 可以让服务端广播，所以在谁那儿都得自己画；而技能列表只复制给本人
+	// （ASC 的 ActivatableAbilities 是 COND_OwnerOnly），队友客户端根本没有那份能力。
+	// 所以这类武器由 NeedsCosmeticTick() 标记，继续在这里跑。
+	//
+	// 联机分工（改造前后一致）：
+	//   · 服务端 / 本人客户端：开火（现在在能力里）；
+	//   · 其它客户端：只画服务端广播过来的那一发（见 BroadcastCosmeticFire）。
+	//
+	// 注意这里**不**加 `HasAuthority() || IsLocallyControlled()`：
+	// 改造前那条判据是 `bAuthoritative || bLocallyControlled || NeedsCosmeticTick()`，
+	// 对"持续型表现武器"来说恒为真（它们在任何机器上都要画自己的轨道），
+	// 所以循环里只留 NeedsCosmeticTick() 才与改造前逐台机器等价。
 	for (ARogueWeaponBase* Weapon : Weapons)
 	{
-		if (IsValid(Weapon) && (bAuthoritative || bLocallyControlled || Weapon->NeedsCosmeticTick()))
+		if (IsValid(Weapon) && Weapon->NeedsCosmeticTick())
 		{
 			Weapon->WeaponTick(DeltaSeconds);
 		}
 	}
 
-	// 本帧所有武器表现合成一条 RPC 发出（见 BroadcastWeaponCosmetic 的说明）。
+	// 本帧所有武器表现合成一条 RPC 发出（见 BroadcastWeaponCosmetics 的说明）。
 	// 放在这里而不是每发即发：一次齐射（5 连发）从 5 条 RPC 降成 1 条。
 	FlushWeaponCosmetics();
+}
+
+void ARogueCharacter::EnsureWeaponAbilities()
+{
+	// 每帧调一次，但只有在"还没全部就绪"时才真的干活（见头文件）。
+	if (bWeaponAbilitiesSettled || Weapons.Num() == 0)
+	{
+		return;
+	}
+
+	URogueAbilitySystemComponent* ASC = GetRogueAbilitySystemComponent();
+	if (ASC == nullptr)
+	{
+		// ASC 还没就位（PlayerState 复制中）。下一帧再来。
+		return;
+	}
+
+	const bool bAuthority = ASC->IsOwnerActorAuthoritative();
+
+	// 别人的武器不由本机模拟：客户端只跑**自己**那份（这一点与改造前 TickWeapons 的判据一致）。
+	// 服务端除外 —— 它要权威地跑所有人的武器（伤害结算只能在这里）。
+	const bool bLocalController = IsLocallyControlled();
+	if (!bAuthority && !bLocalController)
+	{
+		bWeaponAbilitiesSettled = true;
+		return;
+	}
+
+	const FGameplayTagContainer AutoAttackTag = FGameplayTagContainer(RogueGameplayTags::Ability_WeaponAutoAttack);
+
+	// ---- ① 授予：只在权威端，且幂等 ----
+	//
+	// 幂等判据不是"本角色是否授予过"，而是"这个 ASC 上有没有同类能力"：
+	// 角色重生时 Pawn 会换、但 PlayerState 与它上面的 ASC 是保留的，
+	// 用角色上的 bool 会导致重复授予 —— 表现就是**每把武器开两枪**。
+	if (bAuthority)
+	{
+		for (const ARogueWeaponBase* Weapon : Weapons)
+		{
+			if (!IsValid(Weapon))
+			{
+				continue;
+			}
+
+			const TSubclassOf<URogueWeaponAbility> AbilityClass = Weapon->GetFireAbilityClass();
+			if (AbilityClass == nullptr)
+			{
+				// 不参与能力驱动的武器（镰刀：纯表现轨道，见它的头文件）。
+				continue;
+			}
+
+			bool bAlreadyGranted = false;
+			for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
+			{
+				if (Spec.Ability != nullptr && Spec.Ability->GetClass() == AbilityClass.Get())
+				{
+					bAlreadyGranted = true;
+					break;
+				}
+			}
+
+			if (!bAlreadyGranted)
+			{
+				ASC->GiveAbility(FGameplayAbilitySpec(AbilityClass, /*Level=*/1, /*InputID=*/INDEX_NONE, /*SourceObject=*/this));
+			}
+		}
+	}
+
+	// ---- ② 是否已经全部在跑 ----
+	bool bAnyInactive = false;
+	int32 WeaponAbilityCount = 0;
+	for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
+	{
+		if (Spec.Ability == nullptr || !Spec.Ability->GetAssetTags().HasTag(RogueGameplayTags::Ability_WeaponAutoAttack))
+		{
+			continue;
+		}
+		++WeaponAbilityCount;
+		if (!Spec.IsActive())
+		{
+			bAnyInactive = true;
+			break;
+		}
+	}
+
+	// 一个都没有 = 能力还没复制到本机（客户端常见的前几帧）；不算失败，继续等。
+	if (WeaponAbilityCount > 0 && !bAnyInactive)
+	{
+		bWeaponAbilitiesSettled = true;
+		return;
+	}
+
+	// ---- ③ 激活 ----
+	if (bLocalController)
+	{
+		// 本人：本地激活（LocalPredicted 会顺带通知服务端在自己那份 ASC 上激活）。
+		// 一次调用把全部武器能力都激活（它们共用 Ability.Weapon.AutoAttack 资产标签）。
+		ASC->TryActivateAbilitiesByTag(AutoAttackTag);
+		return;
+	}
+
+	// ---- ④ 服务端上的远端玩家：等本人客户端的激活请求，超时再兜底 ----
+	//
+	// 为什么不能由服务端直接激活：LocalPredicted 的能力如果服务端已经激活，
+	// 客户端那条激活请求会被判失败（ClientActivateAbilityFailed），
+	// 于是**客户端本地那份会被结束** —— 本人玩家就失去了零延迟的开火表现。
+	// 但也不能干等：请求万一丢了，这个玩家的武器就永远不会权威开火（伤害全没），
+	// 而且这种失败是静默的。所以加一个看门狗，超时后由服务端接管。
+	const UWorld* World = GetWorld();
+	const float NowSeconds = World != nullptr ? World->GetTimeSeconds() : 0.0f;
+	if (WeaponAbilityWaitStartTime < 0.0f)
+	{
+		WeaponAbilityWaitStartTime = NowSeconds;
+		return;
+	}
+
+	if (NowSeconds - WeaponAbilityWaitStartTime > 5.0f)
+	{
+		if (ASC->TryActivateAbilitiesByTag(AutoAttackTag))
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[武器技能] 玩家 %s 的客户端在 5 秒内没有激活武器能力，服务端已接管激活（本人端将失去本地预测）"),
+				*GetName());
+		}
+	}
+}
+
+void ARogueCharacter::TickWeaponFireReport(float DeltaSeconds)
+{
+	if (!RogueSelfTest::IsWeaponUpgradeChainEnabled() || WeaponFireReportCount >= 6)
+	{
+		return;
+	}
+
+	const UWorld* World = GetWorld();
+	if (World == nullptr)
+	{
+		return;
+	}
+
+	const float NowSeconds = World->GetTimeSeconds();
+	if (WeaponFireReportNextTime <= 0.0f)
+	{
+		// 第一次调用只建立时间基准（这时候武器与技能通常都还没就绪）
+		WeaponFireReportNextTime = NowSeconds + 10.0f;
+		return;
+	}
+	if (NowSeconds < WeaponFireReportNextTime)
+	{
+		return;
+	}
+
+	WeaponFireReportNextTime = NowSeconds + 10.0f;
+	++WeaponFireReportCount;
+
+	URogueAbilitySystemComponent* ASC = GetRogueAbilitySystemComponent();
+	if (ASC == nullptr)
+	{
+		return;
+	}
+
+	// 本局战况：击杀数只在服务端增长（伤害在服务端结算），所以客户端读到的这份
+	// 恰好能当"复制是否也正常"的旁证。
+	int32 Kills = -1;
+	int32 Wave = -1;
+	if (const AGameStateBase* WorldGameState = World->GetGameState())
+	{
+		if (const ARogueGameState* RogueGS = Cast<ARogueGameState>(WorldGameState))
+		{
+			Kills = RogueGS->GetEnemiesDefeated();
+			Wave = RogueGS->GetCurrentWave();
+		}
+	}
+
+	const APlayerState* OwningPlayerState = GetPlayerState();
+
+	UE_LOG(LogTemp, Log, TEXT("[SelfTest] 武器技能报告#%d | 本机(%s) 玩家=%s | 波次=%d 击杀=%d"),
+		WeaponFireReportCount,
+		IsAuthoritySide() ? TEXT("服务端") : TEXT("客户端"),
+		OwningPlayerState != nullptr ? *OwningPlayerState->GetPlayerName() : TEXT("?"),
+		Wave, Kills);
+
+	for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
+	{
+		const URogueWeaponAbility* Ability = Cast<URogueWeaponAbility>(Spec.GetPrimaryInstance());
+		if (Ability == nullptr)
+		{
+			continue;
+		}
+
+		// 目标数也要打：否则"这把武器一次没开火"分不清是"没目标"还是"被冷却卡住"。
+		int32 TargetCount = -1;
+		if (const ARogueWeaponBase* Weapon = Ability->GetDrivenWeapon())
+		{
+			TArray<ARogueEnemy*> Targets;
+			Weapon->CollectFireTargets(Targets);
+			TargetCount = Targets.Num();
+		}
+
+		UE_LOG(LogTemp, Log, TEXT("[SelfTest]   能力 %-32s 激活=%d 开火=%d 持续心跳=%d 冷却中=%d 剩余=%.2f 目标=%d 该武器=%s"),
+			*Ability->GetClass()->GetName(),
+			Spec.IsActive() ? 1 : 0,
+			Ability->GetFireCount(),
+			Ability->GetContinuousTickCount(),
+			Ability->IsWeaponCoolingDown() ? 1 : 0,
+			Ability->GetCooldownRemainingForSelfTest(),
+			TargetCount,
+			*GetNameSafe(Ability->GetDrivenWeapon()));
+	}
+
+	for (const ARogueWeaponBase* Weapon : Weapons)
+	{
+		if (!IsValid(Weapon))
+		{
+			continue;
+		}
+
+		UE_LOG(LogTemp, Log, TEXT("[SelfTest]   武器 %-32s 生效冷却=%.2f 数量=%d 伤害=%.2f"),
+			*Weapon->GetClass()->GetName(),
+			Weapon->GetAbilityCooldown(), Weapon->GetEffectiveCount(), Weapon->GetEffectiveDamage());
+	}
 }
 
 void ARogueCharacter::Tick(float DeltaSeconds)
@@ -739,6 +964,12 @@ void ARogueCharacter::Tick(float DeltaSeconds)
 			}
 		}
 	}
+
+	// 武器能力的授予/激活：**必须在 `if (bDead) return;` 之前**。
+	// 理由与上面那段复活轮询一样：倒地的玩家也要把能力准备好，
+	// 否则"加载时就已经倒地"的客户端会一直激活不了（本项目在诊断代码上踩过同一个坑）。
+	EnsureWeaponAbilities();
+	TickWeaponFireReport(DeltaSeconds);
 
 	if (bDead)
 	{

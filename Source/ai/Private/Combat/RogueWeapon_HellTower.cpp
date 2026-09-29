@@ -1,5 +1,6 @@
 // 地狱塔武器 —— 持续锁定 + 伤害递增逻辑
 #include "Combat/RogueWeapon_HellTower.h"
+#include "AbilitySystem/Abilities/RogueWeaponAbility.h"
 #include "AbilitySystem/RogueAttributeSet.h"
 
 #include "Player/RogueCharacter.h"
@@ -8,6 +9,13 @@
 #include "Core/RogueGameplayTags.h"
 #include "Kismet/GameplayStatics.h"
 
+ARogueWeapon_HellTower::ARogueWeapon_HellTower()
+{
+	FireAbilityClass = URogueWeaponAbility_HellTower::StaticClass();
+}
+
+// 注：本函数由 URogueWeaponAbility_HellTower 通过逐帧心跳调用（见 UsesTargetedFireLoop 的说明）。
+// 它**不再**由 ARogueCharacter::TickWeapons 调用 —— 后者的职责已经缩小到"持续型表现武器"。
 void ARogueWeapon_HellTower::WeaponTick(float DeltaSeconds)
 {
 	const int32 EffectiveCount = GetEffectiveCount();

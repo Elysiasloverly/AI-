@@ -16,6 +16,7 @@ class ARogueRocketProjectile;
 class ARogueLaserBeam;
 class ARogueOrbitingBlade;
 class URogueAttributeSet;
+class URogueWeaponAbility;
 struct FRogueCombatPoolPrewarmClasses;
 
 // ============================================================
@@ -176,11 +177,45 @@ public:
 	/** 由 Character 在 BeginPlay 时调用，传入 DataTable 行数据 */
 	void InitializeWeapon(ARogueCharacter* InOwnerCharacter, const FRogueWeaponTableRow& InConfig);
 
-	/** 由 Character 每帧调用 */
+	/** 由 Character 每帧调用 —— **只给"没有某一发可广播"的持续型表现武器用**
+	 *  （目前只有环绕刀片；见 NeedsCosmeticTick）。
+	 *  事件型武器的开火已经全部搬进 GameplayAbility（见下面 Ability 一节），
+	 *  它们的逐帧节拍由 URogueAbilityTask_WeaponFireLoop 驱动。 */
 	virtual void WeaponTick(float DeltaSeconds) PURE_VIRTUAL(ARogueWeaponBase::WeaponTick, );
 
 	/** 角色死亡时调用，子类可重写做清理 */
 	virtual void OnOwnerDied();
+
+	// ---- 能力驱动（GameplayAbility 侧要问的问题）----
+	//
+	// 分工：**能力决定"什么时候能开火"，武器决定"这一发是什么"**。
+	// 所以能力只会问下面这几个问题，而不会碰伤害/弹速/散射那些细节。
+
+	/** 本武器的开火能力类（子类在构造里指定）。
+	 *  返回 nullptr = 这把武器不参与能力驱动（目前只有镰刀：它是纯表现轨道，
+	 *  在**所有**机器上都要画，而技能列表只复制给本人，所以它留在 TickWeapons 那条路）。 */
+	virtual TSubclassOf<URogueWeaponAbility> GetFireAbilityClass() const { return FireAbilityClass; }
+
+	/** 是否"未解锁就不开火"。各武器改造前的判据都是生效数量 > 0，所以默认就是它。 */
+	virtual bool CanFireNow() const { return GetEffectiveCount() > 0; }
+
+	/** 开火节拍由**目标选择**驱动（事件型武器），还是武器自己内部的持续模拟（地狱塔）。
+	 *
+	 *  · true （默认，子弹/火箭/迫击炮/激光）：能力每帧问一次"有目标吗"，有就开一发。
+	 *  · false（地狱塔）：它维护自己的锁定列表，每个目标各有独立的伤害跳与光束刷新间隔，
+	 *    没有"某一发"这种事件。能力只提供逐帧心跳，节拍在武器内部。
+	 */
+	virtual bool UsesTargetedFireLoop() const { return true; }
+
+	/** 目标选择：把这一发要打的敌人填进 OutTargets。
+	 *  返回空数组 = 本帧不开火（**不消耗冷却**，下一帧继续找 —— 与改造前一致）。 */
+	virtual void CollectFireTargets(TArray<ARogueEnemy*>& OutTargets) const;
+
+	/** 开火：对着选出来的目标打出这一发（池化弹体、散射、广播都在这里）。 */
+	virtual void FireAtTargets(const TArray<ARogueEnemy*>& Targets);
+
+	/** 这一发之后要冷却多久（秒）—— 生效冷却，各武器有自己的换算系数与下限。 */
+	virtual float GetAbilityCooldown() const { return GetEffectiveCooldown(); }
 
 	// ---- 联机表现：本人预测 + 服务端广播给别人 ----
 
@@ -315,6 +350,10 @@ protected:
 
 	/** 武器配置数据 */
 	FRogueWeaponTableRow Config;
+
+	/** 开火能力类 —— 子类在构造里指定（见 GetFireAbilityClass）。 */
+	UPROPERTY(EditDefaultsOnly, Category = "技能")
+	TSubclassOf<URogueWeaponAbility> FireAbilityClass;
 
 private:
 	UPROPERTY()

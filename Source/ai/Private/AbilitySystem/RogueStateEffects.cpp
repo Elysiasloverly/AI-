@@ -112,3 +112,23 @@ URogueDashCooldownEffect::URogueDashCooldownEffect()
 	// 曾经因为标签没真的授予（废弃容器那个坑），冲刺**完全没有冷却**且没有任何报错。
 	GrantStateTag(RogueGameplayTags::Cooldown_Dash);
 }
+
+// ===========================================================
+//  武器开火冷却：Cooldown.Weapon.AutoAttack（时长 = SetByCaller(Data.Cooldown)）
+// ===========================================================
+
+URogueWeaponCooldownEffect::URogueWeaponCooldownEffect()
+{
+	DurationPolicy = EGameplayEffectDurationType::HasDuration;
+
+	// 时长由施加方用 SetByCaller 给出（各武器的冷却算法不同，见武器侧的 GetAbilityCooldown）。
+	// 用 SetByCaller 而不是绑属性：属性里存的是**加成**，不是"这把武器的冷却"，
+	// "加成怎么换算成冷却"是武器的知识（火箭 ×2.5/下限 0.55、迫击炮 ×2.0/下限 0.7、激光 ×2.0/下限 0.35）。
+	// UE 5.5 里 FSetByCallerFloat 有 DataName(FName) 与 DataTag(FGameplayTag) 两个字段，
+	// 用 DataTag —— 施加方走 `Spec->SetByCallerTagMagnitudes`，走 Tag 不会有字符串拼写风险。
+	FSetByCallerFloat DurationFromCaller;
+	DurationFromCaller.DataTag = RogueGameplayTags::Data_Cooldown;
+	DurationMagnitude = FGameplayEffectModifierMagnitude(DurationFromCaller);
+
+	GrantStateTag(RogueGameplayTags::Cooldown_WeaponAutoAttack);
+}

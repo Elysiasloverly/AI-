@@ -347,6 +347,41 @@ private:
 
 	void InitializeWeapons();
 	void TickWeapons(float DeltaSeconds);
+
+	// ---- 武器技能（开火能力的授予与激活）----
+
+	/** 给每把武器授予并激活它的开火能力（URogueWeaponAbility）。
+	 *
+	 *  每帧调一次、很便宜、且**幂等**：
+	 *    · 授予只在权威端做，而且先查"这个 ASC 上有没有同类能力"，
+	 *      所以角色重生（Pawn 换了但 PlayerState/ASC 保留）不会重复授予；
+	 *    · 激活成功后置 bWeaponAbilitiesSettled，之后就只剩一个 bool 判断。
+	 *  为什么必须每帧重试：客户端的能力列表是**复制过来的**，
+	 *  到达时刻晚于武器生成，第一次尝试通常会"还没有技能可用"。
+	 *
+	 *  联机分工（与改造前 TickWeapons 的判据一致）：
+	 *    · 本人（主机自己那份 / 客户端自己那份）：本地激活 → LocalPredicted 顺带通知服务端；
+	 *    · 服务端上的**远端**玩家：等本人客户端的激活请求（GAS 标准路径）+ 兜底看门狗；
+	 *    · 其它客户端：不激活任何人的武器（别人的弹道由服务端广播补上）。
+	 */
+	void EnsureWeaponAbilities();
+
+	/** 结算完成（全部武器能力都已在跑）—— 之后每帧只做一次 bool 判断 */
+	bool bWeaponAbilitiesSettled = false;
+
+	/** 服务端为"远端玩家"等待其客户端激活请求的起始时刻（看门狗用，单位：世界秒） */
+	float WeaponAbilityWaitStartTime = -1.0f;
+
+	// ---- 武器技能自检报告（仅 Rogue.SelfTest.WeaponUpgradeChain 打开时输出）----
+
+	/** 每 10 秒打一行"每把武器的能力是否激活 + 开了多少次火 + 当前生效冷却"。
+	 *  为什么需要它：开火已经搬进能力了，光看"数值对不对"证明不了循环真的在跑 ——
+	 *  必须同时看到**开火次数在涨**、且服务端与客户端同一玩家的数字量级一致。 */
+	void TickWeaponFireReport(float DeltaSeconds);
+
+	float WeaponFireReportNextTime = 0.0f;
+	int32 WeaponFireReportCount = 0;
+
 	void UpdateVisualPresentation(float DeltaSeconds);
 	void LevelUp();
 

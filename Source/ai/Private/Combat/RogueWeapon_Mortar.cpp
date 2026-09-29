@@ -1,4 +1,5 @@
 #include "Combat/RogueWeapon_Mortar.h"
+#include "AbilitySystem/Abilities/RogueWeaponAbility.h"
 #include "AbilitySystem/RogueAttributeSet.h"
 
 #include "Enemies/RogueEnemy.h"
@@ -7,40 +8,42 @@
 #include "Combat/RogueMortarProjectile.h"
 #include "Combat/RogueRocketProjectile.h"
 
-void ARogueWeapon_Mortar::WeaponTick(float DeltaSeconds)
+ARogueWeapon_Mortar::ARogueWeapon_Mortar()
 {
-	if (GetEffectiveCount() <= 0)
+	FireAbilityClass = URogueWeaponAbility_Mortar::StaticClass();
+}
+
+void ARogueWeapon_Mortar::CollectFireTargets(TArray<ARogueEnemy*>& OutTargets) const
+{
+	// 与改造前 WeaponTick 完全一致：射程内取 `max(8, 数量×4)` 个候选，
+	// 再按"离玩家从远到近"排序（迫击炮优先打最远的那批）。
+	CollectEnemiesInRange(GetEffectiveRange(), OutTargets, FMath::Max(8, GetEffectiveCount() * 4));
+	if (OutTargets.Num() == 0)
 	{
 		return;
 	}
 
-	FireTimer -= DeltaSeconds;
-	if (FireTimer > 0.0f)
-	{
-		return;
-	}
-
-	TArray<ARogueEnemy*> Enemies;
-	CollectEnemiesInRange(GetEffectiveRange(), Enemies, FMath::Max(8, GetEffectiveCount() * 4));
-	if (Enemies.Num() == 0)
-	{
-		return;
-	}
-
-	ARogueCharacter* OwnerChar = GetOwnerCharacter();
+	const ARogueCharacter* OwnerChar = GetOwnerCharacter();
 	if (OwnerChar == nullptr)
 	{
 		return;
 	}
 
 	const FVector OwnerLocation = OwnerChar->GetActorLocation();
-	Enemies.Sort([&OwnerLocation](const ARogueEnemy& Left, const ARogueEnemy& Right)
+	OutTargets.Sort([&OwnerLocation](const ARogueEnemy& Left, const ARogueEnemy& Right)
 	{
 		return FVector::DistSquared(Left.GetActorLocation(), OwnerLocation) > FVector::DistSquared(Right.GetActorLocation(), OwnerLocation);
 	});
+}
 
-	FireMortarVolley(Enemies);
-	FireTimer = GetEffectiveCooldown();
+void ARogueWeapon_Mortar::FireAtTargets(const TArray<ARogueEnemy*>& Targets)
+{
+	if (Targets.Num() == 0)
+	{
+		return;
+	}
+
+	FireMortarVolley(Targets);
 }
 
 // 生效数值：迫击炮的换算系数（攻速 ×2.0/下限 0.7、弹速 ×0.5、爆炸半径 ×0.35）

@@ -44,15 +44,33 @@ void ARogueWeaponBase::OnOwnerDied()
 	// 基类默认不做任何事，子类可重写
 }
 
+void ARogueWeaponBase::CollectFireTargets(TArray<ARogueEnemy*>& OutTargets) const
+{
+	// 基类默认：范围内最近的**一个**敌人（子弹武器改造前就是 FindNearestEnemy）。
+	// 打多个目标的武器（火箭/迫击炮/激光）重写这里。
+	if (ARogueEnemy* Target = FindNearestEnemy(GetEffectiveRange()))
+	{
+		OutTargets.Add(Target);
+	}
+}
+
+void ARogueWeaponBase::FireAtTargets(const TArray<ARogueEnemy*>& Targets)
+{
+	// 基类没有"开火"这一说（每把武器的这一发都不一样），子类实现。
+	// 留着空实现是为了让"忘了实现"表现为"这把武器不开火"而不是编译不过 ——
+	// 但那样会静默失效，所以这里给一次明确的报错。
+	UE_LOG(LogTemp, Error, TEXT("[武器] %s 没有实现 FireAtTargets —— 它被能力驱动了但永远打不出伤害"),
+		*GetClass()->GetName());
+}
+
 const FRogueWeaponBonusValues& ARogueWeaponBase::GetWeaponBonusValues() const
 {
-	// 加成来自拥有者 PlayerState 上的**复制快照**（服务端每帧从属性集同步）。
+	// 加成来自拥有者角色身上的**复制快照**（服务端每帧从属性集同步，变化才推）。
 	//
-	// 为什么不是直接读 ASC 上的属性集：实测那 12 个加成属性没有复制到客户端
-	// （同一套集里的生命/护甲正常），而武器在各端都要按同样的加成算。
-	// 详见 FRogueWeaponBonusValues 的注释。
-	// 快照挂在**拥有者角色**上（实测 PlayerState 上的复制属性到不了客户端，
-	// 而角色自己的可以）。各端读同一份，所以每台机器算出的武器数值一致。
+	// 为什么要这一层而不是直接读 ASC 上的属性集：武器生效值是"数据表基础值 + 加成×本武器系数"，
+	// 各端要各算一遍，所以需要一份跨端一致的"加成输入"。
+	// 快照挂在 ARogueCharacter 上（与 bDead 同一条复制通道）；双进程自检已验证
+	// 客户端读到的加成与服务端一致（见 Docs/GAS-Main-Architecture-Plan.md 的 Phase 1b 记录）。
 	static const FRogueWeaponBonusValues EmptyValues;
 
 	if (OwnerCharacter == nullptr)

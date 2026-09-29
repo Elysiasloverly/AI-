@@ -12,8 +12,8 @@
 |---|---|
 | 玩家属性 / 伤害 / 状态标签 / 特效 | ✅ GAS（属性集 + GE + Tag + Cue） |
 | 冲刺 | ✅ GAS（GameplayAbility + AbilityTask） |
-| **武器开火** | ❌ 自研：`ARogueCharacter::TickWeapons` 每帧调 `ARogueWeaponBase::WeaponTick` |
-| **武器升级** | ❌ 自研：改武器 Actor 上的 `Config` 结构体 + `Multicast_ApplyWeaponUpgrade` 各端重放 |
+| **武器开火** | ✅ GAS（Phase 2：`URogueWeaponAbility` + 逐帧心跳任务 + 冷却 GE） |
+| **武器升级** | ✅ GAS（Phase 1b：改玩家 ASC 上的加成属性，武器读"基础值 + 加成"） |
 | **敌人攻击** | ❌ 自研：`ARogueEnemy::Tick` 里的接触/远程/地面波计时器 |
 | 对象池 / 刷怪 / 商店 / 奖励 | 保留自研（GAS 不负责这些，也不该负责） |
 
@@ -112,14 +112,55 @@ UnrealEditor.exe <uproject> <map>?listen -game -nullrhi -log
 3. 完成后：`ARogueCharacter::ApplyUpgrade` 的武器分支改为 `ApplyUpgradeEffectViaGAS`，
    删除 `Multicast_ApplyWeaponUpgrade` 与 `DispatchWeaponUpgrade`
 
-### ⏳ Phase 2：武器开火改为 GameplayAbility
+### ✅ Phase 2：武器开火改为 GameplayAbility（已完成，双进程验证通过）
 
-- 新增 `URogueWeaponAbility`：**持续激活**（`InstancingPolicy = InstancedPerActor`，
-  `NetExecutionPolicy = LocalPredicted`），用 `UAbilityTask_WaitDelay` 循环开火
-- 开火间隔来自 `GetEffectiveCooldown()`（Phase 1b 之后它就是"数据 + 属性"）
-- 分支：服务端 → 生成真实弹体并广播；本人客户端 → 只生成本地表现弹体（保持零延迟手感）
-- `ARogueCharacter::TickWeapons` 退化为"只给持续型武器（环绕刀片）跑表现"
-- 升级可以顺带改成"能力层"的写法：`ActivationBlockedTags`（如冲刺中禁用某武器）
+**新增/改动**
+- `URogueWeaponAbility`（`Public|Private/AbilitySystem/Abilities/`）：**持续激活**的自动开火能力
+  （`InstancedPerActor` + `NetExecutionPolicy = LocalPredicted` + 资产标签 `Ability.Weapon.AutoAttack`），
+  每把武器一个实例。六个子类各只有一行"我驱动哪把武器"。
+- `URogueAbilityTask_WeaponFireLoop`：每帧心跳（`bTickingTask = true`）。
+  GameplayAbility 没有 Tick，而开火的节奏检查**必须逐帧**（改造前 `TickWeapons` 就是每帧调一次
+  `WeaponTick`）—— 换成定时器轮询会让"敌人刚进射程"时多等一帧到几十毫秒。
+- `URogueWeaponCooldownEffect`：冷却 GE（`HasDuration`，时长 = SetByCaller `Data.Cooldown`，
+  授予 `Cooldown.Weapon.AutoAttack`）。**它是开火节奏的唯一真相源**，武器里的 float 计时器全部删除。
+- 四把事件型武器（子弹/火箭/迫击炮/激光）的 `WeaponTick` 拆成 `CollectFireTargets` + `FireAtTargets`；
+  地狱塔保留自己的持续模拟（`UsesTargetedFireLoop() == false`，能力只给逐帧心跳）；
+  镰刀不参与能力驱动（纯表现轨道，任何机器都要画）。
+- `ARogueCharacter::EnsureWeaponAbilities`：授予（只在权威端、幂等）+ 激活（本人本地激活；
+  服务端上远端玩家等本人客户端的请求 + 5 秒看门狗兜底）。
+- `ARogueCharacter::TickWeapons` **只剩纯表现**（环绕刀片 + 每帧一次的表现 RPC 合并）。
+
+**联机角色分工**（这条是 GAS 天然给的，不再手写判断）
+| 机器 | 有能力的 ASC | 结果 |
+|---|---|---|
+| 服务端 | 每个玩家的 PlayerState | 权威模拟所有人的武器（伤害在这里结算） |
+| 本人客户端 | 只有自己那份（技能列表按 `COND_OwnerOnly` 复制） | 本地预测开火，零延迟 |
+| 其它客户端 | 没有别人的技能 | 只画服务端广播的那一发 |
+
+**双进程无头验证（同一玩家逐行对比）**
+
+| | Projectile | Rocket | Mortar | HellTower |
+|---|---|---|---|---|
+| 服务端（权威那份） | 1 | 8 | 56 | 持续心跳 45890 |
+| 客户端（本人预测那份） | 0 | 8 | 69 | 持续心跳 110776 |
+
+- 击杀数持续上涨（服务端 78 / 客户端读到的复制值 89）→ 弹体真的打出去并结算了
+- 起止均无 `Fatal` / `Ensure` / `LogAbilitySystem: Error`；无"未实现 FireAtTargets"；看门狗**未**触发
+  （说明远端玩家的能力是客户端通过 GAS 标准路径激活的，预测没有丢）
+- 两端的开火次数只有个位数差异（各端各自索敌，目标选择本来就可能不同），量级与冷却完全一致
+
+**⚠️ 本次挖出来的最贵的一个坑（务必保留注释）**：客户端施加冷却 GE 会**静默失败**。
+1. `ASC->ApplyGameplayEffectSpecToSelf(Spec)` 不带预测键 → 引擎 `HasNetworkAuthorityToApplyGameplayEffect`
+   在非权威端要求"权威 **或** 有效预测键" → 客户端拿到**空句柄**；
+2. 换成引擎自己的 `ApplyGameplayEffectSpecToOwner(...)`（`ApplyCooldown` 就这么写）**仍然失败** ——
+   它内部用 `GetPredictionKeyForNewAction()`，那个键只在**预测窗口内**（能力激活的调用栈里）有效，
+   而我们的调用发生在逐帧心跳任务里，窗口已经关闭；
+3. 正确做法：显式传 `CurrentActivationInfo.GetActivationPredictionKey()`。
+
+症状极隐蔽：冷却挂不上 → `IsWeaponCoolingDown()` 恒为假 → **客户端那把武器每帧开一枪**
+（实测客户端火箭 1531 发 / 迫击炮 9486 发，而服务端只有 11/71，表现就是"伤害莫名其妙高好几倍"）。
+所以代码里保留了显式报错（句柄无效就 `UE_LOG(Error)`），并且自检报告会打出
+`冷却中 / 剩余 / 目标数 / 持续心跳`，让这类失效一眼可见。
 
 ### ⏳ Phase 3：敌人攻击改为 GameplayAbility
 

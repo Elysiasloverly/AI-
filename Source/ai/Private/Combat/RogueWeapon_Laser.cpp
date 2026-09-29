@@ -1,5 +1,6 @@
 // 激光武器 —— 激光爆发 + 折射链逻辑
 #include "Combat/RogueWeapon_Laser.h"
+#include "AbilitySystem/Abilities/RogueWeaponAbility.h"
 #include "AbilitySystem/RogueAttributeSet.h"
 
 #include "Player/RogueCharacter.h"
@@ -8,28 +9,25 @@
 #include "Core/RogueGameplayTags.h"
 #include "Kismet/GameplayStatics.h"
 
-void ARogueWeapon_Laser::WeaponTick(float DeltaSeconds)
+ARogueWeapon_Laser::ARogueWeapon_Laser()
 {
-	if (GetEffectiveCount() <= 0)
+	FireAbilityClass = URogueWeaponAbility_Laser::StaticClass();
+}
+
+void ARogueWeapon_Laser::CollectFireTargets(TArray<ARogueEnemy*>& OutTargets) const
+{
+	// 与改造前 WeaponTick 完全一致：射程内取 `max(8, 数量×3)` 个候选。
+	CollectEnemiesInRange(GetEffectiveRange(), OutTargets, FMath::Max(8, GetEffectiveCount() * 3));
+}
+
+void ARogueWeapon_Laser::FireAtTargets(const TArray<ARogueEnemy*>& Targets)
+{
+	if (Targets.Num() == 0)
 	{
 		return;
 	}
 
-	LaserTimer -= DeltaSeconds;
-	if (LaserTimer > 0.0f)
-	{
-		return;
-	}
-
-	TArray<ARogueEnemy*> Enemies;
-	CollectEnemiesInRange(GetEffectiveRange(), Enemies, FMath::Max(8, GetEffectiveCount() * 3));
-	if (Enemies.Num() == 0)
-	{
-		return;
-	}
-
-	FireLaserBurst(Enemies);
-	LaserTimer = GetEffectiveCooldown();
+	FireLaserBurst(Targets);
 }
 
 // 生效数值：激光的换算系数（攻速 ×2.0/下限 0.35、折射范围 ×0.45）沿用自研版本。

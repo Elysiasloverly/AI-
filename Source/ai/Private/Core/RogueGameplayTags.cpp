@@ -24,6 +24,7 @@ namespace RogueGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG(Data_Damage,                  "Data.Damage");
 	UE_DEFINE_GAMEPLAY_TAG(Data_Duration,                "Data.Duration");
 	UE_DEFINE_GAMEPLAY_TAG(Data_Magnitude,               "Data.Magnitude");
+	UE_DEFINE_GAMEPLAY_TAG(Data_Cooldown,                "Data.Cooldown");
 
 	// ---- 伤害来源 ----
 	UE_DEFINE_GAMEPLAY_TAG(Damage_Source_Contact,        "Damage.Source.Contact");

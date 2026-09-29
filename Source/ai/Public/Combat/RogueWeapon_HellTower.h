@@ -13,11 +13,20 @@ class AI_API ARogueWeapon_HellTower : public ARogueWeaponBase
 	GENERATED_BODY()
 
 public:
+	ARogueWeapon_HellTower();
+
+	/** 由能力每帧驱动（见 UsesTargetedFireLoop）：地狱塔维护自己的锁定列表，
+	 *  每个目标各有独立的伤害跳与光束刷新间隔，所以它的"节拍"在武器内部，
+	 *  能力只提供逐帧心跳。 */
 	virtual void WeaponTick(float DeltaSeconds) override;
 	virtual void OnOwnerDied() override;
 
+	/** 地狱塔不是"目标选择 → 开火"型武器（它是持续锁定 + 伤害递增），
+	 *  逐帧心跳直接进 WeaponTick，不走能力的目标选择那三步。 */
+	virtual bool UsesTargetedFireLoop() const override { return false; }
+
 	/** 队友客户端收到服务端广播后，把这束地狱塔光束再画一遍（不索敌、不结算伤害） */
-		virtual ERogueUpgradeType GetCountUpgradeType() const override { return ERogueUpgradeType::HellTowerCount; }
+	virtual ERogueUpgradeType GetCountUpgradeType() const override { return ERogueUpgradeType::HellTowerCount; }
 	virtual void PlayCosmeticFire(const FRogueWeaponCosmeticFire& Fire) override;
 
 	// ---- 生效数值：地狱塔的换算系数与其它武器都不同（沿用自研版本的行为）----

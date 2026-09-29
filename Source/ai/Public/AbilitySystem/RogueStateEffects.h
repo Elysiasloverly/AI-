@@ -88,3 +88,26 @@ class AI_API URogueDashCooldownEffect : public URogueStateTagEffect
 public:
 	URogueDashCooldownEffect();
 };
+
+/**
+ * 武器开火冷却效果：授予 Cooldown.Weapon.AutoAttack，**时长由 SetByCaller(Data.Cooldown) 给出**。
+ *
+ * 为什么时长走 SetByCaller 而不是像冲刺那样绑属性：
+ *   每把武器的冷却算法都不同（换算系数、下限都不一样，见各武器的 GetEffectiveCooldown），
+ *   而"这个加成本武器怎么用"是**武器自己的知识**。所以流程是：
+ *     武器算出 `GetAbilityCooldown()` → 能力把它写成一次 SetByCaller → 冷却 GE 按它计时。
+ *   同一个 GE 类因此能被六把武器共用，而每把武器仍然各算各的。
+ *
+ * ⚠️ 与冲刺冷却的区别：这个 GE **不是** `CooldownGameplayEffectClass`。
+ *    武器能力是"持续激活"的（激活一次就一直跑），GAS 内置的"冷却期间不能重新激活"
+ *    对持续能力没有意义。它的作用是**节拍**：开火循环每帧问一次"这把武器的冷却 GE
+ *    还在不在"，在就跳过这一帧 —— 节奏的唯一真相源是这个 GE，而不是武器里的 float 计时器。
+ */
+UCLASS()
+class AI_API URogueWeaponCooldownEffect : public URogueStateTagEffect
+{
+	GENERATED_BODY()
+
+public:
+	URogueWeaponCooldownEffect();
+};

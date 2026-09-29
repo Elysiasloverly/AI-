@@ -76,6 +76,11 @@ namespace RogueGameplayTags
 	/** 通用幅值（升级卡的 Magnitude）。 */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Magnitude);
 
+	/** 武器开火的冷却时长（秒）—— 由 URogueWeaponCooldownEffect 按 SetByCaller 取值。
+	 *  为什么不复用 Data_Duration：两者语义不同（一个是"状态持续多久"，
+	 *  一个是"这把武器多久能再开一枪"），共用会让同一个 GE 上出现歧义。 */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Cooldown);
+
 	// ===========================================================
 	//  伤害来源（Damage.Source）—— 用于反馈分流与未来的免疫/减伤
 	// ===========================================================

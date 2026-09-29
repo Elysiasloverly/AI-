@@ -475,6 +475,88 @@ void ARogueGameMode::RunWeaponUpgradeSelfTest()
 
 	const int32 PlayerCount = Players.Num();
 
+	// ---- 自检要施加的升级内容 ----
+	//
+	// 每一项都走真实的 ApplyUpgrade → GE → ExecutionCalculation → 属性集。
+	//
+	// ⚠️ 为什么连 6 种"数量+1"也要施加：武器的"是否开火"判据是生效数量 > 0，
+	//    而 DT_WeaponConfig 里多数行的基础数量就是 0（= 未解锁，要靠数量卡解锁）。
+	//    只加主武器数量的话，另外 5 把武器全程是"锁着"的状态 —— 日志看起来一切正常，
+	//    实际上它们的开火路径（能力 → 目标选择 → 池化弹体）一次都没被验证过。
+	//    所以这里把 6 类数量全 +1，让整个武器表都真的跑起来。
+	struct FSelfTestCase
+	{
+		ERogueUpgradeType Type;
+		float Magnitude;
+		const TCHAR* Label;
+	};
+	const FSelfTestCase Cases[] =
+	{
+		{ ERogueUpgradeType::AttackPower,      10.0f, TEXT("伤害+10") },
+		{ ERogueUpgradeType::AttackSpeed,       0.1f, TEXT("攻速+0.1") },
+		{ ERogueUpgradeType::AttackRange,     100.0f, TEXT("范围+100") },
+		{ ERogueUpgradeType::ProjectileSpeed, 200.0f, TEXT("弹速+200") },
+		{ ERogueUpgradeType::ProjectileCount,   1.0f, TEXT("主武器数量+1") },
+		{ ERogueUpgradeType::ScytheCount,       1.0f, TEXT("镰刀数量+1") },
+		{ ERogueUpgradeType::RocketCount,       1.0f, TEXT("火箭数量+1") },
+		{ ERogueUpgradeType::LaserCount,        1.0f, TEXT("激光数量+1") },
+		{ ERogueUpgradeType::HellTowerCount,    1.0f, TEXT("地狱塔数量+1") },
+		{ ERogueUpgradeType::MortarCount,       1.0f, TEXT("迫击炮数量+1") },
+	};
+
+	auto ApplyStandardUpgrades = [&Cases, &PlayerName](ARogueCharacter* InCharacter, const TCHAR* Stage, bool bLogEach)
+	{
+		if (InCharacter == nullptr)
+		{
+			return;
+		}
+
+		const ARoguePlayerState* PS = InCharacter->GetPlayerState<ARoguePlayerState>();
+		const URogueAttributeSet* Set = PS != nullptr ? PS->GetAttributeSet() : nullptr;
+
+		for (const FSelfTestCase& TestCase : Cases)
+		{
+			FRogueUpgradeOption Option;
+			Option.Type = TestCase.Type;
+			Option.Magnitude = TestCase.Magnitude;
+			Option.Title = TestCase.Label;
+			InCharacter->ApplyUpgrade(Option);
+
+			if (bLogEach && Set != nullptr)
+			{
+				UE_LOG(LogTemp, Log, TEXT("[SelfTest] %s | 施加【%s】后 | 玩家=%s | 属性集：伤害=%.2f 攻速=%.2f 范围=%.2f 弹速=%.2f 主武器数量=%.2f"),
+					Stage, TestCase.Label, *PlayerName(InCharacter),
+					Set->GetAttackPowerBonus(), Set->GetAttackSpeedBonus(), Set->GetAttackRangeBonus(),
+					Set->GetProjectileSpeedBonus(), Set->GetProjectileCountBonus());
+			}
+		}
+	};
+
+	// 武器的"是否开火"完全由生效数量决定（0 = 锁着），所以这个摘要必须每次都打：
+	// 没有它，"某把武器一次都没开火"会被误读成"能力没跑起来"。
+	auto DumpWeaponCounts = [&PlayerName](const TCHAR* Stage, const ARogueCharacter* InCharacter)
+	{
+		if (InCharacter == nullptr)
+		{
+			return;
+		}
+
+		FString Summary;
+		for (const ARogueWeaponBase* Weapon : InCharacter->GetWeapons())
+		{
+			if (!IsValid(Weapon))
+			{
+				continue;
+			}
+			Summary += FString::Printf(TEXT("%s=%d "),
+				*Weapon->GetClass()->GetName().Replace(TEXT("RogueWeapon_"), TEXT("")),
+				Weapon->GetEffectiveCount());
+		}
+
+		UE_LOG(LogTemp, Log, TEXT("[SelfTest] %s | 玩家=%s | 各武器生效数量：%s"),
+			Stage, *PlayerName(InCharacter), *Summary);
+	};
+
 	switch (SelfTestPhase)
 	{
 	// ---- 阶段 2/4：在"所有人都已经连上"之后改属性 ----
@@ -501,10 +583,17 @@ void ARogueGameMode::RunWeaponUpgradeSelfTest()
 
 		UE_LOG(LogTemp, Log, TEXT("[SelfTest] ==== 第%s阶段：%d 个玩家**都在线** → 全员【伤害加成+5】%s ===="),
 			bSecondPhase ? TEXT("二") : TEXT("三"), PlayerCount,
-			bSecondPhase ? TEXT("并各挨 7 点伤害") : TEXT("（只改加成，不动生命）"));
+			bSecondPhase ? TEXT("并各挨 7 点伤害 + 全套升级（含 6 类数量解锁）") : TEXT("（只改加成，不动生命）"));
 
 		for (ARogueCharacter* Player : Players)
 		{
+			// 第二阶段补一次"全套升级"：后连上的玩家在第一阶段时还不存在，
+			// 所以它的武器全是锁着的（生效数量 0），那样就验证不到它的开火路径。
+			if (bSecondPhase)
+			{
+				ApplyStandardUpgrades(Player, TEXT("第二阶段"), /*bLogEach=*/false);
+			}
+
 			Player->ApplyUpgrade(LateOption);
 			if (bSecondPhase)
 			{
@@ -516,6 +605,10 @@ void ARogueGameMode::RunWeaponUpgradeSelfTest()
 		}
 
 		PushSnapshots();
+		for (const ARogueCharacter* Player : Players)
+		{
+			DumpWeaponCounts(bSecondPhase ? TEXT("第二阶段后") : TEXT("第三阶段后"), Player);
+		}
 		DumpAll(bSecondPhase ? TEXT("第二阶段后") : TEXT("第三阶段后"));
 		return;
 	}
@@ -547,51 +640,30 @@ void ARogueGameMode::RunWeaponUpgradeSelfTest()
 	SelfTestPhase = 1;
 	SelfTestPhaseTime = NowSeconds;
 
-	// 逐项施加的升级内容：每一项都走真实的 ApplyUpgrade → GE → ExecutionCalculation → 属性集
-	struct FSelfTestCase
-	{
-		ERogueUpgradeType Type;
-		float Magnitude;
-		const TCHAR* Label;
-	};
-	const FSelfTestCase Cases[] =
-	{
-		{ ERogueUpgradeType::AttackPower,      10.0f, TEXT("伤害+10") },
-		{ ERogueUpgradeType::AttackSpeed,       0.1f, TEXT("攻速+0.1") },
-		{ ERogueUpgradeType::AttackRange,     100.0f, TEXT("范围+100") },
-		{ ERogueUpgradeType::ProjectileSpeed, 200.0f, TEXT("弹速+200") },
-		{ ERogueUpgradeType::ProjectileCount,   1.0f, TEXT("数量+1") },
-	};
-
 	UE_LOG(LogTemp, Log, TEXT("[SelfTest] ==== 武器升级链路自检开始（服务端玩家数=%d）===="), PlayerCount);
+	for (const ARogueCharacter* Player : Players)
+	{
+		DumpWeaponCounts(TEXT("升级前"), Player);
+	}
 	DumpAll(TEXT("升级前"));
 
 	for (ARogueCharacter* Player : Players)
 	{
 		const ARoguePlayerState* PS = Player->GetPlayerState<ARoguePlayerState>();
-		const URogueAttributeSet* Set = PS != nullptr ? PS->GetAttributeSet() : nullptr;
-		if (Set == nullptr)
+		if (PS == nullptr || PS->GetAttributeSet() == nullptr)
 		{
 			UE_LOG(LogTemp, Error, TEXT("[SelfTest] 玩家 %s 的 ASC 上没有属性集 —— 注册失败（见 RoguePlayerState 构造）"), *PlayerName(Player));
 			continue;
 		}
 
-		for (const FSelfTestCase& TestCase : Cases)
-		{
-			FRogueUpgradeOption Option;
-			Option.Type = TestCase.Type;
-			Option.Magnitude = TestCase.Magnitude;
-			Option.Title = TestCase.Label;
-			Player->ApplyUpgrade(Option);
-
-			UE_LOG(LogTemp, Log, TEXT("[SelfTest] 施加【%s】后 | 玩家=%s | 属性集加成：伤害=%.2f 攻速=%.2f 范围=%.2f 弹速=%.2f 数量=%.2f"),
-				TestCase.Label, *PlayerName(Player),
-				Set->GetAttackPowerBonus(), Set->GetAttackSpeedBonus(), Set->GetAttackRangeBonus(),
-				Set->GetProjectileSpeedBonus(), Set->GetProjectileCountBonus());
-		}
+		ApplyStandardUpgrades(Player, TEXT("第一阶段"), /*bLogEach=*/true);
 	}
 
 	PushSnapshots();
+	for (const ARogueCharacter* Player : Players)
+	{
+		DumpWeaponCounts(TEXT("升级后"), Player);
+	}
 	DumpAll(TEXT("升级后"));
 	UE_LOG(LogTemp, Log, TEXT("[SelfTest] ==== 第一阶段完成（等客户端连上后会自动进入第二阶段）===="));
 }

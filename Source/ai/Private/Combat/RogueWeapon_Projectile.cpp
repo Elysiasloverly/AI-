@@ -1,35 +1,38 @@
 // 弹体武器 —— 自动射击逻辑
 #include "Combat/RogueWeapon_Projectile.h"
 
+#include "AbilitySystem/Abilities/RogueWeaponAbility.h"
 #include "Player/RogueCharacter.h"
 #include "Enemies/RogueEnemy.h"
 #include "Subsystems/RogueCombatPoolSubsystem.h"
 #include "Combat/RogueProjectile.h"
 
-void ARogueWeapon_Projectile::WeaponTick(float DeltaSeconds)
+ARogueWeapon_Projectile::ARogueWeapon_Projectile()
 {
-	if (GetEffectiveProjectileCount() <= 0)
-	{
-		return;
-	}
-
-	AttackTimer -= DeltaSeconds;
-	if (AttackTimer > 0.0f)
-	{
-		return;
-	}
-
-	ARogueEnemy* Target = FindNearestEnemy(GetEffectiveRange());
-	if (Target != nullptr)
-	{
-		FireAtTarget(Target);
-		AttackTimer = GetEffectiveCooldown();
-	}
+	// 开火全部由这个技能驱动（见 ARogueCharacter::EnsureWeaponAbilities）。
+	FireAbilityClass = URogueWeaponAbility_Projectile::StaticClass();
 }
 
-// 注：本类**不再有** OnUpgradeApplied / ApplyShared*Bonus。
-// 升级统一落成玩家 ASC 上 URogueAttributeSet 的加成属性，
-// 由上面的 GetEffective*() 在开火时合并（"数据表基础值 + 属性加成"）。
+void ARogueWeapon_Projectile::CollectFireTargets(TArray<ARogueEnemy*>& OutTargets) const
+{
+	// 单个最近目标（与改造前 WeaponTick 里的 FindNearestEnemy 完全一致）。
+	// 基类默认实现就是它，这里显式写出来是为了让"这把武器打几个目标"一目了然。
+	Super::CollectFireTargets(OutTargets);
+}
+
+void ARogueWeapon_Projectile::FireAtTargets(const TArray<ARogueEnemy*>& Targets)
+{
+	if (Targets.Num() == 0)
+	{
+		return;
+	}
+
+	FireAtTarget(Targets[0]);
+}
+
+// 注：本类**不再有** OnUpgradeApplied / ApplyShared*Bonus，也**不再有** AttackTimer。
+// 升级统一落成玩家 ASC 上 URogueAttributeSet 的加成属性（GetEffective* 在开火时合并）；
+// 开火节奏由技能的冷却 GE 承担（见 URogueWeaponAbility::StampWeaponCooldown）。
 
 void ARogueWeapon_Projectile::FireAtTarget(AActor* TargetActor)
 {

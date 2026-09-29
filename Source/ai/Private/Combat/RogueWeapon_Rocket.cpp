@@ -1,5 +1,6 @@
 // 火箭武器 —— 齐射逻辑
 #include "Combat/RogueWeapon_Rocket.h"
+#include "AbilitySystem/Abilities/RogueWeaponAbility.h"
 #include "AbilitySystem/RogueAttributeSet.h"
 
 #include "Engine/World.h"
@@ -9,28 +10,26 @@
 #include "Subsystems/RogueCombatPoolSubsystem.h"
 #include "Combat/RogueRocketProjectile.h"
 
-void ARogueWeapon_Rocket::WeaponTick(float DeltaSeconds)
+ARogueWeapon_Rocket::ARogueWeapon_Rocket()
 {
-	if (GetEffectiveCount() <= 0)
+	FireAbilityClass = URogueWeaponAbility_Rocket::StaticClass();
+}
+
+void ARogueWeapon_Rocket::CollectFireTargets(TArray<ARogueEnemy*>& OutTargets) const
+{
+	// 与改造前 WeaponTick 完全一致：射程额外放宽 700，取 `max(12, 数量×3)` 个候选，
+	// 然后按顺序分给每一发火箭（见 FireRocketVolley 的 `RocketIndex % Enemies.Num()`）。
+	CollectEnemiesInRange(GetEffectiveRange() + 700.0f, OutTargets, FMath::Max(12, GetEffectiveCount() * 3));
+}
+
+void ARogueWeapon_Rocket::FireAtTargets(const TArray<ARogueEnemy*>& Targets)
+{
+	if (Targets.Num() == 0)
 	{
 		return;
 	}
 
-	RocketTimer -= DeltaSeconds;
-	if (RocketTimer > 0.0f)
-	{
-		return;
-	}
-
-	TArray<ARogueEnemy*> Enemies;
-	CollectEnemiesInRange(GetEffectiveRange() + 700.0f, Enemies, FMath::Max(12, GetEffectiveCount() * 3));
-	if (Enemies.Num() == 0)
-	{
-		return;
-	}
-
-	FireRocketVolley(Enemies);
-	RocketTimer = GetEffectiveCooldown();
+	FireRocketVolley(Targets);
 }
 
 // 生效数值：火箭的换算系数与主武器不同，全部沿用自研版本的公式

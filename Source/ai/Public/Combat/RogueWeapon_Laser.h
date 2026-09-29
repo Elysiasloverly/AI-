@@ -13,10 +13,14 @@ class AI_API ARogueWeapon_Laser : public ARogueWeaponBase
 	GENERATED_BODY()
 
 public:
-	virtual void WeaponTick(float DeltaSeconds) override;
+	ARogueWeapon_Laser();
+
+	// ---- 能力驱动（见 ARogueWeaponBase 的"能力驱动"一节）----
+	virtual void CollectFireTargets(TArray<ARogueEnemy*>& OutTargets) const override;
+	virtual void FireAtTargets(const TArray<ARogueEnemy*>& Targets) override;
 
 	/** 队友客户端收到服务端广播后，把这条光束再画一遍（不索敌、不结算伤害） */
-		virtual ERogueUpgradeType GetCountUpgradeType() const override { return ERogueUpgradeType::LaserCount; }
+	virtual ERogueUpgradeType GetCountUpgradeType() const override { return ERogueUpgradeType::LaserCount; }
 	virtual void PlayCosmeticFire(const FRogueWeaponCosmeticFire& Fire) override;
 
 	// ---- 生效数值：激光的换算系数（攻速 ×2.0/下限 0.35、折射范围 ×0.45）沿用自研版本 ----
@@ -33,6 +37,4 @@ public:
 private:
 	void FireLaserBurst(const TArray<ARogueEnemy*>& Enemies);
 	void FireLaserRefractionChain(ARogueEnemy* InitialTarget, const FVector& InitialImpactLocation, float InitialDamage);
-
-	float LaserTimer = 0.0f;
 };

@@ -14,10 +14,14 @@ class AI_API ARogueWeapon_Rocket : public ARogueWeaponBase
 	GENERATED_BODY()
 
 public:
-	virtual void WeaponTick(float DeltaSeconds) override;
+	ARogueWeapon_Rocket();
+
+	// ---- 能力驱动（见 ARogueWeaponBase 的"能力驱动"一节）----
+	virtual void CollectFireTargets(TArray<ARogueEnemy*>& OutTargets) const override;
+	virtual void FireAtTargets(const TArray<ARogueEnemy*>& Targets) override;
 
 	/** 队友客户端收到服务端广播后，照着补画这一发（纯表现火箭，伤害恒为 0） */
-		virtual ERogueUpgradeType GetCountUpgradeType() const override { return ERogueUpgradeType::RocketCount; }
+	virtual ERogueUpgradeType GetCountUpgradeType() const override { return ERogueUpgradeType::RocketCount; }
 	virtual void PlayCosmeticFire(const FRogueWeaponCosmeticFire& Fire) override;
 
 	// ---- 生效数值：火箭的换算系数与主武器不同（沿用自研版本的行为，必须一致）----
@@ -33,6 +37,4 @@ public:
 
 private:
 	void FireRocketVolley(const TArray<ARogueEnemy*>& Enemies);
-
-	float RocketTimer = 0.0f;
 };
