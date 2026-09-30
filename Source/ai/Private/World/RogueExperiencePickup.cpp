@@ -286,6 +286,14 @@ void ARogueExperiencePickup::AddExperienceValue(int32 InExperienceValue)
 {
 	ExperienceValue += InExperienceValue;
 	SetActorScale3D(FVector(FMath::Clamp(1.0f + static_cast<float>(ExperienceValue) * 0.015f, 1.0f, 2.4f)));
+
+	// ⚠️ 必须同时把存活时间归零。
+	//
+	// 合并的语义是"把这批新经验并进最近那颗球"，而那颗球**可能已经在场上待了很久**：
+	// 不刷新的话，它可能只剩不到 1 秒就过期，于是刚并进去的经验跟着一起消失 ——
+	// 而且完全没有任何提示，玩家只会看到"杀了怪但经验没涨"（最难归因的一类问题）。
+	// 顺带这也符合直觉：并了新经验之后，玩家应该有完整的时间去捡它。
+	ActiveTimeSeconds = 0.0f;
 }
 
 void ARogueExperiencePickup::ActivatePooledPickup(AActor* InOwner, const FVector& SpawnLocation, int32 InExperienceValue)

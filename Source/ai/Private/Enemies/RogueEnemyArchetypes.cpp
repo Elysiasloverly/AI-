@@ -275,17 +275,44 @@ FName RogueEnemyArchetypes::FindRowNameForEnemyType(const UDataTable* DataTable,
 		return NAME_None;
 	}
 
+	// 记忆化最近一次查询。
+	//
+	// 为什么值得缓存：这个函数被**每次刷怪多次**调用 —— 取配置一次、取 MaxAlive 一次、
+	// 取 MaxSpawnPerWave 一次，而每次调用都要遍历全表并对**每一行**做一次 FindRow。
+	// 表只有 9 行，但刷怪是每秒数十次的频率，且同一只怪的这几次查询参数完全相同，
+	// 所以单条记忆化的命中率就很高。
+	//
+	// 用弱引用记住表：关卡切换/换表后旧指针不会把缓存钉住。
+	// 不缓存"全表映射"是刻意的 —— 那需要以 DataTable 指针为键的嵌套 TMap，
+	// 而运行期真正的热点只是"同一只怪的连续几次查询"，别为此引入生命周期复杂度。
+	static TWeakObjectPtr<const UDataTable> CachedTable;
+	static ERogueEnemyType CachedType = ERogueEnemyType::Hunter;
+	static FName CachedRowName = NAME_None;
+	static bool bCacheValid = false;
+
+	if (bCacheValid && CachedTable.Get() == DataTable && CachedType == Type)
+	{
+		return CachedRowName;
+	}
+
+	FName Result = NAME_None;
 	const TArray<FName> RowNames = DataTable->GetRowNames();
 	for (const FName& RowName : RowNames)
 	{
 		const FRogueEnemyArchetypeRow* Row = DataTable->FindRow<FRogueEnemyArchetypeRow>(RowName, TEXT("FindRowNameForEnemyType"));
 		if (Row != nullptr && Row->EnemyType == Type)
 		{
-			return RowName;
+			Result = RowName;
+			break;
 		}
 	}
 
-	return NAME_None;
+	CachedTable = DataTable;
+	CachedType = Type;
+	CachedRowName = Result;
+	bCacheValid = true;
+
+	return Result;
 }
 
 FRogueEnemyArchetype RogueEnemyArchetypes::BuildEnemyArchetypeFromDataTable(const UDataTable* DataTable, ERogueEnemyType Type, bool bIsBoss)

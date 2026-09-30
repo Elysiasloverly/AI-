@@ -193,7 +193,14 @@ ARogueExperiencePickup* FRogueEnemyTracker::FindPickupMergeTarget(const FVector&
 	for (const TWeakObjectPtr<ARogueExperiencePickup>& PickupPtr : ActiveExperiencePickups)
 	{
 		ARogueExperiencePickup* ExistingPickup = PickupPtr.Get();
-		if (!IsValid(ExistingPickup) || ExistingPickup->IsActorBeingDestroyed())
+		// ⚠️ 除了有效性，还必须排除**已经回池**的球。
+		// 注册表里的注销发生在 DeactivateToPool 里，而它开头有一个
+		// `if (!bPoolAvailable) return;` 的守卫 —— 也就是说"已经是池可用状态"的球
+		// 不会再走一次注销，会留在注册表里直到下一次 CompactPickupRegistry。
+		// 在这个窗口内合并经验，会并进一颗**已经被回收**的球：它不再 Tick、不会被拾取，
+		// 那批经验就直接消失了。敌人路径（:223/:262）一直有这个检查，这里漏了。
+		if (!IsValid(ExistingPickup) || ExistingPickup->IsActorBeingDestroyed()
+			|| ExistingPickup->IsAvailableInPool())
 		{
 			continue;
 		}

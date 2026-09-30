@@ -6,6 +6,35 @@ FRogueEnemyArchetype FRogueEnemyArchetypeRow::ToArchetype(bool bIsBoss) const
 	FRogueEnemyArchetype Archetype = RogueEnemyArchetypes::BuildEnemyArchetype(EnemyType, bIsBoss);
 
 	// 基础移动属性
+	//
+	// ⚠️ 这一列会**覆盖** `BuildEnemyArchetype` 按类型给出的移动模型。
+	//    而移动模型基本就是每种敌人的身份：
+	//      Charger=BurstCharge / Orbiter=Orbit / Skirmisher=ZigZagChase /
+	//      Shooter·Artillery·Spitter=RangedKite / ShockPillar=Stationary
+	//    所以表里**漏填**这一列（于是取到结构体默认值 Direct）会让该类型静默退化成直追。
+	//    更麻烦的是 Hunter 本来就是 Direct —— 默认表根本测不出这个问题。
+	//
+	//    这里**不改变**"数据表优先"的设计（那是项目明确的取舍），
+	//    只把静默失效变成一条响亮的警告。若想改成"按类型固定、表不参与"，
+	//    删掉下面两行赋值即可。
+	if (MovementModel != Archetype.Movement.Model)
+	{
+		// 每个类型只警告一次：本函数每次刷怪会被调多次（配置 + 两个上限查询），
+		// 不加限制的话一场对局能刷出上百条同样的警告，反而把日志淹掉。
+		// 类型最多 9 种，用一个位掩码记录就够。
+		static uint32 WarnedTypesMask = 0;
+		const uint32 TypeBit = 1u << static_cast<uint32>(EnemyType);
+		if ((WarnedTypesMask & TypeBit) == 0)
+		{
+			WarnedTypesMask |= TypeBit;
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Rogue] 敌人原型：类型 %d 的移动模型被数据表覆盖（表=%d，按类型基线=%d）。")
+				TEXT("若不是有意配置，请检查 DT_FRogueEnemyArchetypeRow 的 MovementModel 列是否漏填。"),
+				static_cast<int32>(EnemyType),
+				static_cast<int32>(MovementModel),
+				static_cast<int32>(Archetype.Movement.Model));
+		}
+	}
 	Archetype.Movement.Model = MovementModel;
 	Archetype.Movement.BaseMoveMultiplier = BaseMoveMultiplier;
 
@@ -63,8 +92,12 @@ FRogueEnemyArchetype FRogueEnemyArchetypeRow::ToArchetype(bool bIsBoss) const
 				if (BossOverride.BossNextShotCooldown > 0.0f) EffectiveNextShotCooldown = BossOverride.BossNextShotCooldown;
 				if (BossOverride.BossProjectileSpeed > 0.0f) EffectiveProjectileSpeed = BossOverride.BossProjectileSpeed;
 				if (BossOverride.BossProjectileDamageMultiplier > 0.0f) EffectiveProjectileDamageMultiplier = BossOverride.BossProjectileDamageMultiplier;
-				bEffectiveLargeVisual = BossOverride.bBossLargeVisual;
-				bEffectiveMuzzleEffect = BossOverride.bBossSpawnMuzzleEffect;
+				// ⚠️ bool 没有"未设置"的哨兵值，所以不能像上面那些 float 一样用 `> 0` 保护。
+				//    无条件赋值会让**没配这两列的 Boss** 把基础值一起清掉：
+				//    Artillery 的枪口特效、Shooter/Spitter 的放大视觉都会静默消失。
+				//    取"叠加"语义：Boss 覆盖只能**打开**表现，不能把基础配置关掉。
+				bEffectiveLargeVisual = bEffectiveLargeVisual || BossOverride.bBossLargeVisual;
+				bEffectiveMuzzleEffect = bEffectiveMuzzleEffect || BossOverride.bBossSpawnMuzzleEffect;
 			}
 
 			Archetype.Movement.PreferredRange = EffectivePreferredRange;
@@ -128,8 +161,12 @@ FRogueEnemyArchetype FRogueEnemyArchetypeRow::ToArchetype(bool bIsBoss) const
 				if (BossOverride.BossNextShotCooldown > 0.0f) EffectiveNextShotCooldown = BossOverride.BossNextShotCooldown;
 				if (BossOverride.BossProjectileSpeed > 0.0f) EffectiveProjectileSpeed = BossOverride.BossProjectileSpeed;
 				if (BossOverride.BossProjectileDamageMultiplier > 0.0f) EffectiveProjectileDamageMultiplier = BossOverride.BossProjectileDamageMultiplier;
-				bEffectiveLargeVisual = BossOverride.bBossLargeVisual;
-				bEffectiveMuzzleEffect = BossOverride.bBossSpawnMuzzleEffect;
+				// ⚠️ bool 没有"未设置"的哨兵值，所以不能像上面那些 float 一样用 `> 0` 保护。
+				//    无条件赋值会让**没配这两列的 Boss** 把基础值一起清掉：
+				//    Artillery 的枪口特效、Shooter/Spitter 的放大视觉都会静默消失。
+				//    取"叠加"语义：Boss 覆盖只能**打开**表现，不能把基础配置关掉。
+				bEffectiveLargeVisual = bEffectiveLargeVisual || BossOverride.bBossLargeVisual;
+				bEffectiveMuzzleEffect = bEffectiveMuzzleEffect || BossOverride.bBossSpawnMuzzleEffect;
 			}
 
 			Archetype.Movement.PreferredRange = EffectivePreferredRange;
@@ -181,8 +218,12 @@ FRogueEnemyArchetype FRogueEnemyArchetypeRow::ToArchetype(bool bIsBoss) const
 				if (BossOverride.BossNextShotCooldown > 0.0f) EffectiveNextShotCooldown = BossOverride.BossNextShotCooldown;
 				if (BossOverride.BossProjectileSpeed > 0.0f) EffectiveProjectileSpeed = BossOverride.BossProjectileSpeed;
 				if (BossOverride.BossProjectileDamageMultiplier > 0.0f) EffectiveProjectileDamageMultiplier = BossOverride.BossProjectileDamageMultiplier;
-				bEffectiveLargeVisual = BossOverride.bBossLargeVisual;
-				bEffectiveMuzzleEffect = BossOverride.bBossSpawnMuzzleEffect;
+				// ⚠️ bool 没有"未设置"的哨兵值，所以不能像上面那些 float 一样用 `> 0` 保护。
+				//    无条件赋值会让**没配这两列的 Boss** 把基础值一起清掉：
+				//    Artillery 的枪口特效、Shooter/Spitter 的放大视觉都会静默消失。
+				//    取"叠加"语义：Boss 覆盖只能**打开**表现，不能把基础配置关掉。
+				bEffectiveLargeVisual = bEffectiveLargeVisual || BossOverride.bBossLargeVisual;
+				bEffectiveMuzzleEffect = bEffectiveMuzzleEffect || BossOverride.bBossSpawnMuzzleEffect;
 				if (BossOverride.BossSpreadAngleStep > 0.0f) EffectiveSpreadAngleStep = BossOverride.BossSpreadAngleStep;
 			}
 

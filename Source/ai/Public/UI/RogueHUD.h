@@ -86,7 +86,6 @@ private:
 	void DrawEnemyHealthBars(UFont* Font);
 	void DrawDamageNumbers(UFont* Font);
 	void InitializeMenuWidgets();
-	ARogueGameMode* GetRogueGameMode() const;
 
 	/** 整局运行状态。与 GameMode 不同，GameState 在客户端也存在（复制副本），
 	 *  所以客户端 HUD 读波次/击杀/存活时间必须走这里。 */

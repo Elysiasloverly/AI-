@@ -399,11 +399,33 @@ URogueAttributeSet* ARogueCharacter::GetRogueAttributeSet() const
 
 void ARogueCharacter::InitializeGASAttributes()
 {
-	// SetNumericAttributeBase 会改属性的 BaseValue —— 这是服务端权威操作
-	if (!HasAuthority())
+	// 判据用 IsAuthoritySide()（GetNetMode）而**不是** HasAuthority()：
+	// 客户端上本机拥有的角色 Role 也是 ROLE_Authority，HasAuthority() 会返回 true，
+	// 于是客户端会自己把基础值写进本地属性集，与复制过来的权威值打架。
+	// 这正是本文件头 IsAuthoritySide() 注释里点名禁止的用法。
+	if (!IsAuthoritySide())
 	{
 		return;
 	}
+
+	// ⚠️ 重入守卫：这个函数**只能跑一次**。
+	//
+	// 它用 SetNumericAttributeBase 写的是属性的 BaseValue，而升级（Instant GE）
+	// 改的**也是** BaseValue —— 再灌一次会把玩家已获得的属性升级（生命/护甲上限/移速/
+	// 拾取范围/回复/经验/冲刺冷却/减伤）**全部覆盖回初始值**，而且不报任何错。
+	//
+	// 这条路径真实可达：GameMode 的归属自愈（RepairPlayerPawnOwnership，每 0.5 秒检查）
+	// 会为了纠正 Pawn 归属而调 Possess()，进而再次触发 PossessedBy() → 本函数；
+	// 项目文档记载过归属自愈在**客户端加入的瞬间实测真的会触发**。
+	// 守卫放在 PlayerState（而不是 Pawn）上，因为 ASC 与属性集都挂在它上面 ——
+	// 它才是"这一局这个玩家的数值"的载体，Pawn 换了不该重灌。详见
+	// ARoguePlayerState::bBaseAttributesInitialized 的注释。
+	ARoguePlayerState* RoguePS = GetPlayerState<ARoguePlayerState>();
+	if (RoguePS == nullptr || RoguePS->IsBaseAttributesInitialized())
+	{
+		return;
+	}
+	RoguePS->MarkBaseAttributesInitialized();
 
 	URogueAttributeSet* AttributeSet = GetRogueAttributeSet();
 	if (AttributeSet == nullptr)
@@ -1431,7 +1453,12 @@ void ARogueCharacter::ApplyUpgrade(const FRogueUpgradeOption& Upgrade)
 
 void ARogueCharacter::BroadcastWeaponCosmetic(const ARogueWeaponBase* Weapon, const FRogueWeaponCosmeticFire& Fire)
 {
-	if (!HasAuthority() || Weapon == nullptr)
+	// ⚠️ 判据必须是 IsAuthoritySide()（GetNetMode）而不是 HasAuthority()：
+	// 客户端上**本机拥有**的角色 Role 也是 ROLE_Authority，HasAuthority() 会返回 true，
+	// 于是客户端的开火表现会被塞进队列，最后在 FlushWeaponCosmetics 里
+	// 从客户端发出一条 Multicast RPC（本地会被 IsLocallyControlled 兜住、看不出异常，
+	// 但那是一次无意义的上行广播，而且闸门本身已经失效）。
+	if (!IsAuthoritySide() || Weapon == nullptr)
 	{
 		return;
 	}
@@ -1450,7 +1477,8 @@ void ARogueCharacter::BroadcastWeaponCosmetic(const ARogueWeaponBase* Weapon, co
 
 void ARogueCharacter::FlushWeaponCosmetics()
 {
-	if (!HasAuthority() || PendingWeaponCosmetics.Num() == 0)
+	// 同 BroadcastWeaponCosmetic：判据用 IsAuthoritySide()，理由见那里的注释。
+	if (!IsAuthoritySide() || PendingWeaponCosmetics.Num() == 0)
 	{
 		return;
 	}
@@ -1466,7 +1494,9 @@ void ARogueCharacter::Multicast_WeaponCosmetics_Implementation(const TArray<FRog
 	// 两类机器跳过（它们各自已经有"真实/预测"的那一份了）：
 	//   · 服务端：权威那一发就是它自己生成的；
 	//   · 本人：自己那一发是本地预测。
-	if (HasAuthority() || IsLocallyControlled())
+	// 这里用 IsAuthoritySide() 而不是 HasAuthority()：语义是"我是不是权威端"，
+	// 与广播侧保持同一判据（客户端上本机拥有的角色 HasAuthority() 也是 true）。
+	if (IsAuthoritySide() || IsLocallyControlled())
 	{
 		return;
 	}

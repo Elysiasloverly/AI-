@@ -129,8 +129,6 @@ private:
 	UFUNCTION()
 	void HandleProjectileStop(const FHitResult& ImpactResult);
 
-	void InitializeProjectile(const FVector& InDirection, float InSpeed, float InDamage);
-
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<USphereComponent> Collision;
 

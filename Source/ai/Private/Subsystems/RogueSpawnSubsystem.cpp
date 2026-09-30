@@ -313,16 +313,32 @@ FVector URogueSpawnSubsystem::FindSpawnLocation(float DesiredDistance, //希望�
 		}
 	}
 
+	// 兜底：**仍然围绕玩家取样**，只是把距离抖动放宽（0.7~1.6 倍）并把结果钳进竞技场。
+	//
+	// ⚠️ 这里原本是"在整个竞技场里均匀随机"——那是个真实的 bug，不是保守回退：
+	//    · 玩家贴近边界时第一轮 16 次几乎必然失败（方向一多半指向场外），于是频繁落到这个循环；
+	//    · 均匀随机会把怪撒到 ±ArenaHalfExtent 的任意角落（最远上万单位），
+	//      表现是"怪刷在地图另一端、玩家永远遇不到"；
+	//    · **Boss 也走这条路径**（SpawnBoss → SpawnConfiguredEnemy），所以 Boss 同样会刷丢。
+	//   钳进竞技场 + 保留最小距离检查，既保证落点在可见范围内，也不会贴着玩家刷。
 	for (int32 Attempt = 0; Attempt < 20; ++Attempt)
 	{
-		const FVector CandidateLocation(
-			FMath::FRandRange(-ArenaHalfExtent, ArenaHalfExtent),
-			FMath::FRandRange(-ArenaHalfExtent, ArenaHalfExtent),
+		const FVector2D SpawnDirection = FVector2D(FMath::FRandRange(-1.0f, 1.0f),
+			FMath::FRandRange(-1.0f, 1.0f)).GetSafeNormal();
+
+		const float DistanceScale = FMath::FRandRange(0.7f, 1.6f);
+
+		const FVector CandidateLocation = PlayerGroundLocation + FVector(
+			SpawnDirection.X * DesiredDistance * DistanceScale, SpawnDirection.Y * DesiredDistance * DistanceScale, 0.0f);
+
+		const FVector ClampedLocation(
+			FMath::Clamp(CandidateLocation.X, -ArenaHalfExtent, ArenaHalfExtent),
+			FMath::Clamp(CandidateLocation.Y, -ArenaHalfExtent, ArenaHalfExtent),
 			EnemySpawnGroundZ);
 
-		if (IsSpawnLocationClearOfPlayers(CandidateLocation, MinimumDistance))
+		if (IsSpawnLocationClearOfPlayers(ClampedLocation, MinimumDistance))
 		{
-			return CandidateLocation;
+			return ClampedLocation;
 		}
 	}
 

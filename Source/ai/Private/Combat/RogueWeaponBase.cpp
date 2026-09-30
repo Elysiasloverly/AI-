@@ -258,10 +258,13 @@ void ARogueWeaponBase::SpawnLaserBeam(const FVector& Start, const FVector& End, 
 
 void ARogueWeaponBase::BroadcastCosmeticFire(const FRogueWeaponCosmeticFire& Fire) const
 {
-	if (OwnerCharacter == nullptr || !OwnerCharacter->HasAuthority())
+	if (OwnerCharacter == nullptr || !OwnerCharacter->IsAuthoritySide())
 	{
 		// 客户端不广播：它本来就是这条广播的接收方，
 		// 而且客户端这一发是本地预测，没有权威性。
+		// ⚠️ 判据必须是 IsAuthoritySide()（GetNetMode）而不是 HasAuthority() ——
+		// 客户端上本机拥有的角色 HasAuthority() 也是 true，闸门会失效，
+		// 客户端会一路走到 Multicast RPC。见 ARogueCharacter::BroadcastWeaponCosmetic。
 		return;
 	}
 

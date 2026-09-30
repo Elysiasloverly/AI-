@@ -121,6 +121,15 @@ public:
 	 *  客户端用 GameState 的服务器时间换算（引擎已做时间同步）。 */
 	float GetShopSecondsUntilRefresh() const;
 
+	// ---- 基础属性初始化（一局一次，服务端）----
+
+	/** 基础属性是否已经灌过。
+	 *
+	 *  由 `ARogueCharacter::InitializeGASAttributes()` 在**第一次** possess 时置位，
+	 *  并作为它自己的重入守卫。详细理由见 `bBaseAttributesInitialized` 的注释。 */
+	bool IsBaseAttributesInitialized() const { return bBaseAttributesInitialized; }
+	void MarkBaseAttributesInitialized() { bBaseAttributesInitialized = true; }
+
 	// ---- 复活倒计时（由 ASC 上的 State.Downed GE 承担，HUD 直接读它的剩余时长）----
 
 	/** 距离复活还剩多少秒；<=0 表示当前没有待复活。
@@ -184,4 +193,20 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, Category = "Rogue|GAS")
 	TObjectPtr<URogueAttributeSet> AttributeSet;
+
+	/** 基础属性是否已灌过（**服务端**，一局一次）。见 IsBaseAttributesInitialized()。
+	 *
+	 *  ⚠️ 为什么需要这个守卫：`InitializeGASAttributes()` 用 `SetNumericAttributeBase` 写的是
+	 *  属性的 **BaseValue**，而升级（Instant GE）改的**也是** BaseValue —— 再灌一次就会把玩家
+	 *  已经拿到的属性升级（生命/护甲上限/移速/拾取范围/回复/经验/冲刺冷却/减伤）**全部覆盖回初始值**。
+	 *
+	 *  这条路径**真实可达**，不是理论风险：GameMode 的归属自愈
+	 *  （`ARogueGameMode::RepairPlayerPawnOwnership`，每 0.5 秒检查一次）会为了纠正 Pawn 归属
+	 *  而调 `PlayerController->Possess()`，进而再次触发 `PossessedBy()`；而项目文档记载过
+	 *  归属自愈在**客户端加入的瞬间实测真的会触发**。
+	 *
+	 *  放在 PlayerState 而不是 Pawn 上：ASC 与属性集都挂在这里 —— 它才是"这一局这个玩家的数值"
+	 *  的生命周期载体，Pawn 被重新 possess 不该重灌。
+	 *  不复制：纯服务端状态，客户端从不灌基础值（客户端等属性复制过来）。 */
+	bool bBaseAttributesInitialized = false;
 };

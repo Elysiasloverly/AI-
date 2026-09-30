@@ -351,41 +351,10 @@ void ARogueEnemyProjectile::Tick(float DeltaSeconds)
 	}
 }
 
-void ARogueEnemyProjectile::InitializeProjectile(const FVector& InDirection, float InSpeed, float InDamage, bool bInBossShot)
-{
-	Damage = InDamage;
-	bBossShot = bInBossShot;
-
-	if (ProjectileMovement != nullptr && !bPoolAvailable)
-	{
-		ProjectileMovement->SetUpdatedComponent(Collision);
-		ProjectileMovement->SetComponentTickEnabled(true);
-		ProjectileMovement->StopMovementImmediately();
-		ProjectileMovement->InitialSpeed = InSpeed;
-		ProjectileMovement->MaxSpeed = InSpeed;
-		ProjectileMovement->Velocity = InDirection.GetSafeNormal() * InSpeed;
-		ProjectileMovement->UpdateComponentVelocity();
-		ProjectileMovement->Activate(true);
-	}
-
-	if (bBossShot)
-	{
-		Collision->SetSphereRadius(BossVisualState.CollisionRadius);
-		if (GlowLight != nullptr)
-		{
-			GlowLight->SetAttenuationRadius(BossVisualState.LightAttenuationRadius);
-			GlowLight->SetSourceRadius(BossVisualState.LightSourceRadius);
-			GlowLight->SetSoftSourceRadius(BossVisualState.LightSoftSourceRadius);
-		}
-	}
-	else if (GlowLight != nullptr)
-	{
-		Collision->SetSphereRadius(NormalVisualState.CollisionRadius);
-		GlowLight->SetAttenuationRadius(NormalVisualState.LightAttenuationRadius);
-		GlowLight->SetSourceRadius(NormalVisualState.LightSourceRadius);
-		GlowLight->SetSoftSourceRadius(NormalVisualState.LightSoftSourceRadius);
-	}
-}
+// 注：这里原本有一个 InitializeProjectile(InDirection, InSpeed, InDamage, bInBossShot)，
+// 全项目**无任何调用方** —— 它是 ActivatePooledProjectile 的过期副本
+//（少了 RemainingLifetime / PulseTime 的重置、少了 ignore-actor 与 owner 的设置）。
+// 留着它的唯一后果是"改了激活路径忘改它"，已删除。
 
 void ARogueEnemyProjectile::HandleOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {

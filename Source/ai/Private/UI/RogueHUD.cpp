@@ -498,7 +498,11 @@ void ARogueHUD::DrawDamageNumbers(UFont* Font)
 	}
 
 	const float RefreshInterval = bHeavyCombat ? DamageProjectionRefreshIntervalHeavy : DamageProjectionRefreshIntervalNormal;
-	if (CurrentTime >= NextDamageNumberProjectionRefreshTime)
+
+	// 没有飘字时直接跳过：RefreshDamageNumberProjectionCache 的全部工作就是遍历 DamageNumbers
+	// 做世界→屏幕投影，数组为空时它只剩一次子系统查询与时间推进，纯属白跑。
+	// （满屏 42 条时这个函数每秒要投影 800 次以上，是 HUD 里最贵的一项，所以值得在入口拦一下。）
+	if (DamageNumbers.Num() > 0 && CurrentTime >= NextDamageNumberProjectionRefreshTime)
 	{
 		RefreshDamageNumberProjectionCache(PlayerController, Tracker);
 		NextDamageNumberProjectionRefreshTime = CurrentTime + RefreshInterval;
@@ -633,11 +637,6 @@ void ARogueHUD::InitializeMenuWidgets()
 		// 复活倒计时（Z 序介于其它菜单之下：它是"等待中"的提示，不应该盖住暂停/商店界面）
 		ReviveCountdownWidget = CreateRogueMenuWidget(PlayerController, ReviveCountdownWidgetClass, this, 60);
 	}
-}
-
-ARogueGameMode* ARogueHUD::GetRogueGameMode() const
-{
-	return GetWorld() != nullptr ? GetWorld()->GetAuthGameMode<ARogueGameMode>() : nullptr;
 }
 
 const ARogueGameState* ARogueHUD::GetRogueGameState() const

@@ -323,7 +323,6 @@ void ARogueRocketProjectile::DeactivateToPool()
 	}
 
 	bPoolAvailable = true;
-	bExploded = true;
 	RemainingLifetime = 0.0f;
 
 	if (ProjectileMovement != nullptr)

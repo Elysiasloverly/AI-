@@ -272,25 +272,6 @@ void ARogueProjectile::Tick(float DeltaSeconds)
 	}
 }
 
-void ARogueProjectile::InitializeProjectile(const FVector& InDirection, float InSpeed, float InDamage)
-{
-	TravelDirection = InDirection.GetSafeNormal();
-	Speed = InSpeed;
-	Damage = InDamage;
-
-	if (ProjectileMovement != nullptr && !bPoolAvailable)
-	{
-		ProjectileMovement->SetUpdatedComponent(Collision);
-		ProjectileMovement->SetComponentTickEnabled(true);
-		ProjectileMovement->StopMovementImmediately();
-		ProjectileMovement->InitialSpeed = Speed;
-		ProjectileMovement->MaxSpeed = Speed;
-		ProjectileMovement->Velocity = TravelDirection * Speed;
-		ProjectileMovement->UpdateComponentVelocity();
-		ProjectileMovement->Activate(true);
-	}
-}
-
 void ARogueProjectile::HandleOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
 	if (bPoolAvailable || bResolvedImpact || IsActorBeingDestroyed() || !IsValid(OtherActor) || OtherActor == GetOwner())
