@@ -1154,6 +1154,8 @@ void ARogueGameMode::TryOpenShop(ARogueCharacter* Character)
 		return;
 	}
 
+	// 同帧打开光标，不必等 HUD 下一帧推导。
+	// 注意关店时**不能**对称地调 SetMenuInteractionInput(false) —— 见 CloseShop 的说明。
 	Character->SetMenuInteractionInput(true);
 
 	// 立刻推一次快照：不然客户端要等到下一帧 Tick 才看到商店界面
@@ -1162,8 +1164,8 @@ void ARogueGameMode::TryOpenShop(ARogueCharacter* Character)
 	// 注意：这里**不暂停游戏**。
 	// 旧设计是"开商店 → SetGamePaused(true)"（单机写法）。联机下暂停是全局的，
 	// 一个玩家开商店会把所有人的世界冻住。现在改成非模态：
-	// 世界继续跑、敌人继续打，玩家可以边逛边躲（SetMenuInteractionInput 用的是
-	// FInputModeGameAndUI，游戏输入仍然有效）。
+	// 世界继续跑、敌人继续打，玩家可以边逛边躲（HUD 推导出的是 FInputModeGameAndUI，
+	// 游戏输入仍然有效）。
 }
 
 void ARogueGameMode::CloseShop(ARogueCharacter* Requester)
@@ -1175,8 +1177,18 @@ void ARogueGameMode::CloseShop(ARogueCharacter* Requester)
 	}
 
 	PlayerState->GetShopRuntime().CloseShop();
-	Requester->SetMenuInteractionInput(false);
 	PushShopSnapshotForPlayer(PlayerState);
+
+	// ⚠️ 这里**绝不能**顺手把光标关掉 —— 那正是"关掉商店后鼠标消失、升级卡点不了"的根因。
+	//
+	// 关店的那一刻完全可能仍有**别的**界面需要光标，最典型的就是：
+	// 开着商店时升了级，待选卡还挂着。此时把光标关掉，玩家就既看不到鼠标、也点不了卡。
+	//
+	// 光标与输入模式是**本地 UI 状态**，统一交给 ARogueHUD::UpdateUIInputState
+	// 按"暂停 / 已阵亡 / 商店开 / 有待选卡"四个条件推导：
+	//   · 它是这四个条件的唯一权威（原来这里和 HUD 是两个写入者，互相覆盖）；
+	//   · 它天然对客户端生效 —— 服务端改 SetInputMode 只影响主机自己那份 PlayerController，
+	//     客户端的商店/选卡光标本来就一直是靠 HUD 推导的。
 
 	// 同样不涉及暂停（见 TryOpenShop 的说明）
 }
@@ -1361,6 +1373,7 @@ void ARogueGameMode::NotifyPlayerDied(ARogueCharacter* DeadCharacter)
 			DeadPlayerState->ApplyShopSnapshot(false, TArray<FRogueShopOffer>(), 0, 0.0f);
 		}
 
+		// 同帧打开光标（HUD 下一帧也会推导出来，这里只是让它立刻可见）。
 		DeadCharacter->SetMenuInteractionInput(true);
 	}
 

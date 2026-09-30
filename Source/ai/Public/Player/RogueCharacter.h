@@ -103,6 +103,20 @@ public:
 	void AddExperience(int32 ExperienceAmount);
 	void AddMoney(int32 Amount);
 	void ApplyUpgrade(const FRogueUpgradeOption& Upgrade);
+
+	/** 立刻把光标/输入模式切到"可操作 UI"。
+	 *
+	 *  ⚠️ **只负责打开，不负责关闭**（传 false 会被忽略）。
+	 *
+	 *  为什么：光标与输入模式的**唯一权威**是 `ARogueHUD::UpdateUIInputState` ——
+	 *  它每帧按"暂停菜单 / 已阵亡 / 商店开 / 有待选卡"四个本地状态推导，并且天然对客户端生效
+	 *  （服务端改 SetInputMode 只影响主机自己那份 PlayerController）。
+	 *
+	 *  本函数存在的意义只是**同帧反馈**：刚进入某个需要光标的界面时不必等 HUD 下一帧推导。
+	 *  它**不能**负责关闭，否则会重现这个真实 bug：
+	 *    开着商店时升级 → 关闭商店 → 这里把光标关掉，
+	 *    而 HUD 因为"推导出的状态没变"（待选卡还在，一直属于需要光标）而不重设，
+	 *    结果鼠标消失、待选的升级卡点不了。 */
 	void SetMenuInteractionInput(bool bEnabled);
 	void SetUpgradeSelectionInput(bool bEnabled) { SetMenuInteractionInput(bEnabled); }
 

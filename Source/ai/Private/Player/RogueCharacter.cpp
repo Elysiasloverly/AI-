@@ -2157,29 +2157,32 @@ void ARogueCharacter::RemoveInvulnerableEffect()
 	}
 }
 
-void ARogueCharacter::SetMenuInteractionInput(bool bEnabled){
+void ARogueCharacter::SetMenuInteractionInput(bool bEnabled)
+{
+	// ⚠️ 只处理"打开"。关闭一律交给 ARogueHUD::UpdateUIInputState 推导 —— 详见头文件注释。
+	//
+	// 这条 `if` 就是那个真实 bug 的修复点：关店时会调本函数传 false，
+	// 而"关店"并不等于"不再需要光标"（可能还有待选的升级卡挂着）。
+	// 由本函数盲目关掉，HUD 又因为推导状态没变而不重设 → 鼠标消失、卡点不了。
+	if (!bEnabled)
+	{
+		return;
+	}
+
 	APlayerController* PlayerController = Cast<APlayerController>(GetController());
 	if (PlayerController == nullptr)
 	{
 		return;
 	}
 
-	PlayerController->bShowMouseCursor = bEnabled;
-	PlayerController->bEnableClickEvents = bEnabled;
-	PlayerController->bEnableMouseOverEvents = bEnabled;
+	PlayerController->bShowMouseCursor = true;
+	PlayerController->bEnableClickEvents = true;
+	PlayerController->bEnableMouseOverEvents = true;
 
-	if (bEnabled)
-	{
-		FInputModeGameAndUI InputMode;
-		InputMode.SetHideCursorDuringCapture(false);
-		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-		PlayerController->SetInputMode(InputMode);
-	}
-	else
-	{
-		FInputModeGameOnly InputMode;
-		PlayerController->SetInputMode(InputMode);
-	}
+	FInputModeGameAndUI InputMode;
+	InputMode.SetHideCursorDuringCapture(false);
+	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	PlayerController->SetInputMode(InputMode);
 }
 
 void ARogueCharacter::Die()

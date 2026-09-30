@@ -665,7 +665,22 @@ void ARogueHUD::UpdateInteractionInputMode(const ARogueCharacter* PlayerCharacte
 		|| (LocalPlayerState != nullptr && (LocalPlayerState->IsShopOpen() || LocalPlayerState->IsAwaitingUpgradeChoice()));
 
 	const int32 NewState = bWantUIInput ? 1 : 0;
-	if (NewState == LastAppliedUIInputState)
+
+	// ⚠️ 除了比对推导出的状态，还必须检查"**实际状态是否被别人改过**"。
+	//
+	// 这个缓存的前提是"本函数是唯一的写入者"，而那个前提曾经不成立：
+	// ARogueCharacter::SetMenuInteractionInput（由 GameMode 在开关商店/死亡时调用）
+	// 也在直接写 bShowMouseCursor。于是出现过这样一条真实的故障链 ——
+	//   开商店 → 推导=需要UI → 缓存记 1
+	//   商店里升级（待选卡出现）→ 推导仍是"需要UI" → 缓存没变，本函数不动
+	//   关闭商店 → 另一个写入者把光标关掉
+	//   本函数推导仍是"需要UI" → 但缓存已是 1 → **提前返回，光标永远回不来**
+	// 表现就是"关掉商店后鼠标消失、升级卡点不了"。
+	//
+	// 现在那个竞争写入者已经删掉，但这个漂移检查保留：它让本函数在
+	// "有人从背后改了光标"时仍然能自我纠正，而不是被自己的缓存锁死。
+	const bool bAppliedStateMatches = (PlayerController->bShowMouseCursor == bWantUIInput);
+	if (NewState == LastAppliedUIInputState && bAppliedStateMatches)
 	{
 		return;
 	}

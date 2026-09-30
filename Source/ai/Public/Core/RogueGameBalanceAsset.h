@@ -136,12 +136,47 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "普通敌人", meta = (DisplayName = "最大经验奖励"))
 	int32 MaxExperienceReward = 5;
 
+	// ─────────────────────────────────────────────────────────────────────
+	//  中后期生命强化（普通敌人）
+	//
+	//  敌人生命由**三层依次相乘**得到：
+	//    ① 线性成长（**永远不封顶**，一直涨）
+	//         Health = 基础生命 + (波次 - 1) × 每波生命成长
+	//    ② 中期加成（波次 ≥ 中期开始波次）
+	//         Health ×= 1 + min( (波次 - 中期开始波次 + 1) × 中期每波成长 , 中期上限 )
+	//    ③ 后期加成（波次 ≥ 后期开始波次）
+	//         Health ×= 1 + min( (波次 - 后期开始波次 + 1) × 后期每波成长 , 后期上限 )
+	//  最后再乘该敌人类型的专属倍率（见下方「敌人类型平衡」）。
+	//
+	//  ⚠️ 两个最容易踩的坑：
+	//
+	//  1) **「上限」是"加成比例"的上限，不是"倍率"的上限。**
+	//     代码是 `1.0 + min(...)` —— 填 0.72 得到的是「加成最多 +72%」= 生命 ×1.72。
+	//     想表达"生命变成 2 倍"应该填 **1.0**，而不是 2.0（填 2.0 会得到 3 倍）。
+	//
+	//  2) **两个上限是相乘的，不是相加、也不是取其一。**
+	//     中后期重叠时是两次独立的 `*=`，所以总加成上限 = 两个上限的**乘积**：
+	//     默认值下 = 1.72 × 1.50 = **2.58 倍**（第 25 波及以后达到）。
+	//
+	//  默认值下两个上限各自到顶的波次：
+	//    · 中期： (波次-7) × 0.08 ≥ 0.72 → **第 16 波**（恰好是后期开始的那一波）
+	//    · 后期： (波次-15) × 0.05 ≥ 0.50 → **第 25 波**
+	//
+	//  参考：默认值下第 16 波生命约 334，第 25 波约 710（未计敌人类型倍率）。
+	//
+	//  ── 上限填 0（或负数）＝ **不封顶** ──
+	//  该层会随波次无限增长。想让难度在中后期持续攀升就用它；
+	//  注意①本身就不封顶，带上它之后生命会一直涨下去，后期会非常硬。
+	// ─────────────────────────────────────────────────────────────────────
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "普通敌人", meta = (DisplayName = "中期生命强化开始波次"))
 	int32 MidGameHealthStartWave = 8;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "普通敌人", meta = (DisplayName = "中期每波生命倍率成长"))
 	float MidGameHealthPerWave = 0.08f;
 
+	/** 中期加成的上限。注意这是**加成比例**不是倍率：填 0.72 = 加成最多 +72% = 生命 ×1.72。
+	 *  **填 0 或负数 = 不封顶**（该层随波次无限增长）。与后期上限**相乘**，详见上方说明。 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "普通敌人", meta = (DisplayName = "中期生命倍率上限"))
 	float MidGameHealthCap = 0.72f;
 
@@ -151,6 +186,8 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "普通敌人", meta = (DisplayName = "后期每波生命倍率成长"))
 	float LateGameHealthPerWave = 0.05f;
 
+	/** 后期加成的上限。同样是**加成比例**：填 0.50 = 加成最多 +50% = 生命 ×1.50。
+	 *  **填 0 或负数 = 不封顶**（该层随波次无限增长）。与中期上限**相乘**，详见上方说明。 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "普通敌人", meta = (DisplayName = "后期生命倍率上限"))
 	float LateGameHealthCap = 0.50f;
 

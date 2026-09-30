@@ -253,16 +253,24 @@ FRogueEnemyProfile RogueGameModeRules::BuildEnemyProfile(int32 Wave, ERogueEnemy
 	Profile.Damage = BaseEnemyDamage + WaveScale * EnemyDamagePerWave;
 	Profile.ExperienceReward = FMath::Clamp(BaseExperienceReward + Wave / FMath::Max(ExperienceRewardWaveDivisor, 1), BaseExperienceReward, MaxExperienceReward);
 
+	// 中期 / 后期生命加成：两层依次相乘，每层都是 `1 + min(成长, 上限)`。
+	// **上限 <= 0 表示不封顶**（该层随波次无限增长）。
+	//
+	// ⚠️ 这里刻意不把上限钳到正数：0 是一个有意义的开关值。
+	//    详见 RogueGameBalanceAsset.h 里「中后期生命强化」那段说明 ——
+	//    两个坑：①上限是"加成比例"不是"倍率"（0.72 = ×1.72）；②两层上限**相乘**（默认 1.72×1.50 = 2.58）。
 	if (Wave >= MidGameHealthStartWave)
 	{
-		const float MidGameHealthMultiplier = 1.0f + FMath::Min(static_cast<float>(Wave - (MidGameHealthStartWave - 1)) * MidGameHealthPerWave, MidGameHealthCap);
-		Profile.Health *= MidGameHealthMultiplier;
+		const float RawMidGameBonus = static_cast<float>(Wave - (MidGameHealthStartWave - 1)) * MidGameHealthPerWave;
+		const float MidGameBonus = MidGameHealthCap > 0.0f ? FMath::Min(RawMidGameBonus, MidGameHealthCap) : RawMidGameBonus;
+		Profile.Health *= 1.0f + MidGameBonus;
 	}
 
 	if (Wave >= LateGameHealthStartWave)
 	{
-		const float LateGameHealthMultiplier = 1.0f + FMath::Min(static_cast<float>(Wave - (LateGameHealthStartWave - 1)) * LateGameHealthPerWave, LateGameHealthCap);
-		Profile.Health *= LateGameHealthMultiplier;
+		const float RawLateGameBonus = static_cast<float>(Wave - (LateGameHealthStartWave - 1)) * LateGameHealthPerWave;
+		const float LateGameBonus = LateGameHealthCap > 0.0f ? FMath::Min(RawLateGameBonus, LateGameHealthCap) : RawLateGameBonus;
+		Profile.Health *= 1.0f + LateGameBonus;
 	}
 
 	if (const FRogueEnemyBalanceRow* BalanceRow = FindBalanceRow(BalanceAsset, EnemyType))
