@@ -23,7 +23,6 @@
 #include "AbilitySystem/RogueStateEffects.h"
 #include "AbilitySystem/Abilities/RogueEnemyAttackAbility.h"
 #include "Subsystems/RogueEnemyTrackerSubsystem.h"
-#include "AbilitySystem/RogueAttributeSet.h"
 #include "AbilitySystem/RogueAttributeUpgradeEffect.h"
 #include "Core/RogueGameplayTags.h"
 #include "World/RogueShopTerminal.h"
@@ -32,6 +31,13 @@
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/InputComponent.h"
+// Enhanced Input（UE5 标准输入）。资产清单见 Docs/Enhanced-Input-Migration.md；
+// 资产缺失时 SetupEnhancedInput 会返回 false，输入整体回退到 legacy 绑定。
+#include "EnhancedInputComponent.h"
+#include "EnhancedInputSubsystems.h"
+#include "InputAction.h"
+#include "InputActionValue.h"
+#include "InputMappingContext.h"
 #include "Engine/DataTable.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Controller.h"
@@ -40,6 +46,32 @@
 #include "Kismet/GameplayStatics.h"
 #include "Net/UnrealNetwork.h"
 #include "UObject/SoftObjectPath.h"
+
+namespace
+{
+	/** Enhanced Input 资产的默认目录（见 Docs/Enhanced-Input-Migration.md）。
+	 *  约定：映射上下文直接放在 `/Game/Input/` 下，10 个输入动作统一放在 `/Game/Input/IA/` 下。 */
+	const TCHAR* DefaultInputContextFolder = TEXT("/Game/Input");
+	const TCHAR* DefaultInputActionFolder = TEXT("/Game/Input/IA");
+
+	/** 解析一个 Enhanced Input 资产：优先用角色上配置的引用（可在 BP_RogueCharacter 里指定）；
+	 *  留空则按 `<DefaultFolder>/<名字>.<名字>` 的约定路径加载。
+	 *
+	 *  找不到返回 nullptr —— 调用方据此**整体回退**到 legacy 输入。
+	 *  换句话说：**没有这些资产，项目照样能玩**，只是走旧输入路径。 */
+	template<typename TAsset>
+	TAsset* ResolveInputAsset(const TSoftObjectPtr<TAsset>& Configured, const TCHAR* DefaultFolder, const TCHAR* DefaultAssetName)
+	{
+		if (!Configured.IsNull())
+		{
+			return Configured.LoadSynchronous();
+		}
+
+		const FString AssetPath = FString::Printf(TEXT("%s/%s.%s"),
+			DefaultFolder, DefaultAssetName, DefaultAssetName);
+		return LoadObject<TAsset>(nullptr, *AssetPath);
+	}
+}
 
 namespace
 {
@@ -220,14 +252,6 @@ void ARogueCharacter::SetCurrentHealth(float NewHealth)
 	if (URogueAttributeSet* AttrSet = GetRogueAttributeSet())
 	{
 		AttrSet->SetHealth(FMath::Max(0.0f, NewHealth));
-	}
-}
-
-void ARogueCharacter::SetCurrentArmor(float NewArmor)
-{
-	if (URogueAttributeSet* AttrSet = GetRogueAttributeSet())
-	{
-		AttrSet->SetArmor(FMath::Max(0.0f, NewArmor));
 	}
 }
 
@@ -422,6 +446,52 @@ void ARogueCharacter::InitializeGASAttributes()
 		AttributeSet->GetHealth(), AttributeSet->GetMaxHealth(),
 		AttributeSet->GetArmor(), AttributeSet->GetMaxArmor(),
 		AttributeSet->GetMoveSpeed(), AttributeSet->GetDashCooldownDuration());
+
+	// 自然回复（生命 / 护甲）由两个常驻的 Periodic GE 承担，逐帧的
+	// HandleRecovery / HandleArmorRecharge 已删除。挂载放在属性灌完之后：
+	// 量级是 AttributeBased（每次结算重新读属性），顺序其实不影响正确性，
+	// 但这样能保证"第一次结算时速率属性已经就位"。
+	EnsureRegenEffects();
+}
+
+void ARogueCharacter::EnsureRegenEffects()
+{
+	URogueAbilitySystemComponent* ASC = GetRogueAbilitySystemComponent();
+	if (ASC == nullptr)
+	{
+		return;
+	}
+
+	// ⚠️ 这个检查是**必须的**，不是防御性编程：
+	//    两个回复 GE 都是 Infinite，重复施加会变成两份独立的 ActiveGameplayEffect，
+	//    回复速度直接翻倍 —— 而且没有任何报错。
+	//    角色重生时 Pawn 换了、PlayerState / ASC 保留，InitializeGASAttributes 会再跑一次。
+	const TSubclassOf<UGameplayEffect> RegenEffectClasses[] =
+	{
+		URogueHealthRegenEffect::StaticClass(),
+		URogueArmorRechargeEffect::StaticClass()
+	};
+
+	for (const TSubclassOf<UGameplayEffect>& RegenClass : RegenEffectClasses)
+	{
+		if (RegenClass == nullptr)
+		{
+			continue;
+		}
+
+		FGameplayEffectQuery AlreadyActiveQuery;
+		AlreadyActiveQuery.EffectDefinition = RegenClass;
+		if (ASC->GetActiveEffects(AlreadyActiveQuery).Num() > 0)
+		{
+			continue;
+		}
+
+		FGameplayEffectContextHandle Context = ASC->MakeEffectContext();
+		Context.AddSourceObject(this);
+		ASC->ApplyGameplayEffectToSelf(RegenClass->GetDefaultObject<UGameplayEffect>(), /*Level=*/1.0f, Context);
+
+		UE_LOG(LogTemp, Log, TEXT("[GAS] 自然回复 GE 已挂载：%s"), *RegenClass->GetName());
+	}
 }
 
 void ARogueCharacter::ApplyBalanceAsset()
@@ -1009,9 +1079,10 @@ void ARogueCharacter::Tick(float DeltaSeconds)
 	// 复活无敌的到期检查（服务端自己算，不需要复制字段：伤害只在服务端结算）。
 
 	HandleDash(DeltaSeconds);
-	HandleArmorRecharge(DeltaSeconds);
 	UpdateVisualPresentation(DeltaSeconds);
-	HandleRecovery(DeltaSeconds);
+	// 生命 / 护甲回复**不在这里了**：已改为两个常驻的 Periodic GE（见 EnsureRegenEffects）。
+	// 这一条同时消掉了原来"倒下的角色不再 Tick，于是回复逻辑行为异常"的隐患 ——
+	// 现在回复由 GAS 按周期推进，与角色是否 Tick 无关。
 	TickWeapons(DeltaSeconds);
 }
 
@@ -1019,27 +1090,156 @@ void ARogueCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComp
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 
-	PlayerInputComponent->BindAxis(TEXT("MoveForward"), this, &ARogueCharacter::MoveForward);
-	PlayerInputComponent->BindAxis(TEXT("MoveRight"), this, &ARogueCharacter::MoveRight);
-	PlayerInputComponent->BindAxis(TEXT("TurnCamera"), this, &ARogueCharacter::TurnCamera);
-	PlayerInputComponent->BindAxis(TEXT("PitchCamera"), this, &ARogueCharacter::PitchCamera);
-	PlayerInputComponent->BindAxis(TEXT("ZoomCamera"), this, &ARogueCharacter::ZoomCamera);
-	FInputActionBinding& PauseMenuBinding = PlayerInputComponent->BindAction(TEXT("TogglePauseMenu"), IE_Pressed, this, &ARogueCharacter::TogglePauseMenu);
-	PauseMenuBinding.bExecuteWhenPaused = true;
-	FInputActionBinding& InteractBinding = PlayerInputComponent->BindAction(TEXT("Interact"), IE_Pressed, this, &ARogueCharacter::Interact);
-	InteractBinding.bExecuteWhenPaused = true;
-	PlayerInputComponent->BindAction(TEXT("Jump"), IE_Pressed, this, &ARogueCharacter::StartJump);
-	PlayerInputComponent->BindAction(TEXT("Jump"), IE_Released, this, &ARogueCharacter::StopJump);
-	PlayerInputComponent->BindAction(TEXT("Dash"), IE_Pressed, this, &ARogueCharacter::Dash);
+	// Enhanced Input（UE5 标准输入）。资产在 `/Game/Input/`，清单见 Docs/Enhanced-Input-Migration.md。
+	//
+	// 历史：迁移期这里曾有一条支路 —— "任一资产缺失就整体回退到 legacy 的 BindAxis / BindAction"，
+	// 配套 DefaultInput.ini 里的 8 条 ActionMappings + 11 条 AxisMappings。
+	// 资产就位后那条支路**永远走不到了**，已随那些旧映射一起删除。
+	//
+	// 为什么删而不是留着当保险：留着的代价不是那几十行，而是
+	// "看起来还能回退、实际上从没被走到过" —— 这种代码比没有更容易误导后来的人。
+	SetupEnhancedInput(PlayerInputComponent);
+}
 
-	FInputActionBinding& UpgradeOneBinding = PlayerInputComponent->BindAction(TEXT("ChooseUpgrade1"), IE_Pressed, this, &ARogueCharacter::ChooseUpgradeOne);
-	UpgradeOneBinding.bExecuteWhenPaused = true;
+void ARogueCharacter::SetupEnhancedInput(UInputComponent* PlayerInputComponent)
+{
+	UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(PlayerInputComponent);
+	if (EnhancedInput == nullptr)
+	{
+		// 正常情况下不会发生：DefaultInput.ini 已把 DefaultInputComponentClass 设为 EnhancedInputComponent。
+		UE_LOG(LogTemp, Error, TEXT("[Rogue][Input] 输入组件不是 UEnhancedInputComponent —— 本机将没有任何输入"));
+		return;
+	}
 
-	FInputActionBinding& UpgradeTwoBinding = PlayerInputComponent->BindAction(TEXT("ChooseUpgrade2"), IE_Pressed, this, &ARogueCharacter::ChooseUpgradeTwo);
-	UpgradeTwoBinding.bExecuteWhenPaused = true;
+	// 局部名统一带 Asset 后缀：成员名本身就叫 MoveAction 等，
+	// 同名局部变量会遮蔽成员（本工程开了 -WarningsAsErrors，C4458 直接报错）。
+	UInputMappingContext* MappingContext = ResolveInputAsset(DefaultMappingContext, DefaultInputContextFolder, TEXT("IMC_Default"));
+	UInputAction* MoveAsset = ResolveInputAsset(this->MoveAction, DefaultInputActionFolder, TEXT("IA_Move"));
+	UInputAction* LookAsset = ResolveInputAsset(this->LookAction, DefaultInputActionFolder, TEXT("IA_Look"));
+	UInputAction* ZoomAsset = ResolveInputAsset(this->ZoomAction, DefaultInputActionFolder, TEXT("IA_Zoom"));
+	UInputAction* DashAsset = ResolveInputAsset(this->DashAction, DefaultInputActionFolder, TEXT("IA_Dash"));
+	UInputAction* JumpAsset = ResolveInputAsset(this->JumpAction, DefaultInputActionFolder, TEXT("IA_Jump"));
+	UInputAction* InteractAsset = ResolveInputAsset(this->InteractAction, DefaultInputActionFolder, TEXT("IA_Interact"));
+	UInputAction* PauseMenuAsset = ResolveInputAsset(this->TogglePauseMenuAction, DefaultInputActionFolder, TEXT("IA_TogglePauseMenu"));
+	UInputAction* Upgrade1Asset = ResolveInputAsset(this->ChooseUpgrade1Action, DefaultInputActionFolder, TEXT("IA_ChooseUpgrade1"));
+	UInputAction* Upgrade2Asset = ResolveInputAsset(this->ChooseUpgrade2Action, DefaultInputActionFolder, TEXT("IA_ChooseUpgrade2"));
+	UInputAction* Upgrade3Asset = ResolveInputAsset(this->ChooseUpgrade3Action, DefaultInputActionFolder, TEXT("IA_ChooseUpgrade3"));
 
-	FInputActionBinding& UpgradeThreeBinding = PlayerInputComponent->BindAction(TEXT("ChooseUpgrade3"), IE_Pressed, this, &ARogueCharacter::ChooseUpgradeThree);
-	UpgradeThreeBinding.bExecuteWhenPaused = true;
+	// ⚠️ 缺任何一个就**整体**回退，不做"能用几个算几个"的部分绑定：
+	//    半套绑定（例如移动正常但冲刺没反应）比全 legacy 难排查得多，
+	//    而且那种状态下"输入坏了"和"技能坏了"从表现上分不出来。
+	TArray<FString> MissingAssets;
+	if (MappingContext == nullptr) { MissingAssets.Add(TEXT("IMC_Default")); }
+	if (MoveAsset == nullptr)      { MissingAssets.Add(TEXT("IA_Move")); }
+	if (LookAsset == nullptr)      { MissingAssets.Add(TEXT("IA_Look")); }
+	if (ZoomAsset == nullptr)      { MissingAssets.Add(TEXT("IA_Zoom")); }
+	if (DashAsset == nullptr)      { MissingAssets.Add(TEXT("IA_Dash")); }
+	if (JumpAsset == nullptr)      { MissingAssets.Add(TEXT("IA_Jump")); }
+	if (InteractAsset == nullptr)  { MissingAssets.Add(TEXT("IA_Interact")); }
+	if (PauseMenuAsset == nullptr) { MissingAssets.Add(TEXT("IA_TogglePauseMenu")); }
+	if (Upgrade1Asset == nullptr)  { MissingAssets.Add(TEXT("IA_ChooseUpgrade1")); }
+	if (Upgrade2Asset == nullptr)  { MissingAssets.Add(TEXT("IA_ChooseUpgrade2")); }
+	if (Upgrade3Asset == nullptr)  { MissingAssets.Add(TEXT("IA_ChooseUpgrade3")); }
+
+	if (MissingAssets.Num() > 0)
+	{
+		// 用 Error 而不是 Warning：资产齐全是**前提**，缺了就是本机完全没有输入 ——
+		// 这不是"降级运行"，而是坏掉了，不该被当成一条普通提示划过去。
+		UE_LOG(LogTemp, Error,
+			TEXT("[Rogue][Input] Enhanced Input 资产缺失 %d 个（%s）—— 本机将没有任何输入。")
+			TEXT("资产清单见 Docs/Enhanced-Input-Migration.md"),
+			MissingAssets.Num(), *FString::Join(MissingAssets, TEXT("、")));
+		return;
+	}
+
+	// 映射上下文按**本机**添加：联机下每台客户端各自加自己那一份
+	// （AddMappingContext 是本地玩家子系统的东西，不参与复制）。
+	if (const APlayerController* PC = GetController<APlayerController>())
+	{
+		if (UEnhancedInputLocalPlayerSubsystem* InputSubsystem =
+			ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
+		{
+			InputSubsystem->AddMappingContext(MappingContext, /*Priority=*/0);
+		}
+	}
+
+	// 全部走"薄适配层"：这些处理函数只是转调 legacy 的处理函数，
+	// 所以"按 WASD 怎么移动""冲刺怎么判定"这些逻辑仍然只有一份实现。
+	EnhancedInput->BindAction(MoveAsset,      ETriggerEvent::Triggered, this, &ARogueCharacter::HandleMoveInput);
+	EnhancedInput->BindAction(LookAsset,      ETriggerEvent::Triggered, this, &ARogueCharacter::HandleLookInput);
+	EnhancedInput->BindAction(ZoomAsset,      ETriggerEvent::Triggered, this, &ARogueCharacter::HandleZoomInput);
+	EnhancedInput->BindAction(DashAsset,      ETriggerEvent::Started,   this, &ARogueCharacter::HandleDashInput);
+	// 跳跃要成对绑定：按下起跳、松开截断（对应 legacy 的 IE_Pressed / IE_Released）
+	EnhancedInput->BindAction(JumpAsset,      ETriggerEvent::Started,   this, &ARogueCharacter::HandleJumpStarted);
+	EnhancedInput->BindAction(JumpAsset,      ETriggerEvent::Completed, this, &ARogueCharacter::HandleJumpStopped);
+	EnhancedInput->BindAction(InteractAsset,  ETriggerEvent::Started,   this, &ARogueCharacter::Interact);
+	EnhancedInput->BindAction(PauseMenuAsset, ETriggerEvent::Started,   this, &ARogueCharacter::TogglePauseMenu);
+	EnhancedInput->BindAction(Upgrade1Asset,  ETriggerEvent::Started,   this, &ARogueCharacter::ChooseUpgradeOne);
+	EnhancedInput->BindAction(Upgrade2Asset,  ETriggerEvent::Started,   this, &ARogueCharacter::ChooseUpgradeTwo);
+	EnhancedInput->BindAction(Upgrade3Asset,  ETriggerEvent::Started,   this, &ARogueCharacter::ChooseUpgradeThree);
+
+	// 日志里带上**映射条数**：这是"资产是否真的配了按键"的唯一直接证据。
+	// 光看"资产加载成功"是不够的 —— 一个空的 IMC 也能加载成功，
+	// 表现却是"所有按键都没反应"，且不会报任何错。
+	// 期望条数：Move 8（WASD + 四个方向键）+ Look 1 + Zoom 1 + Dash 1 + Jump 1
+	//          + Interact 1 + PauseMenu 1 + ChooseUpgrade 3 = 17。
+	UE_LOG(LogTemp, Log, TEXT("[Rogue][Input] Enhanced Input 已启用：IMC=%s（%d 条按键映射），动作 10/10 就绪"),
+		*MappingContext->GetName(), MappingContext->GetMappings().Num());
+}
+
+void ARogueCharacter::HandleMoveInput(const FInputActionValue& Value)
+{
+	// IA_Move 是 Axis2D：X = 右、Y = 前。
+	// 注意 W 能给出 +Y 靠的是资产上的 Swizzle 修饰器，不是代码 —— 见迁移文档 §3.3。
+	const FVector2D Axis = Value.Get<FVector2D>();
+	MoveForward(Axis.Y);
+	MoveRight(Axis.X);
+}
+
+void ARogueCharacter::HandleLookInput(const FInputActionValue& Value)
+{
+	const FVector2D Axis = Value.Get<FVector2D>();
+	TurnCamera(Axis.X);
+	PitchCamera(Axis.Y);
+}
+
+void ARogueCharacter::HandleZoomInput(const FInputActionValue& Value)
+{
+	ZoomCamera(Value.Get<float>());
+}
+
+void ARogueCharacter::HandleDashInput()
+{
+	// 走 GAS 的**原生输入路径**：按 InputID 找技能并激活。
+	// 冲刺能力在授予时带了 RogueAbilityInputID::Dash（见 URogueAbilitySystemComponent::GrantDefaultAbilities）。
+	// "能不能冲刺"仍完全由技能自己判定（ActivationBlockedTags + 冷却 GE）——
+	// 输入层不做任何玩法判断，这也是这段代码能这么短的原因。
+	if (URogueAbilitySystemComponent* ASC = GetRogueAbilitySystemComponent())
+	{
+		for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
+		{
+			if (Spec.InputID == RogueAbilityInputID::Dash)
+			{
+				ASC->AbilityLocalInputPressed(RogueAbilityInputID::Dash);
+				return;
+			}
+		}
+	}
+
+	// 兜底：技能列表是**复制**过来的，客户端刚连上时可能还没到达。
+	// 这时退回按标签激活，免得玩家要再按一次。
+	// （Dash() 自己会再判一次死亡 / 暂停，所以这里不必重复判断。）
+	Dash();
+}
+
+void ARogueCharacter::HandleJumpStarted()
+{
+	StartJump();
+}
+
+void ARogueCharacter::HandleJumpStopped()
+{
+	StopJump();
 }
 
 void ARogueCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -1394,47 +1594,6 @@ int32 ARogueCharacter::GetLaserRefractionCount() const
 
 // ---- 角色移动 / 摄像机 / 冲刺 / 护甲 / 恢复 ----
 
-void ARogueCharacter::HandleArmorRecharge(float DeltaSeconds)
-{
-	// 护甲回复是**服务端权威**逻辑：客户端只显示复制过来的数值。
-	//
-	// 为什么必须挡住客户端：SetCurrentArmor 会直接写 AttributeSet
-	// （ATTRIBUTE_ACCESSORS 生成的 setter 内部是 ASC->SetNumericAttributeBase），
-	// 在客户端照样生效 —— 于是客户端自己也在回甲，而服务端下一次复制又把它盖回去，
-	// 表现为护甲条在两个值之间来回跳；更糟的是"受伤后不回复"的依据
-	// （State.RecentlyDamaged 标签）在客户端本来就晚一步，本地回甲会提前生效。
-	if (!HasAuthority())
-	{
-		return;
-	}
-
-	// 数值全部从属性集读（真相源），并且用 State.RecentlyDamaged 标签代替旧的
-	// ArmorRechargeDelayRemaining 计时器来判断"是否还在受伤冷却中"。
-	const URogueAttributeSet* AttrSet = GetRogueAttributeSet();
-	if (AttrSet == nullptr)
-	{
-		return;
-	}
-
-	const float MaxArmorValue = AttrSet->GetMaxArmor();
-	const float CurrentArmorValue = AttrSet->GetArmor();
-	if (MaxArmorValue <= 0.0f || CurrentArmorValue >= MaxArmorValue)
-	{
-		return;
-	}
-
-	// 刚受过伤 → 护甲不回复（这个状态由 AttributeSet 在结算伤害时挂上，带时长）
-	if (const URogueAbilitySystemComponent* ASC = GetRogueAbilitySystemComponent())
-	{
-		if (ASC->HasMatchingGameplayTag(RogueGameplayTags::State_RecentlyDamaged))
-		{
-			return;
-		}
-	}
-
-	SetCurrentArmor(FMath::Min(MaxArmorValue, CurrentArmorValue + AttrSet->GetArmorRechargeRate() * DeltaSeconds));
-}
-
 void ARogueCharacter::MoveForward(float Value)
 {
 	ForwardInputValue = Value;
@@ -1721,33 +1880,6 @@ void ARogueCharacter::HandleDash(float DeltaSeconds)
 	const TArray<float> RemainingTimes = ASC->GetActiveEffectsTimeRemaining(
 		FGameplayEffectQuery::MakeQuery_MatchAnyOwningTags(CooldownTagContainer));
 	DashCooldownRemaining = RemainingTimes.Num() > 0 ? RemainingTimes[0] : 0.0f;
-}
-
-void ARogueCharacter::HandleRecovery(float DeltaSeconds)
-{
-	// 同 HandleArmorRecharge：回血也是服务端权威，客户端写本地属性只会和复制结果打架。
-	if (!HasAuthority())
-	{
-		return;
-	}
-
-	// 回复速率与上限都取自属性集（真相源）；写回也走 SetCurrentHealth，
-	// 由属性变化回调用刷新镜像 —— 角色侧不再直接改 CurrentHealth。
-	const URogueAttributeSet* AttrSet = GetRogueAttributeSet();
-	if (AttrSet == nullptr)
-	{
-		return;
-	}
-
-	const float RegenRate = AttrSet->GetHealthRegenPerSecond();
-	const float MaxHealthValue = AttrSet->GetMaxHealth();
-	const float CurrentHealthValue = AttrSet->GetHealth();
-	if (RegenRate <= 0.0f || CurrentHealthValue >= MaxHealthValue)
-	{
-		return;
-	}
-
-	SetCurrentHealth(FMath::Min(MaxHealthValue, CurrentHealthValue + RegenRate * DeltaSeconds));
 }
 
 FVector ARogueCharacter::GetDashDirection() const

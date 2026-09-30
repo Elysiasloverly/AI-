@@ -9,7 +9,6 @@
 
 class URogueAbilitySystemComponent;
 class URogueAttributeSet;
-class URogueAttributeSet;
 struct FRogueUpgradeOption;
 
 /**

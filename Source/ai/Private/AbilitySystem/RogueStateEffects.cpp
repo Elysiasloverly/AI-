@@ -4,6 +4,7 @@
 #include "AbilitySystemComponent.h"
 #include "Core/RogueGameplayTags.h"
 #include "GameplayEffectComponents/TargetTagsGameplayEffectComponent.h"
+#include "GameplayEffectComponents/TargetTagRequirementsGameplayEffectComponent.h"
 
 // ===========================================================
 //  公共基类：统一的"构造期授予标签"写法
@@ -164,6 +165,19 @@ URogueDownedEffect::URogueDownedEffect()
 	DurationMagnitude = FGameplayEffectModifierMagnitude(DurationFromCaller);
 
 	GrantStateTag(RogueGameplayTags::State_Downed);
+
+	// 表现：倒地的全息环（**Actor 型** GameplayCue，见 RogueGameplayCue_Downed.h）。
+	//
+	// 为什么把 cue 挂在 GE 上，而不是像打击特效那样用代码调 ExecuteGameplayCue：
+	//   打击特效是"一次性的"，打一枪放一次，调用点很自然；
+	//   而倒地的环是"持续的"，如果由代码触发，就必须**再写一处代码在复活时把它关掉** ——
+	//   那正是本项目踩过两次的坑（"倒下的角色不再 Tick，于是清理逻辑永远不执行"）。
+	//   挂在 GE 上之后，"环什么时候消失"与"倒地什么时候结束"天然是同一件事。
+	//
+	// MinLevel/MaxLevel 给 0→1：引擎会用它们把 GE 等级映射成 cue 的 NormalizedMagnitude，
+	// 两者相等会导致除零，所以这里给一个正常区间（本 cue 不用这个值，但契约要成立）。
+	FGameplayEffectCue DownedCue(RogueGameplayTags::GameplayCue_State_Downed, /*MinLevel=*/0.0f, /*MaxLevel=*/1.0f);
+	GameplayCues.Add(DownedCue);
 }
 
 // ===========================================================
@@ -200,4 +214,122 @@ float GetDownedSecondsRemaining(const UAbilitySystemComponent* ASC)
 	}
 
 	return FMath::Max(0.0f, Longest);
+}
+
+// ===========================================================
+//  自然回复：生命 / 护甲（Periodic GE，替代两个逐帧函数）
+// ===========================================================
+
+namespace
+{
+	/** 自然回复的结算周期（秒）。
+	 *
+	 *  写成具名常量是因为它要用在**两处**，而且两处必须一致：
+	 *    · GE 的 `Period`（多久结算一次）
+	 *    · 修饰器量级的换算系数（`速率 × Period` = 每周期增量）
+	 *  两处不一致的话，回复总量会整体偏大或偏小，且不会有任何报错。 */
+	constexpr float RegenPeriodSeconds = 0.25f;
+}
+
+URoguePeriodicRegenEffect::URoguePeriodicRegenEffect()
+{
+	// Infinite：回复是常驻状态，用标签条件开关，而不是"到期再重挂"。
+	DurationPolicy = EGameplayEffectDurationType::Infinite;
+
+	// 每 0.25 秒结算一次。两个不选：
+	//   · Period = 0（逐帧）—— 那正是迁移前的老路，等于换个地方写 Tick；
+	//   · Period = 1（每秒）—— 护甲回复速率默认 45/秒，1 秒一跳会让护甲条明显一格一格跳。
+	// 0.25 秒是观感与开销的平衡点（每秒 4 次结算，比"每帧约 60 次"少一个半数量级）。
+	//
+	// ⚠️ `UGameplayEffect::Period` 是 **FScalableFloat**，不是 float ——
+	//    直接当 float 用（例如塞进 UE_LOG 的可变参数）会编译失败。
+	//    要读数值用 `Period.GetValue()`；`FGameplayEffectSpec::GetPeriod()` 返回的才是 float。
+	Period = FScalableFloat(RegenPeriodSeconds);
+
+	// 施加当帧**不**立刻结算：这个 GE 在开局/复活时挂上，若立刻跳一次，
+	// 初始生命与护甲会先超出初始值再被钳回来（观感上"满的"，语义上不该发生）。
+	bExecutePeriodicEffectOnApplication = false;
+}
+
+void URoguePeriodicRegenEffect::ConfigureRegen(FGameplayAttribute TargetAttribute, FGameplayAttribute RateAttribute)
+{
+	// 量级 = 持有者的速率属性 × Period（把"每秒速率"换算成"每周期增量"）。
+	//
+	// ⚠️ bSnapshot 必须是 false：true 会在**施加瞬间**把速率快照下来，
+	//    之后升级改 HealthRegenPerSecond / ArmorRechargeRate 就再也不生效 ——
+	//    这是这个 GE 最容易踩、且完全没有报错的坑。
+	FAttributeBasedFloat RateFromAttribute;
+	RateFromAttribute.BackingAttribute = FGameplayEffectAttributeCaptureDefinition(
+		RateAttribute,
+		EGameplayEffectAttributeCaptureSource::Target,
+		/*bSnapshot=*/ false);
+	RateFromAttribute.AttributeCalculationType = EAttributeBasedFloatCalculationType::AttributeMagnitude;
+	RateFromAttribute.Coefficient = FScalableFloat(RegenPeriodSeconds);
+
+	FGameplayModifierInfo Modifier;
+	Modifier.Attribute = TargetAttribute;
+	Modifier.ModifierOp = EGameplayModOp::Additive;
+	Modifier.ModifierMagnitude = FGameplayEffectModifierMagnitude(RateFromAttribute);
+	Modifiers.Add(Modifier);
+
+	// 上限钳制不在这里做：URogueAttributeSet::PreAttributeChange 已经把
+	// Health 钳到 [0, MaxHealth]、Armor 钳到 [0, MaxArmor]，
+	// 所以"到上限还继续加"会被静默钳掉，GE 侧不需要写"满了就停"。
+}
+
+void URoguePeriodicRegenEffect::BlockRegenWhileTagPresent(FGameplayTag BlockingTag)
+{
+	if (!BlockingTag.IsValid())
+	{
+		return;
+	}
+
+	// 与 URogueStateTagEffect 同一个教训（见本文件顶部）：
+	// 构造期只能用 CreateDefaultSubobject 建组件，而且必须挂进 GEComponents，
+	// 否则 PostLoad 之后条件就丢了。这里也**不要**用已废弃的裸成员
+	// `UGameplayEffect::OngoingTagRequirements`。
+	UTargetTagRequirementsGameplayEffectComponent* TagRequirements = nullptr;
+	for (UGameplayEffectComponent* Component : GEComponents)
+	{
+		if (UTargetTagRequirementsGameplayEffectComponent* Existing =
+			Cast<UTargetTagRequirementsGameplayEffectComponent>(Component))
+		{
+			TagRequirements = Existing;
+			break;
+		}
+	}
+
+	if (TagRequirements == nullptr)
+	{
+		TagRequirements = CreateDefaultSubobject<UTargetTagRequirementsGameplayEffectComponent>(TEXT("RegenTagRequirements"));
+		GEComponents.Add(TagRequirements);
+	}
+
+	// IgnoreTags 的语义是"身上**不能**有这个标签"。
+	TagRequirements->OngoingTagRequirements.IgnoreTags.AddTag(BlockingTag);
+}
+
+URogueHealthRegenEffect::URogueHealthRegenEffect()
+{
+	ConfigureRegen(
+		URogueAttributeSet::GetHealthAttribute(),
+		URogueAttributeSet::GetHealthRegenPerSecondAttribute());
+
+	// 死亡期间不回复。迁移前这条是 ARogueCharacter::Tick 里的 `if (bDead) return;` ——
+	// 那时"死亡"是一个 C++ bool；现在是 State.Dead 标签，条件因此可以对 GE 声明。
+	BlockRegenWhileTagPresent(RogueGameplayTags::State_Dead);
+}
+
+URogueArmorRechargeEffect::URogueArmorRechargeEffect()
+{
+	ConfigureRegen(
+		URogueAttributeSet::GetArmorAttribute(),
+		URogueAttributeSet::GetArmorRechargeRateAttribute());
+
+	BlockRegenWhileTagPresent(RogueGameplayTags::State_Dead);
+
+	// "刚受伤"期间不回复。这个标签本身带 ArmorRechargeDelay 秒的时长
+	// （见 URogueRecentlyDamagedEffect），所以两条合起来就是
+	// "受伤后等 N 秒 → 标签消失 → 周期自动恢复"这条完整规则。
+	BlockRegenWhileTagPresent(RogueGameplayTags::State_RecentlyDamaged);
 }

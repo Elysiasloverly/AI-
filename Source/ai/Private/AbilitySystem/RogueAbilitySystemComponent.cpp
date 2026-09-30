@@ -73,9 +73,11 @@ void URogueAbilitySystemComponent::GrantDefaultAbilities()
 	}
 	bDefaultAbilitiesGranted = true;
 
-	// 冲刺：Level 1、不绑定输入 ID（项目用的是旧版 InputComponent 绑定，
-	// 输入侧直接 TryActivateAbilitiesByTag，见 ARogueCharacter::Dash()）。
-	FGameplayAbilitySpec DashSpec(URogueGameplayAbility_Dash::StaticClass(), /*Level=*/1, /*InputID=*/INDEX_NONE, /*SourceObject=*/this);
+	// 冲刺：Level 1，**绑定输入 ID**。
+	// 输入侧走 GAS 原生路径：IA_Dash 的处理函数调 `AbilityLocalInputPressed(RogueAbilityInputID::Dash)`，
+	// 由 GAS 自己按 InputID 找能力并激活 —— 不需要输入层认识技能类，也不需要按标签再查一次。
+	// （迁移前这里是 InputID = INDEX_NONE + "输入侧直接 TryActivateAbilitiesByTag"。）
+	FGameplayAbilitySpec DashSpec(URogueGameplayAbility_Dash::StaticClass(), /*Level=*/1, /*InputID=*/RogueAbilityInputID::Dash, /*SourceObject=*/this);
 	GiveAbility(DashSpec);
 
 	UE_LOG(LogTemp, Log, TEXT("[GAS] 已授予默认技能：冲刺"));

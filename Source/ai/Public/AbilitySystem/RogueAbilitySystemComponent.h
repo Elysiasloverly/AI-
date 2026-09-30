@@ -4,6 +4,24 @@
 #include "AbilitySystemComponent.h"
 #include "RogueAbilitySystemComponent.generated.h"
 
+/** 玩家能力的输入 ID（对应 `UAbilitySystemComponent::AbilityLocalInputPressed` 的 InputID）。
+ *
+ *  为什么要有它：迁移到 Enhanced Input 之后，冲刺走的是 GAS 的**原生输入路径** ——
+ *  能力在授予时带上 InputID，输入侧只喊一句 `ASC->AbilityLocalInputPressed(InputID)`，
+ *  由 GAS 自己去技能表里找匹配的能力并激活。相比"输入直接调函数、函数再按标签找技能"，
+ *  少一层间接，而且"哪个键对应哪个技能"变成了一份可查询的数据。
+ *
+ *  目前只有冲刺需要输入：6 把武器是**自动开火**（持续型能力自己跑心跳），不需要玩家按键；
+ *  敌人攻击是 `ServerOnly`，由 AI 决策激活。 */
+namespace RogueAbilityInputID
+{
+	enum Type : int32
+	{
+		None = INDEX_NONE,
+		Dash = 1,
+	};
+}
+
 /**
  * 项目 ASC（AbilitySystemComponent 子类）。
  *

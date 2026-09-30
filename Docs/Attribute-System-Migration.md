@@ -1,7 +1,26 @@
 # 属性系统迁移记录：从双数据源到单一数据源
 
-> 本文档记录玩家属性系统（Attribute System）从「半接入」到「单一数据源」的迁移过程。
-> 适合面试时解释：为什么要自研属性系统、为什么迁移、迁移后收益。
+> ## ⚠️ 本文是**历史记录**，描述的是一个**已被删除**的自研属性系统
+>
+> 文中提到的 `FRoguePlayerAttributeSet`、`FRoguePlayerAttributeSystem`、`FRogueUpgradeEffectApplier`、
+> `SyncAttributesFromSystem`、`BaseGroup` / `UpgradeGroup` 与三个计算器（Additive/Multiplier/Clamp）
+> —— **当前代码里全部不存在**。请勿据此阅读源码，否则会找不到任何对应实现。
+>
+> **当前架构**：属性系统已整体迁移到 UE 的 **GameplayAbilitySystem（GAS）**，
+> 唯一数值真相源是 `URogueAttributeSet`。请先阅读：
+>
+> | 想知道 | 看这里 |
+> |---|---|
+> | 现在是什么结构 | [Project-Structure.md](./Project-Structure.md) |
+> | 怎么迁到 GAS 的、有什么验证证据 | [GAS-Main-Architecture-Plan.md](./GAS-Main-Architecture-Plan.md) |
+> | 接下来打算做什么 | [Optimal-Portfolio-Plan.md](./Optimal-Portfolio-Plan.md) |
+>
+> **本文保留的价值**：它记录了"为什么曾经自研、自研方案暴露了哪些问题"——
+> 这恰好解释了后来为什么选择 GAS。
+>
+> ⚠️ **第 6 节「遗留问题」针对的是那套自研系统**：`reinterpret_cast` 类型双关、
+> Multiplier/Clamp 计算器未使用等问题**随系统一起消失了**，
+> 不要试图在现网代码里找它们（现在的属性钳制走 `PreAttributeChange`，见 `RogueAttributeSet.cpp`）。
 
 ---
 

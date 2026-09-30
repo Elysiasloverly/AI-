@@ -223,7 +223,11 @@ FVector ARogueWeaponBase::GetOwnerCameraRightVector() const
 bool ARogueWeaponBase::IsHeavyCombat() const
 {
 	URogueEnemyTrackerSubsystem* Tracker = GetWorld() ? GetWorld()->GetSubsystem<URogueEnemyTrackerSubsystem>() : nullptr;
-	return Tracker != nullptr && (Tracker->ShouldCullCombatEffects() || Tracker->GetActiveEnemyCount() >= 40);
+	// 判据只有一份（Tracker 上的 ShouldCullCombatEffects）。
+	// 这里原本还有一个 `GetActiveEnemyCount() >= 40` 的硬编码兜底，它抢先命中，
+	// 使配置项 CombatEffectsCullEnemyCount（默认 52）对武器路径完全失效，
+	// 并让武器（40）与弹体/命中特效（52）在同一帧里用了两个不同的阈值。已删除。
+	return Tracker != nullptr && Tracker->ShouldCullCombatEffects();
 }
 
 void ARogueWeaponBase::SpawnLaserBeam(const FVector& Start, const FVector& End, bool bInfernoStyle, bool bImpactEffect, float Lifetime)

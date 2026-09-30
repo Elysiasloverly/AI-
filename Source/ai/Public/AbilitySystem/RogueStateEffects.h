@@ -180,3 +180,74 @@ public:
  *  放在这里的理由：服务端（复活轮询）与客户端（HUD 倒计时）都要问同一个问题，
  *  而两边用的是同一个 ASC 类型。实现只有一份，就不会出现"两边算法不一致"这种问题。 */
 AI_API float GetDownedSecondsRemaining(const UAbilitySystemComponent* ASC);
+
+// ===========================================================
+//  自然回复：生命 / 护甲（Periodic GameplayEffect）
+// ===========================================================
+
+/**
+ * 自然回复的公共基类（**Periodic GE**）。
+ *
+ * 迁移前，生命回复与护甲回复是 `ARogueCharacter` 上的两个**逐帧函数**
+ * （`HandleRecovery` / `HandleArmorRecharge`）：每帧自己读属性、自己乘 DeltaSeconds、
+ * 自己判标签、自己钳上限。合并到这里之后由 GAS 接管：
+ *
+ * | 迁移前（逐帧 C++） | 迁移后（GE 机制） |
+ * |---|---|
+ * | 每帧调用一次 | `Period` —— 每 0.25 秒结算一次 |
+ * | `Rate * DeltaSeconds` | `AttributeBased` 修饰器量级（`Rate × Period`） |
+ * | `if (HasMatchingGameplayTag(...)) return;` | `OngoingTagRequirements`（声明式标签条件） |
+ * | 自己 `FMath::Min(Max, ...)` 钳上限 | 交给 `URogueAttributeSet::PreAttributeChange` |
+ *
+ * **最关键的一条**：`AttributeBased` 的 `bSnapshot` 必须是 **false**。
+ * 为 true 会在施加瞬间把速率快照下来，之后升级改 `HealthRegenPerSecond` /
+ * `ArmorRechargeRate` 就**再也不生效**，而且不会有任何报错。
+ *
+ * ⚠️ 客户端不会执行周期结算：引擎在 `GameplayEffect.cpp:4325` 要求
+ *    `Owner->IsOwnerActorAuthoritative()` 才创建周期定时器，客户端拿到的副本只负责显示
+ *    复制过来的属性值。所以这个 GE 不会重现迁移前"客户端自己也回甲、和服务端复制打架"
+ *    导致护甲条来回跳的问题。
+ */
+UCLASS(Abstract)
+class AI_API URoguePeriodicRegenEffect : public UGameplayEffect
+{
+	GENERATED_BODY()
+
+public:
+	URoguePeriodicRegenEffect();
+
+protected:
+	/** 派生类构造里调用：每个结算周期给 `TargetAttribute` 加 `RateAttribute × Period`。 */
+	void ConfigureRegen(FGameplayAttribute TargetAttribute, FGameplayAttribute RateAttribute);
+
+	/** 身上带着 `BlockingTag` 时暂停回复（写进 OngoingTagRequirements，可多次调用叠加）。
+	 *
+	 *  条件不满足时 GE 进入 Inhibited —— 效果保留、周期暂停，条件消失后自动继续，
+	 *  不需要任何人手动移除/重挂。 */
+	void BlockRegenWhileTagPresent(FGameplayTag BlockingTag);
+};
+
+/** 生命自然回复：每周期 `Health += HealthRegenPerSecond × Period`，`State.Dead` 期间暂停。
+ *  （迁移前 `HandleRecovery` 靠 `Tick` 里那句 `if (bDead) return;` 挡住死亡期间回复。） */
+UCLASS()
+class AI_API URogueHealthRegenEffect : public URoguePeriodicRegenEffect
+{
+	GENERATED_BODY()
+
+public:
+	URogueHealthRegenEffect();
+};
+
+/** 护甲自然回复：每周期 `Armor += ArmorRechargeRate × Period`。
+ *
+ *  除了 `State.Dead`，**`State.RecentlyDamaged` 期间也暂停** ——
+ *  这两条标签条件合起来就是"受伤后等 `ArmorRechargeDelay` 秒才开始回甲"这条完整规则，
+ *  而它现在是**声明式**的（读 GE 就能看懂），不需要再去 C++ 里找 if。 */
+UCLASS()
+class AI_API URogueArmorRechargeEffect : public URoguePeriodicRegenEffect
+{
+	GENERATED_BODY()
+
+public:
+	URogueArmorRechargeEffect();
+};

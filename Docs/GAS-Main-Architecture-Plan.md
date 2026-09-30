@@ -21,6 +21,12 @@
 
 ### ✅ Phase 1a：武器加成属性化（基础层，已完成并编译验证）
 
+> ⚠️ **后续修正**：本阶段新增的 `URogueWeaponAttributeSet`（第二套属性集）**已回退**，
+> 12 个加成属性最终合并进 `URogueAttributeSet`。
+> 回退理由**不是**"第二套属性集不复制"（那个结论已被推翻，见下方「已结案」一节），
+> 只是取舍：加成与生命/护甲同属玩家战斗数值，且只需维护一套访问器宏与复制登记。
+> 因此下面第 2 条"挂第二套属性集"**已不成立**，保留原文仅为记录阶段过程。
+
 - 新增 `URogueWeaponAttributeSet`：12 个**加成属性**（伤害/攻速/范围/弹速 + 6 类数量 + 折射 + 爆炸半径）
 - 玩家 `ARoguePlayerState` 挂第二套属性集（ASC 的 `InitializeComponent()` 会自动收录 Owner 的
   所有 `UAttributeSet` 默认子对象，见 `AbilitySystemComponent_Abilities.cpp:74-84`），并登记复制
@@ -282,11 +288,19 @@ Rogue.SelfTest.DisableEnemyAttackAbilities 1      # 对照：不授予敌人攻�
   与迁移前 `ReviveServerTime` 的 `COND_OwnerOnly` 完全一致，且 HUD 只用本人那一份。
 - 无 `Fatal` / `Ensure` / `LogAbilitySystem: Error`。
 
-### ⏳ Phase 5：清理旧路径 + 更新结构文档 + 回归验证
+### ✅ Phase 5：清理旧路径 + 更新结构文档 + 回归验证（已完成，提交 `3fa31d2`）
 
-- 复活等待用 GE 时长驱动（现在由 PlayerState 上的截止时刻 + 三条路径驱动）
-- 删除过渡期的双路径代码（`OnUpgradeApplied` / `ApplyShared*Bonus` / `Multicast_ApplyWeaponUpgrade`）
-- 更新 `Docs/Project-Structure.md`，回归验证数据资产仍是唯一数据入口
+- ✅ 删除过渡期的双路径代码：`OnUpgradeApplied` / `ApplyShared*Bonus` / `Multicast_ApplyWeaponUpgrade`
+  / `DispatchWeaponUpgrade` / `ReviveServerTime` / `TickReviveInvulnerability` / `GetServerTimeSeconds`
+  / `URogueGameplayCueManager` / `FRogueUpgradeEffectApplier` / 未使用的 `Effect.Upgrade.Weapon` 标签。
+  已全树 grep 复核：这些符号现在**只出现在"已删除"的说明性注释里**，无残留实现
+- ✅ 更新 `Docs/Project-Structure.md`（该快照已同步为改造后状态）
+- ✅ 回归验证：`Development` + `DebugGame` 编译通过；双进程无头无 `Fatal` / `Ensure`；
+  **200 敌人压测**数据见上面的 Phase 3 小节
+- ⚠️ 已知遗留（不影响功能）：**本文件之外的注释与文档未同步清理** ——
+  `Attribute-System-Migration.md` 曾在描述已删除的自研系统、`RogueAttributeSet.h` 里
+  还留着已被推翻的"加成不复制"结论。清理计划见
+  [Optimal-Portfolio-Plan.md](./Optimal-Portfolio-Plan.md) 第 1 批
 
 ## 不做的事（有意保留自研）
 

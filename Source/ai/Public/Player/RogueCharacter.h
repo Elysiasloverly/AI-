@@ -8,6 +8,9 @@
 // 倒地等待 / 复活无敌两个状态 GE 的句柄（只用于调试与失效报错，不参与判定）。
 #include "GameplayEffectTypes.h"
 #include "AbilitySystemInterface.h"
+// Enhanced Input：处理函数按值语义接收 FInputActionValue（轴值 / 布尔值统一封装）。
+// 见 SetupEnhancedInput 与 Docs/Enhanced-Input-Migration.md。
+#include "InputActionValue.h"
 #include "RogueCharacter.generated.h"
 
 class ARogueWeaponBase;
@@ -25,6 +28,8 @@ class URogueCharacterVisualComponent;
 class URoguePlayerBalanceAsset;
 class URogueAbilitySystemComponent;
 class URogueAttributeSet;
+class UInputAction;
+class UInputMappingContext;
 
 UCLASS()
 class AI_API ARogueCharacter : public ACharacter, public IAbilitySystemInterface
@@ -62,11 +67,15 @@ public:
 	 *  AttributeSet 施加死亡效果后需要有人来做善后，而"善后"属于角色自己的事。 */
 	void Die();
 
-	/** 设置当前生命/护甲。**这是唯一的写入点** —— 属性集是真相源，
+	/** 设置当前生命。**这是唯一的写入点** —— 属性集是真相源，
 	 *  运行时字段 CurrentHealth / CurrentArmor 只由属性变化回调去更新，
-	 *  任何地方都不要直接给它们赋值。 */
+	 *  任何地方都不要直接给它们赋值。
+	 *
+	 *  注：这里**只有生命**，没有对应的 SetCurrentArmor ——
+	 *  护甲的全部变化（伤害扣减、自然回复）现在都由 GAS 承担
+	 *  （回复走 `URogueArmorRechargeEffect` 这个 Periodic GE），C++ 侧不再需要写入口。
+	 *  原来的 SetCurrentArmor 已随逐帧回复函数一起删除。 */
 	void SetCurrentHealth(float NewHealth);
-	void SetCurrentArmor(float NewArmor);
 
 	/** 清除"护甲回复延迟"状态（升级护甲上限时旧行为会立即开始回复） */
 	void ClearRecentlyDamagedState();
@@ -333,10 +342,38 @@ private:
 	void ChooseUpgradeOne();
 	void ChooseUpgradeTwo();
 	void ChooseUpgradeThree();
+
+	// ---- 输入绑定 ----
+	// 全部走 Enhanced Input（旧的 legacy `BindAxis` / `BindAction` 支路已随
+	// DefaultInput.ini 的 19 条旧映射一起删除，见 SetupPlayerInputComponent 的注释）。
+
+	/** 解析输入资产、登记映射上下文、绑定 10 个动作。
+	 *
+	 *  资产缺失时打 Error 并**不绑定任何输入** —— 不做"能用几个算几个"的部分绑定，
+	 *  也不再有回退路径：半套输入（移动正常但冲刺没反应）比彻底没有更难排查。
+	 *  资产清单见 `Docs/Enhanced-Input-Migration.md`。 */
+	void SetupEnhancedInput(UInputComponent* PlayerInputComponent);
+
+	// Enhanced Input 的处理函数：都是薄适配层，转调上面的 legacy 处理函数，
+	// 所以"按 WASD 移动"这条逻辑只有一份实现。
+	void HandleMoveInput(const FInputActionValue& Value);
+	void HandleLookInput(const FInputActionValue& Value);
+	void HandleZoomInput(const FInputActionValue& Value);
+	void HandleDashInput();
+	void HandleJumpStarted();
+	void HandleJumpStopped();
+
 	void HandleDash(float DeltaSeconds);
-	void HandleArmorRecharge(float DeltaSeconds);
-	void HandleRecovery(float DeltaSeconds);
 	void ApplyBalanceAsset();
+
+	/** 挂上生命 / 护甲的自然回复 GE（`URoguePeriodicRegenEffect` 的两个子类）。
+	 *
+	 *  迁移前这里是两个**逐帧**函数 `HandleRecovery` / `HandleArmorRecharge`：
+	 *  每帧读属性、乘 DeltaSeconds、判标签、钳上限。现在回复完全由 GAS 的 Periodic GE 承担。
+	 *
+	 *  **幂等**：先查同类 GE 在不在身上再挂。角色重生时 Pawn 换了但 PlayerState / ASC 保留，
+	 *  `InitializeGASAttributes` 会再跑一次 —— 不查就会挂上第二份，回复速度直接翻倍。 */
+	void EnsureRegenEffects();
 
 	/** 把 URoguePlayerBalanceAsset 的基础数值灌进 GAS 属性集的 BaseValue。
 	 *  这是旧系统 BaseGroup 的替代品：GAS 用 SetNumericAttributeBase 写一次绝对值，
@@ -518,6 +555,26 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, Category = "跳跃")
 	int32 JumpMaxCountConfig = 1;
+
+	// ---- 输入（Enhanced Input）----
+	// 留空时按 `/Game/Input/` 下的约定名加载（IMC_Default / IA_Move / …）。
+	// ⚠️ **任何一个缺失都会整体回退到 legacy 绑定** —— 半套绑定比全 legacy 更难排查，
+	//    启动日志会打印走的是哪一条路径、缺了哪个资产。
+	//    资产清单、按键映射与修饰器配置见 Docs/Enhanced-Input-Migration.md。
+
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	TSoftObjectPtr<UInputMappingContext> DefaultMappingContext;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Input") TSoftObjectPtr<UInputAction> MoveAction;
+	UPROPERTY(EditDefaultsOnly, Category = "Input") TSoftObjectPtr<UInputAction> LookAction;
+	UPROPERTY(EditDefaultsOnly, Category = "Input") TSoftObjectPtr<UInputAction> ZoomAction;
+	UPROPERTY(EditDefaultsOnly, Category = "Input") TSoftObjectPtr<UInputAction> DashAction;
+	UPROPERTY(EditDefaultsOnly, Category = "Input") TSoftObjectPtr<UInputAction> JumpAction;
+	UPROPERTY(EditDefaultsOnly, Category = "Input") TSoftObjectPtr<UInputAction> InteractAction;
+	UPROPERTY(EditDefaultsOnly, Category = "Input") TSoftObjectPtr<UInputAction> TogglePauseMenuAction;
+	UPROPERTY(EditDefaultsOnly, Category = "Input") TSoftObjectPtr<UInputAction> ChooseUpgrade1Action;
+	UPROPERTY(EditDefaultsOnly, Category = "Input") TSoftObjectPtr<UInputAction> ChooseUpgrade2Action;
+	UPROPERTY(EditDefaultsOnly, Category = "Input") TSoftObjectPtr<UInputAction> ChooseUpgrade3Action;
 
 	UPROPERTY(VisibleInstanceOnly, Category = "Stats")
 	float CurrentHealth = 100.0f;

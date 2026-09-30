@@ -146,9 +146,16 @@ private:
 
 	/** 收集当前所有活着的玩家角色（用 TInlineAllocator<4> 避免堆分配：联机上限 4 人）。 */
 	void CollectAlivePlayers(TArray<ARogueCharacter*, TInlineAllocator<4>>& OutPlayers) const;
-	/** 把每个玩家属性集里的 12 个武器加成推给各自的 PlayerState 快照（复制到各端）。
-	 *  为什么不让武器直接读属性集：实测那 12 个属性没有复制到客户端（同集的生命/护甲正常），
-	 *  所以跨端走 PlayerState 复制字段 —— 与商店 ApplyShopSnapshot 同一套做法。 */
+	/** 把每个玩家属性集里的 12 个武器加成推到**各自的角色**身上
+	 *  （`ARogueCharacter::ApplyWeaponBonusSnapshot`）。
+	 *
+	 *  载体是 `ARogueCharacter`（**不是** PlayerState —— 早期注释曾这么写，已纠正）：
+	 *  这份数据本来就是"角色的战斗参数"，与 `bDead` 走同一条已验证的复制通道，分层也更合理。
+	 *
+	 *  ⚠️ 早期这里写的理由是"那 12 个加成属性没有复制到客户端"，该结论已被推翻
+	 *  （见 Docs/GAS-Main-Architecture-Plan.md 的「已结案」：错在自检拿两个不同玩家对比）。
+	 *  保留这一层的**真实**理由是：武器要在两端各算一遍"数据表基础值 + 加成×本武器系数"，
+	 *  所以需要一份跨端一致的"加成输入"。 */
 	void PushWeaponBonusSnapshots();
 
 	/**

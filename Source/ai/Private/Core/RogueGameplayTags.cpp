@@ -70,6 +70,9 @@ namespace RogueGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Impact_Spark,      "GameplayCue.Impact.Spark");
 	UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Impact_Laser,      "GameplayCue.Impact.Laser");
 	UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Impact_Explosion,  "GameplayCue.Impact.Explosion");
+	// 倒地表现：**Actor 型** cue，由 URogueDownedEffect 的 GameplayCues 数组驱动
+	//（GE 生效 → OnActive，GE 移除 → OnRemove），见 RogueGameplayCue_Downed.h。
+	UE_DEFINE_GAMEPLAY_TAG(GameplayCue_State_Downed,      "GameplayCue.State.Downed");
 }
 
 FGameplayTag RogueGameplayTags::GetUpgradeAttributeTag(ERogueUpgradeType UpgradeType)

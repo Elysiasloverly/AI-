@@ -1,5 +1,6 @@
 #include "AbilitySystem/RogueGameplayCue_Impact.h"
 
+#include "AbilitySystem/RogueGameplayCue_Downed.h"
 #include "AbilitySystemGlobals.h"
 #include "Core/RogueGameplayTags.h"
 #include "GameplayCueManager.h"
@@ -20,19 +21,32 @@ void RogueGameplayCues::EnsureNativeImpactCuesRegistered()
 		return;
 	}
 
-	// 本项目的原生 cue：一个 C++ 通知类 + 一组 Tag。
-	// 函数内静态：FGameplayTag 需要原生 Tag 已注册，放到首次调用时构造最安全。
-	static const TArray<FGameplayTag> NativeImpactTags = {
-		RogueGameplayTags::GameplayCue_Impact_Spark,
-		RogueGameplayTags::GameplayCue_Impact_Laser,
-		RogueGameplayTags::GameplayCue_Impact_Explosion,
+	// 原生 cue 清单：**Tag → 通知类**。
+	//
+	// 注意两种 cue 的基类不同，所以不能再用"一个类吃三个 Tag"的老写法：
+	//   · 三个 Impact 共用一个 `UGameplayCueNotify_Static`（无状态，按 MatchedTagName 分流风格）；
+	//   · 倒地那个是 `UGameplayCueNotify_Actor`（有实例、有生命周期，见 RogueGameplayCue_Downed.h）。
+	//
+	// 用类路径（FSoftObjectPath）而不是类指针，是因为 AddCues 收的是路径 ——
+	// 原生类（`/Script/ai.XXX`）一样能解析，不需要为它们做 .uasset。
+	struct FNativeCueEntry
+	{
+		FGameplayTag Tag;
+		const UClass* NotifyClass;
+	};
+
+	static const TArray<FNativeCueEntry> NativeCues = {
+		{ RogueGameplayTags::GameplayCue_Impact_Spark,     URogueGameplayCue_Impact::StaticClass() },
+		{ RogueGameplayTags::GameplayCue_Impact_Laser,     URogueGameplayCue_Impact::StaticClass() },
+		{ RogueGameplayTags::GameplayCue_Impact_Explosion, URogueGameplayCue_Impact::StaticClass() },
+		{ RogueGameplayTags::GameplayCue_State_Downed,     ARogueGameplayCue_Downed::StaticClass() },
 	};
 
 	// 快路径：全都在（AddCues 内部会重建 GameplayCueDataMap，所以这里查得到）
 	bool bAllRegistered = true;
-	for (const FGameplayTag& Tag : NativeImpactTags)
+	for (const FNativeCueEntry& Entry : NativeCues)
 	{
-		if (!CueSet->GameplayCueDataMap.Contains(Tag))
+		if (!CueSet->GameplayCueDataMap.Contains(Entry.Tag))
 		{
 			bAllRegistered = false;
 			break;
@@ -43,26 +57,25 @@ void RogueGameplayCues::EnsureNativeImpactCuesRegistered()
 		return;
 	}
 
-	// 路径写成原生类的软引用即可：AddCues 之后按 FSoftObjectPath 解析，
-	// 原生类（/Script/ai.RogueGameplayCue_Impact）一样能解析到，不需要为它做一个 .uasset。
-	const FSoftObjectPath NotifyClassPath(URogueGameplayCue_Impact::StaticClass());
-
 	TArray<FGameplayCueReferencePair> CuesToAdd;
-	CuesToAdd.Reserve(NativeImpactTags.Num());
-	for (const FGameplayTag& Tag : NativeImpactTags)
+	CuesToAdd.Reserve(NativeCues.Num());
+	for (const FNativeCueEntry& Entry : NativeCues)
 	{
-		CuesToAdd.Emplace(Tag, NotifyClassPath);
+		if (Entry.NotifyClass != nullptr)
+		{
+			CuesToAdd.Emplace(Entry.Tag, FSoftObjectPath(Entry.NotifyClass));
+		}
 	}
 
 	CueSet->AddCues(CuesToAdd);
 
 	// 打一行注册结果，并把"注册完到底认不认"一起报出来。
-	// cue 注册失败的表现是"打击特效全部消失"且没有任何报错 —— 有这行日志，
+	// cue 注册失败的表现是"特效全部消失"且没有任何报错 —— 有这行日志，
 	// 出问题时一眼就能确认注册跑没跑、以及 cue set 里到底有没有这几个 Tag。
 	int32 MappedCount = 0;
-	for (const FGameplayTag& Tag : NativeImpactTags)
+	for (const FNativeCueEntry& Entry : NativeCues)
 	{
-		MappedCount += CueSet->GameplayCueDataMap.Contains(Tag) ? 1 : 0;
+		MappedCount += CueSet->GameplayCueDataMap.Contains(Entry.Tag) ? 1 : 0;
 	}
 	UE_LOG(LogTemp, Log, TEXT("[Rogue] 原生 GameplayCue 注册：提交 %d 条，cue set 中已映射 %d 条（管理器=%s）"),
 		CuesToAdd.Num(), MappedCount, *GetNameSafe(CueManager));

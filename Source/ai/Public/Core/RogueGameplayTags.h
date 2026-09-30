@@ -195,6 +195,19 @@ namespace RogueGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayCue_Impact_Laser);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayCue_Impact_Explosion);
 
+	/**
+	 * 倒地表现（**Actor 型** GameplayCue）。
+	 *
+	 * 与上面三个 Impact cue 的区别：那三个是 `UGameplayCueNotify_Static`（无状态、一次触发、
+	 * 命中特效打完就回收）；这个是 `UGameplayCueNotify_Actor`（有实例、有生命周期），
+	 * 因为倒地是一个**持续状态**：环要一直转，直到人复活。
+	 *
+	 * 触发方式也不同：Impact 是靠代码调 `ExecuteGameplayCue` 打一次；
+	 * 这个挂在 `URogueDownedEffect` 的 `GameplayCues` 数组上，由 GE 的生命周期驱动 ——
+	 * GE 生效时 `OnActive`、移除时 `OnRemove`，**不需要任何人记得去关掉它**。
+	 */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayCue_State_Downed);
+
 	/** 冲击风格 → Cue Tag。无对应风格时返回空 Tag。 */
 	AI_API FGameplayTag GetImpactCueTag(ERogueImpactVisualStyle Style);
 }

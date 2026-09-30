@@ -418,7 +418,7 @@ void ARogueHUD::DrawEnemyHealthBars(UFont* Font)
 	}
 
 	const float CurrentTime = GetWorld()->GetTimeSeconds();
-	const bool bHeavyCombat = Tracker->ShouldCullCombatEffects() || Tracker->GetActiveEnemyCount() >= 40;
+	const bool bHeavyCombat = Tracker->ShouldCullCombatEffects();
 	const float RefreshInterval = bHeavyCombat ? EnemyHealthBarRefreshIntervalHeavy : EnemyHealthBarRefreshIntervalNormal;
 	if (CurrentTime >= NextHealthBarCacheRefreshTime)
 	{
@@ -481,7 +481,7 @@ void ARogueHUD::DrawDamageNumbers(UFont* Font)
 	}
 
 	const float CurrentTime = GetWorld()->GetTimeSeconds();
-	const bool bHeavyCombat = Tracker != nullptr && (Tracker->ShouldCullCombatEffects() || Tracker->GetActiveEnemyCount() >= 40);
+	const bool bHeavyCombat = Tracker != nullptr && Tracker->ShouldCullCombatEffects();
 	const int32 MaxDamageNumbers = bHeavyCombat ? MaxDamageNumbersHeavy : MaxDamageNumbersNormal;
 	if (DamageNumbers.Num() > MaxDamageNumbers)
 	{
@@ -532,7 +532,7 @@ void ARogueHUD::RefreshEnemyHealthBarCache(const URogueEnemyTrackerSubsystem* Tr
 	const APlayerController* PlayerController = GetOwningPlayerController();
 	const APawn* PlayerPawn = PlayerController != nullptr ? PlayerController->GetPawn() : nullptr;
 	const FVector PlayerLocation = PlayerPawn != nullptr ? PlayerPawn->GetActorLocation() : FVector::ZeroVector;
-	const bool bHeavyCombat = Tracker->ShouldCullCombatEffects() || Tracker->GetActiveEnemyCount() >= 40;
+	const bool bHeavyCombat = Tracker->ShouldCullCombatEffects();
 	const float MaxBarDistance = bHeavyCombat ? 1300.0f : 1800.0f;
 	const int32 MaxRegularBars = bHeavyCombat ? MaxRegularHealthBarsHeavy : MaxRegularHealthBarsNormal;
 	struct FCandidateBar
@@ -603,7 +603,7 @@ void ARogueHUD::RefreshDamageNumberProjectionCache(APlayerController* PlayerCont
 	}
 
 	const float CurrentTime = GetWorld()->GetTimeSeconds();
-	const bool bHeavyCombat = Tracker != nullptr && (Tracker->ShouldCullCombatEffects() || Tracker->GetActiveEnemyCount() >= 40);
+	const bool bHeavyCombat = Tracker != nullptr && Tracker->ShouldCullCombatEffects();
 	const float PopupRiseSpeed = bHeavyCombat ? 72.0f : 90.0f;
 
 	for (FRogueDamageNumber& DamageNumber : DamageNumbers)
