@@ -2,6 +2,7 @@
 
 #include "Player/RogueCharacter.h"
 #include "AbilitySystem/RogueAbilitySystemComponent.h"
+#include "AbilitySystem/RogueAbilitySet.h"
 #include "AbilitySystem/RogueAbilitySystemLibrary.h"
 #include "AbilitySystem/RogueAttributeSet.h"
 #include "AbilitySystem/Abilities/RogueEnemyAttackAbility.h"
@@ -698,6 +699,55 @@ void ARogueEnemy::GrantAttackAbilities()
 	{
 		return;
 	}
+
+	// ---- ① 优先：数据驱动的能力集 ----
+	//
+	// ⚠️ 这里能读到**正确的** CurrentArchetype，是因为授予被放在 `InitializeEnemy()` 的**末尾**
+	//    （原型赋值之后）。早期版本放在 `ActivatePooledEnemy()` 里，会照着**上一只怪**的原型
+	//    发技能，症状是"远程怪不远程、震荡柱不起波"且没有任何报错。详见 URogueAbilitySet 的类注释。
+	if (URogueAbilitySet* AbilitySet = CurrentArchetype.AttackAbilitySet.LoadSynchronous())
+	{
+		TArray<FGameplayAbilitySpecHandle> Handles;
+		AbilitySet->GiveToAbilitySystem(AbilitySystemComponent, this, &Handles);
+
+		// 按**能力类**把句柄分配到三个槽位，而不是按条目下标 ——
+		// 下标约定太容易被"改资产时调了下顺序"破坏，而那种破坏是静默的（攻击悄悄换了种类）。
+		//
+		// 三个槽位是 AI 侧固有的：`Tick` 里的决策分成"接触 / 远程 / 地面波"三条，
+		// 所以能力集里**多出来的**能力不会有 AI 去驱动（它仍可被别处激活）。
+		// 也就是说这条边界是：**能力集决定"这种敌人有哪些攻击"，AI 决定"什么时候打"。**
+		for (const FGameplayAbilitySpecHandle& Handle : Handles)
+		{
+			const FGameplayAbilitySpec* Spec = AbilitySystemComponent->FindAbilitySpecFromHandle(Handle);
+			UClass* AbilityClass = (Spec != nullptr && Spec->Ability != nullptr) ? Spec->Ability->GetClass() : nullptr;
+			if (AbilityClass == nullptr)
+			{
+				continue;
+			}
+
+			if (AbilityClass->IsChildOf(URogueEnemyContactAttackAbility::StaticClass()))
+			{
+				ContactAttackAbilityHandle = Handle;
+			}
+			else if (AbilityClass->IsChildOf(URogueEnemyRangedAttackAbility::StaticClass()))
+			{
+				RangedAttackAbilityHandle = Handle;
+			}
+			else if (AbilityClass->IsChildOf(URogueEnemyGroundWaveAttackAbility::StaticClass()))
+			{
+				GroundWaveAttackAbilityHandle = Handle;
+			}
+		}
+
+		UE_LOG(LogTemp, Verbose, TEXT("[Rogue] 敌人攻击能力来自数据驱动能力集 %s（%d 条）：接触=%d 远程=%d 地面波=%d"),
+			*AbilitySet->GetName(), Handles.Num(),
+			ContactAttackAbilityHandle.IsValid() ? 1 : 0,
+			RangedAttackAbilityHandle.IsValid() ? 1 : 0,
+			GroundWaveAttackAbilityHandle.IsValid() ? 1 : 0);
+		return;
+	}
+
+	// ---- ② 回退：按原型标志推导（改造前的硬编码逻辑，老数据表走这条）----
 
 	// 用地面波的敌人（震荡柱）不贴身打人 —— 改造前 HandleDefaultBehavior 里
 	// `if (bUsesGroundWave) { HandleGroundWaveAttack(); return; }` 就是这个语义。

@@ -1,8 +1,8 @@
 #include "Player/RoguePlayerState.h"
 
 #include "AbilitySystem/RogueAbilitySystemComponent.h"
+#include "AbilitySystem/RogueAbilitySet.h"
 #include "AbilitySystem/RogueStateEffects.h"
-#include "AbilitySystem/RogueAttributeSet.h"
 #include "AbilitySystem/RogueAttributeSet.h"
 #include "AbilitySystem/RogueGameplayCue_Impact.h"
 #include "Core/RogueGameMode.h"
@@ -339,5 +339,11 @@ void ARoguePlayerState::RefreshAbilityActorInfo(APawn* InPawn)
 
 	// 授予默认技能。内部自带"只在服务端、只授一次"的保护，
 	// 所以这里在 PossessedBy / OnRep_PlayerState 两条路径上重复调用是安全的。
-	AbilitySystemComponent->GrantDefaultAbilities();
+	//
+	// 能力集是**资产**，只在权威端解析：客户端不需要它（GrantDefaultAbilities 在客户端会直接返回），
+	// 让它在客户端也走一遍 LoadSynchronous 只是白白加载一个资产。
+	const URogueAbilitySet* AbilitySet = AbilitySystemComponent->IsOwnerActorAuthoritative()
+		? DefaultAbilitySet.LoadSynchronous()
+		: nullptr;
+	AbilitySystemComponent->GrantDefaultAbilities(AbilitySet);
 }

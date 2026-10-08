@@ -8,6 +8,7 @@
 #include "RoguePlayerState.generated.h"
 
 class URogueAbilitySystemComponent;
+class URogueAbilitySet;
 class URogueAttributeSet;
 struct FRogueUpgradeOption;
 
@@ -193,6 +194,18 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, Category = "Rogue|GAS")
 	TObjectPtr<URogueAttributeSet> AttributeSet;
+
+	/** 玩家的默认能力集（**数据驱动**）。在 `BP_RoguePlayerState` 上指定。
+	 *
+	 *  填了它 → 玩家的初始技能完全由这个资产决定，"加一个主动技能"不用改 C++；
+	 *  留空   → `GrantDefaultAbilities` 回退到硬编码的冲刺，
+	 *           保证资产没配好时玩家依然能玩（而不是一个技能都没有）。
+	 *
+	 *  ⚠️ 授予时机不受这里影响：仍由 `RefreshAbilityActorInfo` 在
+	 *     PossessedBy / OnRep_PlayerState 两条路径上触发，内部自带"只在服务端、只授一次"的保护。
+	 *     详见 URogueAbilitySet 的类注释。 */
+	UPROPERTY(EditDefaultsOnly, Category = "Rogue|GAS")
+	TSoftObjectPtr<URogueAbilitySet> DefaultAbilitySet;
 
 	/** 基础属性是否已灌过（**服务端**，一局一次）。见 IsBaseAttributesInitialized()。
 	 *

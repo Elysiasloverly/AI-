@@ -1811,8 +1811,15 @@ void ARogueCharacter::Dash()
 	// 输入 → GAS。
 	// "能不能冲刺"（是否死亡 / 是否已在冲刺 / 冷却是否走完）全部交给技能判定，
 	// 见 URogueGameplayAbility_Dash 的 ActivationBlockedTags 与 CooldownTags。
-	// 项目目前用的是旧版 InputComponent 绑定，所以在这里按 Tag 激活；
-	// 将来迁到 Enhanced Input 后应改为 AbilityLocalInputPressed。
+	//
+	// ⚠️ 本函数现在是**兜底路径**。正常路径是 HandleDashInput 里的
+	// `ASC->AbilityLocalInputPressed(RogueAbilityInputID::Dash)` —— 那是 GAS 的原生输入路径，
+	// 冲刺能力在授予时就带了 InputID（见 URogueAbilitySystemComponent::GrantDefaultAbilities）。
+	// 只有当技能列表还没复制到位（客户端刚连上）时才落到这里，按 Tag 激活一次，
+	// 免得玩家再按一次才生效。
+	//
+	// （这段注释此前写的是"项目目前用的是旧版 InputComponent 绑定，
+	//   将来迁到 Enhanced Input 后应改为 AbilityLocalInputPressed" —— 那个"将来"已经到了。）
 	if (URogueAbilitySystemComponent* ASC = GetRogueAbilitySystemComponent())
 	{
 		FGameplayTagContainer DashAbilityTag;

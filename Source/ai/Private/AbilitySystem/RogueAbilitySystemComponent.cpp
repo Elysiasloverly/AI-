@@ -1,5 +1,7 @@
 #include "AbilitySystem/RogueAbilitySystemComponent.h"
 
+#include "AbilitySystem/RogueAbilitySet.h"
+
 #include "AbilitySystem/Abilities/RogueGameplayAbility_Dash.h"
 #include "AbilitySystem/RogueAttributeSet.h"
 #include "AbilitySystemGlobals.h"
@@ -56,7 +58,7 @@ void URogueAbilitySystemComponent::ResetForPool()
 	}
 }
 
-void URogueAbilitySystemComponent::GrantDefaultAbilities()
+void URogueAbilitySystemComponent::GrantDefaultAbilities(const URogueAbilitySet* AbilitySet)
 {
 	// 能力是权威数据：只在服务端授予，客户端通过复制拿到自己的技能列表。
 	// IsOwnerActorAuthoritative() 是 GAS 提供的判定（等价于 OwnerActor 有 Authority），
@@ -73,6 +75,28 @@ void URogueAbilitySystemComponent::GrantDefaultAbilities()
 	}
 	bDefaultAbilitiesGranted = true;
 
+	// ---- ① 优先：数据驱动的能力集 ----
+	//
+	// 传了能力集就完全按它授予 —— 于是"加一个玩家主动技能"变成
+	// "写能力子类 + 改一个资产"，C++ 一行都不用动。
+	if (AbilitySet != nullptr)
+	{
+		// SourceObject 传 ASC 自己：与下面回退路径的写法保持一致
+		//（FGameplayAbilitySpec 的 SourceObject 是 UObject*，ASC 完全合格 ——
+		//  注意 ASC 是 UActorComponent 不是 AActor，写成 AActor* 会传不进来）。
+		AbilitySet->GiveToAbilitySystem(this, this);
+
+		UE_LOG(LogTemp, Log, TEXT("[GAS] 已按能力集授予默认技能：%s（%d 条）"),
+			*AbilitySet->GetName(), AbilitySet->Entries.Num());
+		return;
+	}
+
+	// ---- ② 回退：硬编码的冲刺 ----
+	//
+	// 为什么保留：能力集是**资产**，可能没配、配错或加载失败。那种情况下若什么都不授予，
+	// 玩家会连冲刺都没有 —— 而"没有冲刺"很难被归因为"资产没配好"。
+	// 留一条硬编码路径，让"资产缺失"退化成"少几个主动技能"，而不是"玩不了"。
+	//
 	// 冲刺：Level 1，**绑定输入 ID**。
 	// 输入侧走 GAS 原生路径：IA_Dash 的处理函数调 `AbilityLocalInputPressed(RogueAbilityInputID::Dash)`，
 	// 由 GAS 自己按 InputID 找能力并激活 —— 不需要输入层认识技能类，也不需要按标签再查一次。
@@ -80,5 +104,5 @@ void URogueAbilitySystemComponent::GrantDefaultAbilities()
 	FGameplayAbilitySpec DashSpec(URogueGameplayAbility_Dash::StaticClass(), /*Level=*/1, /*InputID=*/RogueAbilityInputID::Dash, /*SourceObject=*/this);
 	GiveAbility(DashSpec);
 
-	UE_LOG(LogTemp, Log, TEXT("[GAS] 已授予默认技能：冲刺"));
+	UE_LOG(LogTemp, Log, TEXT("[GAS] 已授予默认技能：冲刺（回退路径：未配置能力集）"));
 }

@@ -223,6 +223,8 @@ struct AI_API FRogueEnemyVisualArchetype
 	bool bUseBossMaterialOverride = false;
 };
 
+class URogueAbilitySet;
+
 USTRUCT(BlueprintType)
 struct AI_API FRogueEnemyArchetype
 {
@@ -239,6 +241,20 @@ struct AI_API FRogueEnemyArchetype
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Archetype")
 	FRogueEnemyVisualArchetype Visual;
+
+	/** 这种敌人该有哪些攻击能力（数据驱动）。
+	 *
+	 *  留空 → `ARogueEnemy::GrantAttackAbilities` 回退到"按 Ranged/GroundWave 标志推导"的
+	 *  硬编码逻辑，所以**老数据表不改也能跑**。
+	 *
+	 *  填了它之后，加一种敌人攻击方式就只需要：
+	 *    ① 写能力子类 → ② 建/改一个 URogueAbilitySet 资产 → ③ 在数据表这一列挂上。
+	 *  C++ 侧一行都不用动。
+	 *
+	 *  ⚠️ 授予时机必须在 `InitializeEnemy()` 末尾（原型就位之后），
+	 *     详见 URogueAbilitySet 的类注释。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Archetype|Abilities")
+	TSoftObjectPtr<URogueAbilitySet> AttackAbilitySet;
 };
 
 class UDataTable;

@@ -429,6 +429,18 @@ struct AI_API FRogueEnemyArchetypeRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Base", meta = (DisplayName = "基础移动倍率"))
 	float BaseMoveMultiplier = 1.0f;
 
+	/** 这种敌人的攻击能力集（**数据驱动**）。详见 `URogueAbilitySet`。
+	 *
+	 *  **留空 = 回退**：`ARogueEnemy::GrantAttackAbilities` 会按下面的
+	 *  `Ranged.bUsesRangedAttack` / `GroundWave.bUsesGroundWave` 标志推导该授予哪些能力
+	 *  —— 也就是改造前的硬编码逻辑。所以**老数据表不动也能跑**。
+	 *
+	 *  填了它之后，"加一种敌人攻击方式"就只需要改资产：
+	 *    ① 写能力子类 → ② 建一个 URogueAbilitySet 资产 → ③ 在表里这一列挂上。
+	 *  C++ 一行都不用动。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Base", meta = (DisplayName = "攻击能力集(留空=按标志推导)"))
+	TSoftObjectPtr<URogueAbilitySet> AttackAbilitySet;
+
 	/** 同时存活上限：场上这一种敌人**同时**最多存在多少只，死掉才会腾出名额。
 	 *  **不填 / 填 0 = 不限制**。
 	 *  与 `MaxSpawnPerWave` 的区别：

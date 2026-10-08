@@ -22,6 +22,8 @@ namespace RogueAbilityInputID
 	};
 }
 
+class URogueAbilitySet;
+
 /**
  * 项目 ASC（AbilitySystemComponent 子类）。
  *
@@ -54,9 +56,14 @@ public:
 	void ResetForPool();
 
 	/** 授予玩家的默认技能（服务端调用，且只会生效一次）。
-	 *  目前只有冲刺；后续武器/主动技能都挂在这里。
-	 *  必须是服务端授予：能力与冷却 GE 都是权威数据，客户端靠复制拿到。 */
-	void GrantDefaultAbilities();
+	 *
+	 *  必须是服务端授予：能力与冷却 GE 都是权威数据，客户端靠复制拿到。
+	 *
+	 *  @param AbilitySet  **数据驱动**的能力集。传了就按它授予 ——
+	 *                     于是"加一个玩家主动技能"只需要：写能力子类 → 改一个资产，C++ 不用动。
+	 *                     留空则回退到下面那份硬编码（冲刺这一个能力），
+	 *                     保证资产没配好时玩家依然能玩、不会变成"一个技能都没有"。 */
+	void GrantDefaultAbilities(const URogueAbilitySet* AbilitySet = nullptr);
 
 private:
 	/** 默认技能是否已授予（避免 PossessedBy / OnRep 多次触发导致重复 GiveAbility） */

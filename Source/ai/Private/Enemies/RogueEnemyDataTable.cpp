@@ -1,6 +1,9 @@
 
 #include "Enemies/RogueEnemyDataTable.h"
 
+// TSoftObjectPtr<URogueAbilitySet> 的赋值需要**完整类型**（前置声明不够）。
+#include "AbilitySystem/RogueAbilitySet.h"
+
 FRogueEnemyArchetype FRogueEnemyArchetypeRow::ToArchetype(bool bIsBoss) const
 {
 	FRogueEnemyArchetype Archetype = RogueEnemyArchetypes::BuildEnemyArchetype(EnemyType, bIsBoss);
@@ -37,6 +40,10 @@ FRogueEnemyArchetype FRogueEnemyArchetypeRow::ToArchetype(bool bIsBoss) const
 	}
 	Archetype.Movement.Model = MovementModel;
 	Archetype.Movement.BaseMoveMultiplier = BaseMoveMultiplier;
+
+	// 攻击能力集（数据驱动）。留空时 ARogueEnemy::GrantAttackAbilities 会回退到
+	// 按 Ranged/GroundWave 标志推导的硬编码逻辑 —— 所以老数据表不动也能跑。
+	Archetype.AttackAbilitySet = AttackAbilitySet;
 
 	// 根据敌人类型填充专属属性
 	switch (EnemyType)
