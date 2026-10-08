@@ -143,35 +143,17 @@ void URogueAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallb
 {
 	Super::PostGameplayEffectExecute(Data);
 
-	// MaxHealth / MaxArmor 被提升后，当前值要跟着"补满那部分增量"。
-	// 语义沿用自研系统：升级最大生命时是
-	//     CurrentHealth += (MaxHealth - PreviousMaxHealth);
-	// 也就是"上限涨多少就回多少血"，而不是按比例或直接补满。
+	// 注：这里**原本**还有两段 —— "MaxHealth / MaxArmor 被提升后，当前值补满那部分增量"
+	//（语义沿用自研系统：升级最大生命时 `CurrentHealth += (MaxHealth - PreviousMaxHealth)`，
+	//  也就是"上限涨多少就回多少血"，而不是按比例或直接补满）。
 	//
-	// 这里用 Data.EvaluatedData.Magnitude 作为增量。**前提是该 GE 用 Additive 修饰器** ——
-	// 若将来有人把上限改写成 Override / Multiply，这里的增量语义就不成立了，
-	// 那时应该改成"记录旧上限再取差值"。
-	if (Data.EvaluatedData.Attribute == GetMaxHealthAttribute())
-	{
-		const float MaxHealthDelta = Data.EvaluatedData.Magnitude;
-		if (MaxHealthDelta > 0.0f)
-		{
-			SetHealth(GetHealth() + MaxHealthDelta);
-		}
-		SetHealth(FMath::Clamp(GetHealth(), 0.0f, GetMaxHealth()));
-		return;
-	}
-
-	if (Data.EvaluatedData.Attribute == GetMaxArmorAttribute())
-	{
-		const float MaxArmorDelta = Data.EvaluatedData.Magnitude;
-		if (MaxArmorDelta > 0.0f)
-		{
-			SetArmor(GetArmor() + MaxArmorDelta);
-		}
-		SetArmor(FMath::Clamp(GetArmor(), 0.0f, GetMaxArmor()));
-		return;
-	}
+	// 它们已经**搬走**了，原因是升级 GE 变成了 Infinite + Stacking，
+	// 而 **PostGameplayEffectExecute 只对 Instant GE 触发** —— 留着也永远不会执行。
+	//
+	// 新位置：`ARogueCharacter::HandleMaxHealthChanged` / `HandleMaxArmorChanged`
+	//（监听 GetGameplayAttributeValueChangeDelegate，服务端侧生效）。
+	// 搬过去之后它反而更通用：现在**任何来源**的上限变化都会补当前值，
+	// 不再只绑死"升级"这一条路径。
 
 	if (Data.EvaluatedData.Attribute != GetDamageAttribute())
 	{

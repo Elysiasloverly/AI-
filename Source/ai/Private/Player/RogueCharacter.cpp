@@ -209,6 +209,53 @@ void ARogueCharacter::BindAbilitySystemEvents()
 	//   · 只有"死亡"必须事件驱动 —— 它要在标签出现的当下被捕获，等下一帧就晚了。
 	ASC->RegisterGameplayTagEvent(RogueGameplayTags::State_Dead, EGameplayTagEventType::NewOrRemoved)
 		.AddUObject(this, &ARogueCharacter::HandleDeathTagChanged);
+
+	// ---- 上限提升时"补满那部分增量"（原本住在 URogueAttributeSet::PostGameplayEffectExecute）----
+	//
+	// 为什么搬到这里：升级 GE 现在是 **Infinite + Stacking**，而
+	// `PostGameplayEffectExecute` **只对 Instant GE 触发** —— 留原处永远不会执行，
+	// "升级最大生命/护甲上限时等量回复"会静默消失。
+	//
+	// 注意这与上面"属性数值走每帧轮询"的取舍并不冲突：轮询负责**镜像**（供 HUD/武器读），
+	// 这里要的是"变化发生的那一刻做一次补偿动作"，那是事件驱动的典型场景。
+	// 而且它顺带变得更通用：现在**任何来源**的上限变化都会补当前值，不再只认升级。
+	ASC->GetGameplayAttributeValueChangeDelegate(URogueAttributeSet::GetMaxHealthAttribute())
+		.AddUObject(this, &ARogueCharacter::HandleMaxHealthChanged);
+	ASC->GetGameplayAttributeValueChangeDelegate(URogueAttributeSet::GetMaxArmorAttribute())
+		.AddUObject(this, &ARogueCharacter::HandleMaxArmorChanged);
+}
+
+void ARogueCharacter::HandleMaxHealthChanged(const FOnAttributeChangeData& Data)
+{
+	// ⚠️ **只在权威侧补当前值**。
+	// 属性变化会随复制到达客户端并**同样触发这个委托** —— 在客户端改生命只会与服务端
+	// 下一次复制打架（本项目已经踩过同类坑：护甲回复的注释里记着"客户端自己回甲、
+	// 护甲条在两个值之间来回跳"）。这与 InitializeGASAttributes 用 IsAuthoritySide() 同理。
+	if (!IsAuthoritySide())
+	{
+		return;
+	}
+
+	const float Delta = Data.NewValue - Data.OldValue;
+	if (Delta > 0.0f)
+	{
+		SetCurrentHealth(GetCurrentHealth() + Delta);
+	}
+}
+
+void ARogueCharacter::HandleMaxArmorChanged(const FOnAttributeChangeData& Data)
+{
+	// 同 HandleMaxHealthChanged：只在权威侧补，理由见那里。
+	if (!IsAuthoritySide())
+	{
+		return;
+	}
+
+	const float Delta = Data.NewValue - Data.OldValue;
+	if (Delta > 0.0f)
+	{
+		SetCurrentArmor(GetCurrentArmor() + Delta);
+	}
 }
 
 void ARogueCharacter::SyncAttributeMirrors()
@@ -255,6 +302,15 @@ void ARogueCharacter::SetCurrentHealth(float NewHealth)
 	}
 }
 
+void ARogueCharacter::SetCurrentArmor(float NewArmor)
+{
+	// 与 SetCurrentHealth 同理：写属性集，再由属性变化回调刷新 CurrentArmor 镜像。
+	if (URogueAttributeSet* AttrSet = GetRogueAttributeSet())
+	{
+		AttrSet->SetArmor(FMath::Max(0.0f, NewArmor));
+	}
+}
+
 void ARogueCharacter::ClearRecentlyDamagedState()
 {
 	URogueAbilitySystemComponent* ASC = GetRogueAbilitySystemComponent();
@@ -290,12 +346,12 @@ bool ARogueCharacter::ApplyUpgradeEffectViaGAS(ERogueUpgradeType UpgradeType, fl
 		return false;
 	}
 
-	const FGameplayTag PayloadTag = RogueGameplayTags::GetUpgradeAttributeTag(UpgradeType);
-	if (!PayloadTag.IsValid())
+	const TSubclassOf<UGameplayEffect> EffectClass = RogueUpgradeEffectMap::GetEffectClass(UpgradeType);
+	if (EffectClass == nullptr)
 	{
-		// 没有载荷 = 这个升级类型既不是属性类也不是武器类（枚举加了但映射忘了加）。
-		// 静默忽略会让"卡牌能抽到但没效果"，所以打一条 Warning。
-		UE_LOG(LogTemp, Warning, TEXT("[Rogue] 升级类型 %d 没有载荷 Tag，本次升级被忽略（检查 RogueGameplayTags::GetUpgradeAttributeTag）"),
+		// 枚举加了但没在 RogueUpgradeEffectMap 里映射。
+		// 静默忽略会表现成"卡牌能抽到但没效果"（最难归因的一类），所以打 Warning。
+		UE_LOG(LogTemp, Warning, TEXT("[Rogue] 升级类型 %d 没有对应的 GE 类，本次升级被忽略（检查 RogueUpgradeEffectMap::GetEffectClass）"),
 			static_cast<int32>(UpgradeType));
 		return false;
 	}
@@ -303,23 +359,29 @@ bool ARogueCharacter::ApplyUpgradeEffectViaGAS(ERogueUpgradeType UpgradeType, fl
 	FGameplayEffectContextHandle Context = ASC->MakeEffectContext();
 	Context.AddSourceObject(this);
 
-	FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(URogueAttributeUpgradeEffect::StaticClass(), 1.0f, Context);
+	// 每种升级有自己的 GE 子类（**属性烤在类上**），并且是 Infinity + Stacking。
+	//
+	// 为什么必须"一种升级一个类"：引擎的 FindStackableActiveGameplayEffect **只按 Spec.Def 匹配**
+	// 可叠加实例 —— 改造前 20 种升级共用一个类，开 Stacking 会让它们共用一个栈、数值错乱。
+	//
+	// 于是同类型再买一次 = 同一个 GE 实例的**层数 +1**，而引擎把**量级乘以层数**
+	//（ComputeStackedModifierMagnitude），所以"买 N 次 = N × 单次数值"，
+	// 与改造前 Instant 连加 N 次逐项相等。
+	FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(EffectClass, 1.0f, Context);
 	if (!SpecHandle.IsValid())
 	{
 		return false;
 	}
 
-	// 载荷："这次改哪个属性"。用动态资源 Tag 传 —— SetByCaller 只能传 float，传不了"是哪个属性"。
-	SpecHandle.Data->AddDynamicAssetTag(PayloadTag);
-	// 数值。冲刺冷却是负向升级，调用方传负数（符号语义由数据决定，不写死在 Execution 里）。
+	// 数值。冲刺冷却是负向升级，调用方传负数（符号语义由数据决定，不写死在 GE 里）。
 	SpecHandle.Data->SetSetByCallerMagnitude(RogueGameplayTags::Data_Magnitude, Magnitude);
 
 	const bool bApplied = ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get()).WasSuccessfullyApplied();
 
 	if (bApplied)
 	{
-		UE_LOG(LogTemp, Verbose, TEXT("[GAS] 升级已施加：类型=%d 数值=%.2f 载荷=%s"),
-			static_cast<int32>(UpgradeType), Magnitude, *PayloadTag.ToString());
+		UE_LOG(LogTemp, Verbose, TEXT("[GAS] 升级已施加：类型=%d 数值=%.2f GE=%s（同类型再买会叠加层数）"),
+			static_cast<int32>(UpgradeType), Magnitude, *EffectClass->GetName());
 	}
 
 	return bApplied;

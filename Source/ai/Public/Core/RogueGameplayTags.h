@@ -137,47 +137,24 @@ namespace RogueGameplayTags
 		// ===========================================================
 	//  升级的"目标属性"（Upgrade.Attribute）—— 作为 GE 的载荷
 	// ===========================================================
-	//  与上面的 Effect_Upgrade_Attribute 区别：
-	//    Effect.Upgrade.Attribute      —— GE 的**族标签**（"这是一个属性类升级"），用于批量查询/移除
-	//    Upgrade.Attribute.*           —— **载荷**，告诉那个通用的升级 GE "这次要改哪个属性"
-	//  这样只需要**一个** GE 类 + 一个 ExecutionCalculation 就能承载全部 8 种数值升级，
-	//  不必为每个属性造一个 GE 资产。
-
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Upgrade_Attribute_MaxHealth);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Upgrade_Attribute_MoveSpeed);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Upgrade_Attribute_MaxArmor);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Upgrade_Attribute_DashCooldown);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Upgrade_Attribute_PickupRadius);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Upgrade_Attribute_HealthRegen);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Upgrade_Attribute_DamageReduction);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Upgrade_Attribute_ExperienceGain);
-
-	// ===========================================================
-	//  升级的"武器加成属性"（Upgrade.Weapon）—— 同样是 GE 载荷
-	// ===========================================================
-	//  历史：这 12 类曾经**不走 GAS** —— 升级时改武器 Actor 上的配置结构体，
-	//  再用一条 NetMulticast 让各端重放一遍（"各端自己把同一个数值加一遍"）。
-	//  现在它们和属性升级走同一条路：改玩家 ASC 上 URogueAttributeSet 里的加成属性，
-	//  武器开火时读"数据表基础值 + 属性加成"。
-	//  好处：升级只在一处（服务端）结算、自动随属性复制、不需要广播重放、顺序问题自然消失。
-
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Upgrade_Weapon_AttackPower);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Upgrade_Weapon_AttackSpeed);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Upgrade_Weapon_AttackRange);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Upgrade_Weapon_ProjectileSpeed);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Upgrade_Weapon_ProjectileCount);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Upgrade_Weapon_ScytheCount);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Upgrade_Weapon_RocketCount);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Upgrade_Weapon_LaserCount);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Upgrade_Weapon_HellTowerCount);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Upgrade_Weapon_LaserRefraction);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Upgrade_Weapon_MortarCount);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Upgrade_Weapon_MortarBlastRadius);
-
-	/** 升级类型 → 目标属性载荷 Tag（属性类与武器类都走这里）。
-	 *  放在这里而不是散在调用点，是为了让"哪个升级改哪个属性"一眼可见。
-	 *  ⚠️ 返回无效 Tag = 该升级不通过 GE 落地，调用方应当报错而不是静默忽略。 */
-	AI_API FGameplayTag GetUpgradeAttributeTag(ERogueUpgradeType UpgradeType);
+	// ---- 升级"载荷 Tag"已随 ExecutionCalculation 一起退役（20 个 Tag 全部删除）----
+	//
+	// 历史：这里曾有 8 个 `Upgrade.Attribute.*` + 12 个 `Upgrade.Weapon.*`，
+	// 作用是当**载荷**告诉那个"通用升级 GE"这次该改哪个属性 ——
+	// 一个 GE 类 + URogueUpgradeExecution 查表，就能承载全部 20 种升级。
+	//
+	// 为什么删掉：升级改成 **Stacking** 之后那个设计不再成立。
+	// 引擎的 FindStackableActiveGameplayEffect **只按 Spec.Def 匹配**可叠加实例，
+	// 20 种升级共用一"类"会让它们共用一个栈、数值错乱。
+	// 于是拆成 20 个 GE 子类，**目标属性烤在类上**（见 RogueAttributeUpgradeEffect.h），
+	// 载荷 Tag 与那张运行时映射表都不再需要。
+	//
+	// 确认过可以安全删除：唯一的"外部"使用者是升级定义表，而
+	// `FRogueUpgradeDefinitionRow` 只有 `ERogueUpgradeType Type`，**没有任何 FGameplayTag 字段**
+	// —— 也就是说没有资产引用过这批 Tag，删掉原生声明不会让资产出现失效引用。
+	//
+	// 注意上面那个 **族标签**（`Effect.Upgrade.Attribute`）不受影响，它另有用途（批量查询/移除），
+	// 与载荷不是一回事。
 
 	// ===========================================================
 	//  GameplayCue（表现层）—— 由 ASC 自动多播，项目不再手搓 RPC

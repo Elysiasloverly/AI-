@@ -41,29 +41,15 @@ namespace RogueGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG(Effect_Upgrade,               "Effect.Upgrade");
 	UE_DEFINE_GAMEPLAY_TAG(Effect_Upgrade_Attribute,     "Effect.Upgrade.Attribute");
 
-	// ---- 升级的目标属性（载荷）----
-	UE_DEFINE_GAMEPLAY_TAG(Upgrade_Attribute_MaxHealth,        "Upgrade.Attribute.MaxHealth");
-	UE_DEFINE_GAMEPLAY_TAG(Upgrade_Attribute_MoveSpeed,        "Upgrade.Attribute.MoveSpeed");
-	UE_DEFINE_GAMEPLAY_TAG(Upgrade_Attribute_MaxArmor,         "Upgrade.Attribute.MaxArmor");
-	UE_DEFINE_GAMEPLAY_TAG(Upgrade_Attribute_DashCooldown,     "Upgrade.Attribute.DashCooldown");
-	UE_DEFINE_GAMEPLAY_TAG(Upgrade_Attribute_PickupRadius,     "Upgrade.Attribute.PickupRadius");
-	UE_DEFINE_GAMEPLAY_TAG(Upgrade_Attribute_HealthRegen,      "Upgrade.Attribute.HealthRegen");
-	UE_DEFINE_GAMEPLAY_TAG(Upgrade_Attribute_DamageReduction,  "Upgrade.Attribute.DamageReduction");
-	UE_DEFINE_GAMEPLAY_TAG(Upgrade_Attribute_ExperienceGain,   "Upgrade.Attribute.ExperienceGain");
-
-	// 武器加成：与属性类升级同一条 GE 路径（载荷 Tag → URogueAttributeSet 里的属性）
-	UE_DEFINE_GAMEPLAY_TAG(Upgrade_Weapon_AttackPower,         "Upgrade.Weapon.AttackPower");
-	UE_DEFINE_GAMEPLAY_TAG(Upgrade_Weapon_AttackSpeed,         "Upgrade.Weapon.AttackSpeed");
-	UE_DEFINE_GAMEPLAY_TAG(Upgrade_Weapon_AttackRange,         "Upgrade.Weapon.AttackRange");
-	UE_DEFINE_GAMEPLAY_TAG(Upgrade_Weapon_ProjectileSpeed,     "Upgrade.Weapon.ProjectileSpeed");
-	UE_DEFINE_GAMEPLAY_TAG(Upgrade_Weapon_ProjectileCount,     "Upgrade.Weapon.ProjectileCount");
-	UE_DEFINE_GAMEPLAY_TAG(Upgrade_Weapon_ScytheCount,         "Upgrade.Weapon.ScytheCount");
-	UE_DEFINE_GAMEPLAY_TAG(Upgrade_Weapon_RocketCount,         "Upgrade.Weapon.RocketCount");
-	UE_DEFINE_GAMEPLAY_TAG(Upgrade_Weapon_LaserCount,          "Upgrade.Weapon.LaserCount");
-	UE_DEFINE_GAMEPLAY_TAG(Upgrade_Weapon_HellTowerCount,      "Upgrade.Weapon.HellTowerCount");
-	UE_DEFINE_GAMEPLAY_TAG(Upgrade_Weapon_LaserRefraction,     "Upgrade.Weapon.LaserRefraction");
-	UE_DEFINE_GAMEPLAY_TAG(Upgrade_Weapon_MortarCount,         "Upgrade.Weapon.MortarCount");
-	UE_DEFINE_GAMEPLAY_TAG(Upgrade_Weapon_MortarBlastRadius,   "Upgrade.Weapon.MortarBlastRadius");
+	// ---- 升级载荷 Tag（20 个）已随 ExecutionCalculation 一起退役 ----
+	//
+	// 这里曾有 8 个 `Upgrade.Attribute.*` + 12 个 `Upgrade.Weapon.*`，作用是告诉
+	// "通用升级 GE"这次该改哪个属性。升级改成 Stacking 之后，引擎**只按 Spec.Def 匹配**
+	// 可叠加实例，一种升级必须一个 GE 类 —— 于是目标属性烤在类上，载荷 Tag 不再需要。
+	// 删除理由与"确认无资产引用"的依据见 RogueGameplayTags.h 里的说明。
+	//
+	// ⚠️ 上面那个**族标签** `Effect.Upgrade.Attribute` 保留：它另有用途（批量查询/移除），
+	//    与载荷不是一回事。
 
 	// ---- GameplayCue（表现层）----
 	// 注意根必须是 "GameplayCue"，引擎的 GameplayCueManager 按这个根做路由。
@@ -75,38 +61,12 @@ namespace RogueGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG(GameplayCue_State_Downed,      "GameplayCue.State.Downed");
 }
 
-FGameplayTag RogueGameplayTags::GetUpgradeAttributeTag(ERogueUpgradeType UpgradeType)
-{
-	switch (UpgradeType)
-	{
-	case ERogueUpgradeType::MaxHealth:       return Upgrade_Attribute_MaxHealth;
-	case ERogueUpgradeType::MoveSpeed:       return Upgrade_Attribute_MoveSpeed;
-	case ERogueUpgradeType::ArmorCapacity:   return Upgrade_Attribute_MaxArmor;
-	case ERogueUpgradeType::DashCooldown:    return Upgrade_Attribute_DashCooldown;
-	case ERogueUpgradeType::PickupRadius:    return Upgrade_Attribute_PickupRadius;
-	case ERogueUpgradeType::Recovery:        return Upgrade_Attribute_HealthRegen;
-	// 注意：升级枚举里的 "Armor" 语义是**伤害减免**（对应 DamageReductionPercent），
-	// 而 ArmorCapacity 才是护甲上限 —— 这是原项目的命名，容易看错，这里显式标出来。
-	case ERogueUpgradeType::Armor:           return Upgrade_Attribute_DamageReduction;
-	case ERogueUpgradeType::ExperienceGain:  return Upgrade_Attribute_ExperienceGain;
-
-	// ---- 武器类升级：同样走 GE，只是目标属性在 URogueAttributeSet 里 ----
-	case ERogueUpgradeType::AttackPower:         return Upgrade_Weapon_AttackPower;
-	case ERogueUpgradeType::AttackSpeed:         return Upgrade_Weapon_AttackSpeed;
-	case ERogueUpgradeType::AttackRange:         return Upgrade_Weapon_AttackRange;
-	case ERogueUpgradeType::ProjectileSpeed:     return Upgrade_Weapon_ProjectileSpeed;
-	case ERogueUpgradeType::ProjectileCount:     return Upgrade_Weapon_ProjectileCount;
-	case ERogueUpgradeType::ScytheCount:         return Upgrade_Weapon_ScytheCount;
-	case ERogueUpgradeType::RocketCount:         return Upgrade_Weapon_RocketCount;
-	case ERogueUpgradeType::LaserCount:          return Upgrade_Weapon_LaserCount;
-	case ERogueUpgradeType::HellTowerCount:      return Upgrade_Weapon_HellTowerCount;
-	case ERogueUpgradeType::LaserRefraction:     return Upgrade_Weapon_LaserRefraction;
-	case ERogueUpgradeType::MortarCount:         return Upgrade_Weapon_MortarCount;
-	case ERogueUpgradeType::MortarBlastRadius:   return Upgrade_Weapon_MortarBlastRadius;
-
-	default:                                 return FGameplayTag();
-	}
-}
+// 这里原本有 `RogueGameplayTags::GetUpgradeAttributeTag()` —— 一张
+// "升级类型 → 载荷 Tag" 的 switch 表，已随 URogueUpgradeExecution 一起删除。
+//
+// ⚠️ 它上面那条注释（**`ERogueUpgradeType::Armor` 是"伤害减免"而不是护甲回复**）
+//    已经搬到 `RogueAttributeUpgradeEffect.cpp` 里对应子类的构造处 ——
+//    那是映射关系现在所在的地方，也就是最容易看错的地方。
 
 FGameplayTag RogueGameplayTags::GetImpactCueTag(ERogueImpactVisualStyle Style)
 {

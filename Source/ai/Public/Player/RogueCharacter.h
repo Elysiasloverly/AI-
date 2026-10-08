@@ -71,11 +71,14 @@ public:
 	 *  运行时字段 CurrentHealth / CurrentArmor 只由属性变化回调去更新，
 	 *  任何地方都不要直接给它们赋值。
 	 *
-	 *  注：这里**只有生命**，没有对应的 SetCurrentArmor ——
-	 *  护甲的全部变化（伤害扣减、自然回复）现在都由 GAS 承担
-	 *  （回复走 `URogueArmorRechargeEffect` 这个 Periodic GE），C++ 侧不再需要写入口。
-	 *  原来的 SetCurrentArmor 已随逐帧回复函数一起删除。 */
+	 *  注：护甲的所有变化（伤害扣减、自然回复）也由 GAS 承担
+	 *  （回复走 `URogueArmorRechargeEffect` 这个 Periodic GE），C++ 侧原本不需要写入口 ——
+	 *  但"升级护甲上限时等量补甲"的联动后来搬到了 `HandleMaxArmorChanged`，那里需要一个写入口，
+	 *  于是 `SetCurrentArmor` 又回来了。 */
 	void SetCurrentHealth(float NewHealth);
+
+	/** 设置当前护甲。与 SetCurrentHealth 同为一个写入点，理由见上。 */
+	void SetCurrentArmor(float NewArmor);
 
 	/** 清除"护甲回复延迟"状态（升级护甲上限时旧行为会立即开始回复） */
 	void ClearRecentlyDamagedState();
@@ -448,6 +451,17 @@ private:
 
 	/** State.Dead 标签出现 → 安排死亡处理 */
 	void HandleDeathTagChanged(FGameplayTag Tag, int32 NewCount);
+
+	/** 上限提升时"补满那部分增量"（升级最大生命 / 护甲上限时等量回复）。
+	 *
+	 *  原本住在 `URogueAttributeSet::PostGameplayEffectExecute`，但那个钩子**只对 Instant GE 触发**，
+	 *  而升级 GE 现在是 Infinite + Stacking —— 留原处会静默失效，所以搬到属性变化委托上。
+	 *  详见 `BindAbilitySystemEvents` 里的说明。
+	 *
+	 *  ⚠️ 两个处理函数内部都**只在权威侧生效**：属性变化会随复制到达客户端并同样触发委托，
+	 *     在客户端改数值只会与服务端下一次复制打架。 */
+	void HandleMaxHealthChanged(const struct FOnAttributeChangeData& Data);
+	void HandleMaxArmorChanged(const struct FOnAttributeChangeData& Data);
 
 	/** 延后到帧末执行的死亡处理（避免在死亡 GE 自己的标签回调里移除它） */
 	void ProcessDeath();
