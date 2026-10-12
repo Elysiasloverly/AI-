@@ -191,6 +191,21 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "普通敌人", meta = (DisplayName = "后期生命倍率上限"))
 	float LateGameHealthCap = 0.50f;
 
+	/** 普通敌人的**最终生命上限**（夹在全部计算之后，含敌人类型倍率）。
+	 *
+	 *  **`-1` = 不设上限**（默认）。
+	 *
+	 *  为什么需要它：上面三层（线性 / 中期 / 后期）里，**线性那一层永远不封顶** ——
+	 *  两个"倍率上限"只约束叠上去的加成，生命本身仍随波次线性增长。
+	 *  想让"到某个波次以后普通怪不再变肉"，就在这里填一个绝对值。
+	 *
+	 *  注意它是**绝对值**（填 2000 = 再多也不超过 2000 血），不是倍率 ——
+	 *  因为它要给"无限增长"封顶，倍率表达不了这件事。
+	 *
+	 *  **只影响普通敌人**；Boss 走 `BuildBossProfile`，不受这里影响。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "普通敌人", meta = (DisplayName = "普通敌人生命上限(-1=不限)"))
+	float MaxEnemyHealth = -1.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "首领", meta = (DisplayName = "基础生命值"))
 	float BaseBossHealth = 420.0f;
 

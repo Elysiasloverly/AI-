@@ -63,6 +63,28 @@ void URogueAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 	// Damage 是元属性：不复制（它是服务端中转值，算完即清零）
 }
 
+float URogueAttributeSet::GetWeaponBonusCapFor(const FGameplayAttribute& Attribute) const
+{
+	// 所有字段默认 -1 = **不设上限**，所以"没在资产里配过"天然等于"不限制"，
+	// 不需要额外的"是否已配置"标志。
+	if (Attribute == GetAttackPowerBonusAttribute())       { return WeaponBonusCaps.AttackPower; }
+	if (Attribute == GetAttackSpeedBonusAttribute())       { return WeaponBonusCaps.AttackSpeed; }
+	if (Attribute == GetAttackRangeBonusAttribute())       { return WeaponBonusCaps.AttackRange; }
+	if (Attribute == GetProjectileSpeedBonusAttribute())   { return WeaponBonusCaps.ProjectileSpeed; }
+	if (Attribute == GetProjectileCountBonusAttribute())   { return WeaponBonusCaps.ProjectileCount; }
+	if (Attribute == GetScytheCountBonusAttribute())       { return WeaponBonusCaps.ScytheCount; }
+	if (Attribute == GetRocketCountBonusAttribute())       { return WeaponBonusCaps.RocketCount; }
+	if (Attribute == GetLaserCountBonusAttribute())        { return WeaponBonusCaps.LaserCount; }
+	if (Attribute == GetHellTowerCountBonusAttribute())    { return WeaponBonusCaps.HellTowerCount; }
+	if (Attribute == GetLaserRefractionBonusAttribute())   { return WeaponBonusCaps.LaserRefraction; }
+	if (Attribute == GetMortarCountBonusAttribute())       { return WeaponBonusCaps.MortarCount; }
+	if (Attribute == GetMortarBlastRadiusBonusAttribute()) { return WeaponBonusCaps.MortarBlastRadius; }
+
+	// 不是 12 个加成属性之一 → 返回 -1（不限制），
+	// 这样调用方不需要自己判断"这个属性是否适用上限"。
+	return -1.0f;
+}
+
 void URogueAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue)
 {
 	// 武器加成：全部不允许为负（负数量会让武器彻底不工作、负范围会让索敌失效）。
@@ -81,6 +103,15 @@ void URogueAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute,
 		|| Attribute == GetMortarBlastRadiusBonusAttribute())
 	{
 		NewValue = FMath::Max(0.0f, NewValue);
+
+		// ---- 上限（**资产配置，-1 = 不设上限**）----
+		// 注意顺序：先夹下限再夹上限。上限只在配置了（>= 0）时才生效，
+		// 所以默认（全 -1）行为与"没有上限"完全一致。
+		const float Cap = GetWeaponBonusCapFor(Attribute);
+		if (Cap >= 0.0f)
+		{
+			NewValue = FMath::Min(NewValue, Cap);
+		}
 
 		if (Attribute == GetProjectileCountBonusAttribute()
 			|| Attribute == GetScytheCountBonusAttribute()

@@ -110,43 +110,76 @@ int32 ARogueWeaponBase::GetEffectiveCount() const
 		return 0;
 	}
 
-	return FMath::Max(1, Config.Count + WeaponSpecificBonus);
+	// 数量上限：**数据表配置，-1 = 不限制**
+	const int32 Combined = FMath::Max(1, Config.Count + WeaponSpecificBonus);
+	return Config.MaxCount >= 0 ? FMath::Min(Combined, Config.MaxCount) : Combined;
 }
 
 float ARogueWeaponBase::GetEffectiveDamage() const
 {
 	const FRogueWeaponBonusValues& Bonuses = GetWeaponBonusValues();
-	return Config.Damage + Bonuses.AttackPower;
+	const float Combined = Config.Damage + Bonuses.AttackPower;
+	// 伤害上限：-1 = 不限制
+	return Config.MaxDamage >= 0.0f ? FMath::Min(Combined, Config.MaxDamage) : Combined;
 }
 
 float ARogueWeaponBase::GetEffectiveCooldown() const
 {
 	const FRogueWeaponBonusValues& Bonuses = GetWeaponBonusValues();
 	const float Reduced = Config.Cooldown - Bonuses.AttackSpeed;
-	// 0.15 秒下限与自研版本一致（旧的 ApplySharedSpeedBonus 也是这么夹的）
-	return FMath::Max(0.15f, Reduced);
+
+	// ---- 攻速**无设计上限**（原本这里夹 0.15 秒，已按要求去掉）----
+	//
+	// 历史：0.15 秒下限沿用自研版本（旧的 ApplySharedSpeedBonus 也这么夹），
+	// 它的作用是"设计上限"—— 攻速加成堆再多，每秒最多也就 6.7 发。
+	// 现在去掉，攻速加成可以一直堆下去。
+	//
+	// ⚠️ 但**必须保留一个技术下限（> 0）**，否则会退化成一个危险的边界：
+	//     冷却 = 0 或负数时，武器 Tick 的判据 `TimeSinceLastShot >= Cooldown` **恒为真**
+	//     → 每帧开火。按项目默认 100Hz 算就是**每把武器每秒 100 发**，
+	//     六把武器一起就是 600 发/秒，每发还要生成弹体 —— 帧率会直接崩掉。
+	//
+	// 所以下限设在 0.01 秒 = **每秒最多 100 发**：相对原来的 0.15 秒（6.7 发/秒）
+	// 已经放宽了 15 倍，实战中等同"无上限"（没有任何升级能堆到这个密度），
+	// 但它挡住了"冷却归零 → 逐帧开火"这个会把游戏跑崩的退化情况。
+	//
+	// 这个下限现在是**数据表里可配的**：`FRogueWeaponConfig::MinCooldown`（"上限"分组）。
+	// 想给某把武器封攻速就在它在 DT_WeaponConfig 里的那一行填值。
+	//
+	// 语义与其它上限统一：**-1 = 不设下限**。此时仍会把结果夹在 >= 0
+	//（负冷却与 0 冷却等价 —— 判据 `TimeSinceLastShot >= Cooldown` 都恒为真，
+	//  所以"不设下限"的实际含义就是"可以逐帧开火"）。
+	return Config.MinCooldown >= 0.0f
+		? FMath::Max(Config.MinCooldown, Reduced)
+		: FMath::Max(0.0f, Reduced);
 }
 
 float ARogueWeaponBase::GetEffectiveRange() const
 {
 	const FRogueWeaponBonusValues& Bonuses = GetWeaponBonusValues();
-	return Config.Range + Bonuses.AttackRange;
+	const float Combined = Config.Range + Bonuses.AttackRange;
+	// 范围上限：-1 = 不限制
+	return Config.MaxRange >= 0.0f ? FMath::Min(Combined, Config.MaxRange) : Combined;
 }
 
 float ARogueWeaponBase::GetEffectiveProjectileSpeed(float BaseSpeed) const
 {
 	const FRogueWeaponBonusValues& Bonuses = GetWeaponBonusValues();
-	const float Bonus = Bonuses.ProjectileSpeed;
-	return BaseSpeed + Bonus * GetProjectileSpeedBonusScale();
+	const float Combined = BaseSpeed + Bonuses.ProjectileSpeed * GetProjectileSpeedBonusScale();
+	// 弹速上限：-1 = 不限制
+	return Config.MaxProjectileSpeed >= 0.0f ? FMath::Min(Combined, Config.MaxProjectileSpeed) : Combined;
 }
 
 int32 ARogueWeaponBase::GetEffectiveRefractionCount() const
 {
 	const FRogueWeaponBonusValues& Bonuses = GetWeaponBonusValues();
-	const int32 Combined = Config.RefractionCount
-		+ FMath::RoundToInt(Bonuses.LaserRefraction);
-	// 旧实现的夹取范围（0..8）原样保留
-	return FMath::Clamp(Combined, 0, 8);
+	const int32 Combined = FMath::Max(0, Config.RefractionCount
+		+ FMath::RoundToInt(Bonuses.LaserRefraction));
+
+	// 折射上限：**数据表配置，-1 = 不限制**（FRogueWeaponConfig::MaxRefractionCount）。
+	// 原来这里硬编码夹死 0..8（旧实现的遗留），上界现在交回数据表；
+	// 下界 0 保留 —— 负数折射没有意义。
+	return Config.MaxRefractionCount >= 0 ? FMath::Min(Combined, Config.MaxRefractionCount) : Combined;
 }
 
 // 注：OnUpgradeApplied / ApplyShared*Bonus 已删除 —— 武器升级现在落成玩家 ASC 上的

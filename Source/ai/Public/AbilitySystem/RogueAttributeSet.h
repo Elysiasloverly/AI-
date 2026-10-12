@@ -4,6 +4,8 @@
 #include "AttributeSet.h"
 #include "AbilitySystem/RogueAttributeMacros.h"
 #include "AbilitySystemComponent.h"
+// 12 个武器加成属性的上限结构（-1 = 不设上限），由玩家数值资产配置。
+#include "Player/RoguePlayerBalanceAsset.h"
 #include "RogueAttributeSet.generated.h"
 
 /**
@@ -37,6 +39,21 @@ public:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	virtual void PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue) override;
 	virtual void PostGameplayEffectExecute(const struct FGameplayEffectModCallbackData& Data) override;
+
+	/** 灌入 12 个武器加成属性的上限（来自玩家数值资产，**-1 = 不设上限**）。
+	 *
+	 *  由 `ARogueCharacter::InitializeGASAttributes` 调用 —— 那里已经加载了玩家数值资产，
+	 *  不必再为属性集单独接一条资产查找路径。
+	 *
+	 *  为什么放在属性集：限制的是**属性本身**，所以最自然的落点是 `PreAttributeChange`，
+	 *  它对该属性**每一次**变化都会跑，不管是升级、GE 还是别处写入。 */
+	void SetWeaponBonusCaps(const FRogueWeaponBonusCaps& InCaps) { WeaponBonusCaps = InCaps; }
+
+	/** 取某个加成属性对应的上限。返回 **-1 表示不设上限**。 */
+	float GetWeaponBonusCapFor(const FGameplayAttribute& Attribute) const;
+
+	/** 12 个武器加成属性的上限（-1 = 不设上限）。纯数据，不需要复制也不参与 GC。 */
+	FRogueWeaponBonusCaps WeaponBonusCaps;
 
 	// ===========================================================
 	//  生命 / 护甲

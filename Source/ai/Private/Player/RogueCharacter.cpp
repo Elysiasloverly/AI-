@@ -501,6 +501,14 @@ void ARogueCharacter::InitializeGASAttributes()
 	const FRoguePlayerBaseStatConfig& BaseStats =
 		LoadedPlayerBalanceAsset ? LoadedPlayerBalanceAsset->BaseStats : DefaultBaseStats;
 
+	// 武器加成属性的上限（**-1 = 不设上限**，资产里默认全 -1 → 行为与"没有上限"完全一致）。
+	//
+	// 必须在下面写属性**之前**灌入：PreAttributeChange 在每次 SetXxx 时就会跑。
+	// （初始加成都是 0，所以顺序的实际影响为零，但摆正可以避免以后往这里加非零初值时踩坑。）
+	AttributeSet->SetWeaponBonusCaps(LoadedPlayerBalanceAsset
+		? LoadedPlayerBalanceAsset->WeaponBonusCaps
+		: FRogueWeaponBonusCaps());
+
 	// 先写上限，再写当前值。
 	// 原因：PreAttributeChange 里 Health 的上界取的是 GetMaxHealth()，
 	// 顺序反了会被旧上限钳住（例如 MaxHealth 从 100 提到 200 时 Health 只能到 100）。

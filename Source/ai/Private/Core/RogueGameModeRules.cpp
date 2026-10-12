@@ -281,6 +281,21 @@ FRogueEnemyProfile RogueGameModeRules::BuildEnemyProfile(int32 Wave, ERogueEnemy
 		Profile.ExperienceReward += BalanceRow->ExperienceRewardBonus;
 	}
 
+	// ---- 最终生命上限（**-1 = 不设上限**，资产默认 -1）----
+	//
+	// 放在**全部计算之后**（含上面那条敌人类型倍率），所以它是真正的最终封顶。
+	//
+	// 为什么需要：上面三层里**线性那一层永远不封顶** —— 中期/后期那两个"倍率上限"
+	// 只约束叠上去的加成，生命本身仍随波次线性增长。想让"某波之后普通怪不再变肉"，
+	// 就得在这里给一个绝对值。
+	//
+	// 只作用于普通敌人：Boss 走 BuildBossProfile，不经过这里。
+	const float MaxEnemyHealth = BalanceAsset != nullptr ? BalanceAsset->MaxEnemyHealth : -1.0f;
+	if (MaxEnemyHealth >= 0.0f)
+	{
+		Profile.Health = FMath::Min(Profile.Health, MaxEnemyHealth);
+	}
+
 	return Profile;
 }
 

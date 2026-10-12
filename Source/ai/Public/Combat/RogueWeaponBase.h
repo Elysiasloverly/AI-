@@ -57,6 +57,49 @@ struct AI_API FRogueWeaponTableRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "升级", meta = (DisplayName = "数量升级类型"))
 	ERogueUpgradeType CountUpgradeType = ERogueUpgradeType::ProjectileCount;
 
+	// ===================================================================
+	//  上限 —— 全部在**数据表里按武器配置**，一律 **0 = 不限制**
+	// ===================================================================
+	//
+	// 作用位置：这些是**最终生效值**的上限，夹在"数据表基础值 + 属性加成"合并**之后**
+	//（见各武器的 GetEffective* 实现）。
+	//
+	// 与属性层的钳制是两回事：`URogueAttributeSet::PreAttributeChange` 里那 12 个加成属性
+	// **只有下限 0、没有上限**。所以"升级能把这些数值堆到多高"由这里决定 ——
+	// 想让某把武器封顶就在它的行里填，留 0 就是无限叠。
+	//
+	// 每一项**独立**判断：填了哪项就限制哪项，互不影响。
+
+	/** 冷却下限（秒）—— 也就是**攻速上限**。**`-1` = 不设下限**。
+	 *
+	 *  ⚠️ 默认**不是 -1**，而是 0.01 秒 —— 这是唯一一个"默认值不等于不限"的上限字段，
+	 *  刻意如此：冷却为 0 或负数时，武器 Tick 的判据 `TimeSinceLastShot >= Cooldown`
+	 *  **恒为真**，会退化成**逐帧开火**（默认 100Hz = 每秒 100 发，每发还要生成弹体，帧率会崩）。
+	 *  0.01 秒 = 每秒最多 100 发，已经等同于"实战无上限"（没有升级能堆到这个密度）。
+	 *  确实要去掉这层保护就填 -1 —— 请先确认接受"攻速堆够多时每帧开火"。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "上限", meta = (DisplayName = "冷却下限(秒，-1=不限)"))
+	float MinCooldown = 0.01f;
+
+	/** 数量上限（**-1 = 不限制**，默认）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "上限", meta = (DisplayName = "数量上限(-1=不限)"))
+	int32 MaxCount = -1;
+
+	/** 伤害上限（**-1 = 不限制**，默认）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "上限", meta = (DisplayName = "伤害上限(-1=不限)"))
+	float MaxDamage = -1.0f;
+
+	/** 索敌范围上限（**-1 = 不限制**，默认）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "上限", meta = (DisplayName = "范围上限(-1=不限)"))
+	float MaxRange = -1.0f;
+
+	/** 弹速上限（**-1 = 不限制**，默认）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "上限", meta = (DisplayName = "弹速上限(-1=不限)"))
+	float MaxProjectileSpeed = -1.0f;
+
+	/** 激光折射次数上限（**-1 = 不限制**，默认）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "上限", meta = (DisplayName = "折射上限(-1=不限)"))
+	int32 MaxRefractionCount = -1;
+
 	// ---- 弹道随机化（弹体 & 火箭通用） ----
 
 	/** 是否启用弹道随机平面偏转 */
