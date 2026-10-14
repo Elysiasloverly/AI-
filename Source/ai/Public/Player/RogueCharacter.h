@@ -2,8 +2,10 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "Engine/EngineTypes.h"
+#include "Player/RoguePlayerLifeState.h"
 #include "Player/RogueCharacterVisualComponent.h"
-#include "Core/RogueTypes.h"
+#include "Shared/RogueTypes.h"
 #include "GameplayTagContainer.h"
 // 倒地等待 / 复活无敌两个状态 GE 的句柄（只用于调试与失效报错，不参与判定）。
 #include "GameplayEffectTypes.h"
@@ -31,6 +33,14 @@ class URogueAttributeSet;
 class UInputAction;
 class UInputMappingContext;
 
+struct FRoguePlayerCollisionSnapshot
+{
+	TWeakObjectPtr<class UPrimitiveComponent> Component;
+	ECollisionEnabled::Type Collision = ECollisionEnabled::NoCollision;
+	bool bGenerateOverlapEvents = false;
+	bool bSimulatePhysics = false;
+};
+
 UCLASS()
 class AI_API ARogueCharacter : public ACharacter, public IAbilitySystemInterface
 {
@@ -39,6 +49,9 @@ class AI_API ARogueCharacter : public ACharacter, public IAbilitySystemInterface
 public:
 	ARogueCharacter();
 
+	virtual void PreInitializeComponents() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void OnRep_Controller() override;
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
@@ -132,17 +145,12 @@ public:
 	 *  而玩家打敌人正常（敌人的 ASC 就在自己身上）。Lyra 里角色同样实现了这个接口，就是为此。 */
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
 
-	// ---- 复活（联机合作：倒地等待后回出生点重来）----
-
-	/** 安排一次复活：DelaySeconds 秒后自动复活（服务端）。传负值 = 取消（团灭时用）。
-	 *
-	 *  为什么计时器放在角色自己身上而不是 GameMode：这样"谁的复活什么时候到"只有一个
-	 *  明确的归属，GameMode 只负责在死亡/团灭时下指令，Tick 里的检查也在本地完成。 */
-	void ScheduleRevive(float DelaySeconds);
-
-	/** 立刻复活：清死亡标签、回血、回出生点、恢复输入与移动，并给一小段无敌保护。
-	 *  只在服务端有效（死亡状态是权威的）。 */
+	// ---- 服务端权威生命周期 ----
+	/** 进入十秒濒死状态，重复调用不重置期限。客户端只读取复制状态。 */
+	/** 仅在十秒期限到达且整局仍进行时复活。 */
 	void Revive();
+	/** 团灭：取消复活并保持幽灵，直到重开。 */
+	void FinalizeForGameOver();
 
 	// ---- 武器加成的跨端快照 ----
 	// 真相源是玩家 ASC 上 URogueAttributeSet 的 12 个加成属性（升级 GE 写入，只有服务端能写）；
@@ -165,7 +173,7 @@ public:
 	 *  （敌人客户端是 SimulatedProxy，Role 不是 Authority）。 */
 	bool IsAuthoritySide() const;
 
-	/** 按 bDead 切换本机的倒地/正常表现（输入、移动、碰撞）。服务端与客户端共用。 */
+	/** 按生命周期应用本机幽灵/正常状态；保存并恢复各组件原有碰撞配置。 */
 	void ApplyDownedState();
 	bool TrySpendMoney(int32 Amount);
 	void SetNearbyShopTerminal(ARogueShopTerminal* ShopTerminal);
@@ -289,7 +297,19 @@ public:
 	bool IsDashReady() const { return !bDashActive && DashCooldownRemaining <= 0.0f; }
 
 	UFUNCTION(BlueprintPure)
-	bool IsDead() const { return bDead; }
+	bool IsDead() const { return !IsAlive(); }
+
+	UFUNCTION(BlueprintPure)
+	bool IsAlive() const;
+
+	UFUNCTION(BlueprintPure)
+	bool IsDowned() const { return LifeState.Phase == ERoguePlayerLifePhase::Downed; }
+
+	UFUNCTION(BlueprintPure)
+	bool IsEliminated() const { return LifeState.Phase == ERoguePlayerLifePhase::Eliminated; }
+
+	UFUNCTION(BlueprintPure)
+	ERoguePlayerLifePhase GetLifePhase() const { return LifeState.Phase; }
 
 	// ---- 武器聚合查询 ----
 	// 把"所有武器里的同类数值"汇总成一个数（总伤害、总攻速、各类武器数量）。
@@ -468,6 +488,7 @@ private:
 
 	/** 死亡处理已排队 */
 	bool bPendingDeath = false;
+	FTimerHandle PendingDeathTimerHandle;
 
 	/** GAS 事件是否已绑定（防止双路径重复绑定导致回调触发两次） */
 	bool bAbilitySystemEventsBound = false;
@@ -641,69 +662,44 @@ private:
 	TWeakObjectPtr<ARogueShopTerminal> NearbyShopTerminal;
 	bool bDashActive = false;
 
-	/** 是否已阵亡（联机合作里 = 倒地等待）。**必须复制**。
-	 *
-	 *  ⚠️ 为什么不能像原来那样"在客户端由 State.Dead 标签推导"：
-	 *    · 客户端上**本机拥有**的角色 `HasAuthority()` 也是 true（本地控制的 Pawn 由客户端自己模拟），
-	 *      而"我是不是服务端"必须用 GetNetMode() 判断（见 IsAuthoritySide()）；
-	 *    · 实测客户端从来没有进入过倒地表现：HUD 读的 `IsDead()` 在客户端恒为 false，
-	 *      于是倒地者在自己屏幕上依然"活着"（没有倒计时、死亡界面也弹不出来），
-	 *      而服务端早就不让他动、怪物也早就不索敌他了 —— 两边表现完全脱节。
-	 *  现在以服务端复制过来的这一位为准，收到后由 OnRep_Dead 切换本机表现。 */
-	UPROPERTY(ReplicatedUsing = OnRep_Dead)
-	bool bDead = false;
+	/** 正常/濒死/出局与复活截止时刻作为同一属性复制，唯一生命周期真值。 */
+	UPROPERTY(ReplicatedUsing = OnRep_LifeState)
+	FRoguePlayerLifeState LifeState;
 
-	/** 武器加成快照（复制给所有端）。服务端每帧从属性集同步、变化才赋值。
-	 *  为什么不让武器直接读属性集：见上面"武器加成的跨端快照"注释。 */
 	UPROPERTY(Replicated)
 	FRogueWeaponBonusValues WeaponBonusSnapshot;
 
-	/** bDead 的客户端回调：只做本机表现（输入 / 移动 / 碰撞），不改数值与位置。 */
 	UFUNCTION()
-	void OnRep_Dead();
+	void OnRep_LifeState();
 
-	/** 复活等待时间（秒）。联机合作下死亡 = 倒地等待，而不是出局。 */
-	UPROPERTY(EditDefaultsOnly, Category = "Rogue|Death")
-	float ReviveDelaySeconds = 10.0f;
-
-	/** 复活后的无敌时长（秒）。0 = 关闭该保护。 */
+	/** 复活保护沿用原有配置，默认 1.5 秒；复活等待固定十秒。 */
 	UPROPERTY(EditDefaultsOnly, Category = "Rogue|Death")
 	float ReviveInvulnerableSeconds = 1.5f;
 
-	/** 复活用的定时器（服务端）。放在角色上，GameMode 只负责下指令。
-	 *  ⚠️ 它只是"三个驱动里的一条"，**不是真相源**：真相源是 ASC 上那个带时长的
-	 *  State.Downed GE。三个驱动（角色 Tick / GameMode::TickReviveQueue / 这个定时器）
-	 *  最终都调 TryReviveIfExpired() 这一个闸门。 */
+	/** 唯一的复活驱动：服务端一次性世界定时器，不依赖 Pawn Tick。 */
 	FTimerHandle ReviveTimerHandle;
-
-	/** 是否已经排过复活（团灭时会取消）。它只回答"有没有排过"，
-	 *  "还剩多久"**只有** GE 一个来源（见 ARogueCharacter::GetReviveSecondsRemaining）。 */
-	bool bRevivePending = false;
-
-	/** 本地记录的两个状态 GE 的句柄（只用于调试/失效报错，不参与判定）。 */
-	FActiveGameplayEffectHandle ReviveEffectHandle;
 	FActiveGameplayEffectHandle InvulnerableEffectHandle;
+	bool bGhostStateApplied = false;
+	bool bActorCollisionBeforeDowned = true;
+	TArray<FRoguePlayerCollisionSnapshot> DownedCollisionSnapshots;
+	FTransform ReviveSpawnTransform;
 
-	// ---- 复活 / 无敌：状态全部由带时长的 GE 承担（Phase 4）----
-
-	/** 移除倒地等待 GE（复活时、以及团灭取消等待时调用）。 */
+	void ApplyLifeStateEffects();
+	void StartReviveTimer();
+	float GetLifeServerTime() const;
 	void RemoveDownedEffect();
-
-	/** 移除无敌 GE（复活时先清旧的、死亡时清掉"尸体还带无敌"的自相矛盾状态）。 */
 	void RemoveInvulnerableEffect();
+	friend struct FRoguePlayerLifeCycleTestAccess;
 
 public:
-	/** 倒地等待还剩多少秒（服务端与客户端读同一个 GE）。 */
+	/** 只用于显示，零秒时仍等待服务端 Alive 确认，不在客户端触发复活。 */
+	UFUNCTION(BlueprintPure)
 	float GetReviveSecondsRemaining() const;
-
-	/** 是否正在等待复活（倒了 + 排过复活）。 */
 	bool IsRevivePending() const;
-
-	/** 倒地等待到期就复活。**唯一的复活闸门**，三个驱动都调它，幂等。 */
 	void TryReviveIfExpired();
 
 private:
-	/** 开发自检：武器加成的打印次数与上次打印时的值签名（默认关，见 Core/RogueSelfTest.h）。
+	/** 开发自检：武器加成的打印次数与上次打印时的值签名（默认关，见 Debug/RogueSelfTest.h）。
 	 *  用"值变化才打"而不是"只打一次"：客户端首帧还没收到复制过来的属性值，
 	 *  只打一次会看到全 0 并误判成"属性没复制"。 */
 	int32 WeaponBonusLogCount = 0;

@@ -2,10 +2,10 @@
 
 #include "AbilitySystem/RogueAbilitySystemComponent.h"
 #include "AbilitySystem/RogueAbilitySet.h"
-#include "AbilitySystem/RogueStateEffects.h"
+#include "AbilitySystem/GameplayEffects/RogueStateEffects.h"
 #include "AbilitySystem/RogueAttributeSet.h"
-#include "AbilitySystem/RogueGameplayCue_Impact.h"
-#include "Core/RogueGameMode.h"
+#include "AbilitySystem/Cues/RogueGameplayCue_Impact.h"
+#include "Framework/RogueGameMode.h"
 #include "GameFramework/GameStateBase.h"
 #include "Player/RogueCharacter.h"
 #include "Net/UnrealNetwork.h"
@@ -31,20 +31,15 @@ void ARoguePlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 	DOREPLIFETIME_CONDITION(ARoguePlayerState, ShopRefreshCost, COND_OwnerOnly);
 	DOREPLIFETIME_CONDITION(ARoguePlayerState, ShopAutoRefreshDeadline, COND_OwnerOnly);
 
-	// 注：复活倒计时**不再**是一个复制字段。
-	// 迁移前这里复制一个"复活截止时刻"（ReviveServerTime）给拥有者，HUD 拿它自己换算；
-	// 现在"还剩多久"是 ASC 上那个带时长的 State.Downed GE 的剩余时长 ——
-	// 带时长的 GE 本身就会同步给本人（玩家 ASC 是 Mixed 模式），所以不需要第二个真相源。
-	// 见 ARoguePlayerState::GetReviveSecondsRemaining 与 URogueDownedEffect。
+	// 复活状态和截止时间统一复制在 Character.LifeState，PlayerState 查询仅转发。
 
 	// 注：武器加成快照也不在这里，在 ARogueCharacter 上（原因见头文件注释）。
 }
 
 float ARoguePlayerState::GetReviveSecondsRemaining() const
 {
-	// 直接读 ASC 上那个 GE 的剩余时长（服务端与客户端同一套算法，
-	// 实现收在 GetDownedSecondsRemaining 里，避免两端算法漂移）。
-	return GetDownedSecondsRemaining(AbilitySystemComponent);
+	const ARogueCharacter* Character = GetPawn<ARogueCharacter>();
+	return Character != nullptr ? Character->GetReviveSecondsRemaining() : 0.0f;
 }
 
 void ARoguePlayerState::ApplyShopSnapshot(bool bInOpen, const TArray<FRogueShopOffer>& InOffers, int32 InRefreshCost, float InAutoRefreshServerTimeDeadline)
@@ -332,7 +327,18 @@ void ARoguePlayerState::RefreshAbilityActorInfo(APawn* InPawn)
 	{
 		return;
 	}
-
+	
+	if (InPawn == nullptr)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("InPawn is nullptr"));
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("InPawn is not nullptr"));
+	}
+	
+	
+	
 	// OwnerActor = this（PlayerState，负责复制）
 	// AvatarActor = InPawn（负责挂载与表现，可能是 nullptr）
 	AbilitySystemComponent->InitAbilityActorInfo(this, InPawn);

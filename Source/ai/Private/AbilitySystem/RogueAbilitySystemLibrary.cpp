@@ -3,14 +3,22 @@
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemGlobals.h"
-#include "AbilitySystem/RogueDamageEffect.h"
-#include "Core/RogueGameplayTags.h"
+#include "AbilitySystem/GameplayEffects/RogueDamageEffect.h"
+#include "AbilitySystem/RogueGameplayTags.h"
 #include "GameFramework/Pawn.h"
 #include "GameplayEffect.h"
+#include "Player/RogueCharacter.h"
 
 bool RogueAbilitySystem::ApplyDamageToTarget(AActor* SourceActor, AActor* TargetActor, float DamageAmount, FGameplayTag SourceTag)
 {
 	if (DamageAmount <= 0.0f || !IsValid(TargetActor))
+	{
+		return false;
+	}
+
+	// 玩家生命状态是权威判据，不能依赖死亡 GE 是否已经施加或清理完毕。
+	const ARogueCharacter* TargetCharacter = Cast<ARogueCharacter>(TargetActor);
+	if (TargetCharacter != nullptr && !TargetCharacter->IsAlive())
 	{
 		return false;
 	}
@@ -35,6 +43,7 @@ bool RogueAbilitySystem::ApplyDamageToTarget(AActor* SourceActor, AActor* Target
 	//   · 后者在本引擎版本已被标记 DeprecatedProperty（GameplayEffect.h:2307）；
 	//   · 代码判定还能省掉一次 Spec 构造 —— 在 200+ 敌人的场景里这有实际意义。
 	if (TargetASC->HasMatchingGameplayTag(RogueGameplayTags::State_Dead)
+		|| TargetASC->HasMatchingGameplayTag(RogueGameplayTags::State_Downed)
 		|| TargetASC->HasMatchingGameplayTag(RogueGameplayTags::State_Invulnerable))
 	{
 		return false;

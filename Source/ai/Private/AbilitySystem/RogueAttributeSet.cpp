@@ -1,7 +1,7 @@
 #include "AbilitySystem/RogueAttributeSet.h"
 
-#include "AbilitySystem/RogueStateEffects.h"
-#include "Core/RogueGameplayTags.h"
+#include "AbilitySystem/GameplayEffects/RogueStateEffects.h"
+#include "AbilitySystem/RogueGameplayTags.h"
 #include "Net/UnrealNetwork.h"
 #include "GameplayEffectExtension.h"
 

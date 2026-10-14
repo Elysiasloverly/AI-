@@ -1,14 +1,14 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Enemies/RogueEnemyArchetypes.h"
-#include "Enemies/RogueEnemyVisualResources.h"
+#include "Enemies/Data/RogueEnemyArchetypes.h"
+#include "Enemies/Data/RogueEnemyVisualResources.h"
 #include "GameFramework/Character.h"
 #include "AbilitySystemInterface.h"
 #include "GameplayTagContainer.h"
 // 攻击能力的句柄：AI 侧只保存句柄、用 TryActivateAbility 激活（见下面的"攻击能力接口"）。
 #include "GameplayAbilitySpec.h"
-#include "Core/RogueTypes.h"
+#include "Shared/RogueTypes.h"
 #include "RogueEnemy.generated.h"
 
 class UStaticMeshComponent;

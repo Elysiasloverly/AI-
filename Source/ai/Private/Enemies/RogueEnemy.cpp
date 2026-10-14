@@ -6,18 +6,18 @@
 #include "AbilitySystem/RogueAbilitySystemLibrary.h"
 #include "AbilitySystem/RogueAttributeSet.h"
 #include "AbilitySystem/Abilities/RogueEnemyAttackAbility.h"
-#include "Core/RogueGameplayTags.h"
-#include "Core/RogueSelfTest.h"
-#include "Core/RogueCombatFeedback.h"
-#include "Enemies/RogueEnemyArchetypes.h"
-#include "Enemies/RogueEnemyProjectile.h"
-#include "Enemies/RogueEnemyVisualResources.h"
-#include "Core/RogueGameMode.h"
-#include "Core/RogueGameState.h"
-#include "Core/RoguePlayerQuery.h"
-#include "Subsystems/RogueCombatPoolSubsystem.h"
-#include "Subsystems/RogueEnemyTrackerSubsystem.h"
-#include "Combat/RogueImpactEffect.h"
+#include "AbilitySystem/RogueGameplayTags.h"
+#include "Debug/RogueSelfTest.h"
+#include "Combat/Visuals/RogueCombatFeedback.h"
+#include "Enemies/Data/RogueEnemyArchetypes.h"
+#include "Combat/Projectiles/RogueEnemyProjectile.h"
+#include "Enemies/Data/RogueEnemyVisualResources.h"
+#include "Framework/RogueGameMode.h"
+#include "Framework/RogueGameState.h"
+#include "Player/RoguePlayerQuery.h"
+#include "Combat/Pooling/RogueCombatPoolSubsystem.h"
+#include "Combat/Targeting/RogueEnemyTrackerSubsystem.h"
+#include "Combat/Visuals/RogueImpactEffect.h"
 #include "World/RogueArena.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
@@ -597,7 +597,7 @@ void ARogueEnemy::Tick(float DeltaSeconds)
 	// 目标重选必须在蓝图行为与基类默认行为之前做：
 	// 它们全部依赖 GetPlayerCharacter() 拿到的那个目标。
 	TargetRefreshCooldown -= DeltaSeconds;
-	if (TargetRefreshCooldown <= 0.0f)
+	if (TargetRefreshCooldown <= 0.0f || GetPlayerCharacter() == nullptr)
 	{
 		TargetRefreshCooldown = TargetRefreshInterval;
 		RefreshTargetPlayer();
@@ -636,7 +636,7 @@ void ARogueEnemy::HandleDefaultBehavior(float DeltaSeconds)
 {
 	// 目标已由 Tick 里的 RefreshTargetPlayer() 选好（活着的玩家里最近的那个）。
 	ARogueCharacter* PlayerCharacter = GetPlayerCharacter();
-	if (!IsValid(PlayerCharacter) || PlayerCharacter->IsDead())
+	if (!IsValid(PlayerCharacter) || !PlayerCharacter->IsAlive())
 	{
 		return;
 	}
@@ -1186,9 +1186,9 @@ FVector ARogueEnemy::GetHealthBarWorldLocation() const
 
 ARogueCharacter* ARogueEnemy::GetPlayerCharacter() const
 {
-	// 只读缓存：缓存的刷新由 Tick 里的 RefreshTargetPlayer() 负责（服务端）。
-	// 客户端跑的是复制代理，不跑 AI，这里拿到什么都无所谓。
-	return CachedPlayerCharacter.Get();
+	// 缓存目标失去存活状态后立即失效，蓝图行为也不能在下一次重选前继续追踪他。
+	ARogueCharacter* PlayerCharacter = CachedPlayerCharacter.Get();
+	return IsValid(PlayerCharacter) && PlayerCharacter->IsAlive() ? PlayerCharacter : nullptr;
 }
 
 void ARogueEnemy::GatherAlivePlayers(TArray<ARogueCharacter*, TInlineAllocator<4>>& OutPlayers) const
@@ -1207,8 +1207,7 @@ void ARogueEnemy::RefreshTargetPlayer()
 
 	// 刻意**不**再"退回尸体"当目标：按设计，倒下的人处于无法控制状态，
 	// 也不应该被怪物索敌（否则会出现"围着尸体打"的观感）。
-	// 场上暂时没有活人时敌人就没有目标 —— 表现为原地站着等，这是期望行为：
-	// 10 秒后倒地者复活，它们自然会重新锁定。
+	// 场上没有存活玩家时不再索敌；团灭与待复活取消由 GameMode 处理。
 
 	ARogueCharacter* Nearest = nullptr;
 	float NearestDistanceSquared = TNumericLimits<float>::Max();
@@ -1416,7 +1415,7 @@ void ARogueEnemy::FireRangedShot(ARogueCharacter* PlayerCharacter)
 	// 本函数是"开火"的唯一出口，测试里出现过"玩家已经倒地、怪物仍然每秒朝他开一枪"
 	// （伤害被 State.Dead 闸门挡下，所以只表现为一堆无意义弹体和特效）。
 	// 把闸门放在出口上，无论上游是谁调用的都拦得住。
-	if (PlayerCharacter->IsDead())
+	if (!PlayerCharacter->IsAlive())
 	{
 		return;
 	}
@@ -1640,9 +1639,14 @@ void ARogueEnemy::HideGroundWave()
 
 bool ARogueEnemy::CanGroundWaveHitPlayer(const ARogueCharacter* PlayerCharacter) const
 {
-	if (!IsValid(PlayerCharacter) || !CurrentArchetype.GroundWave.bJumpCanDodge)
+	if (!IsValid(PlayerCharacter) || !PlayerCharacter->IsAlive())
 	{
-		return IsValid(PlayerCharacter);
+		return false;
+	}
+
+	if (!CurrentArchetype.GroundWave.bJumpCanDodge)
+	{
+		return true;
 	}
 
 	const UCharacterMovementComponent* PlayerMovement = PlayerCharacter->GetCharacterMovement();

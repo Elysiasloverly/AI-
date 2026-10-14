@@ -1,5 +1,7 @@
 # 维护与扩展指南
 
+> **当前类文件目录**见 [Class-Organization.md](Class-Organization.md)，运行时关系与数据流见 [Project-Structure.md](Project-Structure.md)。本次整理保留原有职责分析与技术取舍；下文的旧目录、文件位置和实现阶段描述请结合当前组织说明及源码阅读。尤其 `Core/`、`Subsystems/` 已按业务归位，新增类的落点以当前说明为准。
+
 ## 1. 文档目标
 
 这份文档是给后续维护者和扩展者用的工程手册，核心目标有两件事：
@@ -50,7 +52,7 @@
 - `RogueCharacterVisualComponent.*`
 - `RoguePlayerBalanceAsset.*`
 
-> 武器参数不在这里：已迁到 `Source/ai/Public/Combat/RogueWeaponBase.h`（行结构 `FRogueWeaponTableRow`）+ 数据表 `Content/DataTable/DT_WeaponConfig`。
+> 武器参数不在这里：已迁到 `Source/ai/Public/Combat/Weapons/RogueWeaponBase.h`（行结构 `FRogueWeaponTableRow`）+ 数据表 `Content/DataTable/DT_WeaponConfig`。
 > 旧的 `RogueWeaponConfig.h` 已删除（删除前确认全源码、752 个资产、cooked 数据均 0 引用）。
 
 ### `Source/ai/Public/Enemies` / `Source/ai/Private/Enemies`
@@ -263,7 +265,7 @@
 
 它们共同特点是：
 
-- 武器参数由 `DT_WeaponConfig` 的数据行定义（行结构 `FRogueWeaponTableRow`，声明在 `Combat/RogueWeaponBase.h`）
+- 武器参数由 `DT_WeaponConfig` 的数据行定义（行结构 `FRogueWeaponTableRow`，声明在 `Combat/Weapons/RogueWeaponBase.h`）
 - 玩家运行时由 `ARogueCharacter` 调度
 - 升级入口由 `ERogueUpgradeType`、升级规则、升级定义共同驱动
 
@@ -308,7 +310,7 @@
 
 文件：
 
-- `Source/ai/Public/Combat/RogueWeaponBase.h` —— 行结构 `FRogueWeaponTableRow`
+- `Source/ai/Public/Combat/Weapons/RogueWeaponBase.h` —— 行结构 `FRogueWeaponTableRow`
 - `Content/DataTable/DT_WeaponConfig` —— 每把武器一行的数据
 
 做法：
@@ -488,7 +490,7 @@
 
 文件：
 
-- `Source/ai/Public/Core/RogueTypes.h`
+- `Source/ai/Public/Shared/RogueTypes.h`
 
 通常要新增至少一项：
 
@@ -569,7 +571,7 @@
 
 如果你想最省事地加一把新武器，推荐顺序是：
 
-1. `Combat/RogueWeaponBase.h` 的 `FRogueWeaponTableRow` 里加专属字段
+1. `Combat/Weapons/RogueWeaponBase.h` 的 `FRogueWeaponTableRow` 里加专属字段
 2. `DT_WeaponConfig` 加一行并填好数值与 `WeaponClass`（留空则同步 BP 上的 `WeaponClasses` 数组）
 3. 新建 `Combat/XxxWeaponActor`
 4. `ARogueCharacter` 中增加计时器、处理函数
@@ -608,7 +610,7 @@
 
 文件：
 
-- `Source/ai/Public/Core/RogueTypes.h`
+- `Source/ai/Public/Shared/RogueTypes.h`
 
 新增一个 `ERogueUpgradeType`。
 
@@ -689,7 +691,7 @@
 
 文件：
 
-- `Source/ai/Public/Core/RogueTypes.h`
+- `Source/ai/Public/Shared/RogueTypes.h`
 
 新增一个 `ERogueEnemyType`。
 
@@ -697,7 +699,7 @@
 
 文件：
 
-- `Source/ai/Public/Enemies/RogueEnemyArchetypes.h`
+- `Source/ai/Public/Enemies/Data/RogueEnemyArchetypes.h`
 - `Source/ai/Private/Enemies/RogueEnemyArchetypes.cpp`
 
 这里决定：
@@ -721,7 +723,7 @@
 
 文件：
 
-- `Source/ai/Public/Enemies/RogueEnemyVisualResources.h`
+- `Source/ai/Public/Enemies/Data/RogueEnemyVisualResources.h`
 - `Source/ai/Private/Enemies/RogueEnemyVisualResources.cpp`
 
 这里负责把 `VisualKey` 映射到：
@@ -902,34 +904,34 @@
 
 ### 添加武器最常改的文件
 
-- `Source/ai/Public/Combat/RogueWeaponBase.h`（行结构 `FRogueWeaponTableRow`）
+- `Source/ai/Public/Combat/Weapons/RogueWeaponBase.h`（行结构 `FRogueWeaponTableRow`）
 - `Content/DataTable/DT_WeaponConfig`（数据行）
 - `Source/ai/Public/Player/RoguePlayerBalanceAsset.h`（只放玩家自身属性）
-- `Source/ai/Public/Core/RogueTypes.h`
+- `Source/ai/Public/Shared/RogueTypes.h`
 - `Source/ai/Private/Core/RogueUpgradeSystemRules.cpp`
 - `Source/ai/Public/Player/RogueCharacter.h`
 - `Source/ai/Private/Player/RogueCharacter.cpp`
 - `Source/ai/Public/Combat/*.h`
 - `Source/ai/Private/Combat/*.cpp`
-- `Source/ai/Public/Core/RogueCombatPools.h`
+- `Source/ai/Public/Combat/Pooling/RogueCombatPools.h`
 - `Source/ai/Private/Core/RogueCombatPools.cpp`
 
 ### 添加技能卡最常改的文件
 
-- `Source/ai/Public/Core/RogueTypes.h`
+- `Source/ai/Public/Shared/RogueTypes.h`
 - `Source/ai/Private/Core/RogueUpgradeSystemRules.cpp`
 - `Source/ai/Private/Player/RogueCharacter.cpp`
-- `Source/ai/Public/Core/RogueUpgradeDefinitionAsset.h`
-- `Source/ai/Public/Core/RogueUpgradeRuleAsset.h`
+- `Source/ai/Public/Progression/Upgrades/RogueUpgradeDefinitionAsset.h`
+- `Source/ai/Public/Progression/Upgrades/RogueUpgradeRuleAsset.h`
 
 ### 添加敌人最常改的文件
 
-- `Source/ai/Public/Core/RogueTypes.h`
-- `Source/ai/Public/Enemies/RogueEnemyArchetypes.h`
+- `Source/ai/Public/Shared/RogueTypes.h`
+- `Source/ai/Public/Enemies/Data/RogueEnemyArchetypes.h`
 - `Source/ai/Private/Enemies/RogueEnemyArchetypes.cpp`
-- `Source/ai/Public/Enemies/RogueEnemyVisualResources.h`
+- `Source/ai/Public/Enemies/Data/RogueEnemyVisualResources.h`
 - `Source/ai/Private/Enemies/RogueEnemyVisualResources.cpp`
-- `Source/ai/Public/Core/RogueGameBalanceAsset.h`
+- `Source/ai/Public/Framework/RogueGameBalanceAsset.h`
 - `Source/ai/Private/Core/RogueGameModeRules.cpp`
 - `Source/ai/Public/Enemies/RogueEnemy.h`
 - `Source/ai/Private/Enemies/RogueEnemy.cpp`

@@ -1,11 +1,11 @@
 #include "AbilitySystem/Abilities/RogueGameplayAbility_Dash.h"
 
-#include "AbilitySystem/Abilities/RogueAbilityTask_Dash.h"
+#include "AbilitySystem/Tasks/RogueAbilityTask_Dash.h"
 #include "AbilitySystem/RogueAttributeSet.h"
-#include "AbilitySystem/RogueStateEffects.h"
-#include "Combat/RogueImpactEffect.h"
-#include "Core/RogueGameplayTags.h"
-#include "Core/RogueGameState.h"
+#include "AbilitySystem/GameplayEffects/RogueStateEffects.h"
+#include "Combat/Visuals/RogueImpactEffect.h"
+#include "AbilitySystem/RogueGameplayTags.h"
+#include "Framework/RogueGameState.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Player/RogueCharacter.h"
 
@@ -38,7 +38,7 @@ URogueGameplayAbility_Dash::URogueGameplayAbility_Dash()
 	// 也就是**冷却标签直接取自冷却 GE 的授予标签**。
 	// 所以只需要在 URogueDashCooldownEffect 里授予 Cooldown.Dash 就够了，
 	// GAS 内置的 CheckCooldown 会拿它和持有者身上的 Tag 比对。
-	// （这也是为什么那个 GE 必须真的把标签授予出去 —— 见 AbilitySystem/RogueStateEffects.h。）
+	// （这也是为什么那个 GE 必须真的把标签授予出去 —— 见 AbilitySystem/GameplayEffects/RogueStateEffects.h。）
 	CooldownGameplayEffectClass = URogueDashCooldownEffect::StaticClass();
 }
 

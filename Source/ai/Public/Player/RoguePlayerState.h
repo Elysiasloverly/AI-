@@ -3,8 +3,8 @@
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerState.h"
 #include "AbilitySystemInterface.h"
-#include "Core/RogueTypes.h"
-#include "Core/RogueShopSystem.h"
+#include "Shared/RogueTypes.h"
+#include "Progression/Shop/RogueShopSystem.h"
 #include "RoguePlayerState.generated.h"
 
 class URogueAbilitySystemComponent;
@@ -133,13 +133,7 @@ public:
 
 	// ---- 复活倒计时（由 ASC 上的 State.Downed GE 承担，HUD 直接读它的剩余时长）----
 
-	/** 距离复活还剩多少秒；<=0 表示当前没有待复活。
-	 *
-	 *  迁移前这里复制了一个"复活截止时刻"，现在**没有**这样的复制字段了：
-	 *  真相源是玩家 ASC 上那个带时长的 `URogueDownedEffect`（State.Downed），
-	 *  带时长的 GE 本来就会同步给本人，所以 HUD 读的就是服务端那一份的剩余时间。
-	 *  "有没有排过复活"由 ARogueCharacter::IsRevivePending() 回答（两者语义不同：
-	 *  团灭取消等待时 GE 被移除，但角色仍然是倒下的）。 */
+	/** 当前 Pawn 的显示用复活倒计时；零秒仍需以 IsDowned 判断是否等待服务端。 */
 	float GetReviveSecondsRemaining() const;
 
 	/** 客户端 → 服务端：商店操作请求 */
@@ -151,7 +145,7 @@ public:
 	/** 客户端 → 服务端：请求重开一局（死亡结算界面的"重新开始"）。
 	 *
 	 *  为什么必须走服务端：客户端自己 OpenLevel 只会加载出一份**单机**关卡副本，
-	 *  表现为"点了重开之后队友全没了"。由服务端 OpenLevel 才会触发 server travel，
+	 *  表现为"点了重开之后队友全没了"。由服务端 ServerTravel 带全队重开，
 	 *  把所有客户端一起带到新关卡。
 	 *  服务端另外还会校验"本局是否已经结束"，否则一个已阵亡的玩家
 	 *  就能在队友还在战斗时把整局拉走（见 ARogueGameMode::HandleRestartRequest）。 */

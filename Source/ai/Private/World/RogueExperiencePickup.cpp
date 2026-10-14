@@ -4,8 +4,8 @@
 #include "Net/UnrealNetwork.h"
 
 #include "Player/RogueCharacter.h"
-#include "Core/RoguePlayerQuery.h"
-#include "Subsystems/RogueEnemyTrackerSubsystem.h"
+#include "Player/RoguePlayerQuery.h"
+#include "Combat/Targeting/RogueEnemyTrackerSubsystem.h"
 #include "Components/PointLightComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -358,7 +358,7 @@ void ARogueExperiencePickup::HandleOverlap(UPrimitiveComponent* OverlappedCompon
 	}
 
 	ARogueCharacter* PlayerCharacter = Cast<ARogueCharacter>(OtherActor);
-	if (!IsValid(PlayerCharacter))
+	if (!IsValid(PlayerCharacter) || !PlayerCharacter->IsAlive())
 	{
 		return;
 	}

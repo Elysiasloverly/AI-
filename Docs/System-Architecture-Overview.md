@@ -1,5 +1,7 @@
 # 游戏系统总览
 
+> **当前类文件目录**见 [Class-Organization.md](Class-Organization.md)，运行时关系与数据流见 [Project-Structure.md](Project-Structure.md)。本次整理保留原有职责分析与技术取舍；下文的旧目录、文件位置和实现阶段描述请结合当前组织说明及源码阅读。尤其 `Core/`、`Subsystems/` 已按业务归位，新增类的落点以当前说明为准。
+
 ## 1. 总体定位
 
 这是一个基于 Unreal Engine 5.5 的俯视角肉鸽动作生存项目。当前工程已经形成了相对明确的分层结构：
@@ -155,7 +157,7 @@ Core 层是当前工程最重要的“组织层”，它决定了项目后面是
 
 文件：
 
-- `Source/ai/Public/Core/RogueGameMode.h`
+- `Source/ai/Public/Framework/RogueGameMode.h`
 - `Source/ai/Private/Core/RogueGameMode.cpp`
 
 职责：
@@ -187,7 +189,7 @@ Core 层是当前工程最重要的“组织层”，它决定了项目后面是
 
 文件：
 
-- `Source/ai/Public/Core/RogueGameModeRules.h`
+- `Source/ai/Public/Framework/RogueGameModeRules.h`
 - `Source/ai/Private/Core/RogueGameModeRules.cpp`
 
 职责：
@@ -212,7 +214,7 @@ Core 层是当前工程最重要的“组织层”，它决定了项目后面是
 
 文件：
 
-- `Source/ai/Public/Core/RogueGameBalanceAsset.h`
+- `Source/ai/Public/Framework/RogueGameBalanceAsset.h`
 
 职责：
 
@@ -235,7 +237,7 @@ Core 层是当前工程最重要的“组织层”，它决定了项目后面是
 
 文件：
 
-- `Source/ai/Public/Core/RogueUpgradeSystem.h`
+- `Source/ai/Public/Progression/Upgrades/RogueUpgradeSystem.h`
 - `Source/ai/Private/Core/RogueUpgradeSystem.cpp`
 
 职责：
@@ -258,7 +260,7 @@ Core 层是当前工程最重要的“组织层”，它决定了项目后面是
 
 文件：
 
-- `Source/ai/Public/Core/RogueUpgradeSystemRules.h`
+- `Source/ai/Public/Progression/Upgrades/RogueUpgradeSystemRules.h`
 - `Source/ai/Private/Core/RogueUpgradeSystemRules.cpp`
 
 职责：
@@ -325,7 +327,7 @@ Core 层是当前工程最重要的“组织层”，它决定了项目后面是
 
 文件：
 
-- `Source/ai/Public/Core/RogueShopSystem.h`
+- `Source/ai/Public/Progression/Shop/RogueShopSystem.h`
 - `Source/ai/Private/Core/RogueShopSystem.cpp`
 
 职责：
@@ -349,7 +351,7 @@ Core 层是当前工程最重要的“组织层”，它决定了项目后面是
 
 文件：
 
-- `Source/ai/Public/Core/RogueCombatPools.h`
+- `Source/ai/Public/Combat/Pooling/RogueCombatPools.h`
 - `Source/ai/Private/Core/RogueCombatPools.cpp`
 
 职责：
@@ -379,7 +381,7 @@ Core 层是当前工程最重要的“组织层”，它决定了项目后面是
 
 文件：
 
-- `Source/ai/Public/Core/RogueEnemyTracker.h`
+- `Source/ai/Public/Combat/Targeting/RogueEnemyTracker.h`
 - `Source/ai/Private/Core/RogueEnemyTracker.cpp`
 
 职责：
@@ -458,7 +460,7 @@ Core 层是当前工程最重要的“组织层”，它决定了项目后面是
 文件：
 
 - `Content/DataTable/DT_WeaponConfig.uasset`（数据）
-- `Source/ai/Public/Combat/RogueWeaponBase.h`（行结构 `FRogueWeaponTableRow`）
+- `Source/ai/Public/Combat/Weapons/RogueWeaponBase.h`（行结构 `FRogueWeaponTableRow`）
 
 职责：
 
@@ -679,12 +681,12 @@ Combat 层是玩家和敌人的“短命战斗对象层”。
 
 当前 Combat 层已经按统一规则整理过：
 
-- [RogueProjectile.h](/F:/AI_WorkSpeace/ai/Source/ai/Public/Combat/RogueProjectile.h)
-- [RogueRocketProjectile.h](/F:/AI_WorkSpeace/ai/Source/ai/Public/Combat/RogueRocketProjectile.h)
-- [RogueLaserBeam.h](/F:/AI_WorkSpeace/ai/Source/ai/Public/Combat/RogueLaserBeam.h)
-- [RogueOrbitingBlade.h](/F:/AI_WorkSpeace/ai/Source/ai/Public/Combat/RogueOrbitingBlade.h)
-- [RogueImpactEffect.h](/F:/AI_WorkSpeace/ai/Source/ai/Public/Combat/RogueImpactEffect.h)
-- [RogueEnemyProjectile.h](/F:/AI_WorkSpeace/ai/Source/ai/Public/Enemies/RogueEnemyProjectile.h)
+- [RogueProjectile.h](/F:/AI_WorkSpeace/ai/Source/ai/Public/Combat/Projectiles/RogueProjectile.h)
+- [RogueRocketProjectile.h](/F:/AI_WorkSpeace/ai/Source/ai/Public/Combat/Projectiles/RogueRocketProjectile.h)
+- [RogueLaserBeam.h](/F:/AI_WorkSpeace/ai/Source/ai/Public/Combat/Visuals/RogueLaserBeam.h)
+- [RogueOrbitingBlade.h](/F:/AI_WorkSpeace/ai/Source/ai/Public/Combat/Projectiles/RogueOrbitingBlade.h)
+- [RogueImpactEffect.h](/F:/AI_WorkSpeace/ai/Source/ai/Public/Combat/Visuals/RogueImpactEffect.h)
+- [RogueEnemyProjectile.h](/F:/AI_WorkSpeace/ai/Source/ai/Public/Combat/Projectiles/RogueEnemyProjectile.h)
 
 这几类里抽出来的，都是**表现参数**，例如：
 

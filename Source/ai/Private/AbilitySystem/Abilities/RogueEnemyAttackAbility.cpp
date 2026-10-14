@@ -1,9 +1,9 @@
 #include "AbilitySystem/Abilities/RogueEnemyAttackAbility.h"
 
-#include "AbilitySystem/Abilities/RogueAbilityTask_AttackTick.h"
-#include "AbilitySystem/RogueStateEffects.h"
+#include "AbilitySystem/Tasks/RogueAbilityTask_AttackTick.h"
+#include "AbilitySystem/GameplayEffects/RogueStateEffects.h"
 #include "AbilitySystemComponent.h"
-#include "Core/RogueGameplayTags.h"
+#include "AbilitySystem/RogueGameplayTags.h"
 #include "Enemies/RogueEnemy.h"
 
 namespace RogueEnemyAttackStats
