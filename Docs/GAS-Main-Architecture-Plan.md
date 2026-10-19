@@ -1,10 +1,12 @@
 # GAS 主架构改造方案与进度
 
+> 本文保留迁移各阶段的方案与当时测试记录。网络角色、周期 GE、预测确认、敌人冷却与性能归因等早期解释已在后续核验中纠正，当前结论见 [Comment-Verification.md](Comment-Verification.md)，运行时关系见 [Project-Structure.md](Project-Structure.md)。文中历史测试通过不表示本轮重新测试。
+
 > 历史记录：本文 Phase 4 的「GE 到期驱动复活 / 三个复活驱动」已被 `LifeState` 原子复制、固定 10 秒与单服务端定时器方案取代；当前规则以 [Player-LifeCycle.md](Player-LifeCycle.md) 为准。
 
 > 目标：把项目从"GAS 只做数值层"改造成 **GAS 作为 Gameplay 框架**（能力驱动），
-> 同时**完整保留现有数据资产**（`DT_WeaponConfig` / `DT_FRogueEnemyArchetypeRow` /
-> `DT_FRogueUpgradeDefinitionRow` / `AS_*`）作为唯一数据来源。
+> 同时**完整保留现有数据资产**（`DT_WeaponConfig` / `DT_EnemyArchetypes` /
+> `DT_UpgradeDefinitions` / `DA_*`）作为唯一数据来源。
 > 每阶段的验收标准：Development + DebugGame 编译通过；双进程无头冒烟无 Fatal/Ensure；
 > **数值与改造前逐项一致**（这一点比"结构好看"更重要）。
 

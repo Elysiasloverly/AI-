@@ -28,9 +28,11 @@
 - **权威全在服务端**：AI、伤害、经验、刷怪、商店、复活时机都只在服务端算。
 - **客户端表现与预测**：画复制状态，本地预测自己的操作，按复制状态推导界面。
 - **数值只有一个真相源**：`URogueAttributeSet`。角色上的 `MaxHealth/MoveSpeed/...` 是只读镜像。
-- **升级使用 Infinite GE 叠层**：20 种升级各自对应一个 GE 子类，按目标叠层；单次数值来自 `Data.Magnitude`。最大生命 / 护甲上限的补量由属性变化委托实现。
+- **升级使用 Infinite GE 叠层**：21 种升级各自对应一个 GE 子类，按目标叠层；单次数值来自 `Data.Magnitude`。最大生命 / 护甲上限的补量由属性变化委托实现。
 - **能力授予支持 AbilitySet**：玩家默认技能与敌人攻击支持数据驱动，缺少配置保留回退路径。武器能力由各武器的 `GetFireAbilityClass()` 提供，在角色侧幂等授予。
 - **玩家生命周期只有一份真值**：`ARogueCharacter::LifeState` 同时复制 `Alive / Downed / Eliminated` 与服务器复活截止时刻；濒死固定 10 秒，仅由服务端定时器触发复活，团灭取消全部复活。
+- **场景与商店由关卡提供**：直接编辑地图物体、灯光和 PlayerStart；不再依赖 `BP_RogueArena`、自动生成商店或覆盖场景。地图放置唯一 `RogueEnemySpawnRegion` 框来限制普通怪和 Boss 的出生范围，放置 `BP_RogueShopTerminal` 来配置商店位置及组件外观。详见 [地图摆放说明](Map-Authoring.md)。
+- **玩家外观由蓝图配置**：默认 Pawn 使用 `BP_RogueCharacter`；C++ 保留 `Visuals` 挂接组件，不生成或覆盖玩家主体模型、材质与缩放。濒死圆环是独立 Cue 表现对象。
 - **对象池是高频对象的复用契约**：敌人、弹体、表现对象与经验球获取后激活，结束后回池（见 §5）。
 
 | 玩法动作 | 能力 | 持续/一次性 | 联机策略 | 谁决定时机 |
@@ -38,7 +40,8 @@
 | 冲刺 | `URogueGameplayAbility_Dash` | 一次性 | LocalPredicted | 输入经 `AbilityLocalInputPressed` 激活 |
 | 武器自动开火 | `URogueWeaponAbility` 系列 | 持续心跳 | LocalPredicted | 能力与冷却 GE；镰刀持续轨道保留表现 Tick |
 | 敌人接触 / 远程攻击 | `URogueEnemyAttackAbility` 子类 | 一次性 | ServerOnly | AI 决策，能力执行 |
-| 敌人地面波 | `URogueEnemyAttackAbility_GroundWave` | 持续到波结束 | ServerOnly | AI 决策，能力任务推进 |
+| 震荡柱整圈弹幕 | `URogueEnemyRangedAttackAbility` | 一次性齐射 | ServerOnly | AI 冷却决策，单条多播同步客户端表现 |
+| 旧地面波（兼容） | `URogueEnemyGroundWaveAttackAbility` | 持续到波结束 | ServerOnly | 保留历史能力，震荡柱不再使用 |
 
 ---
 
@@ -192,13 +195,13 @@ graph LR
 | 濒死标签 / 全息环 | ASC 上的 Infinite `URogueDownedEffect` | GAS 复制标签/Cue；由生命周期显式授予/移除，不作为复活计时器 |
 | 敌人是否活跃 `bReplicatedActive` | `ARogueEnemy` / 经验球 | 复制（池化对象必须显式告诉客户端"我上线了"） |
 | 武器开火表现 | `ARogueCharacter::Multicast_WeaponCosmetics` | `NetMulticast, Unreliable`（每帧合批） |
-| 武器升级结果 | 玩家 ASC 上的 12 个加成属性 + `ARogueCharacter::WeaponBonusSnapshot` | 属性常规复制 + 快照 `COND_None`（**不再有** Multicast 重放） |
+| 武器升级结果 | 玩家 ASC 上的 13 个加成属性 + `ARogueCharacter::WeaponBonusSnapshot` | 属性常规复制 + 快照 `COND_None`（**不再有** Multicast 重放） |
 | 敌方弹体表现 | `ARogueEnemy::Multicast_SpawnCosmeticProjectile` | `NetMulticast, Unreliable` |
 | 打击特效 | `RogueGameplayCues::EnsureNativeImpactCuesRegistered` + `URogueGameplayCue_Impact` | GAS cue 多播（原生类注册进 cue set） |
 | 选卡 / 商店操作 / 重开 | `ARoguePlayerState::Server_Request*` | `Server, Reliable`（带 Validate） |
 
-> ⚠️ 判"我是不是服务端"一律用 `GetNetMode() != NM_Client`，**不要用 `HasAuthority()`**：
-> 客户端上"本机拥有"的 Pawn 也是 `ROLE_Authority`。参见 `ARogueCharacter::IsAuthoritySide()`。
+> `GetNetMode()` 判断世界的网络模式，`HasAuthority()` 判断当前 Actor 的本地角色，`IsLocallyControlled()` 判断本地控制关系。正常由服务器复制的自控 Pawn 在客户端是 `AutonomousProxy`，不因拥有关系变成 Authority；客户端本地创建的非复制 Actor 可以拥有本地 Authority。
+> 本项目的 `IsAuthoritySide()` 用于排除客户端世界的伤害/广播逻辑；这不是禁止其他代码使用 `HasAuthority()` 的引擎规则。核验依据见 [Comment-Verification.md](Comment-Verification.md)。
 
 ---
 
@@ -317,7 +320,7 @@ sequenceDiagram
     HUD->>PS: Server_RequestUpgradeSelection(Index)
     PS->>GM: TrySelectUpgrade
     GM->>C: ApplyUpgrade()  ★ 一律走 GE（属性/武器加成都是 ASC 上的属性）
-    Note over GM,C: 武器升级不再有 Multicast 重放：<br/>改的是玩家 ASC 上的 12 个加成属性，<br/>武器读"数据表基础值 + 加成×本武器系数"
+    Note over GM,C: 武器升级不再有 Multicast 重放：<br/>改的是玩家 ASC 上的 13 个加成属性，<br/>武器读"数据表基础值 + 加成×本武器系数"
 ```
 
 ---
@@ -326,12 +329,12 @@ sequenceDiagram
 
 | 资产 | 类型 | 对应代码 |
 |---|---|---|
-| `DT_FRogueEnemyArchetypeRow` | DataTable | `FRogueEnemyArchetypeRow` → `RogueEnemyDataTable.cpp` → `FRogueEnemyArchetype` |
+| `DT_EnemyArchetypes` | DataTable | `FRogueEnemyArchetypeRow` → `RogueEnemyDataTable.cpp` → `FRogueEnemyArchetype` |
 | `DT_WeaponConfig` | DataTable | `FRogueWeaponTableRow`（`RogueWeaponBase.h`）→ 每把武器的配置 |
-| `DT_FRogueUpgradeDefinitionRow` | DataTable | `FRogueUpgradeDefinitionRow` |
-| `AS_RoguePlayerBalanceAsset` | DataAsset | `URoguePlayerBalanceAsset`（灌进属性集的基础属性） |
-| `AS_RogueGameBalanceAsset` | DataAsset | `URogueGameBalanceAsset`（波次/商店/敌人平衡 ） |
-| `AS_UpgradeDefinitionAsset` / `AS_RogueUpgradeRuleAsset` | DataAsset | `URogueUpgradeDefinitionAsset` / `URogueUpgradeRuleAsset` |
+| `DT_UpgradeDefinitions` | DataTable | `FRogueUpgradeDefinitionRow` |
+| `DA_PlayerBalance` | DataAsset | `URoguePlayerBalanceAsset`（灌进属性集的基础属性） |
+| `DA_GameBalance` | DataAsset | `URogueGameBalanceAsset`（波次/商店/敌人平衡 ） |
+| `DA_UpgradeDefinitions` / `DA_UpgradeRules` | DataAsset | `URogueUpgradeDefinitionAsset` / `URogueUpgradeRuleAsset` |
 | `BP_RogueGameMode` | Blueprint | `ARogueGameMode`（**关卡默认 GameMode**） |
 | `BP_RogueCharacter` | Blueprint | `ARogueCharacter`（蓝图里只配资源/数值引用） |
 | `BP_RogueHUD` | Blueprint | `ARogueHUD`（挂 6 个 WBP 类） |
@@ -348,9 +351,9 @@ sequenceDiagram
 | 加一张升级卡 | `Shared/RogueTypes.h`（枚举）→ `Progression/Upgrades/`（定义/出现规则）→ `AbilitySystem/GameplayEffects/RogueAttributeUpgradeEffect`（GE 子类与映射）→ `RogueCharacter.Progression.cpp`（落地） |
 | 加一把新武器 | `RogueWeaponBase` 子类（构造里设 `FireAbilityClass` + 实现 `CollectFireTargets`/`FireAtTargets`）→ `RogueWeaponAbility` 加一个子类（一行 `GetDrivenWeaponClass`）→ `DT_WeaponConfig` 加行 → `RogueCombatPools`（预热量） |
 | 改武器开火节奏 | 武器侧的 `GetEffectiveCooldown()`（**加成怎么换算成冷却**是武器的知识）；节拍由 `URogueWeaponCooldownEffect` 承担，不要再去加 float 计时器 |
-| 加一种敌人（攻击方式） | `DT_FRogueEnemyArchetypeRow` 加行 + `BP_EnemyBase` 子类 → 攻击走 `URogueEnemyAttackAbility`（AI 只决策、能力执行） |
+| 加一种敌人（攻击方式） | `DT_EnemyArchetypes` 加行 + `BP_EnemyBase` 子类 → 攻击走 `URogueEnemyAttackAbility`（AI 只决策、能力执行） |
 | 改属性 / 减伤公式 | `URogueAttributeSet`（`PreAttributeChange` / `PostGameplayEffectExecute`）——**唯一数值真相源** |
-| 加一个状态（如"眩晕"） | `RogueGameplayTags`（Tag）→ 在 `RogueStateEffects.h` 里派生 `URogueStateTagEffect`（**不要**新建三个文件）→ 带时长的话时长走 SetByCaller `Data.Duration` |
+| 加一个状态（如"眩晕"） | `RogueGameplayTags` 定义标签，参考 `RogueStateEffects.h` 的状态 GE；按实际规则配置阻塞/取消与持续时间，时长可走 `Data.Duration` |
 | 加一个持续型玩法（逐帧推进） | 拿 `URogueAbilityTask_WeaponFireLoop` / `URogueAbilityTask_AttackTick` 当模板：`bTickingTask = true` + 能力里一个 `TickXxxStep` |
 | 改"谁算活着" | `ARogueCharacter::IsAlive()` 与 `RoguePlayerQuery`；索敌、奖励和团灭共用这条判断 |
 | 加一个界面 | `UI/Widgets/` 加独立基类文件，共享数据放 `RogueMenuViewData.h` → `ARogueHUD` 创建/推数据 → 建 WBP |
@@ -361,16 +364,17 @@ sequenceDiagram
 
 ---
 
-## 10. 联机分工（改造后由 GAS 天然给出）
+## 10. 联机分工（能力策略与项目守卫共同决定）
 
 | 机器 | 有哪些能力的实例 | 结果 |
 |---|---|---|
 | 服务端 | 每个玩家 PlayerState 的 ASC + 每只敌人的 ASC | 权威模拟：所有人的武器、所有敌人的攻击（伤害只在这里结算） |
-| 本人客户端 | 只有自己的（技能列表按 `COND_OwnerOnly` 复制） | 本地预测开火/冲刺，零延迟 |
+| 本人客户端 | 可获得自己 ASC 的能力列表 | 按 LocalPredicted 策略提前产生操作反馈；服务器仍需确认，移动/冷却预测存在实现边界 |
 | 其它客户端 | 没有别人的技能 | 只画服务端广播的那一发（`Multicast_WeaponCosmetics`） |
 
-判定原则：**"谁模拟"由"谁有这个能力的实例"决定**，不再手写 `HasAuthority() || IsLocallyControlled()`。
-两个例外是有意的：镰刀的环绕轨道（纯表现，任何机器都要画）与敌人攻击（`ServerOnly`，客户端一个实例都没有）。
+分工由能力授予/复制、NetExecutionPolicy、Actor 权限和实际调用路径共同决定。拥有一个能力实例不代表可以在任意端执行所有行为。镰刀轨道在各端表现；敌人攻击按 ServerOnly 执行；伤害入口还检查目标 ASC 的权威性。
+
+当前 Dash 任务直接移动 Actor；持续武器循环复用激活预测键；这些实现不等价于完整的移动重放或持续预测确认。敌人攻击 GE 记录冷却效果，但重复尝试的节奏还由 AI 侧计时器控制。
 
 ---
 
@@ -398,9 +402,7 @@ Rogue.SelfTest.EnemyStress 200                 # 刷 200 只"很硬、伤害 0"�
 Rogue.SelfTest.DisableEnemyAttackAbilities 1   # 对照：不授予敌人攻击能力
 ```
 
-已有测量记录中，199 只敌人同时在场时：能力开启 **2.95 ms/帧**、关闭 2.92 ms/帧 —— GAS 化的敌人攻击
-在 200 敌人规模下约 **0.03 ms/帧（≈1%）**，对应 ~205 次攻击/秒。
-（详细数据与"空转隐患"的修复见 [GAS-Main-Architecture-Plan.md](GAS-Main-Architecture-Plan.md) 的 Phase 3。）
+历史文档记录了 199 只敌人在场时 2.95 与 2.92 ms/帧的两组均值，差值为 0.03 ms。该记录未在本轮复测，也不足以单独证明差值完全来自 GAS；当前版本应固定硬件、构建、地图、攻击负载和采样窗口后重新对照。历史出处见 [GAS-Main-Architecture-Plan.md](GAS-Main-Architecture-Plan.md) 的 Phase 3。
 
 ---
 

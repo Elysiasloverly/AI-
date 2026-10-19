@@ -52,7 +52,7 @@
 - `RogueCharacterVisualComponent.*`
 - `RoguePlayerBalanceAsset.*`
 
-> 武器参数不在这里：已迁到 `Source/ai/Public/Combat/Weapons/RogueWeaponBase.h`（行结构 `FRogueWeaponTableRow`）+ 数据表 `Content/DataTable/DT_WeaponConfig`。
+> 武器参数不在这里：已迁到 `Source/ai/Public/Combat/Weapons/RogueWeaponBase.h`（行结构 `FRogueWeaponTableRow`）+ 数据表 `Content/Data/Weapons/DT_WeaponConfig`。
 > 旧的 `RogueWeaponConfig.h` 已删除（删除前确认全源码、752 个资产、cooked 数据均 0 引用）。
 
 ### `Source/ai/Public/Enemies` / `Source/ai/Private/Enemies`
@@ -311,7 +311,7 @@
 文件：
 
 - `Source/ai/Public/Combat/Weapons/RogueWeaponBase.h` —— 行结构 `FRogueWeaponTableRow`
-- `Content/DataTable/DT_WeaponConfig` —— 每把武器一行的数据
+- `Content/Data/Weapons/DT_WeaponConfig` —— 每把武器一行的数据
 
 做法：
 
@@ -905,7 +905,7 @@
 ### 添加武器最常改的文件
 
 - `Source/ai/Public/Combat/Weapons/RogueWeaponBase.h`（行结构 `FRogueWeaponTableRow`）
-- `Content/DataTable/DT_WeaponConfig`（数据行）
+- `Content/Data/Weapons/DT_WeaponConfig`（数据行）
 - `Source/ai/Public/Player/RoguePlayerBalanceAsset.h`（只放玩家自身属性）
 - `Source/ai/Public/Shared/RogueTypes.h`
 - `Source/ai/Private/Core/RogueUpgradeSystemRules.cpp`

@@ -16,12 +16,12 @@
 
 ### 1. 联机合作：GAS 原生复制与预测
 
-- **ASC 挂 PlayerState 而非 Pawn** —— PlayerState 生命周期覆盖整局，Pawn 死亡/重生/重连都不用重新初始化能力与属性
-- **按需选择复制模式**：玩家 `Mixed`（GE 明细只发拥有者），敌人 `Minimal`（属性不复制，服务端算）
-- **武器开火 = LocalPredicted + 服务端权威**：本人客户端零延迟预测，伤害只在服务端结算，队友通过合批多播看到表现
+- **玩家 ASC 挂 PlayerState**：角色作为 Avatar，通过接管和复制回调刷新 ActorInfo。同 Pawn 复活保留当前能力与属性；更换 Pawn 或重新连接仍需处理绑定、授予与数据恢复。
+- **按需选择 GE 复制模式**：玩家 `Mixed`，敌人 `Minimal`。模式控制活动 GE 明细的接收范围，属性是否复制另由 AttributeSet 的复制声明与宿主路径决定。
+- **武器开火 = LocalPredicted + 服务端权威**：本人客户端提前产生操作反馈，服务器随后确认，伤害只在服务端结算，队友通过合批多播看到表现
 - **濒死固定 10 秒 → 回出生点复活 → 默认 1.5 秒无敌**：角色的 `LifeState` 原子复制生命阶段和服务器复活截止时刻；每名濒死玩家由一个服务端定时器驱动复活，不依赖角色 Tick 或 GE 到期。濒死期间取消全部碰撞、退出怪物索敌并显示 `WBP_ResurrectionScreen`；全员濒死则取消复活并显示 `WBP_DeathScreen`。详见 [玩家生命周期](Docs/Player-LifeCycle.md)
 
-### 2. 性能：200 敌人规模下的实测数据
+### 2. 性能：历史压测记录与复测入口
 
 对象池 + 空间哈希 + 高负载裁剪共同支撑，并有**可复现的压测命令**：
 
@@ -30,16 +30,16 @@
 | 敌人攻击能力**开启** | **2.95 ms/帧** |
 | 敌人攻击能力**关闭**（对照组） | 2.92 ms/帧 |
 
-→ **GAS 化的敌人攻击在 200 敌人规模下开销约 0.03 ms/帧（≈1%）**，对应约 205 次攻击/秒。
+历史记录的两组均值相差 0.03 ms/帧，攻击计数约 205 次/秒。
 
-这个结果不是靠调参得来的，而是结构性保证：**AI 只做决策（一次 float 比较），能力只在实际要打时激活**——所以 GAS 的调用次数与实际攻击次数成正比，**与"敌人数量 × 帧数"无关**。
+以上是旧文档记录的两组结果，本轮未重新测量。AI 决策还包含距离、目标与计时器检查，地面波能力通过逐帧 Task 推进；不能据此保证开销与“敌人数 × 帧数”无关，也不能把两组均值差直接等同于 GAS 固有成本。当前性能应在受控场景中重新测量。
 
 ### 3. 工程实践：可自检、有踩坑记录
 
 - **五阶段无头自检**（`Rogue.SelfTest.WeaponUpgradeChain`）：验证"升级 → GAS 加成属性 → 武器生效值"跨 4 层的完整链路，双进程逐行对齐服务端与客户端的数值
 - **探针机制**：接触攻击 / 地面波 / 死亡复活 / 200 敌人压测——因为**"没实现"与"没机会触发"在计数上完全一样**（这条教训踩过两次）
 - **全项目唯一伤害入口**：`RogueAbilitySystem::ApplyDamageToTarget` → 元属性 `Damage` → 减伤链 → 死亡判定
-- 关键取舍与踩坑均写在代码注释里（客户端施冷却 GE 为何静默失败、敌人能力授予时机为何影响原型等），详见 [GAS 主架构改造方案](Docs/GAS-Main-Architecture-Plan.md)
+- 关键职责、调用条件与实现限制写在源码注释和 [注释核验记录](Docs/Comment-Verification.md)；迁移过程与当时的日志保留在 [GAS 主架构改造方案](Docs/GAS-Main-Architecture-Plan.md)。
 
 ---
 
@@ -50,8 +50,8 @@
 | 目录 | 职责 |
 |---|---|
 | **Framework** | GameMode / GameState、整局流程、波次与平衡规则、运行配置 |
-| **AbilitySystem** | ASC、AttributeSet、AbilitySet、标签；Abilities / Tasks / Effects / Cues |
-| **Combat** | Weapons / Projectiles / Effects / Pooling / Targeting；对象池与空间查询 |
+| **AbilitySystem** | ASC、AttributeSet、AbilitySet、标签；Abilities / Tasks / GameplayEffects / Cues |
+| **Combat** | Weapons / Projectiles / Visuals / Pooling / Targeting；对象池与空间查询 |
 | **Progression** | Upgrades / Shop、升级定义、抽卡规则、奖励报价与商店经济 |
 | **Player** | 角色、PlayerState（**ASC 挂载点**）、控制器、视觉组件、玩家查询 |
 | **Enemies** | 统一敌人运行时、Data 原型与数据表、Spawning 刷怪调度 |
@@ -62,11 +62,13 @@
 
 `ARogueCharacter` 与 `ARogueGameMode` 的函数实现已按职责拆到多个 `.cpp`；类声明、反射名、蓝图接口与运行时对象关系保留。查找具体类和新增文件的约定见 [类文件组织说明](Docs/Class-Organization.md)。
 
-**核心设计原则**：GameMode 仅负责流程协调，具体逻辑下沉至 Rules / System / Subsystem 各层；玩法参数（伤害、冷却）与表现参数（Mesh 缩放、Glow）严格分层解耦。
+**职责划分**：GameMode 协调局内流程，并保留奖励归属、快照推送与商店操作等逻辑；规则计算和运行时系统按职责拆分。战斗伤害与客户端表现分别执行，部分表现参数仍由武器和角色共同组装。
 
 ---
 
 ## GAS 架构
+
+注释与当前行为的核验依据、预测和伤害来源等实现边界见 [注释事实核验](Docs/Comment-Verification.md)。历史改造文档中的日志与性能数字不等于本轮已复测结论。
 
 **数值只有一个真相源**：`URogueAttributeSet`（28 个属性）。角色上的 `MaxHealth` / `MoveSpeed` 等是不可编辑的只读缓存。
 
@@ -77,11 +79,12 @@
 | 冲刺 | `URogueGameplayAbility_Dash` | 一次性 | LocalPredicted | 玩家输入 |
 | 武器自动开火 | `URogueWeaponAbility` 系列 | 持续（逐帧心跳任务） | LocalPredicted | 能力与冷却 GE；镰刀持续轨道保留表现 Tick |
 | 敌人接触 / 远程攻击 | `URogueEnemyAttackAbility` 两子类 | 一次性 | ServerOnly | AI 决策（距离 + 节流） |
-| 敌人地面波 | `URogueEnemyAttackAbility_GroundWave` | 持续到波结束 | ServerOnly | 同上（起波后由能力推进扩散） |
+| 震荡柱整圈弹幕 | `URogueEnemyRangedAttackAbility` | 一次性齐射 | ServerOnly | AI 冷却决策，一条多播同步整圈 |
+| 旧地面波（兼容） | `URogueEnemyGroundWaveAttackAbility` | 持续到波结束 | ServerOnly | 震荡柱不再启用 |
 
 **其余 GAS 构件**：
 
-- **GameplayEffect**：伤害、20 种升级、死亡 / 刚受伤 / 三种冷却 / 复活无敌；濒死 GE 为 Infinite，承载由 `LifeState` 同步的标签与表现，复活时机由服务端定时器决定
+- **GameplayEffect**：伤害、21 种升级、死亡 / 刚受伤 / 三种冷却 / 复活无敌；濒死 GE 为 Infinite，承载由 `LifeState` 同步的标签与表现，复活时机由服务端定时器决定
 - **Periodic GE**：生命与护甲的自然回复 —— `Period`（0.25s 周期）+ `AttributeBased` 修饰器量级（每次结算重读属性，升级自动生效）+ `OngoingTagRequirements`（`State.Dead` / `State.RecentlyDamaged` 期间自动暂停，条件消失后自动恢复）
 - **Infinite GE Stacking**：每种升级对应一个 GE 子类，固定目标属性；`AggregateByTarget` 按目标叠层，`SetByCaller(Data.Magnitude)` 提供单次数值，层数上限为 0（不限）。最大生命 / 护甲上限变化后的补量由角色属性变化委托处理
 - **AbilitySet**：玩家默认技能与敌人攻击支持 `URogueAbilitySet` 数据驱动授予，缺少配置时保留原有回退路径。武器能力由各武器的 `GetFireAbilityClass()` 提供，在角色侧幂等授予；能力授予与基础属性 / 常驻 GE 初始化分别管理
@@ -90,9 +93,9 @@
 - **GameplayTag**：全部原生声明（C++ 声明，与 ini 无关）
 - **GAS 原生输入路径**：冲刺能力授予时带 `InputID`，输入侧调 `AbilityLocalInputPressed`，由 GAS 自己按 ID 找技能并激活
 
-**有意保留自研的部分**（GAS 没有对应概念，或收益为负）：
+**继续使用项目自身系统的部分**：
 
-对象池（200+ 敌人 + 上千弹体必须复用）、刷怪调度与波次、奖励归属、敌人移动与索敌（每帧距离判断比 GA 激活便宜得多）、商店与抽卡规则、数据资产 schema。
+对象池、刷怪与波次、奖励归属、敌人移动与索敌、商店与抽卡规则、数据资产定义。它们与 GAS 协作；是否需要进一步迁移应结合职责与测量结果判断。
 
 ---
 
@@ -102,13 +105,13 @@
 
 - **6 种武器族**：普通子弹、火箭、迫击炮、激光、地狱塔、镰刀
 - 每种武器有独立的升级换算系数（例如攻速加成在火箭上 ×2.5、镰刀转速 +280）
-- **20 种升级类型**，通过 DataAsset / DataTable 驱动默认数值
+- **21 种升级类型**，通过 DataAsset / DataTable 驱动默认数值
 
 ### 敌人
 
 - **统一运行时类 + 原型模式**：所有敌人共用 `ARogueEnemy`，差异由原型组合 + 数据表配置驱动，无蓝图子类爆炸
 - **9 种敌人**（猎手 / 冲锋者 / 坦克 / 环绕者 / 射手 / 游击者 / 炮兵 / 喷射者 / 震荡柱）
-- **6 种移动模型** + **3 种射击模式**（单发 / 散射 / 地面波）
+- **6 种移动模型** + **3 种射击模式**（单发 / 散射 / 整圈弹幕）；震荡柱使用整圈弹幕，旧地面波代码保留兼容
 
 ### 成长
 
@@ -127,9 +130,9 @@
 ## 性能优化
 
 - **全局对象池**：池化敌人、玩家子弹、敌方弹体、火箭 / 迫击炮、激光 Beam、镰刀、命中特效、经验球共 **8 类**高频对象
-- **空间哈希索敌**：为自动索敌、爆炸范围判定、激光折射、HUD 血条筛选提供近邻查询（1600 半径只需扫 25 格，而非全表）
+- **空间哈希索敌**：为自动索敌、范围攻击和 HUD 提供候选查询；遍历格子数由原点、半径与格尺寸决定，还要检查格内候选并维护/重建索引，密集分布可能退化
 - **高负载特效裁剪**：按存活敌人数自动降级表现（判据唯一：`URogueEnemyTrackerSubsystem::ShouldCullCombatEffects()`）
-- **复制预算**：敌人复制频率按距离分档 5 / 15 / 30 Hz；武器表现每帧合批成一条不可靠 RPC（稳态约 240 条/秒，而非每发一条）
+- **复制调度**：敌人按距离设置 5 / 15 / 30 的复制候选频率；武器表现按角色合批发送不可靠 RPC。实际消息率和流量受帧率、人数、相关性与网络条件影响
 
 ---
 

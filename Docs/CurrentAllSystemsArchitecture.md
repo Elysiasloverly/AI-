@@ -149,8 +149,8 @@ flowchart TD
     Archetype --> EnemyDT["敌人原型 DataTable\n编辑器覆盖"]
 
     Enemy --> Movement["移动行为\n直追 / 冲锋 / 环绕 / 远程风筝 / Z字 / 固定"]
-    Enemy --> Ranged["远程攻击\n单发 / 散射"]
-    Enemy --> GroundWave["地面波攻击\n震荡柱"]
+    Enemy --> Ranged["远程攻击\n单发 / 散射 / 震荡柱整圈弹幕"]
+    Enemy --> GroundWave["旧地面波攻击\n历史兼容，震荡柱不再启用"]
     Enemy --> Contact["接触伤害"]
     Enemy --> Death["死亡回收"]
 
@@ -262,11 +262,11 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    GameBalance["AS_RogueGameBalanceAsse\n全局平衡"] --> SpawnRules["刷怪 / Boss / 金币 / 商店"]
-    PlayerBalance["AS_RoguePlayerBalanceAsset\n玩家基础数值"] --> Player["ARogueCharacter"]
+    GameBalance["DA_GameBalance\n全局平衡"] --> SpawnRules["刷怪 / Boss / 金币 / 商店"]
+    PlayerBalance["DA_PlayerBalance\n玩家基础数值"] --> Player["ARogueCharacter"]
     WeaponConfig["DT_WeaponConfig\n武器表"] --> Weapons["武器生成与配置"]
-    UpgradeDefs["AS_UpgradeDefinitionAsset\n升级定义"] --> UpgradeSystem["升级系统"]
-    UpgradeRules["AS_RogueUpgradeRuleAsset\n升级规则"] --> UpgradeSystem
+    UpgradeDefs["DA_UpgradeDefinitions\n升级定义"] --> UpgradeSystem["升级系统"]
+    UpgradeRules["DA_UpgradeRules\n升级规则"] --> UpgradeSystem
     EnemyDT["敌人原型 DataTable\n敌人行为与视觉"] --> Enemies["ARogueEnemy"]
     WBPAssets["WBP_* 资产\nUI 蓝图"] --> HUD["ARogueHUD"]
 ```

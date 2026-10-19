@@ -1,4 +1,4 @@
-# 编辑器美术资产目录
+# 编辑器资产目录
 
 美术资产统一放在 `/Game/GameAssets/`（磁盘上的 `Content/GameAssets/`）。现有游戏使用的主资源目录保持原路径；原本散在 Content 外层的素材包集中到 `Library/`，保留各包内部结构和不同版本。
 
@@ -27,14 +27,14 @@ Content/
 ├── Input/                       输入动作与映射
 ├── UMG/                         界面蓝图
 ├── StarterContent/Maps/          保留原样例地图及构建数据
-└── DataTable/                   数值表与配置资产
+└── Data/                        玩法配置资产（Core / Player / Enemies / Weapons / Upgrades）
 ```
 
 此次移动清单包括五个外层素材包的 350 个美术资产，以及 `Image/` 中的 2 个图片/精灵资产，共 352 个。素材包目标为 `/Game/GameAssets/Library/<原包名>/`；界面图片目标为 `/Game/GameAssets/UI/Textures/`。
 
 ## 引用与保留范围
 
-主地图路径保留 `/Game/GameAssets/StarterContent/Maps/Minimal_Default`；已有 C++ 美术加载路径、默认地图配置以及 BP、BPEnum、Input、UMG、DataTable 的目录保持原位置。三张原样例地图及其构建数据保留在 `StarterContent/Maps/`，不纳入美术资产移动范围。
+主地图路径保留 `/Game/GameAssets/StarterContent/Maps/Minimal_Default`；已有 C++ 美术加载路径、默认地图配置以及 BP、BPEnum、Input、UMG 的目录保持原位置。玩法数值与配置资产现统一位于 `Data/`，详见 [配置资产说明](Data-Configuration.md)。三张原样例地图及其构建数据保留在 `StarterContent/Maps/`，不纳入美术资产移动范围。
 
 同名资产不代表内容相同。现有 `GameAssets` 资源和原外层包作为两个版本保留，不通过这次目录整理合并或删除。玩法蓝图即使包含网格、材质或特效配置，也留在 `BP/`；界面蓝图留在 `UMG/`。
 
