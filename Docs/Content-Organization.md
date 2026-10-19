@@ -14,6 +14,10 @@ Content/
 │   ├── HologramShader/          现有游戏引用的全息材质
 │   ├── Realistic_Starter_VFX_Pack_Vol2/
 │   ├── Vefects/
+│   ├── CharacterAssetse/        角色套装（10 套：网格、贴图与材质）
+│   ├── Environment/             夜景天空等环境资源
+│   ├── Map/                     场景网格与地形材质（1=森林，2=神社）
+│   ├── WEapon/                  武器与弹体外观（冰锥、弹幕、冰刃、激光）
 │   ├── Library/                 原 Content 外层素材包，保留包内结构
 │   │   ├── StarterContent/
 │   │   ├── Grid_Materials/
@@ -23,14 +27,35 @@ Content/
 │   └── UI/
 │       └── Textures/            原 Image/ 中的界面图片
 ├── BP/                          玩法蓝图
-├── BPEnum/                        玩法枚举
+├── BPEnum/                      玩法枚举
 ├── Input/                       输入动作与映射
 ├── UMG/                         界面蓝图
-├── StarterContent/Maps/          保留原样例地图及构建数据
-└── Data/                        玩法配置资产（Core / Player / Enemies / Weapons / Upgrades）
+├── StarterContent/Maps/         保留原样例地图及构建数据
+└── Data/                        玩法配置资产
+    ├── Core/                    DA_GameBalance
+    ├── Player/                  DA_PlayerBalance
+    ├── Enemies/                 DT_EnemyArchetypes
+    ├── Weapons/                 DT_WeaponConfig
+    └── Upgrades/                DA_UpgradeDefinitions、DA_UpgradeRules、DT_UpgradeDefinitions
 ```
 
-此次移动清单包括五个外层素材包的 350 个美术资产，以及 `Image/` 中的 2 个图片/精灵资产，共 352 个。素材包目标为 `/Game/GameAssets/Library/<原包名>/`；界面图片目标为 `/Game/GameAssets/UI/Textures/`。
+## 配置资产从 DataTable 归类到 Data
+
+原 `Content/DataTable/` 下的 7 个配置资产**没有被删除**，而是按所属系统归类到 `Content/Data/`，并统一为 `DA_`（DataAsset）/`DT_`（DataTable）命名：
+
+| 原位置（`Content/DataTable/`） | 现在位置 | 类型 |
+|---|---|---|
+| `AS_RogueGameBalanceAsse` | `/Game/Data/Core/DA_GameBalance` | DataAsset |
+| `AS_RoguePlayerBalanceAsset` | `/Game/Data/Player/DA_PlayerBalance` | DataAsset |
+| `AS_UpgradeDefinitionAsset` | `/Game/Data/Upgrades/DA_UpgradeDefinitions` | DataAsset |
+| `AS_RogueUpgradeRuleAsset` | `/Game/Data/Upgrades/DA_UpgradeRules` | DataAsset |
+| `DT_FRogueEnemyArchetypeRow` | `/Game/Data/Enemies/DT_EnemyArchetypes` | DataTable |
+| `DT_FRogueUpgradeDefinitionRow` | `/Game/Data/Upgrades/DT_UpgradeDefinitions` | DataTable |
+| `DT_WeaponConfig` | `/Game/Data/Weapons/DT_WeaponConfig` | DataTable |
+
+C++ 类名、数据表行结构（`FRogueEnemyArchetypeRow`、`FRogueWeaponTableRow`、`FRogueUpgradeDefinitionRow`）、行名与字段保持不变；源码默认加载路径同步为 `/Game/Data/...`。整理后 `Content/` 下不再保留独立的 `DataTable/` 目录，读取入口见 [配置资产说明](Data-Configuration.md)。
+
+此次移动清单包括五个外层素材包的 350 个美术资产，以及 `Image/` 中的 2 个图片/精灵资产，共 352 个。素材包目标为 `/Game/GameAssets/Library/<原包名>/`；界面图片目标为 `/Game/GameAssets/UI/Textures/`。后续新增的角色套装、森林/神社场景与武器特效直接进入 `CharacterAssetse/`、`Map/`、`WEapon/`，不再经过 `Library/`。
 
 ## 引用与保留范围
 

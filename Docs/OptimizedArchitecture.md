@@ -2,6 +2,8 @@
 
 这份图按当前重构后的职责划分来画，重点是看清楚：`GameMode` 只做总流程协调，具体能力下放到系统、子系统、数据资产和 UI Widget。
 
+> **状态说明（2026-10）**：这是 GAS 改造前的结构图，`Core` 路径与部分职责已变化；当前结构以 [Class-Organization.md](Class-Organization.md) 与 [Project-Structure.md](Project-Structure.md) 为准。
+
 ## 总体结构
 
 ```mermaid

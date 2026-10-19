@@ -19,7 +19,7 @@
 - **玩家 ASC 挂 PlayerState**：角色作为 Avatar，通过接管和复制回调刷新 ActorInfo。同 Pawn 复活保留当前能力与属性；更换 Pawn 或重新连接仍需处理绑定、授予与数据恢复。
 - **按需选择 GE 复制模式**：玩家 `Mixed`，敌人 `Minimal`。模式控制活动 GE 明细的接收范围，属性是否复制另由 AttributeSet 的复制声明与宿主路径决定。
 - **武器开火 = LocalPredicted + 服务端权威**：本人客户端提前产生操作反馈，服务器随后确认，伤害只在服务端结算，队友通过合批多播看到表现
-- **濒死固定 10 秒 → 回出生点复活 → 默认 1.5 秒无敌**：角色的 `LifeState` 原子复制生命阶段和服务器复活截止时刻；每名濒死玩家由一个服务端定时器驱动复活，不依赖角色 Tick 或 GE 到期。濒死期间取消全部碰撞、退出怪物索敌并显示 `WBP_ResurrectionScreen`；全员濒死则取消复活并显示 `WBP_DeathScreen`。详见 [玩家生命周期](Docs/Player-LifeCycle.md)
+- **濒死默认 10 秒（`DA_PlayerBalance.Revival` 可配）→ 回出生点复活 → 默认 1.5 秒无敌**：角色的 `LifeState` 原子复制生命阶段和服务器复活截止时刻；每名濒死玩家由一个服务端定时器驱动复活，不依赖角色 Tick 或 GE 到期。濒死期间取消全部碰撞、退出怪物索敌并显示 `WBP_ResurrectionScreen`；全员濒死则取消复活并显示 `WBP_DeathScreen`。详见 [玩家生命周期](Docs/Player-LifeCycle.md)
 
 ### 2. 性能：历史压测记录与复测入口
 
@@ -122,7 +122,7 @@
 ### 濒死与复活
 
 - `Alive → Downed`：停止移动与战斗，取消角色全部碰撞和重叠，怪物只索敌仍存活的玩家；本人显示 `WBP_ResurrectionScreen`
-- 队友仍存活时，服务端等待固定 10 秒，在原角色上恢复碰撞、移动和生命，并移回出生位置；收到 `Alive` 后隐藏等待界面
+- 队友仍存活时，服务端等待配置的时长（默认 10 秒），在原角色上恢复碰撞、移动和生命，并移回出生位置；收到 `Alive` 后隐藏等待界面
 - 全员同时处于濒死状态：整局结束，所有参与者进入 `Eliminated`，取消所有复活定时器；各玩家只显示 `WBP_DeathScreen`，直到重开
 
 ---
@@ -159,8 +159,9 @@ UnrealEditor.exe ai.uproject <map> -game -nullrhi -log \
 | 想知道 | 看这里 |
 |---|---|
 | **类文件在哪里 / 新类放哪里** | [Class-Organization.md](Docs/Class-Organization.md) — 目录职责、文件索引、实现拆分与蓝图兼容约定 |
+| **美术资产与玩法配置放在哪** | [Content-Organization.md](Docs/Content-Organization.md)、[Data-Configuration.md](Docs/Data-Configuration.md) — 美术主目录与 `/Game/Data/` 的 7 个配置资产 |
 | **现在是什么结构** | [Project-Structure.md](Docs/Project-Structure.md) — 当前目录、运行时对象关系、数据流时序图、池化契约、联机分工 |
-| **濒死 / 复活 / 团灭如何同步** | [Player-LifeCycle.md](Docs/Player-LifeCycle.md) — 生命周期真值、幽灵碰撞、10 秒定时器、两个界面与验证用例 |
+| **濒死 / 复活 / 团灭如何同步** | [Player-LifeCycle.md](Docs/Player-LifeCycle.md) — 生命周期真值、幽灵碰撞、默认 10 秒定时器（资产可配）、两个界面与验证用例 |
 | **GAS 是怎么迁过来的** | [GAS-Main-Architecture-Plan.md](Docs/GAS-Main-Architecture-Plan.md) — 分阶段改造过程、验证数据、踩坑记录 |
 | **各系统职责与协作** | [System-Architecture-Overview.md](Docs/System-Architecture-Overview.md) |
 | **要加武器/卡牌/敌人** | [Maintenance-Extension-Guide.md](Docs/Maintenance-Extension-Guide.md) |

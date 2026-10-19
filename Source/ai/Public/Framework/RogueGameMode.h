@@ -134,7 +134,7 @@ private:
 
 	/** 收集存活角色；内联容量为 4，超过时容器仍可扩容，不构成联机人数限制。 */
 	void CollectAlivePlayers(TArray<ARogueCharacter*, TInlineAllocator<4>>& OutPlayers) const;
-	/** 将各玩家 AttributeSet 的 12 项加成写入其 Character 快照，由武器统一读取。
+	/** 将各玩家 AttributeSet 的 13 项加成写入其 Character 快照，由武器统一读取。
 	 *  属性本身也参与复制；这层提供角色侧输入接口与近似相等脏检查，不证明 ASC 属性未同步。
 	 *  快照与 AttributeSet 属于不同复制路径，客户端不能假设二者同帧到达。 */
 	void PushWeaponBonusSnapshots();

@@ -209,7 +209,7 @@ void ARogueGameMode::Tick(float DeltaSeconds)
 	}
 	PushShopStateToPlayers();
 
-	// 从各玩家属性集读取 12 项加成，写入各自角色快照；近似相等时跳过赋值。
+	// 从各玩家属性集读取 13 项加成，写入各自角色快照；近似相等时跳过赋值。
 	// 此接口统一武器输入，但不取代属性复制，也不保证与其他 Actor 的状态同时到达。
 	PushWeaponBonusSnapshots();
 

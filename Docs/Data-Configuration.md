@@ -18,6 +18,22 @@ Content/Data/
     └── DT_UpgradeDefinitions
 ```
 
+## 从 DataTable 到 Data
+
+原来的配置资产放在 `Content/DataTable/`。这次整理**没有删除其中的配置数据**，而是按所属系统归类到 `Data/` 并统一命名：
+
+| 原资产（`Content/DataTable/`） | 现路径 | 类型 |
+|---|---|---|
+| `AS_RogueGameBalanceAsse` | `/Game/Data/Core/DA_GameBalance` | DataAsset |
+| `AS_RoguePlayerBalanceAsset` | `/Game/Data/Player/DA_PlayerBalance` | DataAsset |
+| `AS_UpgradeDefinitionAsset` | `/Game/Data/Upgrades/DA_UpgradeDefinitions` | DataAsset |
+| `AS_RogueUpgradeRuleAsset` | `/Game/Data/Upgrades/DA_UpgradeRules` | DataAsset |
+| `DT_FRogueEnemyArchetypeRow` | `/Game/Data/Enemies/DT_EnemyArchetypes` | DataTable |
+| `DT_FRogueUpgradeDefinitionRow` | `/Game/Data/Upgrades/DT_UpgradeDefinitions` | DataTable |
+| `DT_WeaponConfig` | `/Game/Data/Weapons/DT_WeaponConfig` | DataTable |
+
+源码默认路径同步改为 `/Game/Data/...`；C++ 类型名、序列化字段、DataTable 行结构与行名均未改变，已有蓝图覆盖值和行数据继续生效。目录层级见 [编辑器资产目录](Content-Organization.md)。
+
 ## 修改配置时去哪里
 
 | 想修改的内容 | 资产 | 读取入口 |
@@ -42,7 +58,7 @@ GameMode 蓝图或关卡指定的配置优先；未指定时，代码从上述�
 
 新配置按所属系统放入对应目录，名称描述用途，例如 `DA_UpgradeRules`；数据表名称不带 C++ 的 `F` 前缀或 `Row` 后缀。资产移动与改名使用 UE 内容浏览器或 AssetTools，再保存引用方并修复重定向器。
 
-本次整理保留三张表的数据、行名、四个配置资产的参数，以及已有蓝图覆盖值；同步了默认加载路径和序列化引用。
+这次整理按系统归类并统一了 7 个配置资产的位置与名称；三张表的数据与行名、四个 DataAsset 的参数，以及已有蓝图覆盖值均保留，同步修改的只有默认加载路径和资产引用。
 
 震荡柱的整圈弹幕参数见 [震荡柱攻击说明](Shock-Pillar-Attack.md)。玩家出生状态、成长、武器加成与复活参数见 [玩家配置说明](Player-Balance-Configuration.md)。
 

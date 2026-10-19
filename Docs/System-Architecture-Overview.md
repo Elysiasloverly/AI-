@@ -2,7 +2,7 @@
 
 > 本文保留早期系统拆分与迁移背景，正文中的 Core 路径、Character Tick 战斗、升级运行态和死亡流程不代表当前实现。当前关系先读 [Project-Structure.md](Project-Structure.md) 与 [Player-LifeCycle.md](Player-LifeCycle.md)，注释事实核验见 [Comment-Verification.md](Comment-Verification.md)。
 
-> **当前类文件目录**见 [Class-Organization.md](Class-Organization.md)，运行时关系与数据流见 [Project-Structure.md](Project-Structure.md)。本次整理保留原有职责分析与技术取舍；下文的旧目录、文件位置和实现阶段描述请结合当前组织说明及源码阅读。尤其 `Core/`、`Subsystems/` 已按业务归位，新增类的落点以当前说明为准。
+> **当前类文件目录**见 [Class-Organization.md](Class-Organization.md)，运行时关系与数据流见 [Project-Structure.md](Project-Structure.md)。下文的旧目录与实现阶段描述只用于解释当时的取舍。旧 `Core/` 路径的当前对应：`RogueGameMode*` / `RogueGameState` → `Framework/`；`RogueUpgrade*` / `RogueShopSystem` → `Progression/`；`RogueCombatPools` → `Combat/Pooling/`；`RogueEnemyTracker` → `Combat/Targeting/`；`RogueStateEffects` → `AbilitySystem/GameplayEffects/`；`RogueCombatFeedback` → `Combat/Visuals/`。
 
 ## 1. 总体定位
 

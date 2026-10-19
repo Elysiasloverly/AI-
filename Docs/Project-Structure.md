@@ -30,7 +30,7 @@
 - **数值只有一个真相源**：`URogueAttributeSet`。角色上的 `MaxHealth/MoveSpeed/...` 是只读镜像。
 - **升级使用 Infinite GE 叠层**：21 种升级各自对应一个 GE 子类，按目标叠层；单次数值来自 `Data.Magnitude`。最大生命 / 护甲上限的补量由属性变化委托实现。
 - **能力授予支持 AbilitySet**：玩家默认技能与敌人攻击支持数据驱动，缺少配置保留回退路径。武器能力由各武器的 `GetFireAbilityClass()` 提供，在角色侧幂等授予。
-- **玩家生命周期只有一份真值**：`ARogueCharacter::LifeState` 同时复制 `Alive / Downed / Eliminated` 与服务器复活截止时刻；濒死固定 10 秒，仅由服务端定时器触发复活，团灭取消全部复活。
+- **玩家生命周期只有一份真值**：`ARogueCharacter::LifeState` 同时复制 `Alive / Downed / Eliminated` 与服务器复活截止时刻；濒死等待默认 10 秒（`DA_PlayerBalance.Revival` 可配），仅由服务端定时器触发复活，团灭取消全部复活。
 - **场景与商店由关卡提供**：直接编辑地图物体、灯光和 PlayerStart；不再依赖 `BP_RogueArena`、自动生成商店或覆盖场景。地图放置唯一 `RogueEnemySpawnRegion` 框来限制普通怪和 Boss 的出生范围，放置 `BP_RogueShopTerminal` 来配置商店位置及组件外观。详见 [地图摆放说明](Map-Authoring.md)。
 - **玩家外观由蓝图配置**：默认 Pawn 使用 `BP_RogueCharacter`；C++ 保留 `Visuals` 挂接组件，不生成或覆盖玩家主体模型、材质与缩放。濒死圆环是独立 Cue 表现对象。
 - **对象池是高频对象的复用契约**：敌人、弹体、表现对象与经验球获取后激活，结束后回池（见 §5）。
@@ -190,7 +190,7 @@ graph LR
 | 经验 / 等级 / 金币 | `ARogueCharacter` | `COND_OwnerOnly` |
 | 商店报价 / 是否打开 / 刷新价格 | `ARoguePlayerState`（镜像字段） | `COND_OwnerOnly` |
 | 玩家生命阶段 / 复活截止时刻 | `ARogueCharacter::LifeState`（`FRoguePlayerLifeState`） | `Phase + ReviveServerTime` 作为同一状态属性原子复制给所有人；`OnRep_LifeState` 应用幽灵/正常表现 |
-| 复活倒计时 | `ARogueCharacter::GetReviveSecondsRemaining()` | 复制的服务器截止时刻减同步服务器时间，限制为 0–10 秒；PlayerState 查询转发角色，客户端不触发复活 |
+| 复活倒计时 | `ARogueCharacter::GetReviveSecondsRemaining()` | 复制的服务器截止时刻减同步服务器时间，限制为 0 到配置的等待时间；PlayerState 查询转发角色，客户端不触发复活 |
 | 复活无敌 | ASC 上的 `URogueInvulnerableEffect`（带时长的 GE） | GE 明细按玩家 ASC 的 Mixed 模式同步给本人，标签/Cue 由 GAS 复制；伤害判定只在服务端 |
 | 濒死标签 / 全息环 | ASC 上的 Infinite `URogueDownedEffect` | GAS 复制标签/Cue；由生命周期显式授予/移除，不作为复活计时器 |
 | 敌人是否活跃 `bReplicatedActive` | `ARogueEnemy` / 经验球 | 复制（池化对象必须显式告诉客户端"我上线了"） |
@@ -270,7 +270,7 @@ sequenceDiagram
 
     AS->>AS: 血量归零 → URogueDeathEffect（State.Dead）
     AS-->>C: 标签回调 → ProcessDeath → Die()
-    C->>C: LifeState = Downed + 服务端时间加 10 秒<br/>取消全部碰撞/重叠，停止移动/战斗
+    C->>C: LifeState = Downed + 服务端时间加等待时间<br/>取消全部碰撞/重叠，停止移动/战斗
     C->>ASC: 镜像 State.Dead / Infinite State.Downed 与 Cue
     C->>Timer: 排定唯一一次性复活定时器
     C-->>HUD: 原子复制 LifeState → 显示 WBP_ResurrectionScreen
@@ -327,14 +327,16 @@ sequenceDiagram
 
 ## 8. 资产 ↔ 代码对应
 
+配置资产统一在 `/Game/Data/`；原 `Content/DataTable/` 的资产按系统归类并统一命名，不是删除，映射见 [配置资产说明](Data-Configuration.md)。
+
 | 资产 | 类型 | 对应代码 |
 |---|---|---|
-| `DT_EnemyArchetypes` | DataTable | `FRogueEnemyArchetypeRow` → `RogueEnemyDataTable.cpp` → `FRogueEnemyArchetype` |
-| `DT_WeaponConfig` | DataTable | `FRogueWeaponTableRow`（`RogueWeaponBase.h`）→ 每把武器的配置 |
-| `DT_UpgradeDefinitions` | DataTable | `FRogueUpgradeDefinitionRow` |
-| `DA_PlayerBalance` | DataAsset | `URoguePlayerBalanceAsset`（灌进属性集的基础属性） |
-| `DA_GameBalance` | DataAsset | `URogueGameBalanceAsset`（波次/商店/敌人平衡 ） |
-| `DA_UpgradeDefinitions` / `DA_UpgradeRules` | DataAsset | `URogueUpgradeDefinitionAsset` / `URogueUpgradeRuleAsset` |
+| `Data/Enemies/DT_EnemyArchetypes` | DataTable | `FRogueEnemyArchetypeRow` → `RogueEnemyDataTable.cpp` → `FRogueEnemyArchetype` |
+| `Data/Weapons/DT_WeaponConfig` | DataTable | `FRogueWeaponTableRow`（`RogueWeaponBase.h`）→ 每把武器的配置 |
+| `Data/Upgrades/DT_UpgradeDefinitions` | DataTable | `FRogueUpgradeDefinitionRow` |
+| `Data/Player/DA_PlayerBalance` | DataAsset | `URoguePlayerBalanceAsset`（灌进属性集的基础属性） |
+| `Data/Core/DA_GameBalance` | DataAsset | `URogueGameBalanceAsset`（波次/商店/敌人平衡） |
+| `Data/Upgrades/DA_UpgradeDefinitions` / `Data/Upgrades/DA_UpgradeRules` | DataAsset | `URogueUpgradeDefinitionAsset` / `URogueUpgradeRuleAsset` |
 | `BP_RogueGameMode` | Blueprint | `ARogueGameMode`（**关卡默认 GameMode**） |
 | `BP_RogueCharacter` | Blueprint | `ARogueCharacter`（蓝图里只配资源/数值引用） |
 | `BP_RogueHUD` | Blueprint | `ARogueHUD`（挂 6 个 WBP 类） |
@@ -409,8 +411,8 @@ Rogue.SelfTest.DisableEnemyAttackAbilities 1   # 对照：不授予敌人攻击�
 ## 12. 已知的待清理项（结构无关，但影响观感）
 
 - 旧扫描曾把外层 `StarterContent/` 与 `GameAssets/StarterContent/` 记为完全重复；这一结论已过期，不能作为删除依据。本次美术目录整理保留两份资产：原有游戏引用版本仍在 `GameAssets/StarterContent/`，原外层包的美术资产收进 `GameAssets/Library/StarterContent/`，示例地图及构建数据仍留在原 `StarterContent/Maps/`。其它同名包也按此原则保留，结构与范围见 [Content-Organization.md](Content-Organization.md)。
-- `Content/BP/` 下的疑似废弃资产：`BP_AIController`、`BP_Enemy1`、`BP_EnemyHunter`（重定向器）、`NewBlueprint`。
-- 数据表里 `MuzzleEffectLifetime` 配了值但代码从未读取（枪口特效回收时长用的是 cue 里的常数）。
+- `Content/BP/` 下仍有三个疑似废弃资产：`BP_AIController`、`BP_EnemyHunter`（重定向器）、`NewBlueprint`（2026-10 核对，`BP_Enemy1` 已不存在）。
+- 数据表里曾经的 `MuzzleEffectLifetime` 字段已随武器配置整理移除（枪口特效回收时长一直使用 cue 里的常数）。
 - `ARogueEnemy::PerformContactDamage` / `FireProjectileAtPlayer` 是**行为树/蓝图的兼容入口**，
   语义是"立刻结算、不走能力"（基类默认行为走能力）。当前没有蓝图重写 `OnBehaviorTick`，所以这条入口没被用到；
   保留是为了不让"重写了行为 Tick 的敌人蓝图"失效。

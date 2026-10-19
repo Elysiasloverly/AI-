@@ -6,6 +6,9 @@
 |---|---|
 | 一个类在哪里，新增类应该放哪 | [Class-Organization.md](Class-Organization.md)：目录职责、实现拆分、独立 Widget 基类与蓝图兼容约定 |
 | 编辑器里的美术资产放在哪里 | [Content-Organization.md](Content-Organization.md)：美术主目录、素材包保留方式及玩法资产位置 |
+| 玩法配置资产放在哪、怎么改 | [Data-Configuration.md](Data-Configuration.md)：`/Game/Data/` 的 7 个资产、读取入口与 DataTable 归类 |
+| 数值怎么调 | [Game-Balance-Configuration.md](Game-Balance-Configuration.md)、[Player-Balance-Configuration.md](Player-Balance-Configuration.md)：平衡与玩家数值分组 |
+| 地图、刷怪框与商店怎么摆 | [Map-Authoring.md](Map-Authoring.md)：关卡物体、刷怪区域与商店终端 |
 | 当前对象如何协作，伤害和升级如何流动 | [Project-Structure.md](Project-Structure.md)：运行时关系、网络划分、池化契约、核心数据流与自检入口 |
 | 源码注释哪些说法经过核验 | [Comment-Verification.md](Comment-Verification.md)：事实纠正、源码依据、当前实现边界与检查结果 |
 | 早期系统为什么这样拆分 | [System-Architecture-Overview.md](System-Architecture-Overview.md)：历史概览，正文旧行为不能当作当前实现 |
@@ -18,11 +21,13 @@
 
 推荐先读 `Class-Organization.md` 找文件，再读 `Project-Structure.md` 理解运行时关系。维护时结合扩展指南理解接线，避免把新逻辑继续堆回 GameMode、Character 或 HUD。
 
+除明确标注为“历史”的文档外，当前结构、路径与接口以仓库源码为准（2026-10 核对）；历史文档只用于解释当时的取舍。
+
 当前升级效果使用 21 种 Infinite GE 子类按目标叠层，能力授予支持 AbilitySet；旧计划中的单一升级 ExecutionCalculation 和硬编码授予描述属于迁移历史。文档保留历史上下文，不表示这些旧实现仍存在。
 
 ## 死亡与复活
 
-当前实现与验证结果见 [玩家生命周期说明](Player-LifeCycle.md)。固定十秒濒死复活、团灭终态和界面切换以该文为准。
+当前实现与验证结果见 [玩家生命周期说明](Player-LifeCycle.md)。默认十秒（`DA_PlayerBalance.Revival` 可配）的濒死复活、团灭终态和界面切换以该文为准。
 
 怪物出生高度、地面射线和胶囊避障配置见 [怪物落地刷新说明](Enemy-Ground-Spawning.md)。
 

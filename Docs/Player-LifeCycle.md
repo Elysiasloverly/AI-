@@ -2,14 +2,14 @@
 
 > 2026-10-16：复活等待、恢复生命比例与保护时间现由 `DA_PlayerBalance.Revival` 配置；下文的 10 秒、50% 和 1.5 秒表示默认值。HUD 按复制的服务器截止时刻显示完整剩余秒数，超过 10 秒的配置不会再被截断。
 
-生命归零后，玩家进入无碰撞、不能参与战斗的濒死状态。只要仍有队友存活，服务器在固定 10 秒后复活该玩家；场上所有参与玩家同时濒死时，整局结束并取消复活。
+生命归零后，玩家进入无碰撞、不能参与战斗的濒死状态。只要仍有队友存活，服务器在配置的等待时间（默认 10 秒）后复活该玩家；场上所有参与玩家同时濒死时，整局结束并取消复活。
 
 ## 状态与职责
 
 | 阶段 | 游戏行为 | 本机界面 |
 |---|---|---|
 | `Alive` | 正常移动、战斗、碰撞与被索敌 | 正常 HUD 与可操作菜单 |
-| `Downed` | 停止移动与攻击，取消角色 Actor 及全部 PrimitiveComponent 碰撞/重叠，退出敌人存活目标集合 | `WBP_ResurrectionScreen`，显示 0–10 秒倒计时 |
+| `Downed` | 停止移动与攻击，取消角色 Actor 及全部 PrimitiveComponent 碰撞/重叠，退出敌人存活目标集合 | `WBP_ResurrectionScreen`，显示 0–等待时间倒计时（默认 10 秒） |
 | `Eliminated` | 保持幽灵状态，取消复活定时器；本局内不能恢复为 Alive | `WBP_DeathScreen`，可重开或退出 |
 
 `ARogueCharacter::LifeState` 是唯一生命阶段真值。`FRoguePlayerLifeState` 将 `Phase` 与 `ReviveServerTime` 放在同一复制属性中，原子同步给所有客户端。截止时刻使用服务器世界时间，仅在 `Downed` 时有效；复活或团灭时清零。
@@ -25,12 +25,12 @@
 stateDiagram-v2
     [*] --> Alive
     Alive --> Downed: 致死伤害
-    Downed --> Alive: 10 秒到期且队友仍存活
+    Downed --> Alive: 等待时间到期且队友仍存活
     Downed --> Eliminated: 全员濒死
     Eliminated --> [*]: 重开或退出本局
 ```
 
-1. 服务端处理致死伤害，进入 `Downed` 并写入「当前服务器时间 + 10 秒」。保存正常碰撞配置后关闭全部碰撞与重叠，清理移动和武器行为，排定唯一一次性世界定时器。
+1. 服务端处理致死伤害，进入 `Downed` 并写入「当前服务器时间 + 配置的等待时间（默认 10 秒）」。保存正常碰撞配置后关闭全部碰撞与重叠，清理移动和武器行为，排定唯一一次性世界定时器。
 2. `GameMode::NotifyPlayerDied()` 关闭该玩家的商店与升级状态，调用 `EvaluateTeamWipe()`。团灭集合按实际参与的 PlayerController/PlayerState 计算，排除旁观者；登录或重新持有期间暂缺 Pawn 的玩家不会被当成已经濒死。
 3. 尚有存活队友时，定时器到期进入 `TryReviveIfExpired()`。它先检查本局结束和团灭，再确认截止时刻；符合条件才执行 `Revive()`。不依赖 Pawn Tick、GameMode 复活队列或 GE 的剩余时长。
 4. 复活在原角色上执行：移回记录的出生位置，恢复最大生命的 50%（至少 1 点）、保存的碰撞/重叠配置和移动输入，清除死亡/濒死效果并应用复活保护，复制 `Alive` 与清零后的截止时刻。
@@ -62,7 +62,7 @@ HUD 每帧独立更新 UMG 状态，画布绘制不作为界面刷新的前提�
 
 ## 主要落点
 
-- `Source/ai/Public/Player/RoguePlayerLifeState.h`：生命阶段、复制载荷与固定 10 秒常量。
+- `Source/ai/Public/Player/RoguePlayerLifeState.h`：生命阶段、复制载荷与资产缺失时使用的默认 10 秒回退常量。
 - `Source/ai/Private/Player/RogueCharacter.LifeCycle.cpp`：濒死、单定时器、复活、碰撞保存/恢复与客户端应用。
 - `Source/ai/Private/Framework/RogueGameMode.Players.cpp`：参与者集合、团灭终态与重开请求。
 - `Source/ai/Private/UI/RogueHUD.cpp` 及复活/结算 Widget 基类：本地界面与输入互斥。
