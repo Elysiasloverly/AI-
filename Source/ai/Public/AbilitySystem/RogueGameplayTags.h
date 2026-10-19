@@ -4,19 +4,8 @@
 #include "Shared/RogueTypes.h"
 #include "Combat/Visuals/RogueImpactEffect.h"
 
-/**
- * 项目原生 GameplayTag 声明。
- *
- * 为什么用原生 Tag 而不是 .ini 里配：
- *   · 编译期就能拿到 FNativeGameplayTag 变量，C++ 侧不用写字符串、不怕拼错；
- *   · 不依赖 DefaultGameplayTags.ini 的加载时机（ini 里的 Tag 在资产加载早期可能还没注册）；
- *   · 重命名时编译器会报错，而字符串不会。
- *
- * 命名约定（沿用 Epic Lyra 的风格，用下划线代替点）：
- *   UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Dash)  ↔  "Ability.Dash"
- *
- * 注意：本文件只做"声明"，实际定义在 Private/Core/RogueGameplayTags.cpp。
- */
+/** 项目原生 GameplayTag 声明，定义位于 Private/AbilitySystem/RogueGameplayTags.cpp。
+ * 通过变量引用可检查 C++ 符号拼写；Tag 路径字符串的正确性仍需审查与运行验证。 */
 
 namespace RogueGameplayTags
 {
@@ -40,14 +29,14 @@ namespace RogueGameplayTags
 	//  状态（State）—— 用来阻塞技能、驱动表现
 	// ===========================================================
 
-	/** 死亡。原来靠 ARogueEnemy::IsDead() / ARogueCharacter::IsDead() 两个 bool，
-	 *  迁移后统一用这个 Tag 查询（死亡还要顺带清掉所有升级效果）。 */
+	/** 致死信号/死亡阻塞标签。玩家是否 Alive/Downed/Eliminated 以 LifeState 为准。
+	 * 本标签自身不会清理升级；清理策略由生命周期流程决定。 */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Dead);
 
 	/** 冲刺中。用来在冲刺期间阻塞其它移动类技能。 */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Dashing);
 
-	/** 无敌。冲刺无敌帧 / Boss 登场保护等都用它。 */
+	/** 无敌状态，当前由复活保护 GE 授予；伤害入口查询此标签拒绝伤害。 */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Invulnerable);
 
 	/** 刚受过伤（短时状态，由一个带时长的 GE 授予）。
@@ -57,13 +46,9 @@ namespace RogueGameplayTags
 	 *  而不是散落在角色类里的一个私有计时器。 */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_RecentlyDamaged);
 
-	/** 正在倒地等待复活（由一个带时长的 GE 授予，时长 = 复活等待秒数）。
-	 *
-	 *  与 State.Dead 刻意分开：
-	 *    · `State.Dead`    = 已经倒下 —— 伤害闸门、技能阻塞、表现都看它；
-	 *    · `State.Downed`  = 正在等待复活 —— 只用于"还剩多久"与触发复活。
-	 *  迁移前"还剩多久"是一个复制到 PlayerState 上的截止时刻，
-	 *  现在它是这个 GE 的剩余时长，客户端 HUD 直接读同一个 GE。 */
+	/** 濒死镜像标签，由 Infinite URogueDownedEffect 授予。
+	 * 复活截止时间来自角色 LifeState，HUD 不读取本效果剩余时间。
+	 * 复活或团灭时显式移除镜像效果；标签本身不会触发定时复活。 */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Downed);
 
 	// ===========================================================
@@ -72,8 +57,8 @@ namespace RogueGameplayTags
 
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Dash);
 
-	/** 武器自动攻击的冷却。六把武器目前各有自己的 Config.Cooldown 计时器，
-	 *  迁移后统一由这个 Tag 承担，升级改冷却就变成改 GE 的时长。 */
+	/** 目标型武器冷却 GE 的共享标签。每个能力按自己的句柄查询，避免共享标签互相阻塞。
+	 * 冷却秒数由武器计算并通过 Data.Cooldown 传入，升级不直接修改既有 GE 的时长。 */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_WeaponAutoAttack);
 
 	/** 敌人攻击的冷却（三种攻击共用一个 GE 类，时长走 SetByCaller）。 */
@@ -86,7 +71,7 @@ namespace RogueGameplayTags
 	/** 伤害量。所有伤害 GE 都用它取量，这样一份 GE 资产能被六把武器复用。 */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Damage);
 
-	/** 持续时间（升级卡的时长、状态的持续时间等）。 */
+	/** 状态持续秒数，当前复活无敌效果用此 SetByCaller 键；永久升级不读取它。 */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Duration);
 
 	/** 通用幅值（升级卡的 Magnitude）。 */
@@ -97,11 +82,7 @@ namespace RogueGameplayTags
 	 *  一个是"这把武器多久能再开一枪"），共用会让同一个 GE 上出现歧义。 */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Cooldown);
 
-	// ===========================================================
-	//  伤害来源（Damage.Source）—— 用于反馈分流与未来的免疫/减伤
-	// ===========================================================
-	//  这个轴是"怎么打出去的"，不是"什么元素"——本项目没有元素/抗性体系。
-	//  它的直接用途：伤害飘字样式、命中特效、以及"某类来源免疫"这类需求。
+	// 来源分类随伤害 Spec 携带；当前不据此自动实现元素抗性、免疫或反馈分流。
 
 	/** 接触伤害（敌人贴到玩家身上按距离结算的那种）。 */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Damage_Source_Contact);
@@ -119,72 +100,33 @@ namespace RogueGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Damage_Source_Melee);
 
 	// ===========================================================
-	//  效果族（Effect）—— 用于批量查询/移除
+	//  保留的效果族（当前 GE 尚未配置这些标签）
 	// ===========================================================
 
-	/** 所有伤害 GE 的父 Tag。 */
+	/** 保留的伤害族标签；当前 URogueDamageEffect 未配置此资产/授予标签。 */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Effect_Damage);
 
-	/** 所有升级 GE 的父 Tag。
-	 *  死亡重开时要按它一次性清空全部升级：RemoveActiveEffectsWithGrantedTags(Effect.Upgrade)。 */
+	/** 保留的升级族标签；当前升级类未配置此资产/授予标签，不能据此查询并清空升级。 */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Effect_Upgrade);
 
-	/** 走属性系统的升级（最大生命/移速/护甲/冲刺冷却/拾取范围/回复/减伤/经验）。
-	 *  自研系统里这 8 类是写进 UpgradeGroup 再整表重算，迁移后是挂这个 Tag 的 GE。
-	 *  这也是**所有升级 GE 实际的族标签**（武器类升级现在也共用同一个 GE 类，见下）。 */
+	/** 保留的属性升级族标签；当前目标属性由各升级 GE 子类固定，不依赖此标签分流。 */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Effect_Upgrade_Attribute);
 
-		// ===========================================================
-	//  升级的"目标属性"（Upgrade.Attribute）—— 作为 GE 的载荷
-	// ===========================================================
-	// ---- 升级"载荷 Tag"已随 ExecutionCalculation 一起退役（20 个 Tag 全部删除）----
-	//
-	// 历史：这里曾有 8 个 `Upgrade.Attribute.*` + 12 个 `Upgrade.Weapon.*`，
-	// 作用是当**载荷**告诉那个"通用升级 GE"这次该改哪个属性 ——
-	// 一个 GE 类 + URogueUpgradeExecution 查表，就能承载全部 20 种升级。
-	//
-	// 为什么删掉：升级改成 **Stacking** 之后那个设计不再成立。
-	// 引擎的 FindStackableActiveGameplayEffect **只按 Spec.Def 匹配**可叠加实例，
-	// 20 种升级共用一"类"会让它们共用一个栈、数值错乱。
-	// 于是拆成 20 个 GE 子类，**目标属性烤在类上**（见 RogueAttributeUpgradeEffect.h），
-	// 载荷 Tag 与那张运行时映射表都不再需要。
-	//
-	// 确认过可以安全删除：唯一的"外部"使用者是升级定义表，而
-	// `FRogueUpgradeDefinitionRow` 只有 `ERogueUpgradeType Type`，**没有任何 FGameplayTag 字段**
-	// —— 也就是说没有资产引用过这批 Tag，删掉原生声明不会让资产出现失效引用。
-	//
-	// 注意上面那个 **族标签**（`Effect.Upgrade.Attribute`）不受影响，它另有用途（批量查询/移除），
-	// 与载荷不是一回事。
+		// 升级目标属性由 RogueAttributeUpgradeEffect 子类配置；这里不再声明历史载荷标签。
+		// GE 合栈至少要求定义相同，AggregateBySource 还要求来源 ASC 相同。
 
-	// ===========================================================
-	//  GameplayCue（表现层）—— 由 ASC 自动多播，项目不再手搓 RPC
-	// ===========================================================
-	//  为什么走 GameplayCue 而不是自己写 Multicast：
-	//    · 多播/相关性/预测去重都由 AbilitySystem 负责，不用每加一种特效就加一条 RPC；
-	//    · 敌人 ASC 是 Minimal 复制模式，而 Minimal 模式**天生就复制 GameplayCue**
-	//      （这正是它的设计目的：只同步"属性 + 表现事件"，不同步 GE 细节）；
-	//    · 特效与"谁造成的"绑定在一起（Instigator / EffectCauser），日后做击杀回放、
-	//      命中反馈分流都是从参数里读，不需要再传一堆上下文。
-	//
-	//  子 Tag 直接对应 ERogueImpactVisualStyle 的三个风格 + 一个压扁变体。
+	// GameplayCue 标签用于表现路由。传播依赖载体相关性与调用方式，属性复制另行配置。
+	// 预测去重依赖匹配预测键，瞬时 Cue 不是可靠事件日志。
+	// 三个 Impact 标签对应三种风格；压扁比例通过参数传递，没有独立标签。
 
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayCue_Impact_Spark);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayCue_Impact_Laser);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayCue_Impact_Explosion);
 
-	/**
-	 * 倒地表现（**Actor 型** GameplayCue）。
-	 *
-	 * 与上面三个 Impact cue 的区别：那三个是 `UGameplayCueNotify_Static`（无状态、一次触发、
-	 * 命中特效打完就回收）；这个是 `UGameplayCueNotify_Actor`（有实例、有生命周期），
-	 * 因为倒地是一个**持续状态**：环要一直转，直到人复活。
-	 *
-	 * 触发方式也不同：Impact 是靠代码调 `ExecuteGameplayCue` 打一次；
-	 * 这个挂在 `URogueDownedEffect` 的 `GameplayCues` 数组上，由 GE 的生命周期驱动 ——
-	 * GE 生效时 `OnActive`、移除时 `OnRemove`，**不需要任何人记得去关掉它**。
-	 */
+	/** 持续濒死表现，由 URogueDownedEffect 的 Cue 生命周期驱动。
+	 * GE 生效触发 OnActive/WhileActive，移除触发 OnRemove；角色仍需在复活/团灭时移除 GE。 */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayCue_State_Downed);
 
-	/** 冲击风格 → Cue Tag。无对应风格时返回空 Tag。 */
+	/** 冲击风格映射到 Cue Tag；未知枚举同样回退到 Spark。 */
 	AI_API FGameplayTag GetImpactCueTag(ERogueImpactVisualStyle Style);
 }

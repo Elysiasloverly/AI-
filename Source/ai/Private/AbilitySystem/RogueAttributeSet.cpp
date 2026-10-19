@@ -16,19 +16,17 @@ namespace
 
 URogueAttributeSet::URogueAttributeSet()
 {
-	// 全部属性的"零值"就是 0。
-	// GAS 里绝对值的唯一来源是 SetNumericAttributeBase（由玩家平衡资产灌入），
-	// 所以这里不需要、也不应该写任何默认数值 —— 写了就会和基础值写入叠加。
+	// 基础值由角色/敌人初始化流程写入；这里沿用 FGameplayAttributeData 的零默认值。
+	// SetNumericAttributeBase 会替换基础值，构造默认值不会因此自动与新基础值相加。
 }
 
 void URogueAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-	// 说明：这里先用朴素的 Replicated（客户端只同步数值，没有 OnRep 回调），
-	// 因为 HUD 是每帧轮询属性来画血条/护甲的。
-	// 等需要"客户端收到伤害时做受击反馈/屏幕血渍"时，再把对应属性改成
-	// ReplicatedUsing=OnRep_Xxx 并在 RepNotify 里用 GAMEPLAYATTRIBUTE_REPNOTIFY 分发。
+	// 当前直接复制属性数据，HUD 轮询数值；尚未使用 RepNotify + GAMEPLAYATTRIBUTE_REPNOTIFY。
+	// 该宏不仅用于表现通知，还将服务端基础值交回 ASC 聚合器处理预测校正；
+	// 因此当前配置不能被视作已完善支持客户端属性预测的复制方案。
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, Health,               COND_None);
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, MaxHealth,            COND_None);
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, Armor,                COND_None);
@@ -38,8 +36,7 @@ void URogueAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, ArmorRechargeRate,    COND_None);
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, DamageReductionPercent, COND_None);
 
-	// 武器加成（升级落点）。与其它属性一样 COND_None：数值要发给所有端，
-	// 客户端的武器也要按同样的数值算表现（见头文件里"为什么并入主属性集"的说明）。
+	// 武器加成发往所有相关客户端，供本地武器计算表现。
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, AttackPowerBonus, COND_None);
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, AttackSpeedBonus, COND_None);
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, AttackRangeBonus, COND_None);
@@ -52,6 +49,7 @@ void URogueAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, MortarCountBonus, COND_None);
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, LaserRefractionBonus, COND_None);
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, MortarBlastRadiusBonus, COND_None);
+	DOREPLIFETIME_CONDITION(URogueAttributeSet, ScytheSizeBonus, COND_None);
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, MoveSpeed,            COND_None);
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, DashCooldownDuration, COND_None);
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, MinDashCooldown,      COND_None);
@@ -79,16 +77,17 @@ float URogueAttributeSet::GetWeaponBonusCapFor(const FGameplayAttribute& Attribu
 	if (Attribute == GetLaserRefractionBonusAttribute())   { return WeaponBonusCaps.LaserRefraction; }
 	if (Attribute == GetMortarCountBonusAttribute())       { return WeaponBonusCaps.MortarCount; }
 	if (Attribute == GetMortarBlastRadiusBonusAttribute()) { return WeaponBonusCaps.MortarBlastRadius; }
+	if (Attribute == GetScytheSizeBonusAttribute())        { return WeaponBonusCaps.ScytheSize; }
 
-	// 不是 12 个加成属性之一 → 返回 -1（不限制），
+	// 不是 13 个加成属性之一 → 返回 -1（不限制），
 	// 这样调用方不需要自己判断"这个属性是否适用上限"。
 	return -1.0f;
 }
 
 void URogueAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue)
 {
-	// 武器加成：全部不允许为负（负数量会让武器彻底不工作、负范围会让索敌失效）。
-	// 数量类只做取整，最终数量由武器侧"数据表基础值 + 加成"合并后再取整。
+	// 加成先钳非负、再应用可选上限；数量类随后取整。
+	// 最终生效数量还会由武器合并基础值和加成后计算。
 	if (Attribute == GetAttackPowerBonusAttribute()
 		|| Attribute == GetAttackSpeedBonusAttribute()
 		|| Attribute == GetAttackRangeBonusAttribute()
@@ -100,7 +99,8 @@ void URogueAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute,
 		|| Attribute == GetHellTowerCountBonusAttribute()
 		|| Attribute == GetMortarCountBonusAttribute()
 		|| Attribute == GetLaserRefractionBonusAttribute()
-		|| Attribute == GetMortarBlastRadiusBonusAttribute())
+		|| Attribute == GetMortarBlastRadiusBonusAttribute()
+		|| Attribute == GetScytheSizeBonusAttribute())
 	{
 		NewValue = FMath::Max(0.0f, NewValue);
 
@@ -126,10 +126,9 @@ void URogueAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute,
 	}
 	Super::PreAttributeChange(Attribute, NewValue);
 
-	// PreAttributeChange 只负责"钳制"，不做任何游戏逻辑（引擎文档明确不建议在这里改别的属性）。
-	// 注意它用的是属性的**当前值**做上界：MaxHealth 自己的修正走到这里时，
-	// Health 还没有被重新钳制 —— 所以 MaxHealth 变化后需要在 PostGameplayEffectExecute
-	// 或属性变化回调里再钳一次 Health。
+	// 仅约束正在写入的 CurrentValue，不修改其他属性或原始聚合量级。
+	// MaxHealth/MaxArmor 自己变化不会自动触发 Health/Armor 的再次写入；
+	// 当前上限提高由角色委托补增量，上限降低后的当前值钳制需另行处理。
 
 	if (Attribute == GetHealthAttribute())
 	{
@@ -141,8 +140,7 @@ void URogueAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute,
 	}
 	else if (Attribute == GetDamageReductionPercentAttribute())
 	{
-		// 关键钳制：这是比例（0~1），不是百分数。
-		// 不钳的话升级能把它堆过 1，`(1 - x)` 变负会让玩家免疫全部伤害。
+		// 比例限制在 [0,1]；伤害结算处仍独立钳制防御性读取。
 		ClampAttribute(NewValue, 0.0f, 1.0f);
 	}
 	else if (Attribute == GetMaxHealthAttribute() || Attribute == GetMaxArmorAttribute())
@@ -174,17 +172,9 @@ void URogueAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallb
 {
 	Super::PostGameplayEffectExecute(Data);
 
-	// 注：这里**原本**还有两段 —— "MaxHealth / MaxArmor 被提升后，当前值补满那部分增量"
-	//（语义沿用自研系统：升级最大生命时 `CurrentHealth += (MaxHealth - PreviousMaxHealth)`，
-	//  也就是"上限涨多少就回多少血"，而不是按比例或直接补满）。
-	//
-	// 它们已经**搬走**了，原因是升级 GE 变成了 Infinite + Stacking，
-	// 而 **PostGameplayEffectExecute 只对 Instant GE 触发** —— 留着也永远不会执行。
-	//
-	// 新位置：`ARogueCharacter::HandleMaxHealthChanged` / `HandleMaxArmorChanged`
-	//（监听 GetGameplayAttributeValueChangeDelegate，服务端侧生效）。
-	// 搬过去之后它反而更通用：现在**任何来源**的上限变化都会补当前值，
-	// 不再只绑死"升级"这一条路径。
+	// 上限变化引起的等量回复由角色的 HandleMaxHealthChanged/HandleMaxArmorChanged 处理。
+	// 本回调响应执行型修改，包括 Instant GE 与周期 GE 的每次执行；
+	// 无周期 Infinite 升级只加入当前值聚合器，不通过此执行回调。
 
 	if (Data.EvaluatedData.Attribute != GetDamageAttribute())
 	{
@@ -194,8 +184,7 @@ void URogueAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallb
 	// 记录击杀者：死亡 GE 自己不知道"谁打死的"，而死亡后的掉落/击杀计数需要它。
 	LastDamageCauser = Data.EffectSpec.GetContext().GetEffectCauser();
 
-	// ---- 伤害结算链：减伤比例 → 护甲吸收 → 剩余扣血 ----
-	// 这是全项目唯一的伤害落地处（所有伤害都经 ApplyDamageToTarget → 这个元属性进来）。
+	// 本项目常规 GAS 伤害在此结算。直接改 Health 的其他路径不会自动经过此伤害链。
 	const float LocalDamage = GetDamage();
 	SetDamage(0.0f);   // 元属性用完立刻清零，避免下一次结算重复计入
 
@@ -219,11 +208,8 @@ void URogueAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallb
 		SetHealth(FMath::Max(0.0f, GetHealth() - RemainingDamage));
 	}
 
-	// ---- 受伤后进入"护甲回复延迟"状态 ----
-	// 用带时长的 GE 授予 State.RecentlyDamaged —— 状态可查询、可复制，
-	// 护甲回复逻辑只需要问一句"身上有没有这个 Tag"。
-	// （自研系统里这是一个私有 float 计时器 `ArmorRechargeDelayRemaining`，迁移时已删除。）
-	// 重复受伤时重挂一次即可（GAS 会刷新持续时间）。
+	// 每次有效受伤重新施加一个带时长的 GE；该类未开启 Stacking，旧实例会独立到期。
+	// 标签计数只在最后一个实例移除后归零，因而回复延迟至少覆盖最近一次受伤。
 	if (MitigatedDamage > 0.0f)
 	{
 		ApplyRecentlyDamagedEffect();
@@ -237,8 +223,7 @@ void URogueAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallb
 		TryApplyDeathEffect();
 	}
 
-	// 受伤后的另一件事（护甲回复计时重置）由 `State.RecentlyDamaged` 承担，
-	// 具体在角色/敌人转换那一步接上。
+	// State.RecentlyDamaged 阻断护甲回复 GE；生命周期切换由死亡标签监听者处理。
 }
 
 void URogueAttributeSet::ApplyRecentlyDamagedEffect()
@@ -256,7 +241,7 @@ void URogueAttributeSet::ApplyRecentlyDamagedEffect()
 		return;
 	}
 
-	// 已经在延迟中就重挂一次（刷新时长），不必先移除
+	// 不移除旧效果，直接新增延迟实例；最后一份标签到期后护甲回复才恢复。
 	FGameplayEffectContextHandle Context = ASC->MakeEffectContext();
 	Context.AddSourceObject(GetOwningActor());
 
@@ -281,7 +266,7 @@ void URogueAttributeSet::TryApplyDeathEffect()
 		return;
 	}
 
-	// 只有服务端能施加 GE
+	// 本死亡效果只允许权威端施加；GAS 的其他效果可以在有效预测窗口中由客户端预测。
 	if (!ASC->IsOwnerActorAuthoritative())
 	{
 		return;

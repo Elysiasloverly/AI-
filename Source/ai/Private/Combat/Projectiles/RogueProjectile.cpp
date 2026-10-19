@@ -4,7 +4,6 @@
 #include "Enemies/RogueEnemy.h"
 #include "AbilitySystem/RogueAbilitySystemLibrary.h"
 #include "AbilitySystem/RogueGameplayTags.h"
-#include "Combat/Targeting/RogueEnemyTrackerSubsystem.h"
 #include "Components/PointLightComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -138,8 +137,6 @@ void ARogueProjectile::ActivatePooledProjectile(AActor* InOwner, APawn* InInstig
 	SetActorTickEnabled(true);
 	bPoolAvailable = false;
 	bResolvedImpact = false;
-	bVisualsSimplified = false;
-	PulseTime = 0.0f;
 	RemainingLifetime = PooledLifetime;
 	Collision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 	Collision->SetGenerateOverlapEvents(true);
@@ -185,8 +182,6 @@ void ARogueProjectile::DeactivateToPool()
 	}
 
 	bResolvedImpact = false;
-	bVisualsSimplified = false;
-	PulseTime = 0.0f;
 	RemainingLifetime = 0.0f;
 	SetActorTickEnabled(false);
 	SetActorEnableCollision(false);
@@ -214,62 +209,7 @@ void ARogueProjectile::Tick(float DeltaSeconds)
 		return;
 	}
 
-	URogueEnemyTrackerSubsystem* Tracker = GetWorld() ? GetWorld()->GetSubsystem<URogueEnemyTrackerSubsystem>() : nullptr;
-	const bool bCullCombatEffects = Tracker != nullptr && Tracker->ShouldCullCombatEffects();
-	if (bCullCombatEffects)
-	{
-		if (!bVisualsSimplified)
-		{
-			bVisualsSimplified = true;
-			if (Mesh != nullptr)
-			{
-				Mesh->SetRelativeScale3D(FVector(VisualConfig.SimplifiedMeshScale));
-			}
-			if (GlowMesh != nullptr)
-			{
-				GlowMesh->SetRelativeScale3D(FVector(VisualConfig.SimplifiedGlowScale));
-			}
-			if (RingMesh != nullptr)
-			{
-				RingMesh->SetRelativeScale3D(FVector(VisualConfig.SimplifiedRingScale));
-			}
-			if (TrailMesh != nullptr)
-			{
-				TrailMesh->SetRelativeScale3D(VisualConfig.SimplifiedTrailScale);
-			}
-		}
-		return;
-	}
-
-	bVisualsSimplified = false;
-
-	PulseTime += DeltaSeconds;
-	const float PulseAlpha = 0.5f + 0.5f * FMath::Sin(PulseTime * VisualConfig.PulseSpeed);
-	const float CoreScale = VisualConfig.CorePulseBaseScale + PulseAlpha * VisualConfig.CorePulseAmplitude;
-	const float GlowScale = VisualConfig.GlowPulseBaseScale + PulseAlpha * VisualConfig.GlowPulseAmplitude;
-	const float RingScale = VisualConfig.RingPulseBaseScale + PulseAlpha * VisualConfig.RingPulseAmplitude;
-
-	if (Mesh != nullptr)
-	{
-		Mesh->SetRelativeScale3D(FVector(CoreScale, CoreScale, CoreScale));
-	}
-
-	if (GlowMesh != nullptr)
-	{
-		GlowMesh->SetRelativeScale3D(FVector(GlowScale, GlowScale, GlowScale));
-	}
-
-	if (RingMesh != nullptr)
-	{
-		RingMesh->SetRelativeScale3D(FVector(RingScale, RingScale, RingScale));
-	}
-
-	if (TrailMesh != nullptr)
-	{
-		const float TrailRadius = VisualConfig.TrailPulseBaseRadius + PulseAlpha * VisualConfig.TrailPulseRadiusAmplitude;
-		const float TrailLength = VisualConfig.TrailPulseBaseLength + PulseAlpha * VisualConfig.TrailPulseLengthAmplitude;
-		TrailMesh->SetRelativeScale3D(FVector(TrailRadius, TrailRadius, TrailLength));
-	}
+	// 模型缩放由蓝图组件决定；飞行、低负载/高负载切换与对象池复用均不重写它。
 }
 
 void ARogueProjectile::HandleOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)

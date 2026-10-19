@@ -18,8 +18,7 @@ void URogueAbilityTask_WeaponFireLoop::Activate()
 {
 	Super::Activate();
 
-	// Ability 为空说明创建方式不对（NewAbilityTask 没传 OwningAbility）。
-	// 直接结束，避免留下一个永远什么都不做、却一直占着逐帧回调的任务。
+	// 关联能力已不可用时结束任务，避免继续调度无效循环。
 	if (Ability == nullptr)
 	{
 		EndTask();

@@ -8,14 +8,14 @@ URogueDamageEffect::URogueDamageEffect()
 	DurationPolicy = EGameplayEffectDurationType::Instant;
 
 	FSetByCallerFloat SetByCallerDamage;
-	// 用 Tag 而不是 FName：Tag 有原生声明（RogueGameplayTags），拼错编译期就报错，
-	// 而 SetByCaller 的 FName 写错只会在运行时静默取到 0 伤害。
+	// 使用原生 Tag 变量统一读写键；变量名拼错可被编译器发现。
+	// FName/Tag 两条 SetByCaller 取值路径在缺值时都返回默认值，并可按参数记录 Error。
 	SetByCallerDamage.DataTag = RogueGameplayTags::Data_Damage;
 
 	FGameplayModifierInfo DamageModifier;
 	DamageModifier.Attribute = URogueAttributeSet::GetDamageAttribute();
-	// Additive：元属性 Damage 每次结算前都是 0（PostGameplayEffectExecute 里会清零），
-	// 所以"加上本次伤害量"就是它的语义。同时在一帧内被多个来源打中时会自然累加。
+	// 每个伤害 Spec 对 Damage 做 Additive；PostGameplayEffectExecute 处理后立即清零。
+	// 同帧多个命中仍按各自的执行顺序逐次结算，不是整帧累积后统一处理。
 	DamageModifier.ModifierOp = EGameplayModOp::Additive;
 	DamageModifier.ModifierMagnitude = FGameplayEffectModifierMagnitude(SetByCallerDamage);
 

@@ -19,15 +19,9 @@ void URogueDeathScreenWidgetBase::UpdateDeathView(const FRogueDeathViewData& InV
 	}
 	SetVisibility(RogueMenuWidgetHelpers::GetMenuVisibility(InViewData.bVisible));
 
-	// 死亡界面**绝不能暂停世界** —— 联机下那会把队友一起冻住。
-	//
-	// 暂停不在这里、也不在任何 C++ 里：实测它来自这个界面的**蓝图**
-	// （WBP 在 OnDeathViewUpdated 的实现里调了 Set Game Paused，是单机时代的写法）。
-	// C++ 够不到蓝图节点，所以只能在蓝图回调**之后**立刻纠偏 ——
-	// 顺序很关键：必须放在 OnDeathViewUpdated 后面，否则会被蓝图又暂停回去。
-	// 主机侧这一下尤其重要：主机是服务端，它的世界一暂停就是"整局停住"。
-	//
-	// 正确做法仍然是把蓝图里那个 Set Game Paused 节点删掉，这里只是兜底。
+	// 蓝图回调结束后检查当前世界是否暂停，并尝试恢复，避免监听服停止整局推进。
+	// 这里只观察暂停结果，无法确定是哪个节点造成；客户端也不能据此保证解除服务器暂停。
+	// 该兜底不代替检查实际 WBP 图表中的暂停调用。
 	if (UWorld* World = GetWorld())
 	{
 		if (World->IsPaused())

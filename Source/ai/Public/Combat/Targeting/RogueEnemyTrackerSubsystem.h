@@ -43,17 +43,8 @@ public:
 	 *  bIncludeBoss = false 时不计入 Boss —— Boss 有独立的生成条件，不该占用普通怪的名额。 */
 	int32 GetActiveEnemyCountOfType(ERogueEnemyType EnemyType, bool bIncludeBoss = false) const;
 
-	/** 是否进入"高负载"档 —— **全项目唯一的高负载判据**。
-	 *
-	 *  阈值来自 `FRogueRuntimePerformanceSettings::CombatEffectsCullEnemyCount`（默认 52），
-	 *  可由 GameMode 的 Config 覆盖；设为 0 表示关闭裁剪。
-	 *
-	 *  ⚠️ 不要在各处另写 `GetActiveEnemyCount() >= <硬编码值>`：
-	 *  武器与 HUD 曾经各写了 `>= 40`，后果有两个 ——
-	 *    1) 它抢先命中，配置项调到 40 以上完全不起作用；
-	 *    2) 40~52 这个区间里，武器已经降级表现，而弹体/命中特效还全开，
-	 *       同一帧里两套阈值并存（正是压测档位最需要一致的时候）。
-	 *  所有"高负载相关"的判断一律调这里。 */
+	/** 战斗表现的数量阈值开关：活跃敌人数达到配置值时请求简化/裁剪；
+	 *  阈值 <= 0 时关闭。它不测量帧耗时，效果实例自身还可有独立数量预算。 */
 	bool ShouldCullCombatEffects() const;
 
 private:

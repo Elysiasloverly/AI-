@@ -31,8 +31,7 @@
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/InputComponent.h"
-// Enhanced Input（UE5 标准输入）。资产清单见 Docs/Enhanced-Input-Migration.md；
-// 资产缺失时 SetupEnhancedInput 会返回 false，输入整体回退到 legacy 绑定。
+// Enhanced Input：绑定与必需资产校验见 RogueCharacter.Input.cpp；缺失时不绑定本角色动作。
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputAction.h"
@@ -173,14 +172,8 @@ void ARogueCharacter::ApplyUpgrade(const FRogueUpgradeOption& Upgrade)
 		break;
 
 	// ---- 武器类升级：与属性升级**同一条路** ----
-	// 历史：这里原来是 `Multicast_ApplyWeaponUpgrade` —— 让服务端与所有客户端各自把
-	// 同一个数值加到本地武器副本的配置结构体上（"各端重放一遍加法"）。
-	// 那套做法有三个代价：数值出现第二个真相源（武器 Actor 上的 Config）、
-	// 顺序/丢包会让各端数值漂移、加一类新升级要同时改分发+多播+每把武器的应用函数。
-	//
-	// 现在：升级 GE 只改玩家 ASC 上 URogueAttributeSet 里的加成属性，
-	// 武器开火时读「数据表基础值 + 属性加成」（ARogueWeaponBase::GetEffective*）。
-	// 结算只发生在服务端一次，客户端通过属性复制天然一致。
+	// 升级 GE 改玩家属性集中的加成，施加成功后立即刷新武器读取的角色快照。
+	// 客户端不重放升级加法；复制仍有延迟，不能保证每一瞬间与服务器数值一致。
 	case ERogueUpgradeType::AttackPower:
 	case ERogueUpgradeType::AttackSpeed:
 	case ERogueUpgradeType::AttackRange:
@@ -193,6 +186,7 @@ void ARogueCharacter::ApplyUpgrade(const FRogueUpgradeOption& Upgrade)
 	case ERogueUpgradeType::LaserRefraction:
 	case ERogueUpgradeType::MortarCount:
 	case ERogueUpgradeType::MortarBlastRadius:
+	case ERogueUpgradeType::ScytheSize:
 		ApplyUpgradeEffectViaGAS(Upgrade.Type, Upgrade.Magnitude);
 		break;
 
@@ -252,7 +246,9 @@ void ARogueCharacter::ChooseUpgradeThree()
 void ARogueCharacter::LevelUp()
 {
 	++PlayerLevel;
-	ExperienceToNextLevel = FMath::RoundToInt(static_cast<float>(ExperienceToNextLevel) * 1.30f + 2.0f);
+	const FRoguePlayerProgressionConfig Progression = LoadedPlayerBalanceAsset
+		? LoadedPlayerBalanceAsset->Progression : FRoguePlayerProgressionConfig();
+	ExperienceToNextLevel = Progression.GetNextExperienceRequirement(ExperienceToNextLevel);
 
 	if (ARogueGameMode* RogueGameMode = GetWorld()->GetAuthGameMode<ARogueGameMode>())
 	{

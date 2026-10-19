@@ -69,9 +69,7 @@ void RogueGameplayCues::EnsureNativeImpactCuesRegistered()
 
 	CueSet->AddCues(CuesToAdd);
 
-	// 打一行注册结果，并把"注册完到底认不认"一起报出来。
-	// cue 注册失败的表现是"特效全部消失"且没有任何报错 —— 有这行日志，
-	// 出问题时一眼就能确认注册跑没跑、以及 cue set 里到底有没有这几个 Tag。
+	// 记录提交数量和映射数量，便于区分未调用注册与注册后仍缺失映射。
 	int32 MappedCount = 0;
 	for (const FNativeCueEntry& Entry : NativeCues)
 	{
@@ -93,15 +91,11 @@ bool URogueGameplayCue_Impact::OnExecute_Implementation(AActor* MyTarget, const 
 
 	const ERogueImpactVisualStyle Style = ResolveStyle(Parameters);
 
-	// RawMagnitude = 统一缩放（"这次冲击有多大"）。
-	// 这是 RawMagnitude 的本义用法：特效的"量级"就是它的大小。
-	// <=0 视为没传 → 1.0，避免调用方漏填时特效缩成 0（看不见 = 最难查的 bug）。
+	// 项目约定 RawMagnitude 是 X/Y 统一缩放，非正值回退 1。
 	const float UniformScale = Parameters.RawMagnitude > 0.0f ? Parameters.RawMagnitude : 1.0f;
 
-	// NormalizedMagnitude = Z 轴压扁比例（1 = 不压）。
-	// 为什么不把三分量都传过来：cue 参数里能承载"形状"的自由浮点只有一个，
-	// 而实际用到的非等比缩放只有"贴地压扁"这一种（震荡柱地面波），
-	// 压成一个比例既够用又省带宽。
+	// 项目约定 NormalizedMagnitude 是 Z/X 缩放比例；非正值回退 1。
+	// Y 未编码，所以这里只能重建 X=Y 的缩放。UE 5.5 直接序列化该 float，不钳制到 [0,1]。
 	const float SquashZ = Parameters.NormalizedMagnitude > 0.0f ? Parameters.NormalizedMagnitude : 1.0f;
 	const FVector Scale(UniformScale, UniformScale, UniformScale * SquashZ);
 
@@ -140,9 +134,8 @@ ERogueImpactVisualStyle URogueGameplayCue_Impact::ResolveStyle(const FGameplayCu
 
 float URogueGameplayCue_Impact::GetLifetimeForStyle(ERogueImpactVisualStyle Style)
 {
-	// 这个值只决定**池对象多久回收**，与粒子自身时长无关
-	// （ARogueImpactEffect::ActivatePooledEffect 内部还有 MinimumLifetime 下限保护）。
-	// 所以按风格给一个"肯定够长"的常数即可，不需要每次调用都传。
+	// 请求池对象存活时间，内部仍按样式最小时长约束。
+	// 回收会隐藏并停用视觉，因此这里的请求也会影响视觉允许持续的时间。
 	switch (Style)
 	{
 	case ERogueImpactVisualStyle::Explosion: return 0.45f;

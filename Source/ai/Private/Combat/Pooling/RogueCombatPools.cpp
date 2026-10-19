@@ -61,10 +61,8 @@ namespace
 			return nullptr;
 		}
 
-		// ── 环形扫描 ──
-		// 从上次命中的位置继续向后找，而不是每次都从池尾重扫整个池。
-		// 池越大收益越明显：敌人池会随存活上限增长到 200+，
-		// 原来的"每次从尾部线性扫"在高占用率下平均要扫过大量已占用对象。
+		// 从上次命中位置继续环形查找可用且精确同类的对象。
+		// 游标可避免反复检查相同前缀，但最坏时间复杂度仍为 O(N)。
 		const int32 Num = Pool.Num();
 		if (Num > 0)
 		{
@@ -94,8 +92,8 @@ namespace
 		CompactPool(Pool);
 		Runtime.Cursor = 0;
 
-		// 让"池不够用"变得可见：第一次和之后每 32 次打一条 Warning。
-		// 原来这个兜底是完全静默的，所以池被撑破时没人知道。
+		// 记录池未命中后的生成尝试，首次及每 32 次输出诊断。
+		// 未命中可能来自容量、类不匹配或失效对象；生成失败也会计入。
 		++Runtime.RuntimeSpawnCount;
 		if (Runtime.RuntimeSpawnCount == 1 || Runtime.RuntimeSpawnCount % 32 == 0)
 		{
@@ -235,8 +233,7 @@ void FRogueCombatPools::Prewarm(
 	PrewarmActorPoolForClasses(World, LaserBeamPool, Settings.InitialLaserBeamPoolSize, LaserBeamClasses, ARogueLaserBeam::StaticClass(), OwnerActor, PoolLocation);
 	PrewarmActorPoolForClasses(World, OrbitingBladePool, Settings.InitialOrbitingBladePoolSize, OrbitingBladeClasses, ARogueOrbitingBlade::StaticClass(), OwnerActor, PoolLocation);
 
-	// 预热完立刻打一份诊断：开局就能看到每个池实际预热了多少，
-	// 以及"实际使用的类"与"预热时假设的类"是否一致（不一致会出现运行时新建）。
+	// 输出各池预热后的总大小；该汇总不列出每种类的数量。
 	LogPoolDiagnostics();
 }
 

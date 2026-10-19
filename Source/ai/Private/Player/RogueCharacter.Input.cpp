@@ -75,14 +75,7 @@ void ARogueCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComp
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 
-	// Enhanced Input（UE5 标准输入）。资产在 `/Game/Input/`，清单见 Docs/Enhanced-Input-Migration.md。
-	//
-	// 历史：迁移期这里曾有一条支路 —— "任一资产缺失就整体回退到 legacy 的 BindAxis / BindAction"，
-	// 配套 DefaultInput.ini 里的 8 条 ActionMappings + 11 条 AxisMappings。
-	// 资产就位后那条支路**永远走不到了**，已随那些旧映射一起删除。
-	//
-	// 为什么删而不是留着当保险：留着的代价不是那几十行，而是
-	// "看起来还能回退、实际上从没被走到过" —— 这种代码比没有更容易误导后来的人。
+	// 角色动作统一经 Enhanced Input 绑定；必需资产验证失败会中止本次绑定，无 legacy 回退。
 	SetupEnhancedInput(PlayerInputComponent);
 }
 
@@ -96,8 +89,7 @@ void ARogueCharacter::SetupEnhancedInput(UInputComponent* PlayerInputComponent)
 		return;
 	}
 
-	// 局部名统一带 Asset 后缀：成员名本身就叫 MoveAction 等，
-	// 同名局部变量会遮蔽成员（本工程开了 -WarningsAsErrors，C4458 直接报错）。
+	// 局部输入资产使用 Asset 后缀，避免遮蔽同名成员，便于区分配置引用与加载结果。
 	UInputMappingContext* MappingContext = ResolveInputAsset(DefaultMappingContext, DefaultInputContextFolder, TEXT("IMC_Default"));
 	UInputAction* MoveAsset = ResolveInputAsset(this->MoveAction, DefaultInputActionFolder, TEXT("IA_Move"));
 	UInputAction* LookAsset = ResolveInputAsset(this->LookAction, DefaultInputActionFolder, TEXT("IA_Look"));
@@ -110,9 +102,7 @@ void ARogueCharacter::SetupEnhancedInput(UInputComponent* PlayerInputComponent)
 	UInputAction* Upgrade2Asset = ResolveInputAsset(this->ChooseUpgrade2Action, DefaultInputActionFolder, TEXT("IA_ChooseUpgrade2"));
 	UInputAction* Upgrade3Asset = ResolveInputAsset(this->ChooseUpgrade3Action, DefaultInputActionFolder, TEXT("IA_ChooseUpgrade3"));
 
-	// ⚠️ 缺任何一个就**整体**回退，不做"能用几个算几个"的部分绑定：
-	//    半套绑定（例如移动正常但冲刺没反应）比全 legacy 难排查得多，
-	//    而且那种状态下"输入坏了"和"技能坏了"从表现上分不出来。
+	// 汇总全部必需资产；缺少任一项就中止本角色动作绑定，不做部分绑定或 legacy 回退。
 	TArray<FString> MissingAssets;
 	if (MappingContext == nullptr) { MissingAssets.Add(TEXT("IMC_Default")); }
 	if (MoveAsset == nullptr)      { MissingAssets.Add(TEXT("IA_Move")); }
@@ -128,8 +118,8 @@ void ARogueCharacter::SetupEnhancedInput(UInputComponent* PlayerInputComponent)
 
 	if (MissingAssets.Num() > 0)
 	{
-		// 用 Error 而不是 Warning：资产齐全是**前提**，缺了就是本机完全没有输入 ——
-		// 这不是"降级运行"，而是坏掉了，不该被当成一条普通提示划过去。
+		// 必需配置缺失作为错误记录；这里只能确定本函数未绑定角色动作，
+		// 不能由此推断其他组件、UI 或控制器也完全没有输入。
 		UE_LOG(LogTemp, Error,
 			TEXT("[Rogue][Input] Enhanced Input 资产缺失 %d 个（%s）—— 本机将没有任何输入。")
 			TEXT("资产清单见 Docs/Enhanced-Input-Migration.md"),
@@ -148,7 +138,7 @@ void ARogueCharacter::SetupEnhancedInput(UInputComponent* PlayerInputComponent)
 		}
 	}
 
-	// 全部走"薄适配层"：这些处理函数只是转调 legacy 的处理函数，
+	// 输入适配函数转调角色移动、摄像机与技能方法，
 	// 所以"按 WASD 怎么移动""冲刺怎么判定"这些逻辑仍然只有一份实现。
 	EnhancedInput->BindAction(MoveAsset,      ETriggerEvent::Triggered, this, &ARogueCharacter::HandleMoveInput);
 	EnhancedInput->BindAction(LookAsset,      ETriggerEvent::Triggered, this, &ARogueCharacter::HandleLookInput);
@@ -163,11 +153,8 @@ void ARogueCharacter::SetupEnhancedInput(UInputComponent* PlayerInputComponent)
 	EnhancedInput->BindAction(Upgrade2Asset,  ETriggerEvent::Started,   this, &ARogueCharacter::ChooseUpgradeTwo);
 	EnhancedInput->BindAction(Upgrade3Asset,  ETriggerEvent::Started,   this, &ARogueCharacter::ChooseUpgradeThree);
 
-	// 日志里带上**映射条数**：这是"资产是否真的配了按键"的唯一直接证据。
-	// 光看"资产加载成功"是不够的 —— 一个空的 IMC 也能加载成功，
-	// 表现却是"所有按键都没反应"，且不会报任何错。
-	// 期望条数：Move 8（WASD + 四个方向键）+ Look 1 + Zoom 1 + Dash 1 + Jump 1
-	//          + Interact 1 + PauseMenu 1 + ChooseUpgrade 3 = 17。
+	// 记录映射条数以发现空上下文；非零数量不能证明具体按键、修饰器或动作类型配置正确。
+	// 默认资产预期共 17 条，若调整按键需同时核对实际映射。
 	UE_LOG(LogTemp, Log, TEXT("[Rogue][Input] Enhanced Input 已启用：IMC=%s（%d 条按键映射），动作 10/10 就绪"),
 		*MappingContext->GetName(), MappingContext->GetMappings().Num());
 }
@@ -217,7 +204,7 @@ void ARogueCharacter::HandleDashInput()
 	}
 
 	// 兜底：技能列表是**复制**过来的，客户端刚连上时可能还没到达。
-	// 这时退回按标签激活，免得玩家要再按一次。
+	// 这里尝试按标签激活已存在的能力；列表尚未复制时不会缓存或重放本次输入。
 	// （Dash() 自己会再判一次死亡 / 暂停，所以这里不必重复判断。）
 	Dash();
 }
@@ -372,12 +359,9 @@ void ARogueCharacter::TogglePauseMenu()
 		SetUpgradeSelectionInput(true);
 	}
 
-	// 注意：这里**不暂停游戏**。
-	// 联机下 SetGamePaused 是全连接生效的 —— 一个人按 Esc 就会把所有人的世界冻住。
-	// 现在 Esc 只是一个"非模态覆盖菜单"：菜单照常显示、鼠标照常出来
-	// （SetUpgradeSelectionInput 用的是 FInputModeGameAndUI），但世界继续跑。
-	// 单人游玩时如果需要"真正的暂停"，那应该做成一个显式的开关（比如只在
-	// 玩家人数为 1 时才暂停），而不是默认行为。
+	// Esc 仅切换本机菜单和输入，不主动暂停世界。服务器暂停会影响整局推进，
+	// 但 SetGamePaused 是否成功还受 GameMode、暂停权限及控制器状态约束，
+	// 客户端本地调用也不等于服务器一定暂停。
 }
 
 void ARogueCharacter::Interact()
@@ -425,8 +409,8 @@ void ARogueCharacter::Dash()
 	// ⚠️ 本函数现在是**兜底路径**。正常路径是 HandleDashInput 里的
 	// `ASC->AbilityLocalInputPressed(RogueAbilityInputID::Dash)` —— 那是 GAS 的原生输入路径，
 	// 冲刺能力在授予时就带了 InputID（见 URogueAbilitySystemComponent::GrantDefaultAbilities）。
-	// 只有当技能列表还没复制到位（客户端刚连上）时才落到这里，按 Tag 激活一次，
-	// 免得玩家再按一次才生效。
+	// 未找到 Dash InputID 时落到这里，尝试按 Tag 激活已有能力；
+	// 若能力尚不存在，这次尝试仍可能失败，当前没有输入缓冲。
 	//
 	// （这段注释此前写的是"项目目前用的是旧版 InputComponent 绑定，
 	//   将来迁到 Enhanced Input 后应改为 AbilityLocalInputPressed" —— 那个"将来"已经到了。）
@@ -524,7 +508,7 @@ FVector ARogueCharacter::GetDashDirection() const
 
 void ARogueCharacter::SetMenuInteractionInput(bool bEnabled)
 {
-	// ⚠️ 只处理"打开"。关闭一律交给 ARogueHUD::UpdateUIInputState 推导 —— 详见头文件注释。
+	// 只处理打开；最终输入模式由 ARogueHUD::UpdateInteractionInputMode 推导。
 	//
 	// 这条 `if` 就是那个真实 bug 的修复点：关店时会调本函数传 false，
 	// 而"关店"并不等于"不再需要光标"（可能还有待选的升级卡挂着）。

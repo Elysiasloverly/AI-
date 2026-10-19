@@ -1,4 +1,4 @@
-// 对象池子系统 —— 管理所有战斗对象的池化分配
+// 当前 World 的战斗对象池；Acquire 只取用/定位，调用方随后执行对应 ActivatePooled*。
 #pragma once
 
 #include "CoreMinimal.h"
@@ -54,9 +54,8 @@ public:
 	/** 获取环绕刀片 */
 	ARogueOrbitingBlade* AcquireOrbitingBlade(TSubclassOf<ARogueOrbitingBlade> BladeClass, AActor* OwnerActor, const FVector& SpawnLocation, const FRotator& SpawnRotation);
 
-	/** 打印所有池的诊断信息：池大小 / 峰值 / 运行时新建次数。
-	 *  Output Log 里搜索 "[Pool]" 即可看到。
-	 *  看到"运行时新建 > 0"就说明对应池的预热量不够，可调高 FRoguePoolSettings 里对应的值。 */
+	/** 打印池大小、峰值与运行时生成尝试数（含失败）。
+	 *  在日志中搜索 [Pool]；增加预热前先检查占用率、类配置与内存成本。 */
 	UFUNCTION(BlueprintCallable, Category = "Rogue|Pool")
 	void LogPoolDiagnostics();
 

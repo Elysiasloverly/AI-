@@ -48,6 +48,11 @@ struct FRoguePlayerLifeCycleTestAccess
 		return HUD->DeathScreenWidget;
 	}
 
+	static int32 GetPresentedCountdownSeconds(const ARogueHUD* HUD)
+	{
+		return HUD->LastReviveCountdownSeconds;
+	}
+
 	static void Refresh(ARogueHUD* HUD, const ARogueCharacter* Character)
 	{
 		HUD->UpdateReviveCountdownWidget(Character);
@@ -465,7 +470,7 @@ bool FRogueLifeCycleWidgetOrderingTest::RunTest(const FString& Parameters)
 		TestFalse(FString::Printf(TEXT("%s: both screens are never visible together"), Stage),
 			IsShown(Resurrection[Index]) && IsShown(Death[Index]));
 	};
-	const float Deadline = Fixture.World->GetTimeSeconds() + 10.0f;
+	const float Deadline = Fixture.World->GetTimeSeconds() + 12.0f;
 	FRoguePlayerLifeCycleTestAccess::ReceiveLifeState(Fixture.Pawns[0], ERoguePlayerLifePhase::Downed, Deadline);
 	// No Downed GE has arrived at all. The atomic lifecycle snapshot alone must
 	// open the resurrection screen, independent of the teammate's draw order.
@@ -473,6 +478,14 @@ bool FRogueLifeCycleWidgetOrderingTest::RunTest(const FString& Parameters)
 	FRoguePlayerLifeCycleTestAccess::Refresh(HUDs[0], Fixture.Pawns[0]);
 	CheckViews(0, true, false, TEXT("Downed snapshot before any GE"));
 	CheckViews(1, false, false, TEXT("Living teammate"));
+	TestEqual(TEXT("The real HUD presents all twelve configured seconds to the actual resurrection widget"),
+		FRoguePlayerLifeCycleTestAccess::GetPresentedCountdownSeconds(HUDs[0]), 12);
+	FRoguePlayerLifeCycleTestAccess::ReceiveLifeState(Fixture.Pawns[0], ERoguePlayerLifePhase::Downed,
+		Fixture.World->GetTimeSeconds() + 9.0f);
+	FRoguePlayerLifeCycleTestAccess::Refresh(HUDs[0], Fixture.Pawns[0]);
+	TestEqual(TEXT("The HUD updates the actual countdown normally below ten seconds"),
+		FRoguePlayerLifeCycleTestAccess::GetPresentedCountdownSeconds(HUDs[0]), 9);
+	CheckViews(0, true, false, TEXT("Countdown falls below ten seconds"));
 
 	// An expired local countdown does not mean authoritative revival has arrived.
 	FRoguePlayerLifeCycleTestAccess::ReceiveLifeState(Fixture.Pawns[0], ERoguePlayerLifePhase::Downed,

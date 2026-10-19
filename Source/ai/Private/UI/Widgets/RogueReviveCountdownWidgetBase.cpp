@@ -5,7 +5,7 @@ void URogueReviveCountdownWidgetBase::UpdateReviveCountdown(int32 SecondsRemaini
 	OnReviveCountdownUpdated(SecondsRemaining, bVisible);
 	if (!bVisible)
 	{
-		// 蓝图退场动画或回调不能在复活后再次把界面变为可见。
+		// 停止现有动画；回调返回后强制应用本次可见性。后续异步修改仍由 HUD 漂移检查纠正。
 		StopAllAnimations();
 	}
 	SetVisibility(bVisible ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);

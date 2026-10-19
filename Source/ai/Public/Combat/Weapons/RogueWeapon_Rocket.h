@@ -20,11 +20,11 @@ public:
 	virtual void CollectFireTargets(TArray<ARogueEnemy*>& OutTargets) const override;
 	virtual void FireAtTargets(const TArray<ARogueEnemy*>& Targets) override;
 
-	/** 队友客户端收到服务端广播后，照着补画这一发（纯表现火箭，伤害恒为 0） */
 	virtual ERogueUpgradeType GetCountUpgradeType() const override { return ERogueUpgradeType::RocketCount; }
+	/** 收到表现广播后在客户端补画火箭，不结算权威伤害。 */
 	virtual void PlayCosmeticFire(const FRogueWeaponCosmeticFire& Fire) override;
 
-	// ---- 生效数值：火箭的换算系数与主武器不同（沿用自研版本的行为，必须一致）----
+	// ---- 生效数值：火箭的换算系数与主武器不同----
 
 	/** 攻速：`max(0.55, 冷却 − 加成×2.5)` —— 系数 2.5、下限 0.55 都与主武器不同。 */
 	virtual float GetEffectiveCooldown() const override;

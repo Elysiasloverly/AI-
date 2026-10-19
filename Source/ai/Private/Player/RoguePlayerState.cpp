@@ -49,10 +49,9 @@ void ARoguePlayerState::ApplyShopSnapshot(bool bInOpen, const TArray<FRogueShopO
 		return;
 	}
 
-	// 脏检查 + 变化才推。
-	// 为什么必须做：GameMode 每帧都会调这里推快照（4 人局 60fps = 240 次/秒），
-	// 而无条件赋值会深拷贝整个 ShopOffers（每个 offer 里还有两个 FString），
-	// 并让 4 个复制属性每帧都"变化"。内容没变时直接返回，代价从"每帧几十次拷贝"降到"一次比较"。
+	// 比较开关、价格、截止时刻及商品的价格/已购/类型，避免每次调用都复制整个商品数组。
+	// 这是当前字段子集的应用层检查，不是完整结构体相等判定；
+	// 对复制属性赋相同值也不等于网络一定发送，仍由引擎变化检测与调度决定。
 	const bool bChanged =
 		bShopOpen != bInOpen
 		|| ShopRefreshCost != InRefreshCost
@@ -84,9 +83,8 @@ void ARoguePlayerState::ApplyShopSnapshot(bool bInOpen, const TArray<FRogueShopO
 	ShopRefreshCost = InRefreshCost;
 	ShopAutoRefreshDeadline = InAutoRefreshServerTimeDeadline;
 
-	// 关键 UI 状态变化立刻推一次，不等下一次网络更新。
-	// 本类的复制频率已被提到 30Hz（见构造函数注释），但商店"开关"这种一次性事件
-	// 仍然值得立刻发包 —— 玩家点开商店却要等半秒才有反应是最容易被感知的延迟。
+	// 请求提前进入网络更新调度，减少等待常规更新周期；
+	// ForceNetUpdate 不保证本调用立即发包、送达或执行客户端 UI 更新。
 	ForceNetUpdate();
 }
 
@@ -215,7 +213,7 @@ bool ARoguePlayerState::Server_RequestRestartRun_Validate()
 {
 	// 无参数，所以这里没有"参数合法性"可查。
 	// 真正的准入条件（本局是否已结束）在服务端实现里由 GameMode 判定 ——
-	// Validate 只做"绝不信任客户端"的那一层粗筛，业务规则统一放在权威侧。
+	// 此 Validate 恒为 true，不提供参数或业务过滤；准入检查依赖 GameMode 的服务端实现。
 	return true;
 }
 
@@ -254,12 +252,9 @@ void ARoguePlayerState::Server_RequestUpgradeSelection_Implementation(int32 Upgr
 
 ARoguePlayerState::ARoguePlayerState()
 {
-	// ── 复制频率：必须显式调高 ──
-	// 引擎的 APlayerState 构造函数里是 `SetNetUpdateFrequency(1)`（PlayerState.cpp:26），
-	// 而本项目的 PlayerState 承载着**玩家 ASC 的全部属性**（血量/护甲/金币/经验/等级）
-	// 以及商店与升级的镜像字段。沿用 1Hz 的后果是客户端最多 1 秒才看到一次变化：
-	// 血条一格一格跳、买完东西半天没反应、开商店像卡住 —— 而主机（本地读取）一切正常。
-	// 这里按"玩家自身状态该有的刷新率"提上来；关键事件另有 ForceNetUpdate() 兜底。
+	// UE5.5 的 APlayerState 默认 NetUpdateFrequency 为 1Hz；本类提高调度频率，
+	// 服务于 ASC 属性及商店/升级镜像。金币、经验和等级当前在 Character 上复制。
+	// 频率为调度参数，不保证固定送达间隔，关键状态另调用 ForceNetUpdate 请求更新。
 	SetNetUpdateFrequency(30.0f);
 	SetMinNetUpdateFrequency(10.0f);
 
@@ -267,20 +262,16 @@ ARoguePlayerState::ARoguePlayerState()
 	AbilitySystemComponent = CreateDefaultSubobject<URogueAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
 	AbilitySystemComponent->SetIsReplicated(true);
 
-	// 玩家侧必须 Mixed：
-	// 引擎枚举注释写明 Minimal "does not work for Owned AbilitySystemComponents"，
-	// 而 Mixed 的含义是"自己的完整 GE 信息 + 其他人的最小信息"，
-	// 这正是联机预测需要的模式。
+	// 项目玩家 ASC 选用 Mixed：完整 GE 主要复制给拥有者，其他连接接收精简标签/Cue。
+	// 该模式不替代属性复制配置，也不单独保证技能预测正确。
 	AbilitySystemComponent->ConfigureAsPlayer();
 
-	// AttributeSet 是普通 UObject（不是组件），
-	// 它要被复制必须挂进 Actor 的"已注册子对象列表"（见 PostInitializeComponents）。
-	// 武器加成属性也在这一套里（曾经单独建过第二套，实测值复制不到客户端，已回退）。
+	// AttributeSet 为 UObject 子对象；本类在 PostInitializeComponents 中将其登记到
+	// ASC 的复制子对象列表。玩家基础属性和武器加成都使用这一套属性集。
 	AttributeSet = CreateDefaultSubobject<URogueAttributeSet>(TEXT("AttributeSet"));
 
-	// 打开 Actor 级的"用注册子对象列表做复制"。
-	// UE5 的新方式是 AddReplicatedSubObject；旧教程里那种重写
-	// UAbilitySystemComponent::ReplicateSubobjects() 已经不需要了。
+	// 启用 Actor 注册子对象列表路径；本项目 ASC/AttributeSet 采用对应注册方式，
+	// 这不表示所有 UE 版本和所有复制配置都只能使用这一条路径。
 	bReplicateUsingRegisteredSubObjectList = true;
 }
 
@@ -312,12 +303,8 @@ void ARoguePlayerState::BeginPlay()
 
 	// 注册项目的原生 GameplayCue（幂等）。
 	//
-	// 为什么放在这里：PlayerState::BeginPlay 在**每一台机器**上都会跑（服务端 + 每个客户端），
-	// 而且一定早于任何一次实际的特效触发。GameplayCue 的注册必须在所有会执行 cue 的机器上完成，
-	// 否则那台机器上的特效就是"静默不出现"。
-	//
-	// 为什么不能只靠"自定义 GameplayCueManager 的钩子"：实测 DefaultGame.ini 里配的
-	// GlobalGameplayCueManagerClass 会静默回退到默认管理器，钩子根本不会被调用（详见头文件说明）。
+	// 在本机每个 PlayerState 的 BeginPlay 尝试幂等注册，确保本机管理器能找到原生 Cue。
+	// 不保证跨 Actor 的 BeginPlay 顺序，也不能据此断言任何 Cue 一定晚于此入口。
 	RogueGameplayCues::EnsureNativeImpactCuesRegistered();
 }
 
@@ -339,8 +326,8 @@ void ARoguePlayerState::RefreshAbilityActorInfo(APawn* InPawn)
 	
 	
 	
-	// OwnerActor = this（PlayerState，负责复制）
-	// AvatarActor = InPawn（负责挂载与表现，可能是 nullptr）
+	// GAS OwnerActor = PlayerState，AvatarActor = 当前 Pawn（允许为空）。
+	// 网络所属连接和实际复制条件还由 Actor/ASC 的复制配置决定。
 	AbilitySystemComponent->InitAbilityActorInfo(this, InPawn);
 
 	// 授予默认技能。内部自带"只在服务端、只授一次"的保护，

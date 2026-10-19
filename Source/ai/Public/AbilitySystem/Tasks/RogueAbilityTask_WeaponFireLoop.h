@@ -6,22 +6,9 @@
 
 class URogueWeaponAbility;
 
-/**
- * 武器开火的"心跳"任务：**每帧一次**调用能力的一步开火逻辑。
- *
- * 为什么需要它：GameplayAbility 本身没有 Tick（`UGameplayAbility` 上没有逐帧回调），
- * 而武器开火的节奏检查必须是逐帧的 —— 改造前 `ARogueCharacter::TickWeapons` 就是每帧调一次
- * `WeaponTick`，任何"改成定时器轮询"的写法都会引入一帧到几十毫秒的额外延迟
- * （典型表现：敌人刚进射程时武器要等一小会儿才开第一枪）。
- *
- * 实现方式：`bTickingTask = true` 会让 ASC 上的 `UGameplayTasksComponent` 每帧调 `TickTask`。
- * 这一位必须在构造函数里设（`bTickingTask` 是 `UGameplayTask` 的 protected 成员）。
- * 本项目早前迁移冲刺时已经验证过这条路可行（见 `URogueAbilityTask_Dash`），
- * 包括"ASC 挂在 PlayerState 上"这种非 Pawn 宿主的情况。
- *
- * 任务本身不含玩法逻辑：它只是把心跳转给 `URogueWeaponAbility::RunFireLoopStep`，
- * 这样"谁在跑、什么时候停"由能力管，"怎么开火"由武器管。
- */
+/** 持续武器能力的逐帧任务，将 TickTask 转给 RunFireLoopStep。
+ * 选择逐帧检查用于及时响应目标出现；其性能与定时轮询的延迟取舍需实测。
+ * 能力结束时 GAS 通知任务清理；本任务不承载武器开火/数值实现。 */
 UCLASS()
 class AI_API URogueAbilityTask_WeaponFireLoop : public UAbilityTask
 {
@@ -30,7 +17,7 @@ class AI_API URogueAbilityTask_WeaponFireLoop : public UAbilityTask
 public:
 	URogueAbilityTask_WeaponFireLoop();
 
-	/** 创建并激活心跳（调用方负责 ReadyForActivation）。 */
+	/** 只创建任务；调用方须 ReadyForActivation 后才进入激活与调度。 */
 	static URogueAbilityTask_WeaponFireLoop* RunWeaponFireLoop(UGameplayAbility* OwningAbility);
 
 	virtual void Activate() override;

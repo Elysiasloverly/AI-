@@ -156,7 +156,7 @@ void ARogueWeapon_HellTower::OnOwnerDied()
 }
 
 // 生效数值：地狱塔的换算系数（伤害 ×0.125、每跳递增 ×0.0625、跳间隔 ×0.08/下限 0.03、范围 ×0.70）
-// 全部沿用自研版本；升级只改玩家 ASC 上的加成属性。
+// 加成输入来自角色的 GAS 属性快照。
 
 float ARogueWeapon_HellTower::GetEffectiveBaseDamage() const
 {

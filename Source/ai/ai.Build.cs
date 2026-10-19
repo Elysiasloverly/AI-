@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+// ai 项目的模块/构建入口。
 
 using UnrealBuildTool;
 
@@ -8,11 +8,8 @@ public class ai : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 	
-		// GAS 迁移：GameplayAbilities（ASC / AttributeSet / GameplayEffect / GameplayAbility）
-		// GameplayTags 提供 FGameplayTag 体系；GameplayTasks 是 UAbilityTask 的依赖（本来就有）。
-		// 联机化还需要 "NetCore"（FGameplayTagContainer 的网络序列化与 RPC 参数）。
-		// 输入迁移到 EnhancedInput（UInputAction / UInputMappingContext / UEnhancedInputComponent），
-		// 见 Docs/Enhanced-Input-Migration.md。
+		// GAS：GameplayAbilities、GameplayTags、GameplayTasks；NetCore 提供底层网络序列化支持。
+		// EnhancedInput 处理玩家输入，UMG/Slate 用于界面，AIModule 用于敌人控制。
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "AIModule", "GameplayTasks", "UMG", "GameplayAbilities", "GameplayTags", "NetCore", "EnhancedInput" });
 
 		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });

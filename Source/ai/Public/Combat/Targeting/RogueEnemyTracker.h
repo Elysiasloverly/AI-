@@ -7,6 +7,9 @@
 class ARogueEnemy;
 class ARogueExperiencePickup;
 
+/** 活跃对象注册表与二维格子缓存。重建遍历活跃敌人及已有桶；
+ *  查询遍历覆盖格子及其中候选，密集或大范围查询可能接近全表扫描。
+ *  格子按配置间隔刷新；期间对象移动/新注册可造成候选遗漏，并非实时物理查询。 */
 struct AI_API FRogueEnemyTracker
 {
 public:

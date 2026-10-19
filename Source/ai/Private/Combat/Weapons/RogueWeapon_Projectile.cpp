@@ -15,8 +15,7 @@ ARogueWeapon_Projectile::ARogueWeapon_Projectile()
 
 void ARogueWeapon_Projectile::CollectFireTargets(TArray<ARogueEnemy*>& OutTargets) const
 {
-	// 单个最近目标（与改造前 WeaponTick 里的 FindNearestEnemy 完全一致）。
-	// 基类默认实现就是它，这里显式写出来是为了让"这把武器打几个目标"一目了然。
+	// 使用基类的单个最近目标策略。
 	Super::CollectFireTargets(OutTargets);
 }
 
@@ -30,9 +29,7 @@ void ARogueWeapon_Projectile::FireAtTargets(const TArray<ARogueEnemy*>& Targets)
 	FireAtTarget(Targets[0]);
 }
 
-// 注：本类**不再有** OnUpgradeApplied / ApplyShared*Bonus，也**不再有** AttackTimer。
-// 升级统一落成玩家 ASC 上 URogueAttributeSet 的加成属性（GetEffective* 在开火时合并）；
-// 开火节奏由技能的冷却 GE 承担（见 URogueWeaponAbility::StampWeaponCooldown）。
+// 开火节奏由能力冷却 GE 控制；每次开火从配置与加成快照计算数值。
 
 void ARogueWeapon_Projectile::FireAtTarget(AActor* TargetActor)
 {
@@ -110,7 +107,7 @@ void ARogueWeapon_Projectile::PlayCosmeticFire(const FRogueWeaponCosmeticFire& F
 	// 只会在这里是"既非服务端、也非本人"的机器上被调用（见 Multicast_WeaponCosmetic）。
 	// 形状与 ARogueEnemy::Multicast_SpawnCosmeticProjectile 一致：
 	// 用同一个池函数、同一套参数生成一个纯表现弹体。
-	// 唯一的区别是伤害传 0 —— 伤害早已在服务端那一发里结算完，
+	// 这里伤害传 0；权威弹体在服务端后续命中时才结算，
 	// 这里再算一次就是双份扣血。
 	if (GetWorld() == nullptr)
 	{

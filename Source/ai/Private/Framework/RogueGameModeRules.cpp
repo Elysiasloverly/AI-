@@ -19,9 +19,7 @@ namespace
 		{ 6, ERogueEnemyType::Shooter, 1 },
 		{ 6, ERogueEnemyType::Spitter, 1 },
 		{ 6, ERogueEnemyType::Orbiter, 1 },
-		// 震荡柱：站桩 + 地面波（跳跃可躲），属于"走位检查"型敌人。
-		// 之前这张表漏了它 —— 数值表里配了倍率、原型/视觉/地面波也都实现了，
-		// 但因为没有任何波次条目，加权抽取时永远抽不到，导致它从不刷新。
+		// 震荡柱从第 7 波开始进入默认加权池；资产配置了波次表时以资产为准。
 		{ 7, ERogueEnemyType::ShockPillar, 1 },
 		{ 8, ERogueEnemyType::Tank, 1 },
 		{ 8, ERogueEnemyType::Artillery, 1 },
@@ -155,7 +153,7 @@ namespace
 ERogueEnemyType RogueGameModeRules::PickWeightedEnemyTypeForWave(int32 Wave, const URogueGameBalanceAsset* BalanceAsset)
 {
 	// 无约束版本：Boss 生成走这条（Boss 不应该被"普通敌人的存活上限"挡住）。
-	// 注意：TFunctionRef 只能绑定左值，所以这里的"永远放行"必须是一个具名变量，不能写临时 lambda。
+	// TFunctionRef 不拥有回调；这里用具名 lambda 使其在本次调用中保持有效，不能将引用保存到回调生命期之外。
 	auto AllowAll = [](ERogueEnemyType) { return true; };
 	return PickWeightedEnemyTypeForWave(Wave, BalanceAsset, AllowAll);
 }
@@ -174,20 +172,16 @@ ERogueEnemyType RogueGameModeRules::PickWeightedEnemyTypeForWave(int32 Wave, con
 FRogueSpawnCadence RogueGameModeRules::BuildSpawnCadence(int32 Wave, int32 AliveEnemies, int32 MaxAliveEnemies, bool bBossAlive, float BaseSpawnInterval, const URogueGameBalanceAsset* BalanceAsset)
 {
 	//数据资产优先，代码兜底
-	const int32 BossAliveMinMaxEnemies = BalanceAsset != nullptr ? BalanceAsset->BossAliveMinMaxEnemies : 20;
-	const int32 BossAliveMaxEnemyReduction = BalanceAsset != nullptr ? BalanceAsset->BossAliveMaxEnemyReduction : 12;
-	const int32 MaxAliveEnemiesPerWave = BalanceAsset != nullptr ? BalanceAsset->MaxAliveEnemiesPerWave : 8;
-	const int32 MaxAliveEnemiesHardLimit = BalanceAsset != nullptr ? BalanceAsset->MaxAliveEnemiesHardLimit : 0;
-	const int32 DoubleSpawnWave = BalanceAsset != nullptr ? BalanceAsset->DoubleSpawnWave : 5;
-	const int32 DoubleSpawnSlack = BalanceAsset != nullptr ? BalanceAsset->DoubleSpawnSlack : 10;
-	const int32 TripleSpawnWave = BalanceAsset != nullptr ? BalanceAsset->TripleSpawnWave : 10;
-	const int32 TripleSpawnSlack = BalanceAsset != nullptr ? BalanceAsset->TripleSpawnSlack : 24;
-	const float DifficultyScalePerWave = BalanceAsset != nullptr ? BalanceAsset->DifficultyScalePerWave : 0.21f;
-	const float MaxDifficultyScale = BalanceAsset != nullptr ? BalanceAsset->MaxDifficultyScale : 4.8f;
-	const int32 EarlyWaveSlowdownEndWave = BalanceAsset != nullptr ? BalanceAsset->EarlyWaveSlowdownEndWave : 4;
-	const float EarlyWaveSpawnMultiplierAtWaveOne = BalanceAsset != nullptr ? BalanceAsset->EarlyWaveSpawnMultiplierAtWaveOne : 1.35f;
-	const float EarlyWaveSpawnMultiplierAtEnd = BalanceAsset != nullptr ? BalanceAsset->EarlyWaveSpawnMultiplierAtEnd : 1.0f;
-	const float MinimumSpawnDelay = BalanceAsset != nullptr ? BalanceAsset->MinimumSpawnDelay : 0.18f;
+	const int32 BossAliveMinMaxEnemies = BalanceAsset != nullptr ? BalanceAsset->Spawn.BossAliveMinimumLimit : 20;
+	const int32 BossAliveMaxEnemyReduction = BalanceAsset != nullptr ? BalanceAsset->Spawn.BossAliveReduction : 12;
+	const int32 MaxAliveEnemiesPerWave = BalanceAsset != nullptr ? BalanceAsset->Spawn.MaxAlivePerWave : 8;
+	const int32 MaxAliveEnemiesHardLimit = BalanceAsset != nullptr ? BalanceAsset->Spawn.MaxAliveLimit : 0;
+	const float DifficultyScalePerWave = BalanceAsset != nullptr ? BalanceAsset->Spawn.AccelerationPerWave : 0.21f;
+	const float MaxDifficultyScale = BalanceAsset != nullptr ? BalanceAsset->Spawn.MaxAcceleration : 4.8f;
+	const int32 EarlyWaveSlowdownEndWave = BalanceAsset != nullptr ? BalanceAsset->Spawn.EarlyWaves.EndWave : 4;
+	const float EarlyWaveSpawnMultiplierAtWaveOne = BalanceAsset != nullptr ? BalanceAsset->Spawn.EarlyWaves.FirstWaveIntervalMultiplier : 1.35f;
+	const float EarlyWaveSpawnMultiplierAtEnd = BalanceAsset != nullptr ? BalanceAsset->Spawn.EarlyWaves.LastWaveIntervalMultiplier : 1.0f;
+	const float MinimumSpawnDelay = BalanceAsset != nullptr ? BalanceAsset->Spawn.MinimumInterval : 0.18f;
 
 	FRogueSpawnCadence Cadence;
 
@@ -204,15 +198,16 @@ FRogueSpawnCadence RogueGameModeRules::BuildSpawnCadence(int32 Wave, int32 Alive
 		? FMath::Max(BossAliveMinMaxEnemies, WaveScaledMaxAlive - BossAliveMaxEnemyReduction)
 		: WaveScaledMaxAlive;
 	
-	//单次生成批量
+	// 规则按列表顺序覆盖，保留原先三只规则独立于两只规则的行为。
 	Cadence.SpawnBatchSize = 1;
-	if (Wave >= DoubleSpawnWave && AliveEnemies <= Cadence.EffectiveMaxAliveEnemies - DoubleSpawnSlack)
+	const TArray<FRogueSpawnBatchRule>& BatchRules = BalanceAsset != nullptr
+		? BalanceAsset->Spawn.BatchRules : GetDefault<URogueGameBalanceAsset>()->Spawn.BatchRules;
+	for (const FRogueSpawnBatchRule& Rule : BatchRules)
 	{
-		Cadence.SpawnBatchSize = 2;
-	}
-	if (Wave >= TripleSpawnWave && AliveEnemies <= Cadence.EffectiveMaxAliveEnemies - TripleSpawnSlack)
-	{
-		Cadence.SpawnBatchSize = 3;
+		if (Wave >= Rule.StartWave && AliveEnemies <= Cadence.EffectiveMaxAliveEnemies - Rule.RequiredFreeSlots)
+		{
+			Cadence.SpawnBatchSize = Rule.BatchSize;
+		}
 	}
 
 	const float DifficultyScale = 1.0f / FMath::Clamp(1.0f + static_cast<float>(Wave - 1) * DifficultyScalePerWave, 1.0f, MaxDifficultyScale);
@@ -227,21 +222,15 @@ FRogueSpawnCadence RogueGameModeRules::BuildSpawnCadence(int32 Wave, int32 Alive
 FRogueEnemyProfile RogueGameModeRules::BuildEnemyProfile(int32 Wave, ERogueEnemyType EnemyType, const URogueGameBalanceAsset* BalanceAsset)
 {
 	//数据资产优先，代码兜底
-	const float BaseEnemyHealth = BalanceAsset != nullptr ? BalanceAsset->BaseEnemyHealth : 35.0f;
-	const float EnemyHealthPerWave = BalanceAsset != nullptr ? BalanceAsset->EnemyHealthPerWave : 10.0f;
-	const float BaseEnemySpeed = BalanceAsset != nullptr ? BalanceAsset->BaseEnemySpeed : 240.0f;
-	const float EnemySpeedPerWave = BalanceAsset != nullptr ? BalanceAsset->EnemySpeedPerWave : 12.0f;
-	const float BaseEnemyDamage = BalanceAsset != nullptr ? BalanceAsset->BaseEnemyDamage : 8.0f;
-	const float EnemyDamagePerWave = BalanceAsset != nullptr ? BalanceAsset->EnemyDamagePerWave : 1.5f;
-	const int32 BaseExperienceReward = BalanceAsset != nullptr ? BalanceAsset->BaseExperienceReward : 1;
-	const int32 ExperienceRewardWaveDivisor = BalanceAsset != nullptr ? BalanceAsset->ExperienceRewardWaveDivisor : 2;
-	const int32 MaxExperienceReward = BalanceAsset != nullptr ? BalanceAsset->MaxExperienceReward : 5;
-	const int32 MidGameHealthStartWave = BalanceAsset != nullptr ? BalanceAsset->MidGameHealthStartWave : 8;
-	const float MidGameHealthPerWave = BalanceAsset != nullptr ? BalanceAsset->MidGameHealthPerWave : 0.08f;
-	const float MidGameHealthCap = BalanceAsset != nullptr ? BalanceAsset->MidGameHealthCap : 0.72f;
-	const int32 LateGameHealthStartWave = BalanceAsset != nullptr ? BalanceAsset->LateGameHealthStartWave : 16;
-	const float LateGameHealthPerWave = BalanceAsset != nullptr ? BalanceAsset->LateGameHealthPerWave : 0.05f;
-	const float LateGameHealthCap = BalanceAsset != nullptr ? BalanceAsset->LateGameHealthCap : 0.50f;
+	const float BaseEnemyHealth = BalanceAsset != nullptr ? BalanceAsset->EnemyStats.Health.BaseValue : 35.0f;
+	const float EnemyHealthPerWave = BalanceAsset != nullptr ? BalanceAsset->EnemyStats.Health.PerWave : 10.0f;
+	const float BaseEnemySpeed = BalanceAsset != nullptr ? BalanceAsset->EnemyStats.Speed.BaseValue : 240.0f;
+	const float EnemySpeedPerWave = BalanceAsset != nullptr ? BalanceAsset->EnemyStats.Speed.PerWave : 12.0f;
+	const float BaseEnemyDamage = BalanceAsset != nullptr ? BalanceAsset->EnemyStats.Damage.BaseValue : 8.0f;
+	const float EnemyDamagePerWave = BalanceAsset != nullptr ? BalanceAsset->EnemyStats.Damage.PerWave : 1.5f;
+	const int32 BaseExperienceReward = BalanceAsset != nullptr ? BalanceAsset->Rewards.EnemyExperience.BaseAmount : 1;
+	const int32 ExperienceRewardWaveDivisor = BalanceAsset != nullptr ? BalanceAsset->Rewards.EnemyExperience.WaveInterval : 2;
+	const int32 MaxExperienceReward = BalanceAsset != nullptr ? BalanceAsset->Rewards.EnemyExperience.MaximumAmount : 5;
 
 	FRogueEnemyProfile Profile;
 	Profile.EnemyType = EnemyType;
@@ -253,24 +242,17 @@ FRogueEnemyProfile RogueGameModeRules::BuildEnemyProfile(int32 Wave, ERogueEnemy
 	Profile.Damage = BaseEnemyDamage + WaveScale * EnemyDamagePerWave;
 	Profile.ExperienceReward = FMath::Clamp(BaseExperienceReward + Wave / FMath::Max(ExperienceRewardWaveDivisor, 1), BaseExperienceReward, MaxExperienceReward);
 
-	// 中期 / 后期生命加成：两层依次相乘，每层都是 `1 + min(成长, 上限)`。
-	// **上限 <= 0 表示不封顶**（该层随波次无限增长）。
-	//
-	// ⚠️ 这里刻意不把上限钳到正数：0 是一个有意义的开关值。
-	//    详见 RogueGameBalanceAsset.h 里「中后期生命强化」那段说明 ——
-	//    两个坑：①上限是"加成比例"不是"倍率"（0.72 = ×1.72）；②两层上限**相乘**（默认 1.72×1.50 = 2.58）。
-	if (Wave >= MidGameHealthStartWave)
+	// 多个生命成长阶段可同时生效；每阶段从开始波当波起增加，并依次相乘。
+	const TArray<FRogueHealthGrowthStage>& HealthStages = BalanceAsset != nullptr
+		? BalanceAsset->EnemyStats.HealthGrowthStages : GetDefault<URogueGameBalanceAsset>()->EnemyStats.HealthGrowthStages;
+	for (const FRogueHealthGrowthStage& Stage : HealthStages)
 	{
-		const float RawMidGameBonus = static_cast<float>(Wave - (MidGameHealthStartWave - 1)) * MidGameHealthPerWave;
-		const float MidGameBonus = MidGameHealthCap > 0.0f ? FMath::Min(RawMidGameBonus, MidGameHealthCap) : RawMidGameBonus;
-		Profile.Health *= 1.0f + MidGameBonus;
-	}
-
-	if (Wave >= LateGameHealthStartWave)
-	{
-		const float RawLateGameBonus = static_cast<float>(Wave - (LateGameHealthStartWave - 1)) * LateGameHealthPerWave;
-		const float LateGameBonus = LateGameHealthCap > 0.0f ? FMath::Min(RawLateGameBonus, LateGameHealthCap) : RawLateGameBonus;
-		Profile.Health *= 1.0f + LateGameBonus;
+		if (Wave >= Stage.StartWave)
+		{
+			const float RawBonus = static_cast<float>(Wave - (Stage.StartWave - 1)) * Stage.BonusPerWave;
+			const float Bonus = Stage.MaxBonus > 0.0f ? FMath::Min(RawBonus, Stage.MaxBonus) : RawBonus;
+			Profile.Health *= 1.0f + Bonus;
+		}
 	}
 
 	if (const FRogueEnemyBalanceRow* BalanceRow = FindBalanceRow(BalanceAsset, EnemyType))
@@ -281,16 +263,9 @@ FRogueEnemyProfile RogueGameModeRules::BuildEnemyProfile(int32 Wave, ERogueEnemy
 		Profile.ExperienceReward += BalanceRow->ExperienceRewardBonus;
 	}
 
-	// ---- 最终生命上限（**-1 = 不设上限**，资产默认 -1）----
-	//
-	// 放在**全部计算之后**（含上面那条敌人类型倍率），所以它是真正的最终封顶。
-	//
-	// 为什么需要：上面三层里**线性那一层永远不封顶** —— 中期/后期那两个"倍率上限"
-	// 只约束叠上去的加成，生命本身仍随波次线性增长。想让"某波之后普通怪不再变肉"，
-	// 就得在这里给一个绝对值。
-	//
-	// 只作用于普通敌人：Boss 走 BuildBossProfile，不经过这里。
-	const float MaxEnemyHealth = BalanceAsset != nullptr ? BalanceAsset->MaxEnemyHealth : -1.0f;
+	// 普通敌人档案的最终生命钳制；任意负值表示关闭，>=0时包含类型倍率后再取最小值。
+	// Boss 独立走 BuildBossProfile，不经过此分支。
+	const float MaxEnemyHealth = BalanceAsset != nullptr ? BalanceAsset->EnemyStats.MaxHealth : -1.0f;
 	if (MaxEnemyHealth >= 0.0f)
 	{
 		Profile.Health = FMath::Min(Profile.Health, MaxEnemyHealth);
@@ -301,21 +276,21 @@ FRogueEnemyProfile RogueGameModeRules::BuildEnemyProfile(int32 Wave, ERogueEnemy
 
 FRogueEnemyProfile RogueGameModeRules::BuildBossProfile(int32 Wave, ERogueEnemyType EnemyType, const URogueGameBalanceAsset* BalanceAsset)
 {
-	const float BaseBossHealth = BalanceAsset != nullptr ? BalanceAsset->BaseBossHealth : 420.0f;
-	const float BossHealthPerWave = BalanceAsset != nullptr ? BalanceAsset->BossHealthPerWave : 140.0f;
-	const float BaseBossSpeed = BalanceAsset != nullptr ? BalanceAsset->BaseBossSpeed : 250.0f;
-	const float BossSpeedPerWave = BalanceAsset != nullptr ? BalanceAsset->BossSpeedPerWave : 10.0f;
-	const float BaseBossDamage = BalanceAsset != nullptr ? BalanceAsset->BaseBossDamage : 18.0f;
-	const float BossDamagePerWave = BalanceAsset != nullptr ? BalanceAsset->BossDamagePerWave : 2.6f;
-	const int32 BossExperiencePerWave = BalanceAsset != nullptr ? BalanceAsset->BossExperiencePerWave : 4;
-	const int32 MinBossExperienceReward = BalanceAsset != nullptr ? BalanceAsset->MinBossExperienceReward : 30;
-	const int32 MaxBossExperienceReward = BalanceAsset != nullptr ? BalanceAsset->MaxBossExperienceReward : 120;
-	const int32 LateEliteBossStartWave = BalanceAsset != nullptr ? BalanceAsset->LateEliteBossStartWave : 20;
-	const float EarlyEliteBossHealthMultiplier = BalanceAsset != nullptr ? BalanceAsset->EarlyEliteBossHealthMultiplier : 1.58f;
-	const float LateEliteBossHealthMultiplier = BalanceAsset != nullptr ? BalanceAsset->LateEliteBossHealthMultiplier : 1.72f;
-	const float EarlyEliteBossDamageMultiplier = BalanceAsset != nullptr ? BalanceAsset->EarlyEliteBossDamageMultiplier : 1.16f;
-	const float LateEliteBossDamageMultiplier = BalanceAsset != nullptr ? BalanceAsset->LateEliteBossDamageMultiplier : 1.24f;
-	const float EliteBossSpeedMultiplier = BalanceAsset != nullptr ? BalanceAsset->EliteBossSpeedMultiplier : 1.05f;
+	const float BaseBossHealth = BalanceAsset != nullptr ? BalanceAsset->BossStats.Health.BaseValue : 420.0f;
+	const float BossHealthPerWave = BalanceAsset != nullptr ? BalanceAsset->BossStats.Health.PerWave : 140.0f;
+	const float BaseBossSpeed = BalanceAsset != nullptr ? BalanceAsset->BossStats.Speed.BaseValue : 250.0f;
+	const float BossSpeedPerWave = BalanceAsset != nullptr ? BalanceAsset->BossStats.Speed.PerWave : 10.0f;
+	const float BaseBossDamage = BalanceAsset != nullptr ? BalanceAsset->BossStats.Damage.BaseValue : 18.0f;
+	const float BossDamagePerWave = BalanceAsset != nullptr ? BalanceAsset->BossStats.Damage.PerWave : 2.6f;
+	const int32 BossExperiencePerWave = BalanceAsset != nullptr ? BalanceAsset->Rewards.BossExperience.PerWave : 4;
+	const int32 MinBossExperienceReward = BalanceAsset != nullptr ? BalanceAsset->Rewards.BossExperience.MinimumAmount : 30;
+	const int32 MaxBossExperienceReward = BalanceAsset != nullptr ? BalanceAsset->Rewards.BossExperience.MaximumAmount : 120;
+	const int32 LateEliteBossStartWave = BalanceAsset != nullptr ? BalanceAsset->BossStats.LateStageStartWave : 20;
+	const float EarlyEliteBossHealthMultiplier = BalanceAsset != nullptr ? BalanceAsset->BossStats.EarlyStage.HealthMultiplier : 1.58f;
+	const float LateEliteBossHealthMultiplier = BalanceAsset != nullptr ? BalanceAsset->BossStats.LateStage.HealthMultiplier : 1.72f;
+	const float EarlyEliteBossDamageMultiplier = BalanceAsset != nullptr ? BalanceAsset->BossStats.EarlyStage.DamageMultiplier : 1.16f;
+	const float LateEliteBossDamageMultiplier = BalanceAsset != nullptr ? BalanceAsset->BossStats.LateStage.DamageMultiplier : 1.24f;
+	const float EliteBossSpeedMultiplier = BalanceAsset != nullptr ? BalanceAsset->BossStats.SpeedMultiplier : 1.05f;
 
 	FRogueEnemyProfile Profile;
 	Profile.EnemyType = EnemyType;
@@ -345,34 +320,34 @@ int32 RogueGameModeRules::BuildCurrencyReward(int32 Wave, bool bIsBoss, const UR
 {
 	if (bIsBoss)
 	{
-		const int32 BossCurrencyBaseReward = BalanceAsset != nullptr ? BalanceAsset->BossCurrencyBaseReward : 14;
-		const int32 BossCurrencyPerWave = BalanceAsset != nullptr ? BalanceAsset->BossCurrencyPerWave : 1;
-		const int32 MaxBossCurrencyReward = BalanceAsset != nullptr ? BalanceAsset->MaxBossCurrencyReward : 28;
+		const int32 BossCurrencyBaseReward = BalanceAsset != nullptr ? BalanceAsset->Rewards.BossGold.BaseAmount : 14;
+		const int32 BossCurrencyPerWave = BalanceAsset != nullptr ? BalanceAsset->Rewards.BossGold.PerWave : 1;
+		const int32 MaxBossCurrencyReward = BalanceAsset != nullptr ? BalanceAsset->Rewards.BossGold.MaximumAmount : 28;
 		return FMath::Clamp(BossCurrencyBaseReward + Wave * BossCurrencyPerWave, BossCurrencyBaseReward, MaxBossCurrencyReward);
 	}
 
-	const int32 EnemyCurrencyBaseReward = BalanceAsset != nullptr ? BalanceAsset->EnemyCurrencyBaseReward : 1;
-	const int32 EnemyCurrencyWaveDivisor = BalanceAsset != nullptr ? BalanceAsset->EnemyCurrencyWaveDivisor : 6;
-	const int32 MaxEnemyCurrencyReward = BalanceAsset != nullptr ? BalanceAsset->MaxEnemyCurrencyReward : 3;
+	const int32 EnemyCurrencyBaseReward = BalanceAsset != nullptr ? BalanceAsset->Rewards.EnemyGold.BaseAmount : 1;
+	const int32 EnemyCurrencyWaveDivisor = BalanceAsset != nullptr ? BalanceAsset->Rewards.EnemyGold.WaveInterval : 6;
+	const int32 MaxEnemyCurrencyReward = BalanceAsset != nullptr ? BalanceAsset->Rewards.EnemyGold.MaximumAmount : 3;
 	return FMath::Clamp(EnemyCurrencyBaseReward + Wave / FMath::Max(EnemyCurrencyWaveDivisor, 1), EnemyCurrencyBaseReward, MaxEnemyCurrencyReward);
 }
 
 int32 RogueGameModeRules::GetShopOfferCount(const URogueGameBalanceAsset* BalanceAsset)
 {
-	return BalanceAsset != nullptr ? FMath::Max(1, BalanceAsset->ShopOfferCount) : 6;
+	return BalanceAsset != nullptr ? FMath::Max(1, BalanceAsset->Shop.OfferCount) : 6;
 }
 
 int32 RogueGameModeRules::GetShopOfferCost(const URogueGameBalanceAsset* BalanceAsset)
 {
-	return BalanceAsset != nullptr ? FMath::Max(1, BalanceAsset->ShopOfferCost) : 22;
+	return BalanceAsset != nullptr ? FMath::Max(1, BalanceAsset->Shop.OfferCost) : 22;
 }
 
 int32 RogueGameModeRules::GetShopRefreshCost(const URogueGameBalanceAsset* BalanceAsset)
 {
-	return BalanceAsset != nullptr ? FMath::Max(0, BalanceAsset->ShopRefreshCost) : 14;
+	return BalanceAsset != nullptr ? FMath::Max(0, BalanceAsset->Shop.RefreshCost) : 14;
 }
 
 float RogueGameModeRules::GetShopAutoRefreshInterval(const URogueGameBalanceAsset* BalanceAsset)
 {
-	return BalanceAsset != nullptr ? FMath::Max(5.0f, BalanceAsset->ShopAutoRefreshInterval) : 60.0f;
+	return BalanceAsset != nullptr ? FMath::Max(5.0f, BalanceAsset->Shop.AutoRefreshInterval) : 60.0f;
 }

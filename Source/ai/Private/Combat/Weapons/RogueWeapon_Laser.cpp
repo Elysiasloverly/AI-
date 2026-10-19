@@ -16,7 +16,7 @@ ARogueWeapon_Laser::ARogueWeapon_Laser()
 
 void ARogueWeapon_Laser::CollectFireTargets(TArray<ARogueEnemy*>& OutTargets) const
 {
-	// 与改造前 WeaponTick 完全一致：射程内取 `max(8, 数量×3)` 个候选。
+	// 当前策略：射程内取 `max(8, 数量×3)` 个候选。
 	CollectEnemiesInRange(GetEffectiveRange(), OutTargets, FMath::Max(8, GetEffectiveCount() * 3));
 }
 
@@ -30,7 +30,7 @@ void ARogueWeapon_Laser::FireAtTargets(const TArray<ARogueEnemy*>& Targets)
 	FireLaserBurst(Targets);
 }
 
-// 生效数值：激光的换算系数（攻速 ×2.0/下限 0.35、折射范围 ×0.45）沿用自研版本。
+// 生效数值：激光的换算系数（攻速 ×2.0/下限 0.35、折射范围 ×0.45）由本武器定义。
 // 升级只改玩家 ASC 上的加成属性，这里负责"基础值 + 加成×本武器系数"。
 
 float ARogueWeapon_Laser::GetEffectiveCooldown() const

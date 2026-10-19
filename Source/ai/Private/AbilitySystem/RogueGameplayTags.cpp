@@ -41,15 +41,7 @@ namespace RogueGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG(Effect_Upgrade,               "Effect.Upgrade");
 	UE_DEFINE_GAMEPLAY_TAG(Effect_Upgrade_Attribute,     "Effect.Upgrade.Attribute");
 
-	// ---- 升级载荷 Tag（20 个）已随 ExecutionCalculation 一起退役 ----
-	//
-	// 这里曾有 8 个 `Upgrade.Attribute.*` + 12 个 `Upgrade.Weapon.*`，作用是告诉
-	// "通用升级 GE"这次该改哪个属性。升级改成 Stacking 之后，引擎**只按 Spec.Def 匹配**
-	// 可叠加实例，一种升级必须一个 GE 类 —— 于是目标属性烤在类上，载荷 Tag 不再需要。
-	// 删除理由与"确认无资产引用"的依据见 RogueGameplayTags.h 里的说明。
-	//
-	// ⚠️ 上面那个**族标签** `Effect.Upgrade.Attribute` 保留：它另有用途（批量查询/移除），
-	//    与载荷不是一回事。
+	// 升级目标属性固定在各 GE 子类；不再使用历史 Upgrade.Attribute/Weapon 载荷标签。
 
 	// ---- GameplayCue（表现层）----
 	// 注意根必须是 "GameplayCue"，引擎的 GameplayCueManager 按这个根做路由。
@@ -61,12 +53,7 @@ namespace RogueGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG(GameplayCue_State_Downed,      "GameplayCue.State.Downed");
 }
 
-// 这里原本有 `RogueGameplayTags::GetUpgradeAttributeTag()` —— 一张
-// "升级类型 → 载荷 Tag" 的 switch 表，已随 URogueUpgradeExecution 一起删除。
-//
-// ⚠️ 它上面那条注释（**`ERogueUpgradeType::Armor` 是"伤害减免"而不是护甲回复**）
-//    已经搬到 `RogueAttributeUpgradeEffect.cpp` 里对应子类的构造处 ——
-//    那是映射关系现在所在的地方，也就是最容易看错的地方。
+// 升级枚举与目标属性映射位于 GameplayEffects/RogueAttributeUpgradeEffect.cpp。
 
 FGameplayTag RogueGameplayTags::GetImpactCueTag(ERogueImpactVisualStyle Style)
 {

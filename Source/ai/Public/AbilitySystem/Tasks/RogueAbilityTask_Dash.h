@@ -6,19 +6,9 @@
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FRogueDashTaskDelegate);
 
-/**
- * 冲刺位移任务（自定义 AbilityTask）。
- *
- * 为什么需要一个 Task 来做位移，而不是在 `ActivateAbility` 里循环：
- *   GameplayAbility 本身**不 Tick**。想在技能激活期间逐帧做事，
- *   标准做法就是派生一个 `bTickingTask = true` 的 UAbilityTask，
- *   把逐帧逻辑放进 `TickTask`。这也是 GAS 里最常被问到的一块。
- *
- * 位移方式刻意与迁移前的 `ARogueCharacter::HandleDash` 完全一致：
- *   `AddActorWorldOffset(方向 * 速度 * Δt, bSweep = true)`，撞墙立即结束。
- *   换成 root motion（`UAbilityTask_ApplyRootMotionConstantForce`）虽然更"正统"，
- *   但会改变撞墙表现与手感，所以迁移期先保证行为等价。
- */
+/** 冲刺逐帧任务：按方向和速度直接 AddActorWorldOffset，并执行碰撞扫描。
+ * 撞墙或时限耗尽时广播完成；不负责 CharacterMovement 的移动预测/重放。
+ * EndTask 只结束任务，不会自动结束所属能力；完成委托由能力绑定以调用 EndAbility。 */
 UCLASS()
 class AI_API URogueAbilityTask_Dash : public UAbilityTask
 {
@@ -27,7 +17,8 @@ class AI_API URogueAbilityTask_Dash : public UAbilityTask
 public:
 	URogueAbilityTask_Dash();
 
-	/** 冲刺结束（时间用完 / 撞墙 / Avatar 失效）时广播 */
+	/** 正常到期、撞墙或发现角色已非存活时广播。
+	 * 参数非法、Avatar 无效的早退仅 EndTask，不广播；外部取消能力也不保证本委托触发。 */
 	UPROPERTY(BlueprintAssignable)
 	FRogueDashTaskDelegate OnDashFinished;
 

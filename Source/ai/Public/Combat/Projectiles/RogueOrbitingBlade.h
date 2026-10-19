@@ -20,20 +20,16 @@ struct AI_API FRogueOrbitingBladeVisualConfig
 	UPROPERTY(EditDefaultsOnly, Category = "Visual")
 	FRotator MeshRotation = FRotator(0.0f, 45.0f, 90.0f);
 
-	UPROPERTY(EditDefaultsOnly, Category = "Visual")
+	// 保留旧资产字段；基础尺寸在蓝图 Mesh 组件中设置，大小升级在该尺寸上乘算。
+	UPROPERTY()
 	FVector MeshScale = FVector(0.75f, 0.14f, 1.1f);
 
-	// ---- 发光（Overlay Material）----
-	// 用 UE5 的 Mesh Overlay Material 做辉光：同一份网格再画一遍，叠一层材质。
-	// 引擎对它的定义就是"Translucent material to blend on top of this mesh"，
-	// 所以这个材质必须是半透明/叠加（Additive）的，否则会直接盖住本体。
-	// 原来这里是"再建一个略大的静态网格套在外面"（GlowMesh），代价是多一个组件、
-	// 多一个 draw call，而且外层一旦不透明就会把本体完全挡住。
+	// Overlay Material 会额外绘制网格；使用合适的半透明/叠加材质表现发光，
+	// 并检查材质混合方式与绘制成本。
 	UPROPERTY(EditDefaultsOnly, Category = "Visual")
 	TObjectPtr<UMaterialInterface> GlowMaterial;
 
-	/** 脉冲要驱动的标量参数名。必须和 GlowMaterial 里的参数名一字不差；
-	 *  找不到这个参数时不会报错也不会刷日志，只是"不脉冲"（启动时查一次并提示）。 */
+	/** 要驱动的标量参数名；SetupGlowMaterial 解析可用参数，缺失时跳过脉冲并限次提示。 */
 	UPROPERTY(EditDefaultsOnly, Category = "Visual", meta = (DisplayName = "脉冲参数名"))
 	FName GlowPulseParameterName = TEXT("GlowPulse");
 
@@ -77,7 +73,7 @@ public:
 	void ActivatePooledBlade(AActor* InOwnerActor);
 	void DeactivateToPool();
 	bool IsAvailableInPool() const { return bPoolAvailable; }
-	void ConfigureBlade(AActor* InOwnerActor, int32 InBladeIndex, int32 InBladeCount, float InOrbitRadius, float InRotationSpeed, float InDamage, float InSharedOrbitAngle);
+	void ConfigureBlade(AActor* InOwnerActor, int32 InBladeIndex, int32 InBladeCount, float InOrbitRadius, float InRotationSpeed, float InDamage, float InSharedOrbitAngle, float InSizeMultiplier = 1.0f);
 
 protected:
 	virtual void BeginPlay() override;
@@ -89,6 +85,7 @@ private:
 
 	void UpdateCooldowns(float DeltaSeconds);
 	void UpdateTransform();
+	void ApplySizeMultiplier(float InSizeMultiplier);
 
 	/** 建立（或重建）发光用的动态材质实例，并解析脉冲参数是否存在。
 	 *  只做一次，之后池复用不再重建——避免每次激活都 new 一个 MID。 */
@@ -107,8 +104,7 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> GlowMaterialInstance;
 
-	/** 解析结果：GlowMaterial 里到底有没有 GlowPulseParameterName 这个标量参数。
-	 *  没有的话就别每帧去 SetScalarParameterValue —— 那会白白刷引擎警告。 */
+	/** 材质是否包含配置的标量参数；缺失时跳过逐帧写入。 */
 	bool bHasGlowPulseParameter = false;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Visual")
@@ -120,11 +116,15 @@ private:
 	int32 BladeIndex = 0;
 	int32 BladeCount = 1;
 	// 这些只是"还没被 ConfigureBlade 覆盖"时的占位值，运行时以武器推送的配置为准。
-	// 默认值与 FRogueWeaponTableRow 对齐，避免出问题时两处不一致。
+	// 只有 OrbitRadius 与表默认值相同；实际转速与伤害以 ConfigureBlade 输入为准。
 	float OrbitRadius = 120.0f;
 	float RotationSpeed = 120.0f;
 	float Damage = 12.0f;
 	float SharedOrbitAngle = 0.0f;
+	// BeginPlay 缓存蓝图组件的实际基础尺寸；升级乘此基准，池复用恢复此基准。
+	FVector BaseMeshScale = FVector(0.75f, 0.14f, 1.1f);
+	float BaseCollisionRadius = 46.0f;
+	float SizeMultiplier = 1.0f;
 	bool bVisualsSimplified = false;
 	bool bPoolAvailable = true;
 };

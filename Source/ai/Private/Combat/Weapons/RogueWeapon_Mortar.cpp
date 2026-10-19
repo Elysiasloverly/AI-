@@ -15,8 +15,8 @@ ARogueWeapon_Mortar::ARogueWeapon_Mortar()
 
 void ARogueWeapon_Mortar::CollectFireTargets(TArray<ARogueEnemy*>& OutTargets) const
 {
-	// 与改造前 WeaponTick 完全一致：射程内取 `max(8, 数量×4)` 个候选，
-	// 再按"离玩家从远到近"排序（迫击炮优先打最远的那批）。
+	// 先取射程内按二维距离排序后的最近 max(8, 数量×4) 个候选，
+	// 再将这批候选按三维距离倒序分配，并非直接选择射程内最远的敌人。
 	CollectEnemiesInRange(GetEffectiveRange(), OutTargets, FMath::Max(8, GetEffectiveCount() * 4));
 	if (OutTargets.Num() == 0)
 	{
@@ -47,7 +47,7 @@ void ARogueWeapon_Mortar::FireAtTargets(const TArray<ARogueEnemy*>& Targets)
 }
 
 // 生效数值：迫击炮的换算系数（攻速 ×2.0/下限 0.7、弹速 ×0.5、爆炸半径 ×0.35）
-// 全部沿用自研版本；升级只改玩家 ASC 上的加成属性。
+// 加成输入来自角色的 GAS 属性快照。
 
 float ARogueWeapon_Mortar::GetEffectiveCooldown() const
 {

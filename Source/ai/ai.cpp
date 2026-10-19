@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+// ai 主游戏模块。
 
 #include "ai.h"
 #include "Modules/ModuleManager.h"

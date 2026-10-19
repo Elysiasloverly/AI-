@@ -8,12 +8,8 @@
 class ARogueEnemy;
 class URogueAbilityTask_AttackTick;
 
-/** 敌人攻击执行次数的进程级计数（Phase 3 自检/性能对比用）。
- *
- *  为什么是"进程级"而不是每只怪各存一份：验证"攻击真的改成能力驱动了"要看的是
- *  "三种攻击各执行了多少次"，把所有怪的数字加起来才有意义；而每只怪的计数器
- *  需要一个遍历所有敌人的聚合过程，反而更贵、更容易在池化复用时漏清。
- *  代价是它不区分敌人，只用于日志对比 —— 所以不进任何玩法逻辑。 */
+/** 进程级攻击尝试/执行计数，只用于调试，不复制、不区分世界或敌人。
+ * 单进程多世界测试会共享这些值；计数不进入玩法判断。 */
 namespace RogueEnemyAttackStats
 {
 	struct FCounters
@@ -23,7 +19,7 @@ namespace RogueEnemyAttackStats
 		int32 RangedAttempts = 0;
 		int32 GroundWaveAttempts = 0;
 
-		/** 能力真的跑完一次攻击的次数 */
+		/** 接触执行入口次数、成功远程发射次数、地面波启动次数；不都代表命中/完整结束。 */
 		int32 Contact = 0;
 		int32 Ranged = 0;
 		int32 GroundWave = 0;
@@ -41,27 +37,10 @@ namespace RogueEnemyAttackStats
 	AI_API void CountGroundWaveAttempt();
 }
 
-/**
- * 敌人攻击的 GameplayAbility 基类。
- *
- * ============ 与 AI 的分工（Phase 3 的核心）============
- *   · **AI（ARogueEnemy）只决定"要不要打"**：目标是谁、距离够不够、决策节流到点了没。
- *     这些都是每帧都在变的东西，放在 AI 里做才便宜（一次距离比较，没有 UObject/GE 开销）。
- *   · **能力负责"怎么打"**：真正结算伤害、生成弹体、推进地面波，以及"这一发之后冷却多久"。
- * 所以 AI 侧每个决策点只有一句 `TryActivateAttack(Handle)`，
- * 而 GAS 的调用次数与**实际攻击次数**成正比，与"敌人数量 × 帧数"无关 ——
- * 这条就是 200+ 敌人不退化性能的关键（详见 Docs/GAS-Main-Architecture-Plan.md 的 Phase 3）。
- *
- * ============ 为什么是 ServerOnly ============
- * 敌人没有"本人客户端"：攻击表现走已有的复制通道（弹体 Multicast、地面波复制半径），
- * 能力只需要在服务端跑一份。用 ServerOnly 也让客户端**完全没有**敌人技能实例，
- * 那部分开销直接归零。
- *
- * ============ 三个子类 ============
- *   · `URogueEnemyContactAttackAbility`   接触伤害（贴身的每个玩家都吃一发）
- *   · `URogueEnemyRangedAttackAbility`    远程弹幕
- *   · `URogueEnemyGroundWaveAttackAbility` 地面波：**持续到波结束**，期间逐帧推进扩散
- */
+/** 服务端敌人攻击能力：AI 判断距离、目标及各自计时器后尝试激活。
+ * 能力调用敌人的接触伤害/弹体/地面波执行函数；地面波持续激活并逐帧推进。
+ * ServerOnly 决定执行位置；客户端是否存在 Spec/实例还受授予、拥有者与复制规则影响。
+ * 当前冷却 GE 只记录状态，未接入能力激活闸门，实际节流仍由 AI 计时器保证。 */
 UCLASS(Abstract)
 class AI_API URogueEnemyAttackAbility : public UGameplayAbility
 {
@@ -79,8 +58,8 @@ public:
 	/** 本能力驱动的敌人（拿不到返回 nullptr）。 */
 	ARogueEnemy* GetEnemy() const;
 
-	/** 这一发之后冷却多久（秒）——由子类从敌人原型里取，AI 也从同一个函数取值，
-	 *  保证"AI 什么时候再试"和"能力冷却多久"永远一致。 */
+	/** 攻击结束后记录到 GE 的冷却秒数；子类从当前敌人原型读取。
+	 * AI 计时器另行读取原型配置，并非调用此函数。 */
 	virtual float GetAttackCooldownSeconds() const PURE_VIRTUAL(URogueEnemyAttackAbility::GetAttackCooldownSeconds, return 0.0f;);
 
 protected:
@@ -135,14 +114,8 @@ public:
 	virtual float GetAttackCooldownSeconds() const override;
 };
 
-/**
- * 地面波：激活后**一直保持激活**，逐帧推进波的扩散与伤害，波结束后才结束能力并进入冷却。
- *
- * 为什么不像另外两种那样"一次性"：波的扩散本身就是一段持续时间的行为
- * （`ARogueEnemy::UpdateGroundWave` 每帧算半径、判命中、刷视觉），
- * 用"持续激活的能力 + 逐帧心跳"表达它，正好让 AI 彻底不用管波 ——
- * 改造前 `HandleGroundWaveAttack` 里那段 "if (bGroundWaveActive) UpdateGroundWave(Delta)" 就是 AI 在替能力干活。
- */
+/** 地面波持续能力：逐帧调用 Enemy 的波推进函数，结束后记录冷却并结束能力。
+ * AI 仍维护目标、攻击决策和冷却计时；能力承担波激活期间的推进。 */
 UCLASS()
 class AI_API URogueEnemyGroundWaveAttackAbility : public URogueEnemyAttackAbility
 {

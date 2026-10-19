@@ -5,7 +5,7 @@
 #include "Shared/RogueTypes.h"
 #include "AbilitySystem/RogueAttributeSet.h"
 
-#include "World/RogueArena.h"
+#include "World/RogueEnemySpawnRegion.h"
 #include "Player/RogueCharacter.h"
 #include "Player/RoguePlayerState.h"
 #include "Player/RoguePlayerController.h"
@@ -28,16 +28,16 @@
 #include "Combat/Pooling/RogueCombatPoolSubsystem.h"
 #include "Combat/Targeting/RogueEnemyTrackerSubsystem.h"
 #include "Enemies/Spawning/RogueSpawnSubsystem.h"
-#include "World/RogueSceneSubsystem.h"
 #include "Kismet/GameplayStatics.h"
 #include "UObject/SoftObjectPath.h"
+#include "UObject/ConstructorHelpers.h"
 
 namespace
 {
-	const TCHAR* DefaultGameBalanceAssetPath = TEXT("/Game/DataTable/AS_RogueGameBalanceAsse.AS_RogueGameBalanceAsse");
-	const TCHAR* DefaultUpgradeDefinitionAssetPath = TEXT("/Game/DataTable/AS_UpgradeDefinitionAsset.AS_UpgradeDefinitionAsset");
-	const TCHAR* DefaultUpgradeRuleAssetPath = TEXT("/Game/DataTable/AS_RogueUpgradeRuleAsset.AS_RogueUpgradeRuleAsset");
-	const TCHAR* DefaultEnemyArchetypeTablePath = TEXT("/Game/DataTable/DT_FRogueEnemyArchetypeRow.DT_FRogueEnemyArchetypeRow");
+	const TCHAR* DefaultGameBalanceAssetPath = TEXT("/Game/Data/Core/DA_GameBalance.DA_GameBalance");
+	const TCHAR* DefaultUpgradeDefinitionAssetPath = TEXT("/Game/Data/Upgrades/DA_UpgradeDefinitions.DA_UpgradeDefinitions");
+	const TCHAR* DefaultUpgradeRuleAssetPath = TEXT("/Game/Data/Upgrades/DA_UpgradeRules.DA_UpgradeRules");
+	const TCHAR* DefaultEnemyArchetypeTablePath = TEXT("/Game/Data/Enemies/DT_EnemyArchetypes.DT_EnemyArchetypes");
 
 	template <typename AssetType>
 	AssetType* LoadConfiguredOrDefaultAsset(const TSoftObjectPtr<AssetType>& ConfiguredAsset, const TCHAR* DefaultAssetPath)
@@ -60,13 +60,15 @@ ARogueGameMode::ARogueGameMode()
 {
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.bTickEvenWhenPaused = true;
-	DefaultPawnClass = ARogueCharacter::StaticClass();
+	// 默认生成玩家蓝图，使用其组件、模型、材质和变换配置。
+	static ConstructorHelpers::FClassFinder<ARogueCharacter> PlayerBlueprint(TEXT("/Game/BP/BP_RogueCharacter"));
+	DefaultPawnClass = PlayerBlueprint.Class;
 
 	// 整局运行状态走 GameState（会复制到所有客户端）。
 	// GameMode 是服务端独占对象，客户端拿不到 —— 所以 HUD 要显示的东西不能只放在这里。
 	GameStateClass = ARogueGameState::StaticClass();
 
-	// ASC 挂在 PlayerState 上（联机 GAS 的标准做法，详见 ARoguePlayerState 的注释）。
+	// 本项目将玩家 ASC 放在 PlayerState，Character 作为 Avatar；其他项目也可按生命周期需求选宿主。
 	// 注意：这是在 C++ 里设的，如果 BP_RogueGameMode 覆盖过 PlayerStateClass，
 	// 需要同步改成 BP 或清掉那个覆盖。
 	PlayerStateClass = ARoguePlayerState::StaticClass();
@@ -76,47 +78,33 @@ ARogueGameMode::ARogueGameMode()
 	PlayerControllerClass = ARoguePlayerController::StaticClass();
 
 	HUDClass = ARogueHUD::StaticClass();
-	ArenaClass = ARogueArena::StaticClass();
-	ShopTerminalClass = ARogueShopTerminal::StaticClass();
 }
 
 void ARogueGameMode::BeginPlay()
 {
 	Super::BeginPlay();
 
-	SpawnRuntimeWorldActors();
+	FindLevelGameplayActors();
 	ConfigureRuntimeAssets();
 	ConfigureRuntimeSubsystems();
 	PrewarmCombatPools();
 }
 
-void ARogueGameMode::SpawnRuntimeWorldActors()
+void ARogueGameMode::FindLevelGameplayActors()
 {
-	//生成竞技场
-	if (!SpawnedArena.IsValid())
-	{
-		UClass* ArenaToSpawn = ArenaClass ? ArenaClass.Get() : ARogueArena::StaticClass();
-		SpawnedArena = GetWorld()->SpawnActor<ARogueArena>(ArenaToSpawn, FVector::ZeroVector, FRotator::ZeroRotator);
-	}
-	//生成商店终端
-	if (!SpawnedShopTerminal.IsValid())
-	{
-		UClass* ShopTerminalToSpawn = ShopTerminalClass ? ShopTerminalClass.Get() : ARogueShopTerminal::StaticClass();
-		const float TerminalOffset = SpawnedArena.IsValid() ? FMath::Min(SpawnedArena->GetArenaHalfExtent() * 0.42f, 2400.0f) : 1800.0f;
-		SpawnedShopTerminal = GetWorld()->SpawnActor<ARogueShopTerminal>(ShopTerminalToSpawn, FVector(0.0f, -TerminalOffset, 0.0f), FRotator::ZeroRotator);
-	}
-
-	// 场景优化 —— 委托给 SceneSubsystem
-	if (URogueSceneSubsystem* SceneSubsystem = GetWorld()->GetSubsystem<URogueSceneSubsystem>())
-	{
-		SceneSubsystem->OptimizeLevelEnvironment(SceneOptimizationSettings);
-	}
-
-	CachedCharacter = Cast<ARogueCharacter>(UGameplayStatics::GetPlayerCharacter(this, 0));
-	if (CachedCharacter.IsValid())
-	{
-		CachedCharacter->SetActorLocation(FVector(0.0f, 0.0f, 120.0f));
-	}
+    ARogueEnemySpawnRegion* Candidate = nullptr;
+    int32 Count = 0;
+    for (TActorIterator<ARogueEnemySpawnRegion> It(GetWorld()); It; ++It)
+    {
+        if (IsValid(*It)) { Candidate = *It; ++Count; }
+    }
+    LevelSpawnRegion = Count == 1 ? Candidate : nullptr;
+    if (Count != 1)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[RogueSpawn] Expected one Enemy Spawn Region in the map, found %d. Automatic spawning is disabled."), Count);
+    }
+    // 场景、商店和玩家出生点均由关卡配置；不再生成竞技场/商店、覆盖灯光或强制传送玩家。
+    CachedCharacter = Cast<ARogueCharacter>(UGameplayStatics::GetPlayerCharacter(this, 0));
 }
 
 void ARogueGameMode::ConfigureRuntimeAssets()
@@ -194,25 +182,11 @@ void ARogueGameMode::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
-	// 把整局状态推进 GameState（服务端权威 → 自动复制给所有客户端）。
-	// 刻意放在所有早退分支**之前**：游戏结束、暂停、正在选卡时客户端同样需要正确数据
-	// （否则结算界面会停在"结束前一帧"的数值上）。
-	//
-	// ⚠️ 这一行曾经被"加看门狗"的编辑意外覆盖掉（只剩注释）：后果是整局快照（存活时间、
-	// 击杀数、波次、是否结束）**从来没有推给 GameState** —— HUD 永远显示"存活 0 秒"，
-	// 客户端也永远收不到 bGameOver。改这一带代码时务必确认它还在。
+	// 在早退前刷新共享状态，确保结算或自检期间仍提供当前值；规则推进后的变化通常于后续推送可见。
 	PushRunStateToGameState();
 
-	// 暂停看门狗：本作**任何时候都不该暂停世界** —— 暂停菜单、商店、选卡、死亡界面都不暂停
-	// （见 TogglePauseMenu / TryOpenShop 的注释；C++ 里也没有任何 SetGamePaused(true)）。
-	//
-	// 关于"整局停住"的历史结论（别再重复排查一遍）：
-	//   · 实测 `World->IsPaused()` 一直是 0、全局时间膨胀也没变，本看门狗与角色侧的冻结探针
-	//     在整个测试期都没有触发过；
-	//   · 真正的现象是"编辑器窗口失去焦点后，PIE 世界停止推进"（会话日志里出现过大段
-	//     只属于编辑器的行、游戏侧一行都没有），来自编辑器设置 bThrottleCPUWhenNotForeground；
-	//   · 所以这段看门狗只是兜底（防某个蓝图真的调 Set Game Paused），不是那个现象的解法。
-	//     注意它必须靠 `PrimaryActorTick.bTickEvenWhenPaused`（构造函数里已设）才能在暂停时运行。
+	// 世界暂停恢复兜底；构造时启用 bTickEvenWhenPaused，前提是本 Tick 仍被引擎调度。
+	// 编辑器失焦节流、时间膨胀或线程阻塞需要分别定位，不能由此推断为暂停问题。
 	{
 		UWorld* WatchdogWorld = GetWorld();
 		if (WatchdogWorld != nullptr && WatchdogWorld->IsPaused())
@@ -222,10 +196,8 @@ void ARogueGameMode::Tick(float DeltaSeconds)
 		}
 	}
 
-	// 归属自愈（每 0.5 秒一次）：
-	// 引擎登录流程会让在场 PC 抢走新玩家的 Pawn，随后才纠正 —— 代价是在场 PC 失去自己的 Pawn
-	// （主机失控）。PostLogin 时机太早（那时抢还没发生），所以放在 Tick 里周期性检查。
-	// 正常对局里这个检查什么也不会做（每个 PC 都有 Pawn），只有异常时才动手。
+	// 用世界时间间隔检查无 Pawn 控制器；这是归属兜底，不是引擎登录会抢走 Pawn 的通则。
+	// LastPawnRepairTime 是函数静态量，多个 World/重开共享它，不能视为独立的每局定时器。
 	{
 		static double LastPawnRepairTime = 0.0;
 		const double NowSeconds = GetWorld() != nullptr ? GetWorld()->GetTimeSeconds() : 0.0;
@@ -237,15 +209,8 @@ void ARogueGameMode::Tick(float DeltaSeconds)
 	}
 	PushShopStateToPlayers();
 
-	// 武器加成快照：把每个玩家属性集里的 12 个加成，推到**他自己角色**身上的复制字段。
-	//
-	// 为什么需要这一层：武器在客户端也要按同样的加成算表现，而客户端读不到服务端算好的
-	// 武器生效值，只能自己重算一遍 —— 所以需要一份跨端一致的"加成输入"。
-	// 真相源仍然是属性集（升级 GE 写入），这里只做"变化才推"的同步：没变化时在
-	// ApplyWeaponBonusSnapshot 的脏检查里直接返回，代价是每帧 O(玩家数) 次 12 浮点比较。
-	//
-	// 载体选角色而不是 PlayerState：角色自己的复制属性能到客户端（bDead 已验证），
-	// 且这份数据本来就是"角色的战斗参数"，放在角色上分层更合理。
+	// 从各玩家属性集读取 12 项加成，写入各自角色快照；近似相等时跳过赋值。
+	// 此接口统一武器输入，但不取代属性复制，也不保证与其他 Actor 的状态同时到达。
 	PushWeaponBonusSnapshots();
 
 	// 开发自检（默认关，见 RunWeaponUpgradeSelfTest）：验证升级 → GAS 属性 → 武器生效值这条链
@@ -290,7 +255,7 @@ void ARogueGameMode::PushRunStateToGameState()
 		return;
 	}
 
-	// 一次性写整份快照，而不是逐个字段设 —— 避免客户端读到"波次已更新、击杀数还没更"的中间态。
+	// 集中更新服务端的整局字段；各 UPROPERTY 独立复制，本函数不提供跨字段原子同步。
 	RogueGameState->SetRunStateSnapshot(
 		RunState.CurrentWave,
 		RunState.EnemiesDefeated,
@@ -306,28 +271,10 @@ void ARogueGameMode::PushWeaponBonusSnapshots()
 
 	for (ARogueCharacter* Character : Players)
 	{
-		ARoguePlayerState* PlayerState = Character != nullptr ? Character->GetPlayerState<ARoguePlayerState>() : nullptr;
-		const URogueAttributeSet* AttributeSet = PlayerState != nullptr ? PlayerState->GetAttributeSet() : nullptr;
-		if (PlayerState == nullptr || AttributeSet == nullptr)
+		if (Character != nullptr)
 		{
-			continue;
+			Character->RefreshWeaponBonusSnapshotFromAttributes();
 		}
-
-		FRogueWeaponBonusValues Values;
-		Values.AttackPower = AttributeSet->GetAttackPowerBonus();
-		Values.AttackSpeed = AttributeSet->GetAttackSpeedBonus();
-		Values.AttackRange = AttributeSet->GetAttackRangeBonus();
-		Values.ProjectileSpeed = AttributeSet->GetProjectileSpeedBonus();
-		Values.ProjectileCount = AttributeSet->GetProjectileCountBonus();
-		Values.ScytheCount = AttributeSet->GetScytheCountBonus();
-		Values.RocketCount = AttributeSet->GetRocketCountBonus();
-		Values.LaserCount = AttributeSet->GetLaserCountBonus();
-		Values.HellTowerCount = AttributeSet->GetHellTowerCountBonus();
-		Values.MortarCount = AttributeSet->GetMortarCountBonus();
-		Values.LaserRefraction = AttributeSet->GetLaserRefractionBonus();
-		Values.MortarBlastRadius = AttributeSet->GetMortarBlastRadiusBonus();
-
-		Character->ApplyWeaponBonusSnapshot(Values);
 	}
 }
 
@@ -344,6 +291,6 @@ void ARogueGameMode::TickRunSystems(float DeltaSeconds)
 	// 生成调度 —— 委托给 SpawnSubsystem
 	if (URogueSpawnSubsystem* SpawnSubsystem = GetWorld()->GetSubsystem<URogueSpawnSubsystem>())
 	{
-		SpawnSubsystem->TickSpawning(DeltaSeconds, RunState, GetSpawnReferenceCharacter(), SpawnedArena.Get());
+		SpawnSubsystem->TickSpawning(DeltaSeconds, RunState, GetSpawnReferenceCharacter(), LevelSpawnRegion.Get());
 	}
 }

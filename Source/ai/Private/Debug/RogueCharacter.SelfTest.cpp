@@ -31,8 +31,7 @@
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/InputComponent.h"
-// Enhanced Input（UE5 标准输入）。资产清单见 Docs/Enhanced-Input-Migration.md；
-// 资产缺失时 SetupEnhancedInput 会返回 false，输入整体回退到 legacy 绑定。
+// Enhanced Input：绑定与必需资产校验见 RogueCharacter.Input.cpp；缺失时不绑定本角色动作。
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputAction.h"
@@ -108,7 +107,8 @@ void ARogueCharacter::TickWeaponFireReport(float DeltaSeconds)
 
 	// 场上敌人数量 + 最近 10 秒的平均帧时：
 	//   · 敌人数量是"这次采样可不可比"的前提（波次推进时它会一直变）；
-	//   · 帧时用来对比 Phase 3 前后的性能（200+ 敌人不退化这条红线）。
+	//   · 这里平均的是传入 Tick 的 DeltaSeconds；帧率限制、固定步长与场景负载都会影响它，
+	//     不等于该函数的 CPU 耗时，性能归因需配合 Insights 等计时工具。
 	int32 ActiveEnemies = -1;
 	if (const URogueEnemyTrackerSubsystem* Tracker = World->GetSubsystem<URogueEnemyTrackerSubsystem>())
 	{
@@ -132,11 +132,9 @@ void ARogueCharacter::TickWeaponFireReport(float DeltaSeconds)
 
 	if (IsAuthoritySide())
 	{
-		// 敌人攻击（Phase 3）：三种攻击各执行了多少次。
-		// 这三个数字是"攻击真的改成能力驱动了"的直接证据 ——
-		// 它们只在 URogueEnemyAttackAbility 的激活路径里自增。
-		// "尝试"与"执行"必须一起看：两者都是 0 = 敌人根本没走到攻击距离；
-		// 尝试 > 0 而执行 = 0 = GAS 激活这一步出了问题。
+		// 三种攻击的尝试/执行计数用于缩小调查范围，计数按本进程累计。
+		// 尝试为零可能是未进入距离、目标无效或路径被跳过；尝试有值而执行为零
+		// 也可能由冷却、标签或其他合法激活条件拒绝，不能直接认定 GAS 故障。
 		UE_LOG(LogTemp, Log, TEXT("[SelfTest]   敌人攻击(能力执行)：接触=%d 远程=%d 地面波=%d | 尝试：接触=%d 远程=%d 地面波=%d | 最近 10 秒平均帧时=%.2f ms（%d 帧）"),
 			AttackCounters.Contact, AttackCounters.Ranged, AttackCounters.GroundWave,
 			AttackCounters.ContactAttempts, AttackCounters.RangedAttempts, AttackCounters.GroundWaveAttempts,

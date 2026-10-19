@@ -200,16 +200,16 @@ namespace
 		Archetype.Movement.Model = ERogueEnemyMovementModel::Stationary;
 		Archetype.Movement.BaseMoveMultiplier = 0.0f;
 
-		Archetype.GroundWave.bUsesGroundWave = true;
-		Archetype.GroundWave.InitialCooldownMin = bIsBoss ? 1.1f : 1.6f;
-		Archetype.GroundWave.InitialCooldownMax = bIsBoss ? 2.2f : 3.2f;
-		Archetype.GroundWave.AttackCooldown = bIsBoss ? 3.8f : 4.8f;
-		Archetype.GroundWave.MaxRadius = bIsBoss ? 1280.0f : 980.0f;
-		Archetype.GroundWave.ExpansionDuration = bIsBoss ? 0.95f : 1.05f;
-		Archetype.GroundWave.ExpansionSpeed = bIsBoss ? 3200.0f : 2600.0f;
-		Archetype.GroundWave.HitThickness = bIsBoss ? 116.0f : 92.0f;
-		Archetype.GroundWave.DamageMultiplier = bIsBoss ? 1.45f : 1.2f;
-		Archetype.GroundWave.bJumpCanDodge = true;
+		// 使用远程攻击槽发射弹幕，不再启动旧地面波能力。
+		Archetype.Ranged.bUsesRangedAttack = true;
+		Archetype.Ranged.ShotPattern = ERogueEnemyShotPattern::RadialRing;
+		Archetype.Ranged.InitialCooldownMin = bIsBoss ? 1.1f : 1.6f;
+		Archetype.Ranged.InitialCooldownMax = bIsBoss ? 2.2f : 3.2f;
+		Archetype.Ranged.NextShotCooldown = bIsBoss ? 3.8f : 4.8f;
+		Archetype.Ranged.BulletRing = FRogueEnemyBulletRingSettings();
+		Archetype.Ranged.ProjectileSpeed = Archetype.Ranged.BulletRing.ProjectileSpeed;
+		Archetype.Ranged.ProjectileDamageMultiplier = Archetype.Ranged.BulletRing.DamageMultiplier;
+		Archetype.Ranged.MaximumRange = Archetype.Ranged.ProjectileSpeed * Archetype.Ranged.BulletRing.ProjectileLifetime;
 
 		Archetype.Visual.VisualKey = ERogueEnemyVisualKey::ShockPillar;
 		Archetype.Visual.MeshScale = FVector(0.74f, 0.74f, 1.72f);
@@ -275,16 +275,8 @@ FName RogueEnemyArchetypes::FindRowNameForEnemyType(const UDataTable* DataTable,
 		return NAME_None;
 	}
 
-	// 记忆化最近一次查询。
-	//
-	// 为什么值得缓存：这个函数被**每次刷怪多次**调用 —— 取配置一次、取 MaxAlive 一次、
-	// 取 MaxSpawnPerWave 一次，而每次调用都要遍历全表并对**每一行**做一次 FindRow。
-	// 表只有 9 行，但刷怪是每秒数十次的频率，且同一只怪的这几次查询参数完全相同，
-	// 所以单条记忆化的命中率就很高。
-	//
-	// 用弱引用记住表：关卡切换/换表后旧指针不会把缓存钉住。
-	// 不缓存"全表映射"是刻意的 —— 那需要以 DataTable 指针为键的嵌套 TMap，
-	// 而运行期真正的热点只是"同一只怪的连续几次查询"，别为此引入生命周期复杂度。
+	// 只缓存最近一次表/类型对应的行名，弱引用不延长表的生命周期。
+	// 命中率取决于查询顺序；表内容若原地修改，同一键不会自动重新解析行名。
 	static TWeakObjectPtr<const UDataTable> CachedTable;
 	static ERogueEnemyType CachedType = ERogueEnemyType::Hunter;
 	static FName CachedRowName = NAME_None;

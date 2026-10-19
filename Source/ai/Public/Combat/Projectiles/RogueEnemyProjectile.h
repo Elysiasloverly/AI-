@@ -15,22 +15,23 @@ struct AI_API FRogueEnemyProjectileVisualState
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditDefaultsOnly, Category = "Visual")
+	// 旧网格缩放字段仅兼容历史资产；模型尺寸以蓝图组件缩放为准。
+	UPROPERTY()
 	float BodyScale = 0.58f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Visual")
+	UPROPERTY()
 	float CoreScale = 0.32f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Visual")
+	UPROPERTY()
 	float GlowScale = 1.12f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Visual")
+	UPROPERTY()
 	float SpineScale = 0.56f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Visual")
+	UPROPERTY()
 	float RingScale = 1.28f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Visual")
+	UPROPERTY()
 	FVector TrailScale = FVector(0.10f, 0.10f, 0.28f);
 
 	UPROPERTY(EditDefaultsOnly, Category = "Visual")
@@ -61,7 +62,7 @@ public:
 	ARogueEnemyProjectile();
 
 	virtual void Tick(float DeltaSeconds) override;
-	void ActivatePooledProjectile(AActor* InOwner, APawn* InInstigator, const FVector& SpawnLocation, const FRotator& SpawnRotation, const FVector& InDirection, float InSpeed, float InDamage, bool bInBossShot);
+	void ActivatePooledProjectile(AActor* InOwner, APawn* InInstigator, const FVector& SpawnLocation, const FRotator& SpawnRotation, const FVector& InDirection, float InSpeed, float InDamage, bool bInBossShot, float InLifetime = 0.0f, float InVisualScale = 1.0f, bool bInSimpleVisual = false);
 	void DeactivateToPool();
 	bool IsAvailableInPool() const { return bPoolAvailable; }
 
@@ -76,6 +77,7 @@ private:
 	void HandleProjectileStop(const FHitResult& ImpactResult);
 
 	void ResolveImpact(AActor* OtherActor, const FVector& ImpactLocation, const FVector& ImpactNormal);
+	void ApplyVisualState(const FRogueEnemyProjectileVisualState& State, float PulseAlpha);
 
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<USphereComponent> Collision;
@@ -122,22 +124,22 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "Visual")
 	float PulseSpeedBoss = 9.0f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Visual")
+	UPROPERTY()
 	float BodyPulseAmplitude = 0.06f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Visual")
+	UPROPERTY()
 	float CorePulseAmplitude = 0.05f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Visual")
+	UPROPERTY()
 	float GlowPulseAmplitude = 0.20f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Visual")
+	UPROPERTY()
 	float SpinePulseAmplitude = 0.08f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Visual")
+	UPROPERTY()
 	float RingPulseAmplitude = 0.22f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Visual")
+	UPROPERTY()
 	FVector TrailPulseAmplitude = FVector(0.02f, 0.02f, 0.14f);
 
 	UPROPERTY(EditDefaultsOnly, Category = "Visual")
@@ -152,7 +154,10 @@ private:
 	float Damage = 10.0f;
 	float PulseTime = 0.0f;
 	float RemainingLifetime = 0.0f;
+	float VisualScale = 1.0f;
+	FVector UnscaledTrailLocation = FVector(-26.0f, 0.0f, 0.0f);
 	bool bBossShot = false;
+	bool bSimpleVisual = false;
 	bool bResolvedImpact = false;
 	bool bVisualsSimplified = false;
 	bool bPoolAvailable = true;

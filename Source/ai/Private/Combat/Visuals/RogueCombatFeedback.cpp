@@ -19,15 +19,9 @@ namespace RogueCombatFeedback
 			return;
 		}
 
-		// 给**本机的每个本地玩家**各加一条飘字。
-		//
-		// 为什么不能用 UGameplayStatics::GetPlayerController(WorldContextActor, 0)：
-		// 索引 0 是"这个进程里的第一个玩家控制器"。PIE 的 2 人模式（Run Under One Process）
-		// 与分屏下两个玩家共用一个进程 —— 于是**客户端算出来的飘字会被加到主机的 HUD 上**，
-		// 表现就是"主机上飘字特别多、客户端一条都没有"。
-		//
-		// 遍历 + IsLocalController() 对三种情况都正确：单机（一个）、分屏（两个都该看到）、
-		// 同进程 PIE（两个都该看到）；而真正的联机（各自独立进程）每台机器只有一个本地玩家。
+		// 遍历当前 World 中的本地控制器，让分屏的各本地 HUD 都收到飘字。
+		// 同进程 PIE 可有多个独立 World；此迭代器不会跨 World 路由到其他 PIE 窗口。
+		// 独立进程同样可能有多个本地玩家，不能假定只有索引 0。
 		for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
 		{
 			APlayerController* PlayerController = It->Get();

@@ -34,10 +34,7 @@
 
 void ARogueGameMode::AdvanceShopAutoRefresh(float DeltaSeconds, bool bWorldPaused)
 {
-	// 世界暂停时商店计时冻结。
-	// 这里原来还有一条"商店打开 + 世界暂停就用真实时间继续推进"的分支 ——
-	// 那是为"开商店会暂停游戏"的旧设计准备的；现在商店不再暂停游戏，
-	// 而暂停菜单又不能和商店同时打开（TogglePauseMenu 里挡了），所以那条分支已不可达。
+	// 此入口在世界暂停时不推进商店剩余时间；菜单开关本身不暂停世界。
 	if (bWorldPaused)
 	{
 		return;
@@ -103,9 +100,7 @@ ARogueCharacter* ARogueGameMode::ResolveRewardCharacter(AActor* Killer, const AA
 		return RewardCharacter;
 	}
 
-	// 3) 兜底：离现场最近的存活玩家。
-	// 旧实现回退到 CachedCharacter（= 玩家 0 / 主机），玩家 2 打死的怪赏金会进主机口袋。
-	// 单机时两者结果一致（场上只有一个人）。
+	// 无法从 Killer、本层 Owner 或 Instigator 解析时，回退到奖励位置最近的存活玩家。
 	return FindNearestAlivePlayer(RewardOrigin != nullptr ? RewardOrigin->GetActorLocation() : FVector::ZeroVector);
 }
 
@@ -209,18 +204,14 @@ void ARogueGameMode::TryOpenShop(ARogueCharacter* Character)
 		return;
 	}
 
-	// 同帧打开光标，不必等 HUD 下一帧推导。
-	// 注意关店时**不能**对称地调 SetMenuInteractionInput(false) —— 见 CloseShop 的说明。
+	// 此处可更新监听服本机输入；远端玩家仍由客户端 HUD 收到商店镜像后推导。
+	// 关店时需结合其他菜单状态决定输入模式，见 CloseShop。
 	Character->SetMenuInteractionInput(true);
 
-	// 立刻推一次快照：不然客户端要等到下一帧 Tick 才看到商店界面
+	// 立即更新服务端的商店镜像，避免等待下次 Tick；客户端显示仍取决于复制到达。
 	PushShopSnapshotForPlayer(PlayerState);
 
-	// 注意：这里**不暂停游戏**。
-	// 旧设计是"开商店 → SetGamePaused(true)"（单机写法）。联机下暂停是全局的，
-	// 一个玩家开商店会把所有人的世界冻住。现在改成非模态：
-	// 世界继续跑、敌人继续打，玩家可以边逛边躲（HUD 推导出的是 FInputModeGameAndUI，
-	// 游戏输入仍然有效）。
+	// 打开商店只改变该玩家的运行态；本地 HUD 另行推导光标、输入模式和菜单移动限制。
 }
 
 void ARogueGameMode::CloseShop(ARogueCharacter* Requester)
@@ -234,18 +225,8 @@ void ARogueGameMode::CloseShop(ARogueCharacter* Requester)
 	PlayerState->GetShopRuntime().CloseShop();
 	PushShopSnapshotForPlayer(PlayerState);
 
-	// ⚠️ 这里**绝不能**顺手把光标关掉 —— 那正是"关掉商店后鼠标消失、升级卡点不了"的根因。
-	//
-	// 关店的那一刻完全可能仍有**别的**界面需要光标，最典型的就是：
-	// 开着商店时升了级，待选卡还挂着。此时把光标关掉，玩家就既看不到鼠标、也点不了卡。
-	//
-	// 光标与输入模式是**本地 UI 状态**，统一交给 ARogueHUD::UpdateUIInputState
-	// 按"暂停 / 已阵亡 / 商店开 / 有待选卡"四个条件推导：
-	//   · 它是这四个条件的唯一权威（原来这里和 HUD 是两个写入者，互相覆盖）；
-	//   · 它天然对客户端生效 —— 服务端改 SetInputMode 只影响主机自己那份 PlayerController，
-	//     客户端的商店/选卡光标本来就一直是靠 HUD 推导的。
-
-	// 同样不涉及暂停（见 TryOpenShop 的说明）
+	// 光标与输入模式由本地 HUD::UpdateInteractionInputMode 结合全部菜单/生命周期状态推导。
+	// 关店后仍可能有其他 UI 需要输入，因此此服务端入口只更新商店状态。
 }
 
 void ARogueGameMode::TryBuyShopOffer(int32 OfferIndex, ARogueCharacter* Purchaser)
@@ -311,8 +292,8 @@ void ARogueGameMode::PushShopSnapshotForPlayer(ARoguePlayerState* PlayerState)
 		return;
 	}
 
-	// 复制的是**自动刷新的截止时刻**而不是倒计时：倒计时每帧都在变，
-	// 会把 PlayerState 的复制频率打满；截止时刻只在刷新时变化。
+	// 发送服务器期限，让客户端自行显示剩余时间，减少持续变化字段。
+	// 当前每次快照都会以 ServerTime + Remaining 重算期限，不能保证只在刷新时改变。
 	const FRogueShopSystem& Shop = PlayerState->GetShopRuntime();
 
 	float AutoRefreshDeadline = 0.0f;
@@ -374,7 +355,7 @@ void ARogueGameMode::HandlePlayerUpgradeSelected(ARoguePlayerState* PlayerState,
 bool ARogueGameMode::IsAwaitingUpgradeChoice() const
 {
 	// 遍历 PlayerController 而不是 GameState->PlayerArray：
-	// 前者在服务端任何时刻都可靠，也不依赖 GameState 的复制时机。
+	// 此查询遍历当前服务端控制器，再检查已就绪的 PlayerState；不等待客户端复制。
 	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
 	{
 		if (const APlayerController* PlayerController = It->Get())

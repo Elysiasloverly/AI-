@@ -13,20 +13,14 @@ class URogueAttributeSet;
 struct FRogueUpgradeOption;
 
 /**
- * 玩家状态（联机版）。
+ * 玩家状态：持有 ASC、属性集，以及每玩家的升级/商店运行态。
  *
- * **为什么 ASC 挂在 PlayerState 而不是 Pawn** —— 这是 GAS 联机架构里最关键的一条：
- *   · PlayerState 的生命周期覆盖整场对局，Pawn 死了/重生/重连会换新的；
- *     ASC 挂 Pawn 的话每次重生都要重新 InitAbilityActorInfo、重新给技能、重算属性，
- *     而且旧 Pawn 的 GE 会随 Pawn 一起没了（升级全部丢失）。
- *   · 服务端与客户端都要能从 PlayerState 拿到 ASC —— 客户端拿到的是复制代理，
- *     属性同步与 GameplayCue 都靠它。
- *   · 这也是 UE 官方模板（Lyra）的做法：OwnerActor = PlayerState，AvatarActor = Pawn。
+ * GAS OwnerActor 为 PlayerState，AvatarActor 为当前 Pawn；ActorInfo 还会缓存控制器等信息。
+ * GAS OwnerActor 不直接决定网络接收者；实际复制取决于 Actor 所属连接、相关性、
+ * GE 复制模式与属性/子对象的复制配置。
  *
- * 注意 Owner 与 Avatar 的区别：
- *   `InitAbilityActorInfo(OwnerActor, AvatarActor)`
- *   Owner 负责**复制**（谁的连接收到这些信息），Avatar 负责**挂载与表现**（技能从谁身上发出）。
- *   两者分开后，"玩家换了个 Pawn"这件事对属性与技能毫无影响。
+ * 当前十秒复活复用同一个 Pawn 和 ASC。若以后替换 Pawn，仍需刷新 ActorInfo 并处理
+ * 能力/武器对旧 Avatar 的引用；断线重连或 PlayerState 重建不会自动保存技能与升级。
  */
 UCLASS()
 class AI_API ARoguePlayerState : public APlayerState, public IAbilitySystemInterface
@@ -45,11 +39,11 @@ public:
 	URogueAttributeSet* GetAttributeSet() const { return AttributeSet; }
 
 	// 注：武器加成的跨端快照**不在这里**，而在 ARogueCharacter 上。
-	// 这份数据本来就是"角色的战斗参数"，挂在角色上分层更合理，也和 bDead 一样走角色的复制通道。
+	// GameMode 从属性集汇总角色快照，武器统一读取；与 LifeState 一样在 Character 上注册复制。
 	// 详见 FRogueWeaponBonusValues 与 ARogueCharacter::GetWeaponBonusSnapshot 的注释。
 
 	/** 由 Pawn 在 PossessedBy / OnRep_PlayerState 时调用，把 Avatar 换成当前 Pawn。
-	 *  服务端在 PossessedBy 调用，客户端在 OnRep_PlayerState（以及 Pawn 复制到达时）调用。 */
+	 *  PlayerState::BeginPlay 也会尝试初始化，此时 InPawn 可能为空；不保证其他 Actor 已完成复制。 */
 	void RefreshAbilityActorInfo(APawn* InPawn);
 
 	// ===========================================================
@@ -89,12 +83,8 @@ public:
 	// ===========================================================
 	//  商店（服务端权威 + 镜像给拥有者客户端）
 	// ===========================================================
-	//  与升级同样的理由：GameMode 在客户端拿不到，所以"商店开着没、有哪些商品、多少钱"
-	//  必须复制到 PlayerState 上，客户端 HUD 才能画出来。
-	//
-	//  注意当前商店仍是**全局一个**（不是每玩家一份），所以各玩家的镜像内容相同；
-	//  但"谁买的"按请求者区分 —— 修掉了原来用 `CachedCharacter` 导致
-	//  "玩家 2 买东西、加到玩家 1 身上"的错误。
+	//  每个 PlayerState 保存独立 ShopRuntime，GameMode 负责服务端规则推进，
+	//  商品与界面状态通过本 PlayerState 的 OwnerOnly 镜像提供给所属客户端。
 
 	/** 服务端写入商店快照（GameMode 每帧推送） */
 	void ApplyShopSnapshot(bool bInOpen, const TArray<FRogueShopOffer>& InOffers, int32 InRefreshCost, float InAutoRefreshServerTimeDeadline);
@@ -104,9 +94,8 @@ public:
 	 *  各类升级的已购次数都在这里，玩家之间互不影响。
 	 *  客户端不直接用它 —— 客户端读复制的镜像字段（ShopOffers / bShopOpen / ...）。
 	 *
-	 *  ⚠️ 只在服务端调。客户端的这份 FRogueShopSystem 是**空的**（不参与复制），
-	 *  误用不会崩也不会报错，只会静默读写一份空数据（表现为"商店永远没商品"），
-	 *  所以这里用 ensureMsgf 把误用喊出来，而不是让它变成一个查不出原因的怪现象。 */
+	 *  仅供服务端规则代码使用；客户端没有复制的运行态，只应读取镜像。
+	 *  ensureMsgf 用于诊断误用，不会阻止函数返回引用。 */
 	FRogueShopSystem& GetShopRuntime()
 	{
 		ensureMsgf(HasAuthority(), TEXT("GetShopRuntime() 只能在服务端调用：客户端的 ShopRuntime 是空的，请改读复制的镜像字段（GetShopOffers/IsShopOpen）"));
@@ -118,7 +107,7 @@ public:
 
 	/** 距离自动刷新还剩多少秒。
 	 *  复制的是**截止时刻**（服务端世界时间）而不是倒计时 ——
-	 *  倒计时每帧都在变，会把复制频率打满；截止时刻只在刷新时变化。
+	 *  服务端每次快照以当前时间与剩余时间重算截止时刻；实际发送仍受复制调度限制。
 	 *  客户端用 GameState 的服务器时间换算（引擎已做时间同步）。 */
 	float GetShopSecondsUntilRefresh() const;
 
@@ -131,7 +120,7 @@ public:
 	bool IsBaseAttributesInitialized() const { return bBaseAttributesInitialized; }
 	void MarkBaseAttributesInitialized() { bBaseAttributesInitialized = true; }
 
-	// ---- 复活倒计时（由 ASC 上的 State.Downed GE 承担，HUD 直接读它的剩余时长）----
+	// ---- 复活显示查询（转发当前 Pawn 的 LifeState 截止时刻）----
 
 	/** 当前 Pawn 的显示用复活倒计时；零秒仍需以 IsDowned 判断是否等待服务端。 */
 	float GetReviveSecondsRemaining() const;
@@ -174,9 +163,7 @@ protected:
 	UPROPERTY(Replicated) int32 ShopRefreshCost = 0;
 	UPROPERTY(Replicated) float ShopAutoRefreshDeadline = 0.0f;
 
-	/** 复活截止时刻（GameState 服务器世界时间；0 = 无待复活）。复制给拥有者，
-	 *  客户端据此自己算"还有几秒复活"，服务端不需要每帧推倒计时。 */
-	// 已删除：ReviveServerTime（迁移到 State.Downed GE 的剩余时长，见 GetReviveSecondsRemaining）。
+	// 复活期限不在 PlayerState 重复保存，由当前 Character.LifeState 统一复制。
 
 	/** 商店运行态本体（服务端）。不复制 —— 客户端只收上面那组镜像。
 	 *  标 UPROPERTY() 是为了让 GC 能追踪它内部的 UObject 引用。 */
@@ -201,19 +188,8 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Rogue|GAS")
 	TSoftObjectPtr<URogueAbilitySet> DefaultAbilitySet;
 
-	/** 基础属性是否已灌过（**服务端**，一局一次）。见 IsBaseAttributesInitialized()。
-	 *
-	 *  ⚠️ 为什么需要这个守卫：`InitializeGASAttributes()` 用 `SetNumericAttributeBase` 写的是
-	 *  属性的 **BaseValue**，而升级（Instant GE）改的**也是** BaseValue —— 再灌一次就会把玩家
-	 *  已经拿到的属性升级（生命/护甲上限/移速/拾取范围/回复/经验/冲刺冷却/减伤）**全部覆盖回初始值**。
-	 *
-	 *  这条路径**真实可达**，不是理论风险：GameMode 的归属自愈
-	 *  （`ARogueGameMode::RepairPlayerPawnOwnership`，每 0.5 秒检查一次）会为了纠正 Pawn 归属
-	 *  而调 `PlayerController->Possess()`，进而再次触发 `PossessedBy()`；而项目文档记载过
-	 *  归属自愈在**客户端加入的瞬间实测真的会触发**。
-	 *
-	 *  放在 PlayerState 而不是 Pawn 上：ASC 与属性集都挂在这里 —— 它才是"这一局这个玩家的数值"
-	 *  的生命周期载体，Pawn 被重新 possess 不该重灌。
-	 *  不复制：纯服务端状态，客户端从不灌基础值（客户端等属性复制过来）。 */
+	/** 当前 PlayerState 的服务端基础属性初始化守卫，不复制。
+	 *  重复 Possess/ActorInfo 刷新不应重写基值或再次补满生命。
+	 *  升级由 Infinite GE 修饰器维护；此标志不负责断线重连、跨关卡或新 PlayerState 的持久化。 */
 	bool bBaseAttributesInitialized = false;
 };

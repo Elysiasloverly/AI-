@@ -8,14 +8,13 @@
 
 ARogueGameplayCue_Downed::ARogueGameplayCue_Downed()
 {
-	// 生命周期完全交给 GE：
-	//   · GE 移除 → 自动销毁本 Actor，不需要任何一处代码记得来 Destroy；
-	//   · 挂到目标身上 → 人走到哪环跟到哪。
+	// 收到 Removed 后由 Cue 框架结束/回收实例（可进入 Cue 池，不保证立即 Destroy）。
+	// 自动附着使环跟随目标；生命周期逻辑仍需显式移除 Infinite 濒死 GE。
 	bAutoDestroyOnRemove = true;
 	bAutoAttachToOwner = true;
 
-	// 这两个保持 false：一次倒地只该有一个环。
-	// 若允许重复 OnActive，GE 被刷新时（例如倒地在即又挨了一下致命伤）会叠出第二个环。
+	// 同一 Cue 实例只处理一次 OnActive/WhileActive，避免刷新时重复初始化动画。
+	// 这些标志控制回调重入，不是通用的跨源/跨实例重复效果去重规则。
 	bAllowMultipleOnActiveEvents = false;
 	bAllowMultipleWhileActiveEvents = false;
 
@@ -44,12 +43,8 @@ ARogueGameplayCue_Downed::ARogueGameplayCue_Downed()
 		RingMesh->SetupAttachment(RootComponent);
 	}
 
-	// ---- 视觉资源：全部复用项目里**已有**的资产 ----
-	// 与 ARogueCharacterVisualComponent 同一套做法（ConstructorHelpers 按路径加载），
-	// 因此本类**不需要新建任何 .uasset**：
-	//   · 网格 = StarterContent 的 Torus（角色的 HaloMesh 用的就是它）
-	//   · 材质 = 角色外壳同款全息材质（HologramShader 包里的 MI_Hologram_12）
-	// 加载失败时不会崩，只是环不可见 —— 与项目里其他视觉组件的处理一致。
+	// 独立濒死圆环使用以下默认资源，仅设置本 Cue 的 RingMesh。
+	// 玩家主体模型和材质由 BP_RogueCharacter 配置，不在此处覆盖。
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> TorusMeshFinder(
 		TEXT("/Game/GameAssets/StarterContent/Shapes/Shape_Torus.Shape_Torus"));
 	if (TorusMeshFinder.Succeeded())
@@ -77,8 +72,8 @@ void ARogueGameplayCue_Downed::BeginPlay()
 
 bool ARogueGameplayCue_Downed::OnActive_Implementation(AActor* MyTarget, const FGameplayCueParameters& Parameters)
 {
-	// 目标无效、或视觉资源没加载出来（缺网格）时直接返回 false：
-	// 让引擎知道这条 cue 没真的生效，而不是留下一个空 Actor 每帧 Tick。
+	// 资源或目标无效时不显示、不启动 Tick。
+	// 返回 false 不会自动结束/销毁 Cue Actor，生命周期仍由 Cue 框架管理。
 	if (!IsValid(MyTarget) || RingMesh == nullptr || RingMesh->GetStaticMesh() == nullptr)
 	{
 		return false;
@@ -108,8 +103,8 @@ bool ARogueGameplayCue_Downed::OnActive_Implementation(AActor* MyTarget, const F
 
 bool ARogueGameplayCue_Downed::OnRemove_Implementation(AActor* MyTarget, const FGameplayCueParameters& Parameters)
 {
-	// 只负责"看不见"；**销毁交给 bAutoDestroyOnRemove**。
-	// 分开做的理由：即使本 Actor 因为复用/延迟销毁没有立刻消失，也不会留下一个可见的环。
+	// 先隐藏并停 Tick；bAutoDestroyOnRemove 让框架结束/回收实例。
+	// 即使进入复用池而未立即 Destroy，也不应保留可见的环。
 	if (RingMesh != nullptr)
 	{
 		RingMesh->SetVisibility(false);

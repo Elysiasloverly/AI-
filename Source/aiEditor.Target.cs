@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+// ai 项目的模块/构建入口。
 
 using UnrealBuildTool;
 using System.Collections.Generic;

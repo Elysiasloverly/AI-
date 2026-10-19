@@ -46,8 +46,7 @@ void ARogueWeaponBase::OnOwnerDied()
 
 void ARogueWeaponBase::CollectFireTargets(TArray<ARogueEnemy*>& OutTargets) const
 {
-	// 基类默认：范围内最近的**一个**敌人（子弹武器改造前就是 FindNearestEnemy）。
-	// 打多个目标的武器（火箭/迫击炮/激光）重写这里。
+	// 默认选择范围内最近的一个敌人；多目标武器重写此函数。
 	if (ARogueEnemy* Target = FindNearestEnemy(GetEffectiveRange()))
 	{
 		OutTargets.Add(Target);
@@ -56,21 +55,15 @@ void ARogueWeaponBase::CollectFireTargets(TArray<ARogueEnemy*>& OutTargets) cons
 
 void ARogueWeaponBase::FireAtTargets(const TArray<ARogueEnemy*>& Targets)
 {
-	// 基类没有"开火"这一说（每把武器的这一发都不一样），子类实现。
-	// 留着空实现是为了让"忘了实现"表现为"这把武器不开火"而不是编译不过 ——
-	// 但那样会静默失效，所以这里给一次明确的报错。
+	// 能力驱动的武器应重写此函数；误用基类实现时输出错误日志。
 	UE_LOG(LogTemp, Error, TEXT("[武器] %s 没有实现 FireAtTargets —— 它被能力驱动了但永远打不出伤害"),
 		*GetClass()->GetName());
 }
 
 const FRogueWeaponBonusValues& ARogueWeaponBase::GetWeaponBonusValues() const
 {
-	// 加成来自拥有者角色身上的**复制快照**（服务端每帧从属性集同步，变化才推）。
-	//
-	// 为什么要这一层而不是直接读 ASC 上的属性集：武器生效值是"数据表基础值 + 加成×本武器系数"，
-	// 各端要各算一遍，所以需要一份跨端一致的"加成输入"。
-	// 快照挂在 ARogueCharacter 上（与 bDead 同一条复制通道）；双进程自检已验证
-	// 客户端读到的加成与服务端一致（见 Docs/GAS-Main-Architecture-Plan.md 的 Phase 1b 记录）。
+	// 从 Character 的复制快照读取统一加成输入，具体换算由各武器完成。
+	// 服务器在刷新快照时读取属性集；客户端等待复制，数值可能短暂滞后。
 	static const FRogueWeaponBonusValues EmptyValues;
 
 	if (OwnerCharacter == nullptr)
@@ -96,15 +89,13 @@ int32 ARogueWeaponBase::GetEffectiveCount() const
 		case ERogueUpgradeType::HellTowerCount: WeaponSpecificBonus = FMath::RoundToInt(Bonuses.HellTowerCount); break;
 		case ERogueUpgradeType::MortarCount:    WeaponSpecificBonus = FMath::RoundToInt(Bonuses.MortarCount); break;
 
-		// 主武器以外的武器如果既没重写 GetCountUpgradeType、数据列也没填，
-		// 会落到这里 —— 那时**不算任何加成**，比"读错别人的加成"安全得多。
+		// ProjectileCount 是主武器加成；未覆盖类型的子类会使用配置列（默认亦为此项）。
 		case ERogueUpgradeType::ProjectileCount: WeaponSpecificBonus = FMath::RoundToInt(Bonuses.ProjectileCount); break;
 		default: WeaponSpecificBonus = 0; break;
 		}
 	}
 
-	// 基础数量为 0 = 该武器未解锁；此时只有它自己的数量升级能把它拉起来（沿用自研版本的语义：
-	// 那条升级会把 0 变成 1）。
+	// 基础数量不为正且自身数量加成不为正时保持未解锁。
 	if (Config.Count <= 0 && WeaponSpecificBonus <= 0)
 	{
 		return 0;
@@ -128,27 +119,8 @@ float ARogueWeaponBase::GetEffectiveCooldown() const
 	const FRogueWeaponBonusValues& Bonuses = GetWeaponBonusValues();
 	const float Reduced = Config.Cooldown - Bonuses.AttackSpeed;
 
-	// ---- 攻速**无设计上限**（原本这里夹 0.15 秒，已按要求去掉）----
-	//
-	// 历史：0.15 秒下限沿用自研版本（旧的 ApplySharedSpeedBonus 也这么夹），
-	// 它的作用是"设计上限"—— 攻速加成堆再多，每秒最多也就 6.7 发。
-	// 现在去掉，攻速加成可以一直堆下去。
-	//
-	// ⚠️ 但**必须保留一个技术下限（> 0）**，否则会退化成一个危险的边界：
-	//     冷却 = 0 或负数时，武器 Tick 的判据 `TimeSinceLastShot >= Cooldown` **恒为真**
-	//     → 每帧开火。按项目默认 100Hz 算就是**每把武器每秒 100 发**，
-	//     六把武器一起就是 600 发/秒，每发还要生成弹体 —— 帧率会直接崩掉。
-	//
-	// 所以下限设在 0.01 秒 = **每秒最多 100 发**：相对原来的 0.15 秒（6.7 发/秒）
-	// 已经放宽了 15 倍，实战中等同"无上限"（没有任何升级能堆到这个密度），
-	// 但它挡住了"冷却归零 → 逐帧开火"这个会把游戏跑崩的退化情况。
-	//
-	// 这个下限现在是**数据表里可配的**：`FRogueWeaponConfig::MinCooldown`（"上限"分组）。
-	// 想给某把武器封攻速就在它在 DT_WeaponConfig 里的那一行填值。
-	//
-	// 语义与其它上限统一：**-1 = 不设下限**。此时仍会把结果夹在 >= 0
-	//（负冷却与 0 冷却等价 —— 判据 `TimeSinceLastShot >= Cooldown` 都恒为真，
-	//  所以"不设下限"的实际含义就是"可以逐帧开火"）。
+	// 配置下限 >= 0 时使用该值；负值取消配置限制，但仍将冷却钳到 0。
+	// 是否逐帧开火还取决于能力循环、目标与激活条件，不承诺固定射速或性能。
 	return Config.MinCooldown >= 0.0f
 		? FMath::Max(Config.MinCooldown, Reduced)
 		: FMath::Max(0.0f, Reduced);
@@ -176,14 +148,9 @@ int32 ARogueWeaponBase::GetEffectiveRefractionCount() const
 	const int32 Combined = FMath::Max(0, Config.RefractionCount
 		+ FMath::RoundToInt(Bonuses.LaserRefraction));
 
-	// 折射上限：**数据表配置，-1 = 不限制**（FRogueWeaponConfig::MaxRefractionCount）。
-	// 原来这里硬编码夹死 0..8（旧实现的遗留），上界现在交回数据表；
-	// 下界 0 保留 —— 负数折射没有意义。
+	// 非负配置值限制最终折射次数；负值不设上限，下限 0 已在合并时处理。
 	return Config.MaxRefractionCount >= 0 ? FMath::Min(Combined, Config.MaxRefractionCount) : Combined;
 }
-
-// 注：OnUpgradeApplied / ApplyShared*Bonus 已删除 —— 武器升级现在落成玩家 ASC 上的
-// URogueAttributeSet 加成属性，由上面的 GetEffective* 读取（见头文件说明）。
 
 ARogueEnemy* ARogueWeaponBase::FindNearestEnemy(float MaxRange) const
 {
@@ -256,10 +223,7 @@ FVector ARogueWeaponBase::GetOwnerCameraRightVector() const
 bool ARogueWeaponBase::IsHeavyCombat() const
 {
 	URogueEnemyTrackerSubsystem* Tracker = GetWorld() ? GetWorld()->GetSubsystem<URogueEnemyTrackerSubsystem>() : nullptr;
-	// 判据只有一份（Tracker 上的 ShouldCullCombatEffects）。
-	// 这里原本还有一个 `GetActiveEnemyCount() >= 40` 的硬编码兜底，它抢先命中，
-	// 使配置项 CombatEffectsCullEnemyCount（默认 52）对武器路径完全失效，
-	// 并让武器（40）与弹体/命中特效（52）在同一帧里用了两个不同的阈值。已删除。
+	// 复用当前 World 的表现裁剪阈值；不是帧耗时测量。
 	return Tracker != nullptr && Tracker->ShouldCullCombatEffects();
 }
 
@@ -293,11 +257,9 @@ void ARogueWeaponBase::BroadcastCosmeticFire(const FRogueWeaponCosmeticFire& Fir
 {
 	if (OwnerCharacter == nullptr || !OwnerCharacter->IsAuthoritySide())
 	{
-		// 客户端不广播：它本来就是这条广播的接收方，
-		// 而且客户端这一发是本地预测，没有权威性。
-		// ⚠️ 判据必须是 IsAuthoritySide()（GetNetMode）而不是 HasAuthority() ——
-		// 客户端上本机拥有的角色 HasAuthority() 也是 true，闸门会失效，
-		// 客户端会一路走到 Multicast RPC。见 ARogueCharacter::BroadcastWeaponCosmetic。
+		// 这里按进程 NetMode 禁止客户端广播。HasAuthority 判断的是 Actor 的本地角色：
+		// 正常服务器复制的自控 Pawn 在客户端是 AutonomousProxy；客户端本地生成的
+		// 非复制 Actor 则可能是 Authority，不能把所有权或本地控制等同于 Authority。
 		return;
 	}
 
@@ -306,7 +268,7 @@ void ARogueWeaponBase::BroadcastCosmeticFire(const FRogueWeaponCosmeticFire& Fir
 
 void ARogueWeaponBase::PlayCosmeticFire(const FRogueWeaponCosmeticFire& Fire)
 {
-	// 默认什么都不做：事件型武器各自重写（子弹/火箭/迫击炮/刀片）。
+	// 默认什么都不做：事件型武器各自重写（子弹/火箭/迫击炮/光束）。
 	// 光束类武器的重写就是转调 PlayCosmeticBeam。
 }
 

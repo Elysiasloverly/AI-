@@ -1,74 +1,15 @@
 #pragma once
-
 #include "CoreMinimal.h"
 #include "Components/SceneComponent.h"
 #include "RogueCharacterVisualComponent.generated.h"
-
-class UPointLightComponent;
-class UStaticMeshComponent;
-
-UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
+/** 玩家外观挂接点。漂浮和转向过渡由独立组件控制，蓝图继续配置子模型、材质和缩放。 */
+UCLASS(ClassGroup=(Custom),meta=(BlueprintSpawnableComponent,DisplayName="玩家外观挂接点"))
 class AI_API URogueCharacterVisualComponent : public USceneComponent
 {
-	GENERATED_BODY()
-
+    GENERATED_BODY()
 public:
-	URogueCharacterVisualComponent();
-
-	void TickVisuals(float DeltaSeconds, float HorizontalSpeed, bool bDashActive, float DashDuration, float DashTimeRemaining);
-
-private:
-	/*
-	UPROPERTY(VisibleAnywhere)
-	TObjectPtr<UStaticMeshComponent> BodyMesh;
-
-	UPROPERTY(VisibleAnywhere)
-	TObjectPtr<UStaticMeshComponent> ChestPlateMesh;
-
-	UPROPERTY(VisibleAnywhere)
-	TObjectPtr<UStaticMeshComponent> CoreMesh;
-
-	UPROPERTY(VisibleAnywhere)
-	TObjectPtr<UStaticMeshComponent> HaloMesh;
-
-	UPROPERTY(VisibleAnywhere)
-	TObjectPtr<UStaticMeshComponent> ShellMesh;
-
-	UPROPERTY(VisibleAnywhere)
-	TObjectPtr<UStaticMeshComponent> ShoulderLeftMesh;
-
-	UPROPERTY(VisibleAnywhere)
-	TObjectPtr<UStaticMeshComponent> ShoulderRightMesh;
-
-	UPROPERTY(VisibleAnywhere)
-	TObjectPtr<UStaticMeshComponent> BackpackMesh;
-
-	UPROPERTY(VisibleAnywhere)
-	TObjectPtr<UStaticMeshComponent> ThrusterLeftMesh;
-
-	UPROPERTY(VisibleAnywhere)
-	TObjectPtr<UStaticMeshComponent> ThrusterRightMesh;
-
-	UPROPERTY(VisibleAnywhere)
-	TObjectPtr<UStaticMeshComponent> HeadMesh;
-
-	UPROPERTY(VisibleAnywhere)
-	TObjectPtr<UStaticMeshComponent> VisorMesh;
-
-	UPROPERTY(VisibleAnywhere)
-	TObjectPtr<UStaticMeshComponent> WingLeftMesh;
-
-	UPROPERTY(VisibleAnywhere)
-	TObjectPtr<UStaticMeshComponent> WingRightMesh;
-
-	UPROPERTY(VisibleAnywhere)
-	TObjectPtr<UStaticMeshComponent> TailFinMesh;
-
-	UPROPERTY(VisibleAnywhere)
-	TObjectPtr<UPointLightComponent> BodyLight;
-	*/
-	float VisualPulseTime = 0.0f;
-	FVector BodyBaseScale = FVector(0.90f, 0.90f, 0.90f);
-	FVector CoreBaseScale = FVector(0.30f, 0.30f, 0.30f);
-	FVector HaloBaseScale = FVector(0.68f, 0.68f, 0.08f);
+    URogueCharacterVisualComponent();
+    /** 兼容旧蓝图调用；新调用应直接访问 FloatingMotion。 */
+    UFUNCTION(BlueprintCallable,Category="外观",meta=(DeprecatedFunction,DeprecationMessage="请改用独立漂浮组件 FloatingMotion 的 SetFloatingEnabled。"))
+    void SetFloatingEnabled(bool bEnabled);
 };

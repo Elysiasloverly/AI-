@@ -147,8 +147,7 @@ void ARogueGameMode::NotifyPlayerDied(ARogueCharacter* DeadCharacter)
 
 bool ARogueGameMode::SetPause(APlayerController* PC, FCanUnpause CanUnpauseDelegate)
 {
-	// 拒绝一切暂停请求（详见头文件）。打日志是为了把"谁在暂停"暴露出来 ——
-	// 这条日志里的 PC 名（或为空）就是定位那个蓝图的线索。
+	// 此入口返回 false；日志中的控制器名称可用于定位暂停请求来源。
 	UE_LOG(LogTemp, Warning, TEXT("[Rogue] 收到暂停请求（PC=%s）：本作不支持暂停，已拒绝。若你看到这条日志，请在蓝图里搜索 Set Game Paused / SetPause 节点并删除"),
 		PC != nullptr ? *PC->GetName() : TEXT("未知（可能来自控制台或关卡蓝图）"));
 	return false;
@@ -188,8 +187,7 @@ void ARogueGameMode::RepairPlayerPawnOwnership()
 
 		APlayerState* OwningPlayerState = PlayerController->PlayerState;
 
-		// 首选：把"被抢走又被还回来"的那个 Pawn 直接认领回来。
-		// 这比重新生成更对：既不留下没人控制的孤儿角色，也不会让玩家位置突变。
+		// 优先认领控制器记录的失控 Pawn；有效且未被控制即可，不在这里再次验证 PlayerState。
 		if (const ARoguePlayerController* RoguePlayerController = Cast<ARoguePlayerController>(PlayerController))
 		{
 			APawn* ReclaimCandidate = RoguePlayerController->GetLastUnpossessedPawn();
@@ -227,16 +225,7 @@ void ARogueGameMode::RepairPlayerPawnOwnership()
 			break;
 		}
 
-		// ⚠️ 这里**故意不再调 RestartPlayer**。
-		//
-		// 实测教训：RestartPlayer 会**再生成一个新角色**，而那个 PC 原来的角色会变成
-		// "没有控制器的孤儿"。于是服务端上所有"通过 PlayerController->GetPawn() 取玩家"的代码
-		// —— 敌人的目标选择 GatherAlivePlayers、以及本类的 CollectAlivePlayers ——
-		// 从此看到的是新角色，玩家实际操控/被瞄准的链条错位，表现为：
-		//   · 客户端死亡后怪物仍锁着尸体（存活列表里找不到他）
-		//   · 主机死亡后被误判成"全员阵亡"，整局停摆（看起来像暂停）
-		// 而"某个 PC 暂时没有 Pawn"最坏只是暂时没有控制权（下次登录/接管会恢复），
-		// 危害远小于制造孤儿角色。所以这里只记录，不动手。
+		// 未找到可认领 Pawn 时保持等待；这里不生成替代角色，以免遗留旧 Pawn 并拆散归属。
 		if (PlayerController->GetPawn() == nullptr)
 		{
 			UE_LOG(LogTemp, Warning, TEXT("[Rogue] 归属校正：%s 目前没有 Pawn 且无可认领的原角色（按设计不做重生，避免制造孤儿角色）"),

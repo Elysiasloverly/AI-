@@ -11,12 +11,10 @@
 
 URogueGameplayAbility_Dash::URogueGameplayAbility_Dash()
 {
-	// 每个角色一份实例：技能需要保存 DashTask 这类运行期状态。
-	// NonInstanced 会退化成 CDO 上的静态状态，多玩家同场时必然串味。
+	// 每个 ASC 的能力 Spec 保留实例，用于持有本次 DashTask 等运行状态。
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 
-	// 本地预测：客户端按下冲刺立刻有反馈，服务端随后权威确认。
-	// 这是联机手感的关键 —— 若用 ServerOnly，玩家要等一个 RTT 才动。
+	// 拥有者可先激活，服务端再权威处理。此策略不自动实现自定义位移的纠正/重放。
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
 
 	// 技能身份标签。注意 5.5 起 AbilityTags 已废弃（UE_DEPRECATED_FORGAME），
@@ -25,11 +23,11 @@ URogueGameplayAbility_Dash::URogueGameplayAbility_Dash()
 	AssetTags.AddTag(RogueGameplayTags::Ability_Dash);
 	SetAssetTags(AssetTags);
 
-	// 激活期间授予 State.Dashing —— 全局可查询，客户端也拿得到。
+	// 激活期间在执行能力的 ASC 上添加 State.Dashing。
+	// 对其他代理的复制还取决于 AbilitySystemGlobals 的激活标签复制配置。
 	ActivationOwnedTags.AddTag(RogueGameplayTags::State_Dashing);
 
-	// 死亡 / 已在冲刺中 → 不可激活。
-	// 这两条取代了旧 `Dash()` 开头的 `if (bDead || bDashActive || ...) return;`
+	// 已死亡或已冲刺时阻止激活；其他生命状态还由角色输入/生命周期逻辑处理。
 	ActivationBlockedTags.AddTag(RogueGameplayTags::State_Dead);
 	ActivationBlockedTags.AddTag(RogueGameplayTags::State_Dashing);
 
@@ -66,12 +64,8 @@ void URogueGameplayAbility_Dash::ActivateAbility(
 		return;
 	}
 
-	// ⚠️ 顺序很重要：**先做完所有前置校验，最后才 CommitAbility**。
-	//
-	// CommitAbility 会真的把冷却 GE 施加到自己身上（扣冷却）。原来它排在方向校验之前，
-	// 于是"拿到零方向"或"属性集没就位"这种失败路径会白扣一次冷却 ——
-	// 玩家表现为"按了冲刺没动，冷却却转起来了"，而且没有任何报错。
-	// 校验失败的路径本来就要 EndAbility（不提交、不扣冷却）。
+	// 先完成方向/属性集校验，再提交，避免这些早期失败路径消耗冷却。
+	// 任务创建或任务参数失效发生在提交后，目前不会自动退款冷却。
 
 	// 方向由角色提供：它需要相机朝向 + 本帧输入，这两样都在角色侧
 	const FVector DashDirection = Character->GetDashDirection();
@@ -81,8 +75,8 @@ void URogueGameplayAbility_Dash::ActivateAbility(
 		return;
 	}
 
-	// 提交：检查冷却 / 阻塞标签 / 代价，并把冷却 GE 施加到自己身上。
-	// 失败说明条件不满足（例如冷却还没走完），直接结束。
+	// CommitAbility 重新检查有效 Spec、冷却和代价，然后施加冷却/代价。
+	// 它不等于重新执行完整 CanActivateAbility，也不自动重查全部激活阻塞标签。
 	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
@@ -99,20 +93,9 @@ void URogueGameplayAbility_Dash::ActivateAbility(
 	}
 	Character->SetActorRotation(DashDirection.Rotation());
 
-	// 表现层：走 GameplayCue，让**所有客户端**都看到这次冲刺。
-	//
-	// 演进过程值得记一笔（每一版都比上一版更接近 GAS 的原生做法）：
-	//   最初直接 SpawnImpactEffect（本地生成）→ 联机下只有本机看得见；
-	//   加 IsLocallyControlled() 守卫避免了双份，但**其他玩家完全看不到你的冲刺**；
-	//   然后改成 GameState 上的手写 Multicast（服务端发一次，各端本地生成一次）；
-	//   现在是 GameplayCue：多播、相关性过滤、预测去重都由 AbilitySystem 负责，
-	//   项目里不再需要为每种特效维护一条 RPC 和一个枚举。
-	//
-	// 仍然只在服务端发起：本技能是 LocalPredicted，预测客户端会再跑一遍 ActivateAbility；
-	// 若客户端也执行 cue，它会先在本地播一次，服务端确认后再播一次 → 拥有者看到双份。
-	// 用"由权威端发起"这一条规则，两端行为就完全确定了（与之前 Multicast 版的约束一致）。
-	// 注意 UGameplayAbility::HasAuthority 是带参数的版本（要 Handle/ActorInfo），
-	// 这里直接问 Avatar 的权限最直观。
+	// 仅权威端发送冲刺 Cue；拥有者本地激活不在此预播特效。
+	// 接收范围受载体 Actor 的网络相关性影响，瞬时 Cue 通道不保证所有客户端都收到。
+	// 预测去重需要客户端/服务端使用匹配预测键，不能把 Cue 当作通用重复事件去重器。
 	AActor* AvatarActor = GetAvatarActorFromActorInfo();
 	if (AvatarActor != nullptr && AvatarActor->HasAuthority())
 	{

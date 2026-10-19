@@ -20,7 +20,8 @@ enum class ERogueEnemyShotPattern : uint8
 {
 	None     UMETA(DisplayName = "无"),
 	Single   UMETA(DisplayName = "单发"),
-	Spread3  UMETA(DisplayName = "散射")
+	Spread3  UMETA(DisplayName = "散射"),
+	RadialRing UMETA(DisplayName = "整圈弹幕")
 };
 
 UENUM(BlueprintType)
@@ -100,6 +101,44 @@ struct AI_API FRogueEnemyMovementArchetype
 	float ZigZagTangentWeight = 0.0f;
 };
 
+/** 震荡柱一次齐射的参数；所有子弹水平飞行，碰到玩家/墙体或到时回收。 */
+USTRUCT(BlueprintType)
+struct AI_API FRogueEnemyBulletRingSettings
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "环形弹幕", meta = (DisplayName = "每圈子弹数量", ClampMin = "8", ClampMax = "128"))
+	int32 ProjectileCount = 48;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "环形弹幕", meta = (DisplayName = "子弹速度（厘米/秒）", ClampMin = "100", ClampMax = "3000"))
+	float ProjectileSpeed = 720.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "环形弹幕", meta = (DisplayName = "最长飞行时间（秒）", ClampMin = "0.1", ClampMax = "10"))
+	float ProjectileLifetime = 5.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "环形弹幕", meta = (DisplayName = "碰撞与特效大小倍率", ToolTip = "影响碰撞球、灯光、拖尾偏移和命中特效；模型网格大小以蓝图组件的缩放为准。", ClampMin = "0.1", ClampMax = "1"))
+	float ProjectileScale = 0.4f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "环形弹幕", meta = (DisplayName = "单发伤害倍率", ClampMin = "0"))
+	float DamageMultiplier = 0.35f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "环形弹幕", meta = (DisplayName = "发射高度（距柱底，厘米）", ClampMin = "20", ClampMax = "200"))
+	float HeightAboveGround = 48.0f;
+
+	/** 配置导入/蓝图赋值也需要边界约束，不能只依赖编辑器输入框。 */
+	FRogueEnemyBulletRingSettings Sanitized() const
+	{
+		FRogueEnemyBulletRingSettings Result = *this;
+		Result.ProjectileCount = FMath::Clamp(ProjectileCount, 8, 128);
+		Result.ProjectileSpeed = FMath::Clamp(ProjectileSpeed, 100.0f, 3000.0f);
+		Result.ProjectileLifetime = FMath::Clamp(ProjectileLifetime, 0.1f, 10.0f);
+		Result.ProjectileScale = FMath::Clamp(ProjectileScale, 0.1f, 1.0f);
+		Result.DamageMultiplier = FMath::Max(DamageMultiplier, 0.0f);
+		Result.HeightAboveGround = FMath::Clamp(HeightAboveGround, 20.0f, 200.0f);
+		return Result;
+	}
+};
+
 USTRUCT(BlueprintType)
 struct AI_API FRogueEnemyRangedArchetype
 {
@@ -152,6 +191,9 @@ struct AI_API FRogueEnemyRangedArchetype
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ranged|Spread")
 	int32 SpreadShotCount = 3;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ranged|Ring", meta = (DisplayName = "整圈弹幕参数"))
+	FRogueEnemyBulletRingSettings BulletRing;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ranged|Spread")
 	float SpreadAngleStep = 10.0f;
@@ -242,17 +284,8 @@ struct AI_API FRogueEnemyArchetype
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Archetype")
 	FRogueEnemyVisualArchetype Visual;
 
-	/** 这种敌人该有哪些攻击能力（数据驱动）。
-	 *
-	 *  留空 → `ARogueEnemy::GrantAttackAbilities` 回退到"按 Ranged/GroundWave 标志推导"的
-	 *  硬编码逻辑，所以**老数据表不改也能跑**。
-	 *
-	 *  填了它之后，加一种敌人攻击方式就只需要：
-	 *    ① 写能力子类 → ② 建/改一个 URogueAbilitySet 资产 → ③ 在数据表这一列挂上。
-	 *  C++ 侧一行都不用动。
-	 *
-	 *  ⚠️ 授予时机必须在 `InitializeEnemy()` 末尾（原型就位之后），
-	 *     详见 URogueAbilitySet 的类注释。 */
+	/** 可选攻击能力集；加载失败或未配置时按原型标志授予默认接触/远程/地面波能力。
+	 *  默认 AI 只识别这三类能力槽；新增独立攻击决策仍需扩展 C++ 或蓝图调用路径。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Archetype|Abilities")
 	TSoftObjectPtr<URogueAbilitySet> AttackAbilitySet;
 };

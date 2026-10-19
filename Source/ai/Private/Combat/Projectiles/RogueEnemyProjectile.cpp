@@ -5,6 +5,7 @@
 #include "AbilitySystem/RogueGameplayTags.h"
 #include "Combat/Targeting/RogueEnemyTrackerSubsystem.h"
 #include "Combat/Visuals/RogueImpactEffect.h"
+#include "Enemies/RogueEnemy.h"
 #include "Components/PointLightComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -190,26 +191,36 @@ ARogueEnemyProjectile::ARogueEnemyProjectile()
 void ARogueEnemyProjectile::BeginPlay()
 {
 	Super::BeginPlay();
+	UnscaledTrailLocation = TrailMesh->GetRelativeLocation();
 	DeactivateToPool();
 }
 
-void ARogueEnemyProjectile::ActivatePooledProjectile(AActor* InOwner, APawn* InInstigator, const FVector& SpawnLocation, const FRotator& SpawnRotation, const FVector& InDirection, float InSpeed, float InDamage, bool bInBossShot)
+void ARogueEnemyProjectile::ActivatePooledProjectile(AActor* InOwner, APawn* InInstigator, const FVector& SpawnLocation, const FRotator& SpawnRotation, const FVector& InDirection, float InSpeed, float InDamage, bool bInBossShot, float InLifetime, float InVisualScale, bool bInSimpleVisual)
 {
-	Damage = InDamage;
+	// 初始化期间保持无碰撞；最后启用球体查询时才允许触发即时重叠。
+	SetActorEnableCollision(false);
+	Collision->SetGenerateOverlapEvents(false);
+	Collision->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	if (ProjectileMovement != nullptr)
+	{
+		ProjectileMovement->OnProjectileStop.RemoveDynamic(this, &ARogueEnemyProjectile::HandleProjectileStop);
+		ProjectileMovement->StopMovementImmediately();
+		ProjectileMovement->Deactivate();
+	}
+
+	// 客户端本地创建的表现 Actor 也可能是 Authority，不能只用 Role 决定伤害权限。
+	Damage = HasAuthority() && GetNetMode() != NM_Client ? InDamage : 0.0f;
 	bBossShot = bInBossShot;
+	bSimpleVisual = bInSimpleVisual;
+	VisualScale = FMath::Max(InVisualScale, KINDA_SMALL_NUMBER);
 	PulseTime = 0.0f;
-	RemainingLifetime = PooledLifetime;
+	RemainingLifetime = InLifetime > 0.0f ? InLifetime : PooledLifetime;
 	bResolvedImpact = false;
 	bPoolAvailable = false;
 	bVisualsSimplified = false;
 	SetOwner(InOwner);
 	SetInstigator(InInstigator);
 	SetActorLocationAndRotation(SpawnLocation, SpawnRotation, false, nullptr, ETeleportType::TeleportPhysics);
-	SetActorHiddenInGame(false);
-	SetActorEnableCollision(true);
-	SetActorTickEnabled(true);
-	Collision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-	Collision->SetGenerateOverlapEvents(true);
 	Collision->ClearMoveIgnoreActors();
 
 	if (AActor* OwnerActor = GetOwner())
@@ -224,7 +235,6 @@ void ARogueEnemyProjectile::ActivatePooledProjectile(AActor* InOwner, APawn* InI
 
 	if (ProjectileMovement != nullptr)
 	{
-		ProjectileMovement->OnProjectileStop.RemoveDynamic(this, &ARogueEnemyProjectile::HandleProjectileStop);
 		ProjectileMovement->OnProjectileStop.AddDynamic(this, &ARogueEnemyProjectile::HandleProjectileStop);
 		ProjectileMovement->SetUpdatedComponent(Collision);
 		ProjectileMovement->SetComponentTickEnabled(true);
@@ -236,32 +246,24 @@ void ARogueEnemyProjectile::ActivatePooledProjectile(AActor* InOwner, APawn* InI
 		ProjectileMovement->Activate(true);
 	}
 
-	if (bBossShot)
-	{
-		Collision->SetSphereRadius(BossVisualState.CollisionRadius);
-		if (GlowLight != nullptr)
-		{
-			GlowLight->SetAttenuationRadius(BossVisualState.LightAttenuationRadius);
-			GlowLight->SetSourceRadius(BossVisualState.LightSourceRadius);
-			GlowLight->SetSoftSourceRadius(BossVisualState.LightSoftSourceRadius);
-		}
-	}
-	else
-	{
-		Collision->SetSphereRadius(NormalVisualState.CollisionRadius);
-		if (GlowLight != nullptr)
-		{
-			GlowLight->SetAttenuationRadius(NormalVisualState.LightAttenuationRadius);
-			GlowLight->SetSourceRadius(NormalVisualState.LightSourceRadius);
-			GlowLight->SetSoftSourceRadius(NormalVisualState.LightSoftSourceRadius);
-		}
-	}
+	const FRogueEnemyProjectileVisualState& ActiveState = bBossShot ? BossVisualState : NormalVisualState;
+	Collision->SetSphereRadius(ActiveState.CollisionRadius * VisualScale, false);
+	ApplyVisualState(ActiveState, 0.0f);
+	SetActorHiddenInGame(false);
+	SetActorTickEnabled(true);
+	Collision->SetGenerateOverlapEvents(true);
+	SetActorEnableCollision(true);
+	// 此调用可能立即命中并归池；之后不再写入激活状态、运动或外观。
+	Collision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 }
 
 void ARogueEnemyProjectile::DeactivateToPool()
 {
 	bPoolAvailable = true;
 	bResolvedImpact = true;
+	SetActorEnableCollision(false);
+	Collision->SetGenerateOverlapEvents(false);
+	Collision->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
 	if (ProjectileMovement != nullptr)
 	{
@@ -269,11 +271,15 @@ void ARogueEnemyProjectile::DeactivateToPool()
 		ProjectileMovement->SetUpdatedComponent(Collision);
 		ProjectileMovement->StopMovementImmediately();
 		ProjectileMovement->Deactivate();
+		ProjectileMovement->SetComponentTickEnabled(false);
 		ProjectileMovement->Velocity = FVector::ZeroVector;
 	}
 
 	bResolvedImpact = false;
 	bBossShot = false;
+	bSimpleVisual = false;
+	VisualScale = 1.0f;
+	Damage = 0.0f;
 	PulseTime = 0.0f;
 	RemainingLifetime = 0.0f;
 	bVisualsSimplified = false;
@@ -285,12 +291,35 @@ void ARogueEnemyProjectile::DeactivateToPool()
 	Collision->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Collision->SetGenerateOverlapEvents(false);
 	Collision->ClearMoveIgnoreActors();
-	Collision->SetSphereRadius(NormalVisualState.CollisionRadius);
+	Collision->SetSphereRadius(NormalVisualState.CollisionRadius, false);
+	ApplyVisualState(NormalVisualState, 0.0f);
 	if (GlowLight != nullptr)
 	{
-		GlowLight->SetAttenuationRadius(NormalVisualState.LightAttenuationRadius);
-		GlowLight->SetSourceRadius(NormalVisualState.LightSourceRadius);
-		GlowLight->SetSoftSourceRadius(NormalVisualState.LightSoftSourceRadius);
+		GlowLight->SetVisibility(false);
+		GlowLight->SetHiddenInGame(true);
+		GlowLight->SetIntensity(0.0f);
+	}
+}
+
+void ARogueEnemyProjectile::ApplyVisualState(const FRogueEnemyProjectileVisualState& State, float PulseAlpha)
+{
+	// 保留蓝图组件缩放；普通/Boss/简化表现切换更新灯光、拖尾偏移与可见性。
+	TrailMesh->SetRelativeLocation(UnscaledTrailLocation * VisualScale);
+	SpineMesh->SetVisibility(!bSimpleVisual);
+	SpineMesh->SetHiddenInGame(bSimpleVisual);
+	RingMesh->SetVisibility(!bSimpleVisual);
+	RingMesh->SetHiddenInGame(bSimpleVisual);
+	TrailMesh->SetVisibility(!bSimpleVisual);
+	TrailMesh->SetHiddenInGame(bSimpleVisual);
+	if (GlowLight != nullptr)
+	{
+		GlowLight->SetVisibility(!bSimpleVisual);
+		GlowLight->SetHiddenInGame(bSimpleVisual);
+		GlowLight->SetIntensity(bSimpleVisual ? 0.0f : (State.LightIntensity
+			+ PulseAlpha * (bBossShot ? LightPulseAmplitudeBoss : LightPulseAmplitudeNormal)) * VisualScale);
+		GlowLight->SetAttenuationRadius(State.LightAttenuationRadius * VisualScale);
+		GlowLight->SetSourceRadius(State.LightSourceRadius * VisualScale);
+		GlowLight->SetSoftSourceRadius(State.LightSoftSourceRadius * VisualScale);
 	}
 }
 
@@ -318,16 +347,7 @@ void ARogueEnemyProjectile::Tick(float DeltaSeconds)
 		{
 			bVisualsSimplified = true;
 			const FRogueEnemyProjectileVisualState& SimplifiedState = bBossShot ? SimplifiedBossVisualState : SimplifiedNormalVisualState;
-			BodyMesh->SetRelativeScale3D(FVector(SimplifiedState.BodyScale));
-			CoreMesh->SetRelativeScale3D(FVector(SimplifiedState.CoreScale));
-			GlowMesh->SetRelativeScale3D(FVector(SimplifiedState.GlowScale));
-			SpineMesh->SetRelativeScale3D(FVector(SimplifiedState.SpineScale));
-			RingMesh->SetRelativeScale3D(FVector(SimplifiedState.RingScale));
-			TrailMesh->SetRelativeScale3D(SimplifiedState.TrailScale);
-			if (GlowLight != nullptr)
-			{
-				GlowLight->SetIntensity(SimplifiedState.LightIntensity);
-			}
+			ApplyVisualState(SimplifiedState, 0.0f);
 		}
 		return;
 	}
@@ -338,23 +358,8 @@ void ARogueEnemyProjectile::Tick(float DeltaSeconds)
 	const FRogueEnemyProjectileVisualState& ActiveState = bBossShot ? BossVisualState : NormalVisualState;
 	const float PulseAlpha = 0.5f + 0.5f * FMath::Sin(PulseTime * (bBossShot ? PulseSpeedBoss : PulseSpeedNormal));
 
-	BodyMesh->SetRelativeScale3D(FVector(ActiveState.BodyScale + PulseAlpha * BodyPulseAmplitude));
-	CoreMesh->SetRelativeScale3D(FVector(ActiveState.CoreScale + PulseAlpha * CorePulseAmplitude));
-	GlowMesh->SetRelativeScale3D(FVector(ActiveState.GlowScale + PulseAlpha * GlowPulseAmplitude));
-	SpineMesh->SetRelativeScale3D(FVector(ActiveState.SpineScale + PulseAlpha * SpinePulseAmplitude));
-	RingMesh->SetRelativeScale3D(FVector(ActiveState.RingScale + PulseAlpha * RingPulseAmplitude));
-	TrailMesh->SetRelativeScale3D(ActiveState.TrailScale + TrailPulseAmplitude * PulseAlpha);
-
-	if (GlowLight != nullptr)
-	{
-		GlowLight->SetIntensity(ActiveState.LightIntensity + PulseAlpha * (bBossShot ? LightPulseAmplitudeBoss : LightPulseAmplitudeNormal));
-	}
+	ApplyVisualState(ActiveState, PulseAlpha);
 }
-
-// 注：这里原本有一个 InitializeProjectile(InDirection, InSpeed, InDamage, bInBossShot)，
-// 全项目**无任何调用方** —— 它是 ActivatePooledProjectile 的过期副本
-//（少了 RemainingLifetime / PulseTime 的重置、少了 ignore-actor 与 owner 的设置）。
-// 留着它的唯一后果是"改了激活路径忘改它"，已删除。
 
 void ARogueEnemyProjectile::HandleOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
@@ -397,6 +402,12 @@ void ARogueEnemyProjectile::ResolveImpact(AActor* OtherActor, const FVector& Imp
 		return;
 	}
 
+	// 密集环形弹可以穿过其它敌人，避免出生圈与友方 Pawn 重叠时立即消耗。
+	if (bSimpleVisual && Cast<ARogueEnemy>(OtherActor) != nullptr)
+	{
+		return;
+	}
+
 	// 死亡前排队的重叠事件也要忽略幽灵，不能消耗弹体或生成命中特效。
 	ARogueCharacter* PlayerCharacter = Cast<ARogueCharacter>(OtherActor);
 	if (PlayerCharacter != nullptr && !PlayerCharacter->IsAlive())
@@ -407,13 +418,13 @@ void ARogueEnemyProjectile::ResolveImpact(AActor* OtherActor, const FVector& Imp
 	bResolvedImpact = true;
 	UWorld* World = GetWorld();
 	AActor* DamageCauser = IsValid(GetOwner()) ? GetOwner() : this;
-	AController* InstigatorController = GetInstigatorController();
 	if (World != nullptr)
 	{
-		ARogueImpactEffect::SpawnImpactEffect(World, ImpactLocation, ImpactNormal.Rotation(), ERogueImpactVisualStyle::Spark, bBossShot ? BossVisualState.ImpactEffectScale : NormalVisualState.ImpactEffectScale, 0.16f, this);
+		const FVector ImpactScale = (bBossShot ? BossVisualState.ImpactEffectScale : NormalVisualState.ImpactEffectScale) * VisualScale;
+		ARogueImpactEffect::SpawnImpactEffect(World, ImpactLocation, ImpactNormal.Rotation(), ERogueImpactVisualStyle::Spark, ImpactScale, 0.16f, this);
 	}
 
-	if (PlayerCharacter != nullptr)
+	if (PlayerCharacter != nullptr && HasAuthority() && GetNetMode() != NM_Client)
 	{
 		// 敌方弹体：公共伤害入口再次检查玩家存活状态。
 		RogueAbilitySystem::ApplyDamageToTarget(DamageCauser, PlayerCharacter, Damage, RogueGameplayTags::Damage_Source_Projectile);

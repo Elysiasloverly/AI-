@@ -19,20 +19,12 @@ ARogueExperiencePickup::ARogueExperiencePickup()
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.TickInterval = 0.05f;
 
-	// ── 复制 ──
-	// 经验球由服务端在敌人死亡时生成，不开复制的话客户端**看不到任何经验球**。
-	//
-	// 与对象池的冲突已核对过，代价可接受：
-	//   · 预热量 64（InitialExperiencePickupPoolSize），预热的球是隐藏+停 Tick 的，
-	//     它们会在开局作为隐藏 actor 复制给客户端 —— 一次性开销约十几 KB，可忽略；
-	//   · 客户端的池是空的（Prewarm 只在 GameMode.BeginPlay 跑，那是服务端），
-	//     所以不会出现"客户端自己池里那份 + 服务端复制那份"的双份球。
+	// 经验球由服务端获取并激活，通过 Actor 复制让相关客户端建立对应实例。
+	// 预热量和初始网络开销取决于配置与测量，本模块不据固定池大小推导带宽。
 	bReplicates = true;
 
-	// 位置也要复制：磁吸位移是**服务端**算的（见 Tick），客户端必须跟着动。
-	// 光开 bReplicates 只复制状态，不保证复制位移 —— 漏了这条的表现就是
-	// "服务端把球吸走了、客户端那颗球原地不动，然后突然消失"，看起来像"不会吸经验球"。
-	// （APawn 在构造函数里显式调了它，说明普通 Actor 的默认值并不保险，这里显式声明。）
+	// 服务端计算磁吸位移，客户端通过标准移动复制跟随根组件位置/旋转。
+	// FRepMovement 不携带缩放；这里只开移动复制不能保证经验值变化后的球大小同步。
 	SetReplicatingMovement(true);
 
 	Collision = CreateDefaultSubobject<USphereComponent>(TEXT("Collision"));
@@ -89,10 +81,8 @@ void ARogueExperiencePickup::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// 服务端：池化对象出生即在池里。
-	// ⚠️ 客户端不能调 DeactivateToPool()：它会写本地的 bReplicatedActive（权威独占的复制位），
-	// 把刚复制到的真实值覆盖成 false，于是客户端永远看不见这颗球。
-	// 与 ARogueEnemy::BeginPlay 是同一个坑，详见那边的注释。
+	// 服务端出生后归池；客户端保留初始复制值，并在下方重建本地表现。
+	// DeactivateToPool 已限制活跃位仅由权威端写入，但客户端无条件归池仍会隐藏活跃实例。
 	if (HasAuthority())
 	{
 		DeactivateToPool();
@@ -106,13 +96,25 @@ void ARogueExperiencePickup::GetLifetimeReplicatedProps(TArray<FLifetimeProperty
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-	// 只复制"在不在场"这一位（位置/缩放交给标准的移动复制）
+	// 本类显式复制活跃位；标准移动载荷负责位姿，不包含经验值或缩放。
 	DOREPLIFETIME_CONDITION(ARogueExperiencePickup, bReplicatedActive, COND_None);
 }
 
 void ARogueExperiencePickup::OnRep_ReplicatedActive()
 {
 	ApplyReplicatedActiveState();
+}
+
+bool ARogueExperiencePickup::IsNetRelevantFor(const AActor* RealViewer, const AActor* ViewTarget, const FVector& SrcLocation) const
+{
+	// AActor 默认会剔除隐藏且无碰撞的对象；归池后仍需把失活状态送到附近客户端。
+	// 保留距离剔除，避免远处的池对象向所有玩家复制。
+	if (bPoolAvailable && IsWithinNetRelevancyDistance(SrcLocation))
+	{
+		return true;
+	}
+
+	return Super::IsNetRelevantFor(RealViewer, ViewTarget, SrcLocation);
 }
 
 void ARogueExperiencePickup::ApplyReplicatedActiveState()
@@ -212,7 +214,7 @@ void ARogueExperiencePickup::Tick(float DeltaSeconds)
 		return;
 	}
 
-	// 目标必须每帧重新挑：联机时玩家会跑动/死亡/退出，
+	// 每次本 Actor 的 Tick 重新挑目标，以响应玩家移动、濒死或退出；默认 Tick 间隔为 0.05 秒。
 	// 缓存一个"玩家 0"会让球朝错误的人飞（而且位移是复制的，全队都会看到球跑偏）。
 	ARogueCharacter* MagnetTarget = FindMagnetTarget();
 	if (!IsValid(MagnetTarget))
@@ -226,6 +228,19 @@ void ARogueExperiencePickup::Tick(float DeltaSeconds)
 
 	const FVector NewLocation = FMath::VInterpConstantTo(GetActorLocation(), MagnetTarget->GetActorLocation(), DeltaSeconds, AttractionSpeed);
 	SetActorLocation(NewLocation);
+	// 移动可能已触发重叠并归池；不要继续更新已被收取的球。
+	if (bPoolAvailable)
+	{
+		return;
+	}
+
+	// 开启碰撞时已在玩家内部或没有重叠事件时，抵达后仍应由服务端完成收取。
+	if (FVector::DistSquared(GetActorLocation(), MagnetTarget->GetActorLocation()) <= FMath::Square(Collision->GetScaledSphereRadius())
+		&& TryCollect(MagnetTarget))
+	{
+		return;
+	}
+
 	if (!bCullCombatEffects)
 	{
 		const float AttractionAlpha = 0.5f + 0.5f * FMath::Sin(PulseTime * 8.0f);
@@ -287,33 +302,34 @@ void ARogueExperiencePickup::AddExperienceValue(int32 InExperienceValue)
 	ExperienceValue += InExperienceValue;
 	SetActorScale3D(FVector(FMath::Clamp(1.0f + static_cast<float>(ExperienceValue) * 0.015f, 1.0f, 2.4f)));
 
-	// ⚠️ 必须同时把存活时间归零。
-	//
-	// 合并的语义是"把这批新经验并进最近那颗球"，而那颗球**可能已经在场上待了很久**：
-	// 不刷新的话，它可能只剩不到 1 秒就过期，于是刚并进去的经验跟着一起消失 ——
-	// 而且完全没有任何提示，玩家只会看到"杀了怪但经验没涨"（最难归因的一类问题）。
-	// 顺带这也符合直觉：并了新经验之后，玩家应该有完整的时间去捡它。
+	// 合并后刷新寿命与自动磁吸计时，避免新经验随旧球立即过期。
 	ActiveTimeSeconds = 0.0f;
 }
 
 void ARogueExperiencePickup::ActivatePooledPickup(AActor* InOwner, const FVector& SpawnLocation, int32 InExperienceValue)
 {
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	// 先完整设置本次激活的数据，再开启会同步触发重叠回调的碰撞。
+	SetActorEnableCollision(false);
 	SetOwner(InOwner);
 	SetActorLocation(SpawnLocation, false, nullptr, ETeleportType::TeleportPhysics);
+	InitializePickup(InExperienceValue);
+	bPoolAvailable = false;
+	bVisualsSimplified = false;
+	bReplicatedActive = true;
 	SetActorHiddenInGame(false);
 	SetActorTickEnabled(true);
-	SetActorEnableCollision(true);
 	if (Collision != nullptr)
 	{
 		Collision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 	}
-
-	bPoolAvailable = false;
-	bVisualsSimplified = false;
-	InitializePickup(InExperienceValue);
-
-	// 通知客户端这颗球上场了
-	bReplicatedActive = true;
+	SetActorEnableCollision(true);
+	// 碰撞回调可能已将球收取归池，此后不能再覆盖活跃位。
+	ForceNetUpdate();
 }
 
 void ARogueExperiencePickup::DeactivateToPool()
@@ -348,29 +364,27 @@ void ARogueExperiencePickup::DeactivateToPool()
 		Collision->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	}
 	SetOwner(nullptr);
+	if (HasAuthority())
+	{
+		ForceNetUpdate();
+	}
+}
+
+bool ARogueExperiencePickup::TryCollect(ARogueCharacter* PlayerCharacter)
+{
+	if (!HasAuthority() || bPoolAvailable || !IsValid(PlayerCharacter) || !PlayerCharacter->IsAlive())
+	{
+		return false;
+	}
+
+	// 先锁定收取结果并归池，再发经验；升级通知或重复重叠不能再次发奖。
+	const int32 CollectedExperience = ExperienceValue;
+	DeactivateToPool();
+	PlayerCharacter->AddExperience(CollectedExperience);
+	return true;
 }
 
 void ARogueExperiencePickup::HandleOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
-	if (bPoolAvailable)
-	{
-		return;
-	}
-
-	ARogueCharacter* PlayerCharacter = Cast<ARogueCharacter>(OtherActor);
-	if (!IsValid(PlayerCharacter) || !PlayerCharacter->IsAlive())
-	{
-		return;
-	}
-
-	// 拾取是**权威操作**：加经验与回收都要在服务端做。
-	// 客户端本地碰到球什么都不做 —— 球的位置与存活由服务端复制过来。
-	// （AddExperience 内部也有权限检查，这里是第一道闸。）
-	if (!HasAuthority())
-	{
-		return;
-	}
-
-	PlayerCharacter->AddExperience(ExperienceValue);
-	DeactivateToPool();
+	TryCollect(Cast<ARogueCharacter>(OtherActor));
 }

@@ -25,6 +25,8 @@ struct AI_API FRogueShopOffer
 	void MarkPurchased() { Reward.bPurchased = true; }
 };
 
+/** 每玩家的服务端商店运行态；PlayerState 另行复制报价镜像。
+ *  刷新失败回滚报价和周期状态；购买次数跨补货保留，影响该类型后续价格。 */
 USTRUCT()
 struct AI_API FRogueShopSystem
 {

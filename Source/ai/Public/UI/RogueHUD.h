@@ -37,10 +37,7 @@ struct FRogueDamageNumber
 	FVector2D CachedScreenPosition = FVector2D::ZeroVector;
 	bool bScreenPositionValid = false;
 
-	/** 飘字文本，**生成时算一次**。
-	 *  为什么不每帧 Printf：数值生成后就固定不变，而屏幕上最多同时有 42 条飘字，
-	 *  每帧拼 42 个 FString = 每秒 2500 次堆分配（重火力下敌人多时更明显）。
-	 *  缓存后每帧只剩下两次 DrawText。 */
+	/** 生成飘字时缓存文本，避免逐帧重复格式化；投影、位置更新和绘制仍按各自路径执行。 */
 	FString CachedText;
 };
 

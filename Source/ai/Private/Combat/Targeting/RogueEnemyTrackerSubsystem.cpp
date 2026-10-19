@@ -64,8 +64,7 @@ int32 URogueEnemyTrackerSubsystem::GetActiveEnemyCountOfType(ERogueEnemyType Ene
 {
 	int32 Count = 0;
 
-	// 线性遍历：刷怪频率是"每 0.2s 一次"这种级别，数组通常也就几十个元素，
-	// 为它单独维护一张"按类型索引"的表不划算（维护成本 > 收益）。
+	// 按类型统计时线性扫描当前注册表，并过滤死亡、回池与可选的 Boss。
 	for (const TWeakObjectPtr<ARogueEnemy>& WeakEnemy : EnemyTracker.GetActiveEnemies())
 	{
 		const ARogueEnemy* Enemy = WeakEnemy.Get();

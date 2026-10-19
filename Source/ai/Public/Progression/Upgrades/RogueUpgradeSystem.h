@@ -8,15 +8,9 @@ class ARogueCharacter;
 class URogueUpgradeDefinitionAsset;
 class URogueUpgradeRuleAsset;
 
-/**
- * 升级配置 + 纯算法。
- *
- * ⚠️ 这里**不再持有运行态**。原来的 `PendingUpgrades` / `QueuedSelections` / `bAwaitingChoice`
- * 都搬到了 `ARoguePlayerState`，原因是它们是**每玩家一份、且必须复制给客户端**的数据：
- *   · 单机版把它们放在 GameMode 上是可行的；
- *   · 联机下 GameMode 是服务端独占对象，客户端调 `GetAuthGameMode()` 得到 nullptr ——
- *     结果就是客户端玩家根本看不到升级界面（这是迁移前的真实故障）。
- * 现在这个结构体只承担"服务端配置"（升级定义表 + 规则资产），因此可以安全地留在 GameMode 上。
+/** 升级定义/规则资产的持有者和随机选项生成器，由服务端 GameMode 使用。
+ *  待选卡、排队次数与选择状态位于各玩家 PlayerState，并按拥有者复制。
+ *  生成过程读取角色/资产且使用全局随机数，因此不是数学意义的纯函数。
  */
 USTRUCT()
 struct AI_API FRogueUpgradeSystem
@@ -24,7 +18,7 @@ struct AI_API FRogueUpgradeSystem
 	GENERATED_BODY()
 
 public:
-	/** 构建随机升级选项（纯函数，不修改自身状态）。 */
+	/** 从候选池随机抽取不重复类型，写入 OutOptions；不修改本对象配置，但会推进随机数状态。 */
 	void BuildRandomUpgradeOptions(const ARogueCharacter* Character, int32 DesiredCount, TArray<FRogueUpgradeOption>& OutOptions) const;
 
 	void SetDefinitionAsset(URogueUpgradeDefinitionAsset* InDefinitionAsset) { DefinitionAsset = InDefinitionAsset; }

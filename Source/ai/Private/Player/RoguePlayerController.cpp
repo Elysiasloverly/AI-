@@ -8,7 +8,7 @@ void ARoguePlayerController::OnPossess(APawn* InPawn)
 void ARoguePlayerController::OnUnPossess()
 {
 	// 记下来：归属自愈时优先把"曾经属于我、现在没人控制"的 Pawn 认领回来。
-	// 存成列表而不是单个：引擎抢 Pawn 的时序里，最后一次放手的可能是别人的 Pawn。
+	// 保留多个历史候选，避免仅能查到最近解除控制、但已被其他控制器持有的 Pawn。
 	if (APawn* CurrentPawn = GetPawn())
 	{
 		PreviouslyOwnedPawns.RemoveAll([CurrentPawn](const TWeakObjectPtr<APawn>& Entry) { return Entry.Get() == CurrentPawn; });

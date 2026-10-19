@@ -49,13 +49,8 @@ ARogueOrbitingBlade::ARogueOrbitingBlade()
 		Mesh->SetMaterial(0, BladeMaterial.Object);
 	}
 
-	// 发光改成 Mesh 的 Overlay Material：同一份网格再画一遍、叠一层半透明材质。
-	// 对比原来的做法（再建一个略大的静态网格套在外面）：
-	//   · 少一个组件、少一个 draw call；
-	//   · 不会出现"外层不透明把本体整块挡住"的问题（本体永远在下面画）；
-	//   · 大纲/辉光形状由材质自己决定（要靠 WPO 外扩就在材质里外扩）。
-	// 引擎对 OverlayMaterial 的定义就是"Translucent material to blend on top of this mesh"，
-	// 所以这个材质必须是半透明/叠加的。
+	// Overlay 在现有网格上追加材质绘制；材质应采用适合的混合方式。
+	// 这省去独立 GlowMesh 组件，但不能据此断言减少 draw call。
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> GlowMaterial(TEXT("/Game/GameAssets/StarterContent/Materials/M_Tech_Hex_Tile_Pulse.M_Tech_Hex_Tile_Pulse"));
 	if (GlowMaterial.Succeeded())
 	{
@@ -66,16 +61,15 @@ ARogueOrbitingBlade::ARogueOrbitingBlade()
 	Mesh->SetOverlayMaterial(VisualConfig.GlowMaterial);
 	Mesh->SetOverlayMaterialMaxDrawDistance(0.0f);
 
-	// 注意：这里**不再**绑定 OnComponentBeginOverlap。
-	// 原因：BeginOverlap 只在"进入的那一帧"触发一次，一旦刀片和敌人持续贴在一起就再也不会触发；
-	// 而 HitCooldown 这个字段的语义是"贴身每 N 秒结算一次"。两者冲突会让实际伤害
-	// 变成"每次进入才算一次"（一圈才一次），冷却表形同虚设。
-	// 现在统一改成 Tick 里按重叠列表结算（见 ApplyContactDamage）。
+	// 持续接触伤害读取重叠列表并使用 HitCooldown；BeginOverlap 只报告开始重叠，
+	// 不会为持续重叠自动周期触发。
 }
 
 void ARogueOrbitingBlade::BeginPlay()
 {
 	Super::BeginPlay();
+	BaseMeshScale = Mesh->GetRelativeScale3D();
+	BaseCollisionRadius = Collision->GetUnscaledSphereRadius();
 
 	// 在这里（而不是构造函数里）建 MID：BP 可能覆盖 VisualConfig.GlowMaterial，
 	// 属性值是在构造之后才加载的，所以要以 BeginPlay 时读到的为准。
@@ -91,8 +85,8 @@ void ARogueOrbitingBlade::SetupGlowMaterial()
 		return;
 	}
 
-	// 每次激活都重建 MID 会持续泄漏 UObject，所以只在没有实例时建一次；
-	// 但 GlowMaterial 被换掉的情况要能重新建。
+	// 尝试复用已缓存的 MID；仅在此初始化入口创建实例。
+	// 反复创建会增加 UObject/GC 负担，但不等同于不可回收的内存泄漏。
 	UMaterialInterface* CurrentOverlay = Mesh->GetOverlayMaterial();
 	if (CurrentOverlay == nullptr)
 	{
@@ -112,8 +106,7 @@ void ARogueOrbitingBlade::SetupGlowMaterial()
 
 	Mesh->SetOverlayMaterial(GlowMaterialInstance);
 
-	// 启动时解析一次参数是否存在：参数名写错时只提示一次，不在每帧刷警告。
-	// （SetScalarParameterValue 对不存在的参数会走引擎的 "Failed to find parameter" 警告路径）
+	// 解析材质参数，缺失时跳过后续无效写入并使用下面的限次诊断。
 	TArray<FMaterialParameterInfo> ScalarParams;
 	TArray<FGuid> ScalarParamIds;
 	GlowMaterialInstance->GetAllScalarParameterInfo(ScalarParams, ScalarParamIds);
@@ -130,10 +123,7 @@ void ARogueOrbitingBlade::SetupGlowMaterial()
 
 	if (!bHasGlowPulseParameter)
 	{
-		// 每局只提示一次（不是每把刀一次）。
-		// 实测这条警告在一次会话里刷了 20+ 行 —— 每把环绕刀都会解析一次材质，
-		// 而它反映的是**材质资源本身的缺失**（M_Tech_Hex_Tile_Pulse 里没有 GlowPulse 参数），
-		// 与刀的数量无关，刷屏只会淹没真正有用的日志。
+		// 函数静态开关在此进程/模块生命周期内共享，不按刀片、World 或对局重置。
 		static bool bWarnedAboutMissingGlowPulse = false;
 		if (!bWarnedAboutMissingGlowPulse)
 		{
@@ -185,8 +175,8 @@ void ARogueOrbitingBlade::Tick(float DeltaSeconds)
 		return;
 	}
 
-	// 位置由武器每帧通过 ConfigureBlade → UpdateTransform 推送（瞬移），
-	// 瞬移会调用 UpdateOverlaps，所以这里的重叠列表就是"当前帧位置"的结果。
+	// ConfigureBlade 推送位置后读取当前缓存的重叠状态。
+	// 角色与刀片 Tick 没有显式前置关系，此处不保证已经收到同帧的新位置。
 	ApplyContactDamage();
 
 	URogueEnemyTrackerSubsystem* Tracker = GetWorld() ? GetWorld()->GetSubsystem<URogueEnemyTrackerSubsystem>() : nullptr;
@@ -208,6 +198,7 @@ void ARogueOrbitingBlade::Tick(float DeltaSeconds)
 
 void ARogueOrbitingBlade::ActivatePooledBlade(AActor* InOwnerActor)
 {
+	ApplySizeMultiplier(1.0f);
 	OwnerActor = InOwnerActor;
 	SetOwner(InOwnerActor);
 	SetActorHiddenInGame(false);
@@ -244,9 +235,10 @@ void ARogueOrbitingBlade::DeactivateToPool()
 		Collision->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		Collision->ClearMoveIgnoreActors();
 	}
+	ApplySizeMultiplier(1.0f);
 }
 
-void ARogueOrbitingBlade::ConfigureBlade(AActor* InOwnerActor, int32 InBladeIndex, int32 InBladeCount, float InOrbitRadius, float InRotationSpeed, float InDamage, float InSharedOrbitAngle)
+void ARogueOrbitingBlade::ConfigureBlade(AActor* InOwnerActor, int32 InBladeIndex, int32 InBladeCount, float InOrbitRadius, float InRotationSpeed, float InDamage, float InSharedOrbitAngle, float InSizeMultiplier)
 {
 	OwnerActor = InOwnerActor;
 	BladeIndex = InBladeIndex;
@@ -255,6 +247,7 @@ void ARogueOrbitingBlade::ConfigureBlade(AActor* InOwnerActor, int32 InBladeInde
 	RotationSpeed = InRotationSpeed;
 	Damage = InDamage;
 	SharedOrbitAngle = InSharedOrbitAngle;
+	ApplySizeMultiplier(InSizeMultiplier);
 
 	if (OwnerActor.IsValid())
 	{
@@ -264,6 +257,18 @@ void ARogueOrbitingBlade::ConfigureBlade(AActor* InOwnerActor, int32 InBladeInde
 	UpdateTransform();
 }
 
+
+void ARogueOrbitingBlade::ApplySizeMultiplier(float InSizeMultiplier)
+{
+	const float NewMultiplier = FMath::IsFinite(InSizeMultiplier) ? FMath::Max(1.0f, InSizeMultiplier) : 1.0f;
+	if (FMath::IsNearlyEqual(SizeMultiplier, NewMultiplier)) { return; }
+	SizeMultiplier = NewMultiplier;
+	Mesh->SetRelativeScale3D(BaseMeshScale * SizeMultiplier);
+	// 显式扩大实际查询球；只放大网格不会改变持续接触伤害覆盖面。
+	// 尺寸改变时更新重叠列表，下一次伤害 Tick 即可读到新进入范围的敌人。
+	Collision->SetSphereRadius(BaseCollisionRadius * SizeMultiplier, !bPoolAvailable);
+}
+
 void ARogueOrbitingBlade::ApplyContactDamage()
 {
 	if (Collision == nullptr || Damage <= 0.0f)
@@ -271,9 +276,8 @@ void ARogueOrbitingBlade::ApplyContactDamage()
 		return;
 	}
 
-	// 用"已缓存的重叠列表"而不是每帧做一次球体查询：
-	// 刀片每帧都会被 SetActorLocation 瞬移，瞬移内部会调用 UpdateOverlaps，
-	// 所以这份列表就是当前帧位置的准确结果，读它不产生任何物理查询开销。
+	// 读取组件缓存的重叠对象，避免在此额外发起球形范围查询。
+	// 移动/启停碰撞仍会维护重叠并可能发生物理查询；结果受更新与 Tick 时序影响。
 	TArray<AActor*> OverlappingActors;
 	Collision->GetOverlappingActors(OverlappingActors, ARogueEnemy::StaticClass());
 
@@ -286,7 +290,7 @@ void ARogueOrbitingBlade::ApplyContactDamage()
 		}
 
 		// 冷却表是"每把刀片 × 每个敌人"各一份，所以多把刀片贴同一个敌人时
-		// 每把都独立结算，伤害随刀片数量线性叠加。
+		// 每把都独立提交伤害请求；实际总伤害还受接触时长、轨道与权威结算条件影响。
 		if (HitCooldowns.Contains(Enemy))
 		{
 			continue;

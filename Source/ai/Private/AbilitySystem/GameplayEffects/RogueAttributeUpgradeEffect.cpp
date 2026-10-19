@@ -5,28 +5,22 @@
 
 URogueAttributeUpgradeEffect::URogueAttributeUpgradeEffect()
 {
-	// **Infinite**：Stacking 必须驻留 —— Instant 的 GE 不会被保留，也就无法叠加。
-	// 代价（见头文件）：只能改 CurrentValue，所以"升级最大生命/护甲上限时等量回复"
-	// 那条联动已经搬到 ARogueCharacter 的属性变化委托上。
+	// 使用无周期 Infinite 保留可移除的升级贡献与层数。
+	// Instant 不形成持续的活动效果栈；本效果的上限变化联动由角色属性委托处理。
 	DurationPolicy = EGameplayEffectDurationType::Infinite;
 
 	// 每个目标一份栈（升级来自商店/升级界面，没有有意义的"来源 Actor"，
 	// 所以不该按来源分开叠）。
 	StackingType = EGameplayEffectStackingType::AggregateByTarget;
 
-	// 0 = **不限制**层数（引擎只在 StackLimitCount > 0 时才钳制）——
-	// 保持改造前"同类型可无限购买"的行为。
-	// 想给某张卡设"最多买 N 次"，把它填成正整数即可，这是改造前做不到的。
+	// 0 不限制层数；购买可选性和属性数值上限仍由升级规则/属性集单独限制。
 	StackLimitCount = 0;
 }
 
 void URogueAttributeUpgradeEffect::ConfigureUpgrade(FGameplayAttribute TargetAttribute)
 {
-	// 量级走 SetByCaller：数值由施加方给出（冲刺冷却是负向升级，调用方传负数）。
-	//
-	// 关键：引擎会把它**乘以层数**
-	//（GameplayEffectUtilities::ComputeStackedModifierMagnitude，Additive 的 OperationBias 为 0），
-	// 所以买 N 次得到的增量 = N × 单次数值 —— 与改造前 Instant 连加 N 次逐项相等。
+	// Additive 量级乘以栈数；同类升级的幅度需保持一致，才能得到 N 次购买的线性和。
+	// 若未来每次传不同幅度，单栈并不逐次累加/保存每次的独立数值。
 	FSetByCallerFloat MagnitudeFromCaller;
 	MagnitudeFromCaller.DataTag = RogueGameplayTags::Data_Magnitude;
 
@@ -38,9 +32,7 @@ void URogueAttributeUpgradeEffect::ConfigureUpgrade(FGameplayAttribute TargetAtt
 }
 
 // ===================================================================
-//  20 个子类 —— 每个只做一件事：把目标属性烤进去。
-//  属性访问器与改造前 URogueUpgradeExecution 的映射表**逐项对应**，
-//  迁移时逐个照搬，不要顺手改。
+// 一种升级一个子类，固定目标属性；枚举到类的映射见本文件末尾。
 // ===================================================================
 
 // ---- 玩家核心属性（8 项）----
@@ -60,13 +52,7 @@ URogueUpgradeEffect_PickupRadius::URogueUpgradeEffect_PickupRadius()
 URogueUpgradeEffect_Recovery::URogueUpgradeEffect_Recovery()
 { ConfigureUpgrade(URogueAttributeSet::GetHealthRegenPerSecondAttribute()); }
 
-// ⚠️ 升级枚举里的 `Armor` 语义是**伤害减免**（DamageReductionPercent），
-//    而 `ArmorCapacity` 才是护甲上限 —— 这是原项目的命名，极容易看错。
-//
-//    这条说明是从已删除的 `RogueUpgradeExecution` 里**抢救出来的**：
-//    它原本是那张"载荷 Tag → 属性"映射表上唯一的提示，随死代码一起删掉后，
-//    下一个人几乎必然会把它错映射成"护甲回复速率"（我自己第一次就映射错了，
-//    而自检不覆盖这张卡，所以不会报错 —— 是删代码时才读到原注释发现的）。
+// Armor 枚举对应伤害减免比例 DamageReductionPercent；ArmorCapacity 才是护甲上限。
 URogueUpgradeEffect_Armor::URogueUpgradeEffect_Armor()
 { ConfigureUpgrade(URogueAttributeSet::GetDamageReductionPercentAttribute()); }
 
@@ -76,7 +62,7 @@ URogueUpgradeEffect_ArmorCapacity::URogueUpgradeEffect_ArmorCapacity()
 URogueUpgradeEffect_ExperienceGain::URogueUpgradeEffect_ExperienceGain()
 { ConfigureUpgrade(URogueAttributeSet::GetExperienceMultiplierAttribute()); }
 
-// ---- 武器加成（12 项）----
+// ---- 武器加成（13 项）----
 URogueUpgradeEffect_AttackPower::URogueUpgradeEffect_AttackPower()
 { ConfigureUpgrade(URogueAttributeSet::GetAttackPowerBonusAttribute()); }
 
@@ -113,6 +99,9 @@ URogueUpgradeEffect_MortarCount::URogueUpgradeEffect_MortarCount()
 URogueUpgradeEffect_MortarBlastRadius::URogueUpgradeEffect_MortarBlastRadius()
 { ConfigureUpgrade(URogueAttributeSet::GetMortarBlastRadiusBonusAttribute()); }
 
+URogueUpgradeEffect_ScytheSize::URogueUpgradeEffect_ScytheSize()
+{ ConfigureUpgrade(URogueAttributeSet::GetScytheSizeBonusAttribute()); }
+
 // ===================================================================
 //  枚举 → GE 子类
 // ===================================================================
@@ -144,6 +133,7 @@ TSubclassOf<UGameplayEffect> RogueUpgradeEffectMap::GetEffectClass(ERogueUpgrade
 	case ERogueUpgradeType::LaserRefraction:     return URogueUpgradeEffect_LaserRefraction::StaticClass();
 	case ERogueUpgradeType::MortarCount:         return URogueUpgradeEffect_MortarCount::StaticClass();
 	case ERogueUpgradeType::MortarBlastRadius:   return URogueUpgradeEffect_MortarBlastRadius::StaticClass();
+	case ERogueUpgradeType::ScytheSize:          return URogueUpgradeEffect_ScytheSize::StaticClass();
 	}
 
 	// 走到这里说明枚举加了但映射忘了加。**不要静默 return nullptr 了事** ——

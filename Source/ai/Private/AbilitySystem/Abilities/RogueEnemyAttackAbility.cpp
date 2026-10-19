@@ -45,11 +45,11 @@ URogueEnemyAttackAbility::URogueEnemyAttackAbility()
 {
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 
-	// 敌人没有"本人客户端"：攻击表现走已有的复制通道（弹体 Multicast / 地面波复制半径），
-	// 能力只需要服务端那一份。副作用很划算：客户端上敌人**一个技能实例都没有**。
+	// 攻击能力仅服务端执行，客户端通过弹体/波状态等表现通道获知结果。
+	// ServerOnly 本身并不禁止所有情况下复制能力 Spec 或创建客户端实例。
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerOnly;
 
-	// 一次性攻击不允许重入（否则同一帧能连打两发）。
+	// 已激活期间不重触发；瞬时能力结束后的下一次尝试仍由 AI 节流条件控制。
 	bRetriggerInstancedAbility = false;
 
 	FGameplayTagContainer AttackTags;
@@ -105,10 +105,8 @@ void URogueEnemyAttackAbility::ApplyAttackCooldown()
 	// 时长走 SetByCaller：三种攻击的冷却字段各不相同，GE 只负责按秒数计时。
 	SpecHandle.Data->SetSetByCallerMagnitude(RogueGameplayTags::Data_Cooldown, Seconds);
 
-	// 显式带上这次激活的预测键 —— 与武器冷却同一条踩坑教训（见 RogueWeaponAbility::StampWeaponCooldown）：
-	// 引擎要求"非权威端施加 GE 必须带有效预测键"，不带就会静默拿到空句柄。
-	// 敌人是 ServerOnly + 服务端权威，这里本来就通过；写成同一个形状是为了
-	// 将来万一有客户端侧的攻击能力时不会再踩一遍。
+	// 当前 ServerOnly，权威端无需有效预测键即可施加效果。
+	// 这里携带激活键不代表支持客户端持续预测；若改执行策略需重新设计预测窗口与确认。
 	const FPredictionKey ActivationPredictionKey = CurrentActivationInfo.GetActivationPredictionKey();
 	const FActiveGameplayEffectHandle NewHandle =
 		ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get(), ActivationPredictionKey);
@@ -149,8 +147,8 @@ void URogueEnemyContactAttackAbility::ActivateAbility(
 		++RogueEnemyAttackStats::GCounters.Contact;
 	}
 
-	// 冷却要在结束前给：EndAbility 之后实例就"没在跑"了，但 GE 与能力实例无关，
-	// 什么时候给都可以；放在这里是让"打完之后进入冷却"这件事一眼可见。
+	// 在能力结束前记录攻击冷却。GE 可独立于能力实例继续存在，
+	// 但当前没有将它接入 CheckCooldown；实际激活节流由敌人计时器负责。
 	ApplyAttackCooldown();
 
 	EndAbility(Handle, ActorInfo, ActivationInfo, /*bReplicateEndAbility=*/false, /*bWasCancelled=*/false);
@@ -230,10 +228,7 @@ void URogueEnemyGroundWaveAttackAbility::TickAttackStep(float DeltaSeconds)
 
 	Enemy->ExecuteAdvanceGroundWave(DeltaSeconds);
 
-	// 波结束 → 能力结束并进入冷却。
-	// 改造前这段是 AI 里的 `if (bGroundWaveActive) UpdateGroundWave()` +
-	// 波结束时的 `GroundWaveAttackTimer = GroundWave.AttackCooldown`，
-	// 现在归能力所有：AI 只需要知道"我要不要起一波"。
+	// 波结束后记录 GE 冷却并结束能力；Enemy 侧仍负责下一次攻击的 AI 节流计时。
 	if (!Enemy->IsGroundWaveActive())
 	{
 		ApplyAttackCooldown();

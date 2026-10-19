@@ -5,19 +5,13 @@
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/CollisionProfile.h"
-#include "Engine/StaticMesh.h"
-#include "Materials/MaterialInterface.h"
-#include "UObject/ConstructorHelpers.h"
 
 ARogueShopTerminal::ARogueShopTerminal()
 {
 	PrimaryActorTick.bCanEverTick = false;
 
-	// ── 复制 ──
-	// 商店终端由 **GameMode 在 BeginPlay 里 SpawnActor** —— 那会儿只有服务端在跑，
-	// 不开复制的话客户端世界里**根本没有这个终端**：看不到它，
-	// 重叠检测也不会触发，于是角色的 NearbyShopTerminal 永远为空 →
-	// 交互提示不出现、商店打不开。这是"客户端按 E 没反应"的根因之一。
+	// 终端由关卡摆放；复制支持服务端交互与客户端本地提示。
+	// 实际购买/报价仍由服务端 PlayerState/GameMode 入口校验。
 	bReplicates = true;
 
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
@@ -38,31 +32,13 @@ ARogueShopTerminal::ARogueShopTerminal()
 	InteractionBox->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 	InteractionBox->SetCollisionResponseToAllChannels(ECR_Ignore);
 	InteractionBox->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
+	InteractionBox->SetGenerateOverlapEvents(true);
 	InteractionBox->SetBoxExtent(FVector(150.0f, 150.0f, 150.0f));
 
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeMesh(TEXT("/Game/GameAssets/StarterContent/Shapes/Shape_Cube.Shape_Cube"));
-	if (CubeMesh.Succeeded())
-	{
-		BaseMesh->SetStaticMesh(CubeMesh.Object);
-		GlowMesh->SetStaticMesh(CubeMesh.Object);
-	}
-
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> BaseMaterial(TEXT("/Game/GameAssets/Vefects/Stylized_Galaxy_Shader/Demo/Shared/Materials/MI_Opaque_Dark_01.MI_Opaque_Dark_01"));
-	if (BaseMaterial.Succeeded())
-	{
-		BaseMesh->SetMaterial(0, BaseMaterial.Object);
-	}
-
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> GlowMaterial(TEXT("/Game/GameAssets/HologramShader/Materials/HologramShader/MI/MI_Hologram_8.MI_Hologram_8"));
-	if (GlowMaterial.Succeeded())
-	{
-		GlowMesh->SetMaterial(0, GlowMaterial.Object);
-	}
-
-	BaseMesh->SetRelativeScale3D(FVector(1.2f, 1.2f, 2.4f));
-	BaseMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 120.0f));
-	GlowMesh->SetRelativeScale3D(FVector(0.82f, 0.82f, 2.05f));
-	GlowMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 138.0f));
+    // 模型、材质、缩放由 BP_RogueShopTerminal 的组件默认值配置，运行时不覆写。
+    PromptAnchor = CreateDefaultSubobject<USceneComponent>(TEXT("PromptAnchor"));
+    PromptAnchor->SetupAttachment(SceneRoot);
+    PromptAnchor->SetRelativeLocation(FVector(0.0f, 0.0f, 220.0f));
 }
 
 void ARogueShopTerminal::BeginPlay()
@@ -75,7 +51,7 @@ void ARogueShopTerminal::BeginPlay()
 
 FVector ARogueShopTerminal::GetPromptWorldLocation() const
 {
-	return GetActorLocation() + FVector(0.0f, 0.0f, 220.0f);
+	return PromptAnchor->GetComponentLocation();
 }
 
 void ARogueShopTerminal::HandleOverlapBegin(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)

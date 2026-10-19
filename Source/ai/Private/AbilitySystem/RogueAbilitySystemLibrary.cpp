@@ -38,10 +38,8 @@ bool RogueAbilitySystem::ApplyDamageToTarget(AActor* SourceActor, AActor* Target
 		return false;
 	}
 
-	// 死了 / 无敌 → 伤害不生效。
-	// 刻意用代码判定而不是 GE 的 ApplicationTagRequirements：
-	//   · 后者在本引擎版本已被标记 DeprecatedProperty（GameplayEffect.h:2307）；
-	//   · 代码判定还能省掉一次 Spec 构造 —— 在 200+ 敌人的场景里这有实际意义。
+	// 死亡、濒死、无敌提前拒绝，避免创建不需要的 Spec。
+	// GE 标签要求在 UE 5.5 可用 TargetTagRequirements 组件配置；这里保留显式业务检查。
 	if (TargetASC->HasMatchingGameplayTag(RogueGameplayTags::State_Dead)
 		|| TargetASC->HasMatchingGameplayTag(RogueGameplayTags::State_Downed)
 		|| TargetASC->HasMatchingGameplayTag(RogueGameplayTags::State_Invulnerable))
@@ -52,8 +50,9 @@ bool RogueAbilitySystem::ApplyDamageToTarget(AActor* SourceActor, AActor* Target
 	FGameplayEffectContextHandle Context = TargetASC->MakeEffectContext();
 	Context.AddSourceObject(SourceActor);
 
-	// Instigator 与 Causer 分开传：击杀归属用它，避免"谁打的"这个信息丢失。
-	// 旧实现里 7 处调用的这两个参数经常传 nullptr，导致归因信息不可靠。
+	// Context 初始来自目标 ASC。仅 Pawn 来源在这里覆盖 Instigator/EffectCauser；
+	// 武器/弹体等非 Pawn 只写入了 SourceObject，EffectCauser 仍可能是目标 Avatar。
+	// 因此当前上下文还不能为所有来源提供可靠的击杀归属。
 	if (APawn* InstigatorPawn = Cast<APawn>(SourceActor))
 	{
 		Context.AddInstigator(InstigatorPawn, SourceActor);
@@ -67,8 +66,7 @@ bool RogueAbilitySystem::ApplyDamageToTarget(AActor* SourceActor, AActor* Target
 
 	SpecHandle.Data->SetSetByCallerMagnitude(RogueGameplayTags::Data_Damage, DamageAmount);
 
-	// 伤害来源写成动态资源 Tag。
-	// 注意：DynamicAssetTags 成员自 5.0 起已废弃，要用 AddDynamicAssetTag / GetDynamicAssetTags。
+	// 通过访问器添加动态资产标签；它们描述此次 Spec，不等于授予目标的状态标签。
 	if (SourceTag.IsValid())
 	{
 		SpecHandle.Data->AddDynamicAssetTag(SourceTag);

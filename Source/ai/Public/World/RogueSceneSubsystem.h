@@ -12,7 +12,8 @@ class AI_API URogueSceneSubsystem : public UWorldSubsystem
 	GENERATED_BODY()
 
 public:
-	/** 执行关卡环境优化 */
+	/** 按配置关闭部分光源/雾/天空/后处理并调整主光源；会改变画面，性能收益需实测。
+	 *  操作当前 World，不保证每项组件设置自动跨端同步。 */
 	void OptimizeLevelEnvironment(const FRogueSceneOptimizationSettings& Settings);
 
 private:

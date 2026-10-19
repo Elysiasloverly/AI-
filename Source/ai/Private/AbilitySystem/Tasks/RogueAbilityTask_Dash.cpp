@@ -5,8 +5,7 @@
 
 URogueAbilityTask_Dash::URogueAbilityTask_Dash()
 {
-	// 打开逐帧回调。不设这一位，引擎不会调用 TickTask。
-	// （bTickingTask 声明在 UGameplayTask 上，属于 protected，只能在构造里设。）
+	// 构造时开启逐帧任务，激活后由任务组件调度 TickTask。
 	bTickingTask = true;
 }
 
@@ -28,14 +27,14 @@ void URogueAbilityTask_Dash::Activate()
 {
 	Super::Activate();
 
-	// 参数非法就直接结束，避免创建一个什么都不做的任务
+	// 参数非法时只结束任务；这里不广播完成，也不自动结束所属能力。
 	if (DashSpeed <= 0.0f || TimeRemaining <= 0.0f || DashDirection.IsNearlyZero())
 	{
 		EndTask();
 		return;
 	}
 
-	// Avatar 可能还没就位（例如 PlayerState 已复制但 Pawn 未生成）
+	// Avatar 未就位时只 EndTask；调用方若需清理能力，必须另行处理该失败路径。
 	if (GetAvatarActor() == nullptr)
 	{
 		EndTask();

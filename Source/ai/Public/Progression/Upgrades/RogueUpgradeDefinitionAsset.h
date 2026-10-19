@@ -8,7 +8,7 @@
 
 /**
  * 升级定义行结构 —— 继承 FTableRowBase，可直接用于 DataTable 配置。
- * RowName 建议使用 ERogueUpgradeType 枚举值名称（如 "MaxHealth"、"MoveSpeed"）。
+ * 查找按行内 Type 字段匹配；RowName 可使用枚举名称便于编辑，但不参与匹配。
  */
 USTRUCT(BlueprintType)
 struct AI_API FRogueUpgradeDefinitionRow : public FTableRowBase

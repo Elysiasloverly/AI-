@@ -5,23 +5,35 @@
 #include "Combat/Targeting/RogueEnemyTrackerSubsystem.h"
 #include "Enemies/RogueEnemy.h"
 #include "Player/RogueCharacter.h"
-#include "World/RogueArena.h"
+#include "World/RogueEnemySpawnRegion.h"
 #include "Framework/RogueGameBalanceAsset.h"
 #include "Framework/RogueGameModeRules.h"
 #include "Player/RoguePlayerQuery.h"
 #include "Enemies/Data/RogueEnemyArchetypes.h"
 #include "Engine/DataTable.h"
+#include "Engine/World.h"
+#include "EngineUtils.h"
+#include "Components/CapsuleComponent.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "CollisionQueryParams.h"
+#include "CollisionShape.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 
 namespace
 {
-	constexpr float EnemySpawnGroundZ = 60.0f;
+	FCollisionQueryParams MakeGroundQuery(UWorld* World, const ARogueEnemy* Enemy)
+	{
+		FCollisionQueryParams Query(SCENE_QUERY_STAT(RogueEnemySpawnGround), false, Enemy);
+		// 角色胶囊、尸体和角色上的可查询网格均不能成为出生地面。
+		for (TActorIterator<APawn> It(World); It; ++It) { Query.AddIgnoredActor(*It); }
+		return Query;
+	}
 
 	/**
 	 * "这一种敌人现在还能不能刷"的判据（供加权抽取做过滤）。
 	 *
-	 * 两道闸门，都配在 `DT_FRogueEnemyArchetypeRow` 里，**没填 / 填 0 = 不限制**：
+	 * 两道闸门，都配在 `DT_EnemyArchetypes` 里，**没填 / 填 0 = 不限制**：
 	 *   ① `MaxAlive`        —— 同时存活上限：场上同时最多 N 只，**死掉就腾出名额**（动态）；
 	 *   ② `MaxSpawnPerWave` —— 每波刷新上限：本波累计刷出 N 只就没了，**死了也不补**（静态预算）。
 	 *   两个都填时谁先到谁生效。
@@ -144,9 +156,10 @@ void URogueSpawnSubsystem::ResetWaveSpawnCounts(int32 Wave)
 	AliveCapLoggedTypes.Reset();
 	WaveBudgetLoggedTypes.Reset();
 	CountedWave = Wave;
+	BossSpawnRetryTimer = 0.0f;
 }
 
-void URogueSpawnSubsystem::TickSpawning(float DeltaSeconds, FRogueRunState& RunState, ARogueCharacter* Character, const ARogueArena* Arena)
+void URogueSpawnSubsystem::TickSpawning(float DeltaSeconds, FRogueRunState& RunState, ARogueCharacter* Character, const ARogueEnemySpawnRegion* Region)
 {
 	RunState.SpawnTimer -= DeltaSeconds;
 
@@ -163,10 +176,13 @@ void URogueSpawnSubsystem::TickSpawning(float DeltaSeconds, FRogueRunState& RunS
 		ResetWaveSpawnCounts(RunState.CurrentWave);
 	}
 
+	BossSpawnRetryTimer = FMath::Max(0.0f, BossSpawnRetryTimer - DeltaSeconds);
 	if (BossSettings.BossWaveInterval > 0 && RunState.CurrentWave > 0 && RunState.CurrentWave % BossSettings.BossWaveInterval == 0 &&
-		!RunState.bBossAlive && RunState.LastBossWaveSpawned != RunState.CurrentWave)
+		BossSpawnRetryTimer <= 0.0f && !RunState.bBossAlive && RunState.LastBossWaveSpawned != RunState.CurrentWave)
 	{
-		SpawnBoss(RunState, Character, Arena);
+		SpawnBoss(RunState, Character, Region);
+		// 无有效地面时避免每帧重试整套射线；不消耗本波 Boss 名额。
+		if (!RunState.bBossAlive) { BossSpawnRetryTimer = FMath::Max(0.1f, SpawnSettings.SpawnInterval); }
 	}
 
 	URogueEnemyTrackerSubsystem* Tracker = GetWorld()->GetSubsystem<URogueEnemyTrackerSubsystem>();
@@ -182,7 +198,7 @@ void URogueSpawnSubsystem::TickSpawning(float DeltaSeconds, FRogueRunState& RunS
 	{
 		for (int32 SpawnIndex = 0; SpawnIndex < SpawnCadence.SpawnBatchSize && AliveEnemies < SpawnCadence.EffectiveMaxAliveEnemies; ++SpawnIndex)
 		{
-			if (SpawnEnemy(RunState, Character, Arena))
+			if (SpawnEnemy(RunState, Character, Region))
 			{
 				++AliveEnemies;
 			}
@@ -192,7 +208,7 @@ void URogueSpawnSubsystem::TickSpawning(float DeltaSeconds, FRogueRunState& RunS
 	}
 }
 
-bool URogueSpawnSubsystem::SpawnEnemy(FRogueRunState& RunState, ARogueCharacter* Character, const ARogueArena* Arena)
+bool URogueSpawnSubsystem::SpawnEnemy(FRogueRunState& RunState, ARogueCharacter* Character, const ARogueEnemySpawnRegion* Region)
 {
 	if (!IsValid(Character) || Character->IsDead())
 	{
@@ -223,7 +239,7 @@ bool URogueSpawnSubsystem::SpawnEnemy(FRogueRunState& RunState, ARogueCharacter*
 	}
 
 	ARogueEnemy* SpawnedEnemy = SpawnConfiguredEnemy(RogueGameModeRules::BuildEnemyProfile(RunState.CurrentWave, EnemyType,
-		BalanceAsset), SpawnSettings.SpawnRadius, SpawnSettings.EnemySpawnMinimumDistance, Arena, Character);
+		BalanceAsset), SpawnSettings.SpawnRadius, SpawnSettings.EnemySpawnMinimumDistance, Region, Character);
 	if (SpawnedEnemy == nullptr)
 	{
 		return false;   // 池子拿不到/生成失败 → 不占名额
@@ -234,7 +250,7 @@ bool URogueSpawnSubsystem::SpawnEnemy(FRogueRunState& RunState, ARogueCharacter*
 	return true;
 }
 
-void URogueSpawnSubsystem::SpawnBoss(FRogueRunState& RunState, ARogueCharacter* Character, const ARogueArena* Arena)
+void URogueSpawnSubsystem::SpawnBoss(FRogueRunState& RunState, ARogueCharacter* Character, const ARogueEnemySpawnRegion* Region)
 {
 	if (!IsValid(Character) || Character->IsDead())
 	{
@@ -242,7 +258,7 @@ void URogueSpawnSubsystem::SpawnBoss(FRogueRunState& RunState, ARogueCharacter* 
 	}
 
 	if (SpawnConfiguredEnemy(RogueGameModeRules::BuildBossProfile(RunState.CurrentWave, PickEnemyTypeForCurrentWave(RunState.CurrentWave), 
-		BalanceAsset), BossSettings.BossSpawnDistance, BossSettings.BossSpawnMinimumDistance, Arena, Character) != nullptr)
+		BalanceAsset), BossSettings.BossSpawnDistance, BossSettings.BossSpawnMinimumDistance, Region, Character) != nullptr)
 	{
 		RunState.bBossAlive = true;
 		RunState.LastBossWaveSpawned = RunState.CurrentWave;
@@ -250,7 +266,7 @@ void URogueSpawnSubsystem::SpawnBoss(FRogueRunState& RunState, ARogueCharacter* 
 }
 
 ARogueEnemy* URogueSpawnSubsystem::SpawnConfiguredEnemy(const FRogueEnemyProfile& EnemyProfile, float DesiredDistance, float MinimumDistance,
-	const ARogueArena* Arena, ARogueCharacter* Character)
+	const ARogueEnemySpawnRegion* Region, ARogueCharacter* Character)
 {
 	URogueCombatPoolSubsystem* Pools = GetWorld()->GetSubsystem<URogueCombatPoolSubsystem>();
 	URogueEnemyTrackerSubsystem* Tracker = GetWorld()->GetSubsystem<URogueEnemyTrackerSubsystem>();
@@ -259,17 +275,36 @@ ARogueEnemy* URogueSpawnSubsystem::SpawnConfiguredEnemy(const FRogueEnemyProfile
 		return nullptr;
 	}
 
-	const FVector SpawnLocation = FindSpawnLocation(DesiredDistance, MinimumDistance, Arena, Character);
+	if (!IsValid(Character) || !IsValid(Region)) { return nullptr; }
 	TSubclassOf<ARogueEnemy> ResolvedClass = ResolveEnemyClass(EnemyProfile.EnemyType);
 	UClass* EnemyToSpawn = ResolvedClass ? ResolvedClass.Get() : ARogueEnemy::StaticClass();
-	ARogueEnemy* Enemy = Pools->AcquireEnemy(EnemyToSpawn, nullptr, SpawnLocation, FRotator::ZeroRotator);
-	if (Enemy == nullptr)
+	// Acquire 只取用/定位，尚未激活；此时可读取蓝图构造完成后的真实胶囊尺寸。
+	ARogueEnemy* Enemy = Pools->AcquireEnemy(EnemyToSpawn, nullptr, Character->GetActorLocation(), FRotator::ZeroRotator);
+	if (Enemy == nullptr) { return nullptr; }
+	FVector SpawnLocation;
+	if (!FindSpawnLocation(DesiredDistance, MinimumDistance, Region, Character, Enemy, SpawnLocation))
 	{
-		return nullptr;
+		return nullptr; // 保持回池状态，不登记、不占用本波刷新名额。
 	}
-
+	const UCapsuleComponent* Capsule = Enemy->GetCapsuleComponent();
+	const float InitialHalfHeight = Capsule->GetScaledCapsuleHalfHeight();
+	const float InitialRadius = Capsule->GetScaledCapsuleRadius();
 	Enemy->ActivatePooledEnemy(nullptr, SpawnLocation, FRotator::ZeroRotator);
 	Enemy->InitializeEnemy(EnemyProfile);
+	// 蓝图激活/初始化事件若调整了胶囊大小，再以本次尺寸落地一次。
+	if (!FMath::IsNearlyEqual(InitialHalfHeight, Capsule->GetScaledCapsuleHalfHeight())
+		|| !FMath::IsNearlyEqual(InitialRadius, Capsule->GetScaledCapsuleRadius()))
+	{
+		FVector Adjusted;
+		const FVector Candidate(SpawnLocation.X, SpawnLocation.Y, Character->GetActorLocation().Z);
+		if (!TryGroundSpawnLocation(Candidate, Enemy, MakeGroundQuery(GetWorld(), Enemy), Region, Adjusted))
+		{
+			Enemy->DeactivateToPool();
+			return nullptr;
+		}
+		Enemy->SetActorLocation(Adjusted, false, nullptr, ETeleportType::TeleportPhysics);
+	}
+
 	Tracker->RegisterEnemy(Enemy);
 	return Enemy;
 }
@@ -281,71 +316,67 @@ bool URogueSpawnSubsystem::IsSpawnLocationClearOfPlayers(const FVector& Candidat
 	return !RoguePlayerQuery::IsAnyAlivePlayerWithin(GetWorld(), CandidateLocation, MinimumDistance);
 }
 
-FVector URogueSpawnSubsystem::FindSpawnLocation(float DesiredDistance, //希望离玩家多远（普通怪 1100 / Boss 1800）
-	float MinimumDistance,  // 最低容忍距离（这才是"不刷脸上"的硬约束）
-	const ARogueArena* Arena, 
-	ARogueCharacter* Character) const
+bool URogueSpawnSubsystem::TryGroundSpawnLocation(const FVector& Candidate, const ARogueEnemy* Enemy,
+	const FCollisionQueryParams& GroundQuery, const ARogueEnemySpawnRegion* Region, FVector& OutLocation) const
 {
-	if (!IsValid(Character))
-	{
-		return FVector(0.0f, 0.0f, EnemySpawnGroundZ);
-	}
+	UWorld* World = GetWorld();
+	const UCapsuleComponent* Capsule = IsValid(Enemy) ? Enemy->GetCapsuleComponent() : nullptr;
+	const UCharacterMovementComponent* Movement = IsValid(Enemy) ? Enemy->GetCharacterMovement() : nullptr;
+	if (World == nullptr || Capsule == nullptr || Movement == nullptr) { return false; }
 
-	const FVector PlayerLocation = Character->GetActorLocation();
-	const FVector PlayerGroundLocation(PlayerLocation.X, PlayerLocation.Y, EnemySpawnGroundZ);
-	const float ArenaHalfExtent = IsValid(Arena) ? Arena->GetArenaHalfExtent() - SpawnSettings.ArenaSpawnPadding : FMath::Max(
-		SpawnSettings.SpawnRadius, DesiredDistance) + 500.0f; 
+	FHitResult Hit;
+    FVector Start, End;
+    if (!IsValid(Region) || !Region->ClipGroundTrace(Candidate, SpawnSettings.GroundTraceHeight, SpawnSettings.GroundTraceDepth, Start, End)) { return false; }
+	if (!World->LineTraceSingleByChannel(Hit, Start, End, SpawnSettings.GroundTraceChannel, GroundQuery)
+		|| Hit.bStartPenetrating || !Region->IsGroundHeightAllowed(Hit.ImpactPoint) || !Movement->IsWalkable(Hit)) { return false; }
 
-	for (int32 Attempt = 0; Attempt < 16; ++Attempt)
-	{
-		const FVector2D SpawnDirection = FVector2D(FMath::FRandRange(-1.0f, 1.0f), 
-			FMath::FRandRange(-1.0f, 1.0f)).GetSafeNormal();
-		
-		const float DistanceScale = FMath::FRandRange(0.82f, 1.15f);
-		
-		const FVector CandidateLocation = PlayerGroundLocation + FVector(
-			SpawnDirection.X * DesiredDistance * DistanceScale, SpawnDirection.Y * DesiredDistance * DistanceScale, 0.0f);
-		
-		if (FMath::Abs(CandidateLocation.X) <= ArenaHalfExtent && FMath::Abs(CandidateLocation.Y) <= ArenaHalfExtent
-			&& IsSpawnLocationClearOfPlayers(CandidateLocation, MinimumDistance))
-		{
-			return CandidateLocation;
-		}
-	}
+	const UPrimitiveComponent* Ground = Hit.GetComponent();
+	if (Ground == nullptr || Ground->GetCollisionResponseToChannel(Capsule->GetCollisionObjectType()) != ECR_Block
+		|| Capsule->GetCollisionResponseToChannel(Ground->GetCollisionObjectType()) != ECR_Block) { return false; }
 
-	// 兜底：**仍然围绕玩家取样**，只是把距离抖动放宽（0.7~1.6 倍）并把结果钳进竞技场。
-	//
-	// ⚠️ 这里原本是"在整个竞技场里均匀随机"——那是个真实的 bug，不是保守回退：
-	//    · 玩家贴近边界时第一轮 16 次几乎必然失败（方向一多半指向场外），于是频繁落到这个循环；
-	//    · 均匀随机会把怪撒到 ±ArenaHalfExtent 的任意角落（最远上万单位），
-	//      表现是"怪刷在地图另一端、玩家永远遇不到"；
-	//    · **Boss 也走这条路径**（SpawnBoss → SpawnConfiguredEnemy），所以 Boss 同样会刷丢。
-	//   钳进竞技场 + 保留最小距离检查，既保证落点在可见范围内，也不会贴着玩家刷。
-	for (int32 Attempt = 0; Attempt < 20; ++Attempt)
-	{
-		const FVector2D SpawnDirection = FVector2D(FMath::FRandRange(-1.0f, 1.0f),
-			FMath::FRandRange(-1.0f, 1.0f)).GetSafeNormal();
+	const float HalfHeight = Capsule->GetScaledCapsuleHalfHeight();
+	const float Radius = Capsule->GetScaledCapsuleRadius();
+	if (!FMath::IsFinite(HalfHeight) || !FMath::IsFinite(Radius) || Radius <= 0.0f || HalfHeight < Radius) { return false; }
+	// 胶囊下端是球面；斜坡额外抬高 Radius * (1 / Normal.Z - 1)，避免侧面初始穿入坡面。
+	const float SlopeLift = Radius * (1.0f / FMath::Max(Hit.ImpactNormal.Z, KINDA_SMALL_NUMBER) - 1.0f);
+	const FVector Location(Candidate.X, Candidate.Y,
+		Hit.ImpactPoint.Z + HalfHeight + SlopeLift + FMath::Max(0.0f, SpawnSettings.GroundClearance));
+	if (!Region->ContainsCapsule(Location, Radius, HalfHeight)) { return false; }
+	const FCollisionQueryParams ClearanceQuery(SCENE_QUERY_STAT(RogueEnemySpawnClearance), false, Enemy);
+	if (World->OverlapBlockingTestByChannel(Location, Capsule->GetComponentQuat(), Capsule->GetCollisionObjectType(),
+		FCollisionShape::MakeCapsule(Radius, HalfHeight), ClearanceQuery,
+		FCollisionResponseParams(Capsule->GetCollisionResponseToChannels()))) { return false; }
+	OutLocation = Location;
+	return true;
+}
 
-		const float DistanceScale = FMath::FRandRange(0.7f, 1.6f);
-
-		const FVector CandidateLocation = PlayerGroundLocation + FVector(
-			SpawnDirection.X * DesiredDistance * DistanceScale, SpawnDirection.Y * DesiredDistance * DistanceScale, 0.0f);
-
-		const FVector ClampedLocation(
-			FMath::Clamp(CandidateLocation.X, -ArenaHalfExtent, ArenaHalfExtent),
-			FMath::Clamp(CandidateLocation.Y, -ArenaHalfExtent, ArenaHalfExtent),
-			EnemySpawnGroundZ);
-
-		if (IsSpawnLocationClearOfPlayers(ClampedLocation, MinimumDistance))
-		{
-			return ClampedLocation;
-		}
-	}
-
-	return FVector(
-		FMath::Clamp(PlayerGroundLocation.X + DesiredDistance * 0.5f, -ArenaHalfExtent, ArenaHalfExtent),
-		FMath::Clamp(PlayerGroundLocation.Y + DesiredDistance * 0.5f, -ArenaHalfExtent, ArenaHalfExtent),
-		EnemySpawnGroundZ);
+bool URogueSpawnSubsystem::FindSpawnLocation(float DesiredDistance, float MinimumDistance,
+    const ARogueEnemySpawnRegion* Region, ARogueCharacter* Character, const ARogueEnemy* Enemy, FVector& OutLocation) const
+{
+    if (!IsValid(Character) || !IsValid(Enemy) || !IsValid(Region)) { return false; }
+    const FVector PlayerLocation = Character->GetActorLocation();
+    const FCollisionQueryParams GroundQuery = MakeGroundQuery(GetWorld(), Enemy);
+    auto TryCandidate = [&](const FVector& Candidate)
+    {
+        return IsSpawnLocationClearOfPlayers(Candidate, MinimumDistance)
+            && TryGroundSpawnLocation(Candidate, Enemy, GroundQuery, Region, OutLocation)
+            && IsSpawnLocationClearOfPlayers(OutLocation, MinimumDistance);
+    };
+    // 优先保持玩家周围的刷怪节奏，所有候选点必须落在关卡框内。
+    for (int32 Attempt = 0; Attempt < 16; ++Attempt)
+    {
+        const float Angle = FMath::FRandRange(0.0f, 2.0f * PI);
+        const float Distance = DesiredDistance * FMath::FRandRange(0.82f, 1.15f);
+        if (TryCandidate(PlayerLocation + FVector(FMath::Cos(Angle) * Distance, FMath::Sin(Angle) * Distance, 0.0f))) { return true; }
+    }
+    // 玩家在框外或框较小时，在整个框内重新选点，不回退到世界原点的隐式范围。
+    for (int32 Attempt = 0; Attempt < 32; ++Attempt)
+    {
+        FVector Candidate = Region->GetRandomCandidate();
+        Candidate.Z = PlayerLocation.Z;
+        if (TryCandidate(Candidate)) { return true; }
+    }
+    return false;
 }
 
 ERogueEnemyType URogueSpawnSubsystem::PickEnemyTypeForCurrentWave(int32 Wave) const

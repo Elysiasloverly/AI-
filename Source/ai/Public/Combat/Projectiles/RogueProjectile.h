@@ -15,13 +15,14 @@ struct AI_API FRogueProjectileVisualConfig
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditDefaultsOnly, Category = "Visual")
+	// 保留旧资产字段用于反序列化；模型尺寸统一在蓝图组件的「变换 → 缩放」中设置。
+	UPROPERTY()
 	float MeshScale = 0.14f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Visual")
+	UPROPERTY()
 	float GlowScale = 0.34f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Visual")
+	UPROPERTY()
 	float RingScale = 0.48f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Visual")
@@ -30,7 +31,7 @@ struct AI_API FRogueProjectileVisualConfig
 	UPROPERTY(EditDefaultsOnly, Category = "Visual")
 	FRotator TrailRotation = FRotator(90.0f, 0.0f, 0.0f);
 
-	UPROPERTY(EditDefaultsOnly, Category = "Visual")
+	UPROPERTY()
 	FVector TrailScale = FVector(0.08f, 0.08f, 0.22f);
 
 	UPROPERTY(EditDefaultsOnly, Category = "Visual")
@@ -48,49 +49,49 @@ struct AI_API FRogueProjectileVisualConfig
 	UPROPERTY(EditDefaultsOnly, Category = "Visual")
 	float LightSoftSourceRadius = 10.0f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Visual")
+	UPROPERTY()
 	float PulseSpeed = 12.0f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Visual")
+	UPROPERTY()
 	float CorePulseBaseScale = 0.13f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Visual")
+	UPROPERTY()
 	float CorePulseAmplitude = 0.03f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Visual")
+	UPROPERTY()
 	float GlowPulseBaseScale = 0.30f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Visual")
+	UPROPERTY()
 	float GlowPulseAmplitude = 0.08f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Visual")
+	UPROPERTY()
 	float RingPulseBaseScale = 0.42f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Visual")
+	UPROPERTY()
 	float RingPulseAmplitude = 0.10f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Visual")
+	UPROPERTY()
 	float TrailPulseBaseRadius = 0.06f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Visual")
+	UPROPERTY()
 	float TrailPulseRadiusAmplitude = 0.02f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Visual")
+	UPROPERTY()
 	float TrailPulseBaseLength = 0.20f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Visual")
+	UPROPERTY()
 	float TrailPulseLengthAmplitude = 0.12f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Visual")
+	UPROPERTY()
 	float SimplifiedMeshScale = 0.13f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Visual")
+	UPROPERTY()
 	float SimplifiedGlowScale = 0.30f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Visual")
+	UPROPERTY()
 	float SimplifiedRingScale = 0.42f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Visual")
+	UPROPERTY()
 	FVector SimplifiedTrailScale = FVector(0.06f, 0.06f, 0.20f);
 
 	UPROPERTY(EditDefaultsOnly, Category = "Visual")
@@ -160,11 +161,9 @@ private:
 	float PooledLifetime = 3.0f;
 
 	FVector TravelDirection = FVector::ForwardVector;
-	float PulseTime = 0.0f;
 	float Speed = 1600.0f;
 	float Damage = 20.0f;
 	float RemainingLifetime = 0.0f;
 	bool bResolvedImpact = false;
-	bool bVisualsSimplified = false;
 	bool bPoolAvailable = true;
 };

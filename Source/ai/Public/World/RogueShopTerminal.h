@@ -9,7 +9,7 @@ class UBoxComponent;
 class USceneComponent;
 class UStaticMeshComponent;
 
-UCLASS()
+UCLASS(Blueprintable, meta = (DisplayName = "商店终端"))
 class AI_API ARogueShopTerminal : public AActor
 {
 	GENERATED_BODY()
@@ -30,15 +30,19 @@ private:
 	UFUNCTION()
 	void HandleOverlapEnd(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
 
-	UPROPERTY(VisibleAnywhere)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "商店组件", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USceneComponent> SceneRoot;
 
-	UPROPERTY(VisibleAnywhere)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "商店组件", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UStaticMeshComponent> BaseMesh;
 
-	UPROPERTY(VisibleAnywhere)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "商店组件", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UStaticMeshComponent> GlowMesh;
 
-	UPROPERTY(VisibleAnywhere)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "商店组件", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UBoxComponent> InteractionBox;
+
+    /** 可在蓝图/关卡里移动提示锚点，适配你设置的模型尺寸。 */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "商店组件", meta = (AllowPrivateAccess = "true"))
+    TObjectPtr<USceneComponent> PromptAnchor;
 };

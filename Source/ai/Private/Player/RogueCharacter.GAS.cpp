@@ -31,8 +31,7 @@
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/InputComponent.h"
-// Enhanced Input（UE5 标准输入）。资产清单见 Docs/Enhanced-Input-Migration.md；
-// 资产缺失时 SetupEnhancedInput 会返回 false，输入整体回退到 legacy 绑定。
+// Enhanced Input：绑定与必需资产校验见 RogueCharacter.Input.cpp；缺失时不绑定本角色动作。
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputAction.h"
@@ -49,7 +48,7 @@
 
 namespace
 {
-	const TCHAR* DefaultPlayerBalanceAssetPath = TEXT("/Game/DataTable/AS_RoguePlayerBalanceAsset.AS_RoguePlayerBalanceAsset");
+	const TCHAR* DefaultPlayerBalanceAssetPath = TEXT("/Game/Data/Player/DA_PlayerBalance.DA_PlayerBalance");
 
 	URoguePlayerBalanceAsset* LoadConfiguredOrDefaultPlayerBalanceAsset(const TSoftObjectPtr<URoguePlayerBalanceAsset>& ConfiguredAsset)
 	{
@@ -77,23 +76,16 @@ void ARogueCharacter::BindAbilitySystemEvents()
 	}
 	bAbilitySystemEventsBound = true;
 
-	// 只订阅死亡标签。
-	// 属性数值不走委托而是每帧轮询（见 SyncAttributeMirrors）：
-	//   · 属性有 14 个，逐个绑委托是纯样板；
-	//   · 轮询读的是 FGameplayAttributeData 的属性值（直接属性读取，不是查表），成本可以忽略；
-	//   · 只有"死亡"必须事件驱动 —— 它要在标签出现的当下被捕获，等下一帧就晚了。
+	// 死亡标签事件在权威端安排下一 Tick 的善后处理；
+	// 显示镜像由 SyncAttributeMirrors 轮询，上限增量补偿则由下面两个属性委托完成。
 	ASC->RegisterGameplayTagEvent(RogueGameplayTags::State_Dead, EGameplayTagEventType::NewOrRemoved)
 		.AddUObject(this, &ARogueCharacter::HandleDeathTagChanged);
 
 	// ---- 上限提升时"补满那部分增量"（原本住在 URogueAttributeSet::PostGameplayEffectExecute）----
 	//
-	// 为什么搬到这里：升级 GE 现在是 **Infinite + Stacking**，而
-	// `PostGameplayEffectExecute` **只对 Instant GE 触发** —— 留原处永远不会执行，
-	// "升级最大生命/护甲上限时等量回复"会静默消失。
-	//
-	// 注意这与上面"属性数值走每帧轮询"的取舍并不冲突：轮询负责**镜像**（供 HUD/武器读），
-	// 这里要的是"变化发生的那一刻做一次补偿动作"，那是事件驱动的典型场景。
-	// 而且它顺带变得更通用：现在**任何来源**的上限变化都会补当前值，不再只认升级。
+	// 非周期 Infinite 升级通过聚合修饰器改变 CurrentValue，不执行 PostGameplayEffectExecute。
+	// 属性委托可捕获这类上限变化；服务端处理函数只在增量为正时补当前值。
+	// PostGameplayEffectExecute 也会用于周期执行，不能泛化为只对 Instant GE 有效。
 	ASC->GetGameplayAttributeValueChangeDelegate(URogueAttributeSet::GetMaxHealthAttribute())
 		.AddUObject(this, &ARogueCharacter::HandleMaxHealthChanged);
 	ASC->GetGameplayAttributeValueChangeDelegate(URogueAttributeSet::GetMaxArmorAttribute())
@@ -102,10 +94,9 @@ void ARogueCharacter::BindAbilitySystemEvents()
 
 void ARogueCharacter::HandleMaxHealthChanged(const FOnAttributeChangeData& Data)
 {
-	// ⚠️ **只在权威侧补当前值**。
-	// 属性变化会随复制到达客户端并**同样触发这个委托** —— 在客户端改生命只会与服务端
-	// 下一次复制打架（本项目已经踩过同类坑：护甲回复的注释里记着"客户端自己回甲、
-	// 护甲条在两个值之间来回跳"）。这与 InitializeGASAttributes 用 IsAuthoritySide() 同理。
+	// 增量补偿只在非客户端世界执行。当前属性为普通 Replicated；
+	// 收到复制不会自动调用 GAS 的 SetBaseAttributeValueFromReplication 或属性委托，
+	// 若引入预测通知，应增加相应 RepNotify/GAMEPLAYATTRIBUTE_REPNOTIFY 并重新验证。
 	if (!IsAuthoritySide())
 	{
 		return;
@@ -141,15 +132,9 @@ void ARogueCharacter::SyncAttributeMirrors()
 		return;
 	}
 
-	// 运行时字段是属性集的**只读缓存**（不是可以调的数值）。
-	// 好处：HUD / 武器 / 移动组件这些高频读取点不必每次都走 GAS 的属性查找，
-	// 而且调用点一行都不用改。
-	// 约定：这些 float 只在这里被写；任何"改数值"都必须改属性集（初始化 / 升级 GE / SetCurrentXxx）。
-	// 所以它们在头文件里是**不可编辑**的（曾经标了 EditDefaultsOnly，在蓝图里改毫无效果 —— 很坑）。
-	//
-	// 注意：这里只同步**真的有人读**的字段。HealthRegenPerSecond / ArmorRechargeDelay /
-	// ArmorRechargeRate / DamageReductionPercent 这几项曾经也各留了一份镜像，
-	// 但从来没有任何代码读过它们（属性集才是消费方），已删除。
+	// 为 HUD、移动与现有查询接口维护属性镜像；属性集就绪后按帧刷新。
+	// BeginPlay 等初始化路径仍会写默认缓存，所以这里不是所有生命周期阶段的唯一写入点。
+	// 运行时数值变更应先作用于属性集，需要即时观察时显式调用本函数。
 	MaxHealth = AttrSet->GetMaxHealth();
 	MaxArmor = AttrSet->GetMaxArmor();
 	CurrentHealth = AttrSet->GetHealth();
@@ -170,7 +155,7 @@ void ARogueCharacter::SyncAttributeMirrors()
 
 void ARogueCharacter::SetCurrentHealth(float NewHealth)
 {
-	// 写属性集，再由上面的回调刷新 CurrentHealth —— 单一写入点
+	// 写属性集基值；CurrentHealth 由 SyncAttributeMirrors 刷新，不由属性回调刷新。
 	if (URogueAttributeSet* AttrSet = GetRogueAttributeSet())
 	{
 		AttrSet->SetHealth(FMath::Max(0.0f, NewHealth));
@@ -179,7 +164,7 @@ void ARogueCharacter::SetCurrentHealth(float NewHealth)
 
 void ARogueCharacter::SetCurrentArmor(float NewArmor)
 {
-	// 与 SetCurrentHealth 同理：写属性集，再由属性变化回调刷新 CurrentArmor 镜像。
+	// 与生命值同理：写属性集基值，再由 SyncAttributeMirrors 刷新护甲镜像。
 	if (URogueAttributeSet* AttrSet = GetRogueAttributeSet())
 	{
 		AttrSet->SetArmor(FMath::Max(0.0f, NewArmor));
@@ -234,14 +219,10 @@ bool ARogueCharacter::ApplyUpgradeEffectViaGAS(ERogueUpgradeType UpgradeType, fl
 	FGameplayEffectContextHandle Context = ASC->MakeEffectContext();
 	Context.AddSourceObject(this);
 
-	// 每种升级有自己的 GE 子类（**属性烤在类上**），并且是 Infinity + Stacking。
-	//
-	// 为什么必须"一种升级一个类"：引擎的 FindStackableActiveGameplayEffect **只按 Spec.Def 匹配**
-	// 可叠加实例 —— 改造前 20 种升级共用一个类，开 Stacking 会让它们共用一个栈、数值错乱。
-	//
-	// 于是同类型再买一次 = 同一个 GE 实例的**层数 +1**，而引擎把**量级乘以层数**
-	//（ComputeStackedModifierMagnitude），所以"买 N 次 = N × 单次数值"，
-	// 与改造前 Instant 连加 N 次逐项相等。
+	// 每种升级使用独立的 Infinite GE 类，固定目标属性并按目标叠层。
+	// 引擎叠层按相同 Def 匹配（按来源叠层时还会检查 SourceASC），不会按动态标签分栈。
+	// 当前线性修饰器在每层量级相同、未触及上限时按层数累积；
+	// 不同量级的重复购买、层数上限和属性钳制需单独验证，不能等同于任意逐次加法。
 	FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(EffectClass, 1.0f, Context);
 	if (!SpecHandle.IsValid())
 	{
@@ -255,6 +236,8 @@ bool ARogueCharacter::ApplyUpgradeEffectViaGAS(ERogueUpgradeType UpgradeType, fl
 
 	if (bApplied)
 	{
+		// 连续升级会在同一调用栈生成下一轮卡牌，不能等 GameMode 下一帧才刷新数量。
+		RefreshWeaponBonusSnapshotFromAttributes();
 		UE_LOG(LogTemp, Verbose, TEXT("[GAS] 升级已施加：类型=%d 数值=%.2f GE=%s（同类型再买会叠加层数）"),
 			static_cast<int32>(UpgradeType), Magnitude, *EffectClass->GetName());
 	}
@@ -292,39 +275,33 @@ URogueAttributeSet* ARogueCharacter::GetRogueAttributeSet() const
 
 void ARogueCharacter::InitializeGASAttributes()
 {
-	// 判据用 IsAuthoritySide()（GetNetMode）而**不是** HasAuthority()：
-	// 客户端上本机拥有的角色 Role 也是 ROLE_Authority，HasAuthority() 会返回 true，
-	// 于是客户端会自己把基础值写进本地属性集，与复制过来的权威值打架。
-	// 这正是本文件头 IsAuthoritySide() 注释里点名禁止的用法。
+	// 此初始化仅允许在非客户端世界运行；IsAuthoritySide 明确检查 NetMode。
+	// HasAuthority 判断 Actor Role，本地控制的复制 Pawn 在客户端通常为 AutonomousProxy。
 	if (!IsAuthoritySide())
 	{
 		return;
 	}
 
-	// ⚠️ 重入守卫：这个函数**只能跑一次**。
-	//
-	// 它用 SetNumericAttributeBase 写的是属性的 BaseValue，而升级（Instant GE）
-	// 改的**也是** BaseValue —— 再灌一次会把玩家已获得的属性升级（生命/护甲上限/移速/
-	// 拾取范围/回复/经验/冲刺冷却/减伤）**全部覆盖回初始值**，而且不报任何错。
-	//
-	// 这条路径真实可达：GameMode 的归属自愈（RepairPlayerPawnOwnership，每 0.5 秒检查）
-	// 会为了纠正 Pawn 归属而调 Possess()，进而再次触发 PossessedBy() → 本函数；
-	// 项目文档记载过归属自愈在**客户端加入的瞬间实测真的会触发**。
-	// 守卫放在 PlayerState（而不是 Pawn）上，因为 ASC 与属性集都挂在它上面 ——
-	// 它才是"这一局这个玩家的数值"的载体，Pawn 换了不该重灌。详见
-	// ARoguePlayerState::bBaseAttributesInitialized 的注释。
+	// 每个 PlayerState 仅初始化一次，避免重复接管时重写基值、补满生命或重置元属性。
+	// 当前升级是 Infinite 修饰器，保留在 ASC 上；重写 BaseValue 并不等于删除全部升级。
+	// 当前复活复用 Pawn/ASC，这个标志也不提供跨 PlayerState 重建或断线重连的数据持久化。
 	ARoguePlayerState* RoguePS = GetPlayerState<ARoguePlayerState>();
 	if (RoguePS == nullptr || RoguePS->IsBaseAttributesInitialized())
 	{
 		return;
 	}
-	RoguePS->MarkBaseAttributesInitialized();
-
 	URogueAttributeSet* AttributeSet = GetRogueAttributeSet();
 	if (AttributeSet == nullptr)
 	{
 		return;
 	}
+
+	// 接管可能先于 BeginPlay；这里确保已解析配置，且只在属性集就绪后提交初始化守卫。
+	if (LoadedPlayerBalanceAsset == nullptr)
+	{
+		LoadedPlayerBalanceAsset = LoadConfiguredOrDefaultPlayerBalanceAsset(PlayerBalanceAsset);
+	}
+	RoguePS->MarkBaseAttributesInitialized();
 
 	// 数据源和旧系统保持同一份：URoguePlayerBalanceAsset::BaseStats。
 	// 加载失败时用结构体默认值兜底 —— 旧系统在这里踩过坑（兜底缺失会导致玩家数值全 0，无法移动）。
@@ -334,8 +311,8 @@ void ARogueCharacter::InitializeGASAttributes()
 
 	// 武器加成属性的上限（**-1 = 不设上限**，资产里默认全 -1 → 行为与"没有上限"完全一致）。
 	//
-	// 必须在下面写属性**之前**灌入：PreAttributeChange 在每次 SetXxx 时就会跑。
-	// （初始加成都是 0，所以顺序的实际影响为零，但摆正可以避免以后往这里加非零初值时踩坑。）
+	// 先提供加成上限，再初始化属性；ASC 对属性当前值的更新会进入 PreAttributeChange。
+	// 初始武器加成可以非零，必须先安装上限，避免开局值绕过配置限制。
 	AttributeSet->SetWeaponBonusCaps(LoadedPlayerBalanceAsset
 		? LoadedPlayerBalanceAsset->WeaponBonusCaps
 		: FRogueWeaponBonusCaps());
@@ -352,14 +329,37 @@ void ARogueCharacter::InitializeGASAttributes()
 	AttributeSet->SetMoveSpeed(BaseStats.MoveSpeed);
 	AttributeSet->SetPickupRadius(BaseStats.PickupRadius);
 	AttributeSet->SetExperienceMultiplier(BaseStats.ExperienceMultiplier);
-	AttributeSet->SetDashCooldownDuration(BaseStats.DashCooldownDuration);
 	AttributeSet->SetMinDashCooldown(BaseStats.DashMinCooldown);
+	AttributeSet->SetDashCooldownDuration(BaseStats.DashCooldownDuration);
 	AttributeSet->SetDashDuration(BaseStats.DashDuration);
 	AttributeSet->SetDashSpeed(BaseStats.DashSpeed);
 
-	// 当前值开局补满（与旧逻辑 BeginPlay 里 CurrentHealth = MaxHealth / CurrentArmor = MaxArmor 一致）
-	AttributeSet->SetHealth(BaseStats.MaxHealth);
-	AttributeSet->SetArmor(BaseStats.MaxArmor);
+	const FRoguePlayerSpawnStateConfig SpawnState = LoadedPlayerBalanceAsset
+		? LoadedPlayerBalanceAsset->SpawnState : FRoguePlayerSpawnStateConfig();
+	AttributeSet->SetHealth(FMath::Min(AttributeSet->GetMaxHealth(), FMath::Max(1.0f,
+		AttributeSet->GetMaxHealth() * FMath::Clamp(SpawnState.HealthRatio, 0.0f, 1.0f))));
+	AttributeSet->SetArmor(AttributeSet->GetMaxArmor() * FMath::Clamp(SpawnState.ArmorRatio, 0.0f, 1.0f));
+
+	const FRogueInitialWeaponBonusConfig InitialBonuses = LoadedPlayerBalanceAsset
+		? LoadedPlayerBalanceAsset->InitialWeaponBonuses : FRogueInitialWeaponBonusConfig();
+	AttributeSet->SetAttackPowerBonus(InitialBonuses.AttackPower);
+	AttributeSet->SetAttackSpeedBonus(InitialBonuses.AttackSpeed);
+	AttributeSet->SetAttackRangeBonus(InitialBonuses.AttackRange);
+	AttributeSet->SetProjectileSpeedBonus(InitialBonuses.ProjectileSpeed);
+	AttributeSet->SetProjectileCountBonus(InitialBonuses.ProjectileCount);
+	AttributeSet->SetScytheCountBonus(InitialBonuses.ScytheCount);
+	AttributeSet->SetRocketCountBonus(InitialBonuses.RocketCount);
+	AttributeSet->SetLaserCountBonus(InitialBonuses.LaserCount);
+	AttributeSet->SetHellTowerCountBonus(InitialBonuses.HellTowerCount);
+	AttributeSet->SetLaserRefractionBonus(InitialBonuses.LaserRefraction);
+	AttributeSet->SetMortarCountBonus(InitialBonuses.MortarCount);
+	AttributeSet->SetMortarBlastRadiusBonus(InitialBonuses.MortarBlastRadius);
+	AttributeSet->SetScytheSizeBonus(InitialBonuses.ScytheSize);
+	RefreshWeaponBonusSnapshotFromAttributes();
+
+	// 成长运行值只在服务器首次初始化时赋值，复活或再次接管不重置钱包和升级进度。
+	ExperienceToNextLevel = FMath::Max(1, BaseStats.ExperienceToNextLevel);
+	Money = FMath::Max(0, LoadedPlayerBalanceAsset ? LoadedPlayerBalanceAsset->Progression.StartingMoney : 0);
 
 	// 元属性必须是 0，否则第一次结算会带上一个凭空多出来的伤害
 	AttributeSet->SetDamage(0.0f);
@@ -370,10 +370,7 @@ void ARogueCharacter::InitializeGASAttributes()
 		AttributeSet->GetArmor(), AttributeSet->GetMaxArmor(),
 		AttributeSet->GetMoveSpeed(), AttributeSet->GetDashCooldownDuration());
 	
-	// 自然回复（生命 / 护甲）由两个常驻的 Periodic GE 承担，逐帧的
-	// HandleRecovery / HandleArmorRecharge 已删除。挂载放在属性灌完之后：
-	// 量级是 AttributeBased（每次结算重新读属性），顺序其实不影响正确性，
-	// 但这样能保证"第一次结算时速率属性已经就位"。
+	// 基础值写入后挂载两种常驻周期回复效果；速率捕获及结算条件见 RogueStateEffects。
 	EnsureRegenEffects();
 }
 
@@ -385,10 +382,8 @@ void ARogueCharacter::EnsureRegenEffects()
 		return;
 	}
 
-	// ⚠️ 这个检查是**必须的**，不是防御性编程：
-	//    两个回复 GE 都是 Infinite，重复施加会变成两份独立的 ActiveGameplayEffect，
-	//    回复速度直接翻倍 —— 而且没有任何报错。
-	//    角色重生时 Pawn 换了、PlayerState / ASC 保留，InitializeGASAttributes 会再跑一次。
+	// 按效果定义查重，避免重复施加不叠层的常驻回复效果。
+	// 当前初始化已有 PlayerState 守卫，同 Pawn 复活不重新挂载这些效果。
 	const TSubclassOf<UGameplayEffect> RegenEffectClasses[] =
 	{
 		URogueHealthRegenEffect::StaticClass(),
@@ -421,15 +416,21 @@ void ARogueCharacter::ApplyBalanceAsset()
 {
 	LoadedPlayerBalanceAsset = LoadConfiguredOrDefaultPlayerBalanceAsset(PlayerBalanceAsset);
 
-	// ⚠️ 兜底：属性集字段现在是"纯累加器"（默认值全 0），BaseGroup 是绝对值的唯一来源。
-	//    因此即使平衡资产加载失败，也必须用一份默认配置把基础值灌进 BaseGroup，
-	//    否则玩家数值会全部为 0（无法移动、无生命值）。
+	// 平衡资产加载失败时使用基础配置默认值；本函数只直接更新非 GAS 配置。
+	// GAS 基值由 InitializeGASAttributes 的服务端路径写入。
 	const FRoguePlayerBaseStatConfig DefaultBaseStats;
 	const FRoguePlayerBaseStatConfig& BaseStats =
 		LoadedPlayerBalanceAsset ? LoadedPlayerBalanceAsset->BaseStats : DefaultBaseStats;
 
 	// 非属性管理的字段仍然直接赋值
-	ExperienceToNextLevel = BaseStats.ExperienceToNextLevel;
+	if (IsAuthoritySide())
+	{
+		const ARoguePlayerState* State = GetPlayerState<ARoguePlayerState>();
+		if (State == nullptr || !State->IsBaseAttributesInitialized())
+		{
+			ExperienceToNextLevel = FMath::Max(1, BaseStats.ExperienceToNextLevel);
+		}
+	}
 	// DashMinCooldown 不再在这里赋值：它是 MinDashCooldown 属性的镜像
 	//（冲刺冷却的下限现在由属性集在 PreAttributeChange 里执行，见 URogueAttributeSet）。
 	JumpZVelocity = BaseStats.JumpZVelocity;
@@ -446,9 +447,7 @@ void ARogueCharacter::ApplyBalanceAsset()
 	// 从同一份 URoguePlayerBalanceAsset::BaseStats 灌入，之后由升级 GE 修改，
 	// 最后经 SyncAttributeMirrors() 每帧缓存回运行时字段。
 	//
-	// 旧的自研属性系统（FRoguePlayerAttributeSystem / BaseGroup / UpgradeGroup）已整体移除，
-	// 连同它那套"累加器复位再补 Base"的结算方式 —— 那套机制曾经导致属性翻倍的 P0 级 bug，
-	// 而 GAS 的 BaseValue + 修饰器模型在结构上就不会出现重复计数。
+	// GAS 区分基值与持续修饰器，但重复施加效果仍可能重复累加；初始化和效果查重各有守卫。
 }
 
 float ARogueCharacter::GetHealthPercent() const
@@ -460,7 +459,7 @@ UAbilitySystemComponent* ARogueCharacter::GetAbilitySystemComponent() const
 {
 	// 本项目的 ASC 挂在 PlayerState 上（玩家侧），这里转发过去。
 	// 实现这个接口之后，"通过 Actor 找 ASC"的所有引擎/项目代码（含 ApplyDamageToTarget）
-	// 都能正确拿到玩家的 ASC —— 这正是"怪物打玩家不掉血"的根因所在，详见头文件。
+	// 可在 PlayerState 就绪时取得其 ASC；就绪前仍返回 nullptr，调用方应处理空值。
 	const ARoguePlayerState* RoguePlayerState = GetPlayerState<ARoguePlayerState>();
 	return RoguePlayerState != nullptr ? RoguePlayerState->GetAbilitySystemComponent() : nullptr;
 }

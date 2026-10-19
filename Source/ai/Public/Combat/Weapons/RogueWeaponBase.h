@@ -57,26 +57,11 @@ struct AI_API FRogueWeaponTableRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "升级", meta = (DisplayName = "数量升级类型"))
 	ERogueUpgradeType CountUpgradeType = ERogueUpgradeType::ProjectileCount;
 
-	// ===================================================================
-	//  上限 —— 全部在**数据表里按武器配置**，一律 **0 = 不限制**
-	// ===================================================================
-	//
-	// 作用位置：这些是**最终生效值**的上限，夹在"数据表基础值 + 属性加成"合并**之后**
-	//（见各武器的 GetEffective* 实现）。
-	//
-	// 与属性层的钳制是两回事：`URogueAttributeSet::PreAttributeChange` 里那 12 个加成属性
-	// **只有下限 0、没有上限**。所以"升级能把这些数值堆到多高"由这里决定 ——
-	// 想让某把武器封顶就在它的行里填，留 0 就是无限叠。
-	//
-	// 每一项**独立**判断：填了哪项就限制哪项，互不影响。
+	// 最终值限制：通常在合并基础值与加成后应用；负值表示不限制，0 是有效限制。
+	// 部分武器重写换算函数并使用自己的固定下限，详见各 GetEffective* 实现。
 
-	/** 冷却下限（秒）—— 也就是**攻速上限**。**`-1` = 不设下限**。
-	 *
-	 *  ⚠️ 默认**不是 -1**，而是 0.01 秒 —— 这是唯一一个"默认值不等于不限"的上限字段，
-	 *  刻意如此：冷却为 0 或负数时，武器 Tick 的判据 `TimeSinceLastShot >= Cooldown`
-	 *  **恒为真**，会退化成**逐帧开火**（默认 100Hz = 每秒 100 发，每发还要生成弹体，帧率会崩）。
-	 *  0.01 秒 = 每秒最多 100 发，已经等同于"实战无上限"（没有升级能堆到这个密度）。
-	 *  确实要去掉这层保护就填 -1 —— 请先确认接受"攻速堆够多时每帧开火"。 */
+	/** 基类冷却下限（秒），默认 0.01；负值不设配置下限，但结果仍不小于 0。
+	 *  0 冷却可使开火循环每次更新都尝试开火；实际频率受更新节奏和目标等条件影响。 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "上限", meta = (DisplayName = "冷却下限(秒，-1=不限)"))
 	float MinCooldown = 0.01f;
 
@@ -142,13 +127,8 @@ struct AI_API FRogueWeaponTableRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "镰刀", meta = (DisplayName = "刀片类"))
 	TSubclassOf<ARogueOrbitingBlade> BladeClass;
 
-	/** 环绕半径。默认 120（原为 220）。
-	 *  为什么改小：刀片环能打到的径向范围 = 半径 ± (刀片球半径 46 + 敌人胶囊半径 34)，
-	 *  220 时是 141…299；但敌人（Direct 模型）没有保持距离，会一路贴到玩家身上（径向≈0），
-	 *  也就是**刀片环整个落在敌群外面**，镰刀几乎砍不到人。120 时范围是 41…199，
-	 *  刚好罩住贴脸的敌群，同时 120 − 46 = 74 > 玩家胶囊半径 42，不会打到玩家自己。
-	 *  ⚠️ 注意：这个值在 `DT_WeaponConfig` 的每一行里都被显式存了一份（行值优先于这里的默认值），
-	 *  所以只改这里不会生效——还要把表里 Scythe 行的"环绕半径"一起改成 120。 */
+	/** 刀片轨道的基础半径。实际接触范围还取决于刀片/敌人的碰撞形状。
+	 *  已保存的数据表行会覆盖这里的结构体默认值；调参时需检查实际行值。 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "镰刀", meta = (DisplayName = "环绕半径"))
 	float OrbitRadius = 120.0f;
 
@@ -168,7 +148,7 @@ struct AI_API FRogueWeaponTableRow : public FTableRowBase
 
 	// ---- 激光武器专属 ----
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "激光", meta = (DisplayName = "激光类"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "光束", meta = (DisplayName = "光束蓝图类", ToolTip = "激光与地狱塔可分别指定光束蓝图；留空使用原生默认光束。"))
 	TSubclassOf<ARogueLaserBeam> BeamClass;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "激光", meta = (DisplayName = "折射次数"))
@@ -234,12 +214,11 @@ public:
 	// 分工：**能力决定"什么时候能开火"，武器决定"这一发是什么"**。
 	// 所以能力只会问下面这几个问题，而不会碰伤害/弹速/散射那些细节。
 
-	/** 本武器的开火能力类（子类在构造里指定）。
-	 *  返回 nullptr = 这把武器不参与能力驱动（目前只有镰刀：它是纯表现轨道，
-	 *  在**所有**机器上都要画，而技能列表只复制给本人，所以它留在 TickWeapons 那条路）。 */
+	/** 构造函数指定的开火能力类。nullptr 表示不授予开火能力；
+	 *  镰刀通过角色 TickWeapons 维护轨道与接触判定，伤害入口仍只允许权威结算。 */
 	virtual TSubclassOf<URogueWeaponAbility> GetFireAbilityClass() const { return FireAbilityClass; }
 
-	/** 是否"未解锁就不开火"。各武器改造前的判据都是生效数量 > 0，所以默认就是它。 */
+	/** 是否"未解锁就不开火"。默认要求生效数量 > 0。 */
 	virtual bool CanFireNow() const { return GetEffectiveCount() > 0; }
 
 	/** 开火节拍由**目标选择**驱动（事件型武器），还是武器自己内部的持续模拟（地狱塔）。
@@ -251,7 +230,7 @@ public:
 	virtual bool UsesTargetedFireLoop() const { return true; }
 
 	/** 目标选择：把这一发要打的敌人填进 OutTargets。
-	 *  返回空数组 = 本帧不开火（**不消耗冷却**，下一帧继续找 —— 与改造前一致）。 */
+	 *  返回空数组 = 此次不开火、不提交开火冷却，后续更新继续查询。 */
 	virtual void CollectFireTargets(TArray<ARogueEnemy*>& OutTargets) const;
 
 	/** 开火：对着选出来的目标打出这一发（池化弹体、散射、广播都在这里）。 */
@@ -289,22 +268,15 @@ public:
 	 */
 	virtual bool NeedsCosmeticTick() const { return false; }
 
-	// ---- 升级接口 ----
-	// **升级不直接改武器配置**（那是自研版本的做法，已删除）。
-	// 升级统一落成玩家 ASC 上 URogueAttributeSet 的属性加成，
-	// 武器通过上面的 GetEffective* 读取 —— 所以这里没有 OnUpgradeApplied / ApplyShared*Bonus。
-	//
-	// 新增武器时：基础值放 DT_WeaponConfig，加成从 GetWeaponBonusValues() 读，
-	// 若本武器的换算系数与默认不同，重写对应的 GetEffective*（见火箭/迫击炮/激光/地狱塔/镰刀）。
+	// 升级写入玩家 ASC 属性，角色将武器加成复制为快照；武器合并基础配置与快照。
+	// 新武器在数据表定义基础值，并按需重写 GetEffective* 的换算。
 
 	// ---- 查询接口 ----
 
 	UFUNCTION(BlueprintPure)
 	int32 GetCount() const { return Config.Count; }
 
-	/** 生效数量 = 数据表基础数量 + 武器加成（见 GetWeaponBonusValues）。
-	 *  历史：以前升级会直接改 Config.Count，所以这里只读 Config 就够了；
-	 *  现在升级只改 GAS 属性，武器配置**保持数据表原值不变**。 */
+	/** 合并基础数量与本武器数量加成，再应用 MaxCount；未解锁且无自身加成时为 0。 */
 	UFUNCTION(BlueprintPure)
 	int32 GetEffectiveCount() const;
 
@@ -314,24 +286,16 @@ public:
 	UFUNCTION(BlueprintPure)
 	float GetRange() const { return Config.Range; }
 
-	// ---- 生效数值（数据表基础值 + GAS 加成）----
-	// 武器开火一律用这些函数，而不是直接读 Config.X —— 这条约定就是"所有数值都来自 GAS"的落地点。
-	//
-	// 为什么是 virtual：**同一个升级在不同武器上的换算系数不一样**（这是自研版本的行为，必须原样保留）：
-	//   攻速：多数武器是 `冷却 − 加成`（下限 0.15），火箭是 `冷却 − 加成×2.5`（下限 0.55），
-	//         地狱塔是把伤害跳间隔按 0.08 缩放，镰刀是转速 +加成×280
-	//   弹速：主武器全额、火箭 ×0.75、迫击炮 ×0.5
-	//   伤害：地狱塔是 `塔伤害 +加成×0.125`（每跳递增 +加成×0.0625）
-	// 所以"加成数值只有一个来源（玩家 ASC 上的属性集）"，而"怎么用这个加成"由各武器自己决定。
+	// 生效值合并数据表基础配置与角色的 GAS 加成快照，并按函数应用限制。
+	// 各武器可以重写换算系数；伤害、冷却和范围的具体公式以对应实现为准。
 
-	/** 单发伤害 = Config.Damage + AttackPowerBonus */
+	/** 单发伤害合并 Config.Damage 与 AttackPower 加成，再应用 MaxDamage。 */
 	virtual float GetEffectiveDamage() const;
 
-	/** 攻击间隔 = max(0.15, Config.Cooldown − AttackSpeedBonus)
-	 *  0.15 秒下限沿用自研版本的行为（防止升级堆到 0 冷却）。 */
+	/** 基类攻击间隔：Config.Cooldown − AttackSpeed，应用配置 MinCooldown（最低为 0）。 */
 	virtual float GetEffectiveCooldown() const;
 
-	/** 索敌范围 = Config.Range + AttackRangeBonus */
+	/** 基类索敌范围合并 Config.Range 与 AttackRange 加成，再应用 MaxRange。 */
 	virtual float GetEffectiveRange() const;
 
 	/** 弹速 = BaseSpeed + ProjectileSpeedBonus × GetProjectileSpeedBonusScale()
@@ -341,24 +305,18 @@ public:
 	/** 弹速加成系数：默认全额（1.0），火箭 0.75、迫击炮 0.5。 */
 	virtual float GetProjectileSpeedBonusScale() const { return 1.0f; }
 
-	/** 本武器的"数量升级"类型 —— 决定它读哪一种数量加成。
-	 *
-	 *  ⚠️ 为什么不直接用 `Config.CountUpgradeType`（数据表那一列）：
-	 *  实测（自检日志）里多数行的那一列是**默认值**，于是所有武器都会去读同一个加成 ——
-	 *  一张"弹体数量+1"的卡会一次性给 5 把武器各 +1。
-	 *  自研版本的做法是每把武器**硬编码**自己的数量升级类型（OnUpgradeApplied 里各自判断），
-	 *  这里沿用同一口径：子类重写本函数，数据列只在没重写时兜底。 */
+	/** 决定读取哪一项数量加成；现有子类显式返回各自类型，基类用 Config.CountUpgradeType。 */
 	virtual ERogueUpgradeType GetCountUpgradeType() const { return Config.CountUpgradeType; }
 
-	/** 激光折射次数 = Config.RefractionCount + LaserRefractionBonus（旧实现夹在 0..8） */
+	/** 折射次数合并基础值与四舍五入后的 LaserRefraction 加成，下限 0，上限由 MaxRefractionCount 配置。 */
 	int32 GetEffectiveRefractionCount() const;
 
 	/** 获取当前武器的完整配置（可读写） */
 	FRogueWeaponTableRow& GetConfig() { return Config; }
 	const FRogueWeaponTableRow& GetConfig() const { return Config; }
 
-	/** 武器加成（生效值）：来自拥有者 PlayerState 上的**复制快照**，各端读同一份。
-	 *  拿不到时返回一份全 0 的静态空值 —— 调用方不需要判空。 */
+	/** 返回拥有者 Character 的武器加成快照；服务端从 GAS 属性生成并复制。
+	 *  客户端可能因网络延迟读到旧快照；无角色时返回全 0 的静态值。 */
 	const FRogueWeaponBonusValues& GetWeaponBonusValues() const;
 
 protected:

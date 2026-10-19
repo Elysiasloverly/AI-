@@ -17,7 +17,7 @@ ARogueWeapon_Rocket::ARogueWeapon_Rocket()
 
 void ARogueWeapon_Rocket::CollectFireTargets(TArray<ARogueEnemy*>& OutTargets) const
 {
-	// 与改造前 WeaponTick 完全一致：射程额外放宽 700，取 `max(12, 数量×3)` 个候选，
+	// 当前策略：射程额外放宽 700，取 `max(12, 数量×3)` 个候选，
 	// 然后按顺序分给每一发火箭（见 FireRocketVolley 的 `RocketIndex % Enemies.Num()`）。
 	CollectEnemiesInRange(GetEffectiveRange() + 700.0f, OutTargets, FMath::Max(12, GetEffectiveCount() * 3));
 }
@@ -32,7 +32,7 @@ void ARogueWeapon_Rocket::FireAtTargets(const TArray<ARogueEnemy*>& Targets)
 	FireRocketVolley(Targets);
 }
 
-// 生效数值：火箭的换算系数与主武器不同，全部沿用自研版本的公式
+// 生效数值：火箭的换算系数与主武器不同，公式由本武器定义
 //（升级只改玩家 ASC 上的加成属性，这里负责"基础值 + 加成×本武器系数"）。
 
 float ARogueWeapon_Rocket::GetEffectiveCooldown() const
@@ -114,7 +114,7 @@ void ARogueWeapon_Rocket::PlayCosmeticFire(const FRogueWeaponCosmeticFire& Fire)
 {
 	// 只在"既非服务端、也非本人"的机器上被调用（见 Multicast_WeaponCosmetic）。
 	// 与 ARogueEnemy::Multicast_SpawnCosmeticProjectile 同形：
-	// 同一个池函数、同一套参数，只把伤害换成 0（伤害已在服务端结算）。
+	// 同一个池函数、同一套参数，只把伤害换成 0；权威伤害在服务端爆炸时结算。
 	if (GetWorld() == nullptr)
 	{
 		return;

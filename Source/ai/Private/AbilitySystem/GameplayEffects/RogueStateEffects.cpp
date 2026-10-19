@@ -12,12 +12,8 @@
 
 URogueStateTagEffect::URogueStateTagEffect()
 {
-	// ⚠️ 构造期只能用 CreateDefaultSubobject：UGameplayEffect::AddComponent<>() 内部是
-	// `NewObject(this, NAME_None, ...)`（GameplayEffect.h:2429），在 UObject 构造函数里非法，
-	// 会直接 Fatal（"NewObject with empty name can't be used to create default subobjects"）。
-	//
-	// 而且必须挂进 GEComponents：引擎的 OnGameplayEffectChanged() 会先 Reset CachedGrantedTags
-	// 再按 GEComponents 重建（GameplayEffect.cpp:353-359），不挂进去的话标签在 PostLoad 之后就丢了。
+	// 构造期使用具名默认子对象；AddComponent 内部的 NewObject(NAME_None) 不适合此处。
+	// GEComponents 持有组件；OnGameplayEffectChanged 会清空并从组件重建授予标签缓存。
 	UTargetTagsGameplayEffectComponent* TargetTags = CreateDefaultSubobject<UTargetTagsGameplayEffectComponent>(TEXT("TargetTags"));
 	GEComponents.Add(TargetTags);
 }
@@ -29,9 +25,7 @@ void URogueStateTagEffect::GrantStateTag(FGameplayTag StateTag)
 		return;
 	}
 
-	// 从 GEComponents 里取回基类构造时建好的组件。
-	// 为什么不存一个成员指针：组件已经由 GEComponents 持有（那是 UPROPERTY 数组），
-	// 再存一个裸指针只会多一份"谁拥有它"的歧义，而这里每个类只在构造期调用一次。
+	// 从 GEComponents 找到基类创建的标签组件；派生类可多次调用以添加不同状态标签。
 	UTargetTagsGameplayEffectComponent* TargetTags = nullptr;
 	for (UGameplayEffectComponent* Component : GEComponents)
 	{
@@ -44,14 +38,13 @@ void URogueStateTagEffect::GrantStateTag(FGameplayTag StateTag)
 
 	if (TargetTags == nullptr)
 	{
-		// 只可能发生在"派生类忘了先跑基类构造"这种编译期就写错的情况，留个兜底提醒。
+		// 组件缺失时记录配置异常。C++ 派生类会自动执行基类构造，不会因漏写调用而跳过。
 		UE_LOG(LogTemp, Error, TEXT("[Rogue] %s 缺少 TargetTags 组件：状态标签 %s 不会被授予"),
 			*GetName(), *StateTag.ToString());
 		return;
 	}
 
-	// 注意：不是往 InheritableOwnedTagsContainer 里塞（5.3 起废弃，塞了也不会授予），
-	// 而是交给 GE 组件去重建 CachedGrantedTags。
+	// 通过组件更新授予标签缓存，不依赖已弃用字段的旧资产升级逻辑。
 	FInheritedTagContainer GrantedTags;
 	GrantedTags.Added.AddTag(StateTag);
 	TargetTags->SetAndApplyTargetTagChanges(GrantedTags);
@@ -97,9 +90,7 @@ URogueDashCooldownEffect::URogueDashCooldownEffect()
 {
 	DurationPolicy = EGameplayEffectDurationType::HasDuration;
 
-	// 时长 = 持有者的 DashCooldownDuration 属性值。
-	// Target：GE 是施加到自己身上的，Source 与 Target 是同一个 ASC，用 Target 语义更贴切。
-	// bSnapshot = true：施加瞬间把属性值快照下来当时长，否则中途属性变化会让剩余冷却漂移。
+	// 从目标快照捕获本次冷却时长，之后属性变化不改变这份已捕获的值。
 	FAttributeBasedFloat CooldownFromAttribute;
 	CooldownFromAttribute.BackingAttribute = FGameplayEffectAttributeCaptureDefinition(
 		URogueAttributeSet::GetDashCooldownDurationAttribute(),
@@ -110,8 +101,7 @@ URogueDashCooldownEffect::URogueDashCooldownEffect()
 
 	DurationMagnitude = FGameplayEffectModifierMagnitude(CooldownFromAttribute);
 
-	// 这一条是冲刺冷却能否生效的关键：能力的 GetCooldownTags() 读的就是冷却 GE 的授予标签。
-	// 曾经因为标签没真的授予（废弃容器那个坑），冲刺**完全没有冷却**且没有任何报错。
+	// CheckCooldown 从冷却 GE 的授予标签判断 Cooldown.Dash 是否存在。
 	GrantStateTag(RogueGameplayTags::Cooldown_Dash);
 }
 
@@ -123,11 +113,8 @@ URogueWeaponCooldownEffect::URogueWeaponCooldownEffect()
 {
 	DurationPolicy = EGameplayEffectDurationType::HasDuration;
 
-	// 时长由施加方用 SetByCaller 给出（各武器的冷却算法不同，见武器侧的 GetAbilityCooldown）。
-	// 用 SetByCaller 而不是绑属性：属性里存的是**加成**，不是"这把武器的冷却"，
-	// "加成怎么换算成冷却"是武器的知识（火箭 ×2.5/下限 0.55、迫击炮 ×2.0/下限 0.7、激光 ×2.0/下限 0.35）。
-	// UE 5.5 里 FSetByCallerFloat 有 DataName(FName) 与 DataTag(FGameplayTag) 两个字段，
-	// 用 DataTag —— 施加方走 `Spec->SetByCallerTagMagnitudes`，走 Tag 不会有字符串拼写风险。
+	// 各武器在施加时传入生效秒数；统一使用原生 Data.Cooldown Tag 作为键。
+	// FName 与 Tag 的缺值行为都由 GetSetByCallerMagnitude 的告警/默认值参数决定。
 	FSetByCallerFloat DurationFromCaller;
 	DurationFromCaller.DataTag = RogueGameplayTags::Data_Cooldown;
 	DurationMagnitude = FGameplayEffectModifierMagnitude(DurationFromCaller);
@@ -201,28 +188,18 @@ URoguePeriodicRegenEffect::URoguePeriodicRegenEffect()
 	// Infinite：回复是常驻状态，用标签条件开关，而不是"到期再重挂"。
 	DurationPolicy = EGameplayEffectDurationType::Infinite;
 
-	// 每 0.25 秒结算一次。两个不选：
-	//   · Period = 0（逐帧）—— 那正是迁移前的老路，等于换个地方写 Tick；
-	//   · Period = 1（每秒）—— 护甲回复速率默认 45/秒，1 秒一跳会让护甲条明显一格一格跳。
-	// 0.25 秒是观感与开销的平衡点（每秒 4 次结算，比"每帧约 60 次"少一个半数量级）。
-	//
-	// ⚠️ `UGameplayEffect::Period` 是 **FScalableFloat**，不是 float ——
-	//    直接当 float 用（例如塞进 UE_LOG 的可变参数）会编译失败。
-	//    要读数值用 `Period.GetValue()`；`FGameplayEffectSpec::GetPeriod()` 返回的才是 float。
+	// 正周期 0.25 秒：每秒四次结算。Period=0 表示无周期，不会逐帧执行。
+	// Period 是 FScalableFloat；定义数值用 GetValue，Spec 中计算后的周期用 GetPeriod。
 	Period = FScalableFloat(RegenPeriodSeconds);
 
-	// 施加当帧**不**立刻结算：这个 GE 在开局/复活时挂上，若立刻跳一次，
-	// 初始生命与护甲会先超出初始值再被钳回来（观感上"满的"，语义上不该发生）。
+	// 不在应用后额外安排一次立即执行，第一次回复等待周期计时器。
 	bExecutePeriodicEffectOnApplication = false;
 }
 
 void URoguePeriodicRegenEffect::ConfigureRegen(FGameplayAttribute TargetAttribute, FGameplayAttribute RateAttribute)
 {
-	// 量级 = 持有者的速率属性 × Period（把"每秒速率"换算成"每周期增量"）。
-	//
-	// ⚠️ bSnapshot 必须是 false：true 会在**施加瞬间**把速率快照下来，
-	//    之后升级改 HealthRegenPerSecond / ArmorRechargeRate 就再也不生效 ——
-	//    这是这个 GE 最容易踩、且完全没有报错的坑。
+	// 捕获目标速率并乘以周期。非快照捕获用于跟随后续速率属性变化；
+	// 若改为快照，现有常驻效果将继续使用施加时捕获的速率。
 	FAttributeBasedFloat RateFromAttribute;
 	RateFromAttribute.BackingAttribute = FGameplayEffectAttributeCaptureDefinition(
 		RateAttribute,
@@ -280,8 +257,7 @@ URogueHealthRegenEffect::URogueHealthRegenEffect()
 		URogueAttributeSet::GetHealthAttribute(),
 		URogueAttributeSet::GetHealthRegenPerSecondAttribute());
 
-	// 死亡期间不回复。迁移前这条是 ARogueCharacter::Tick 里的 `if (bDead) return;` ——
-	// 那时"死亡"是一个 C++ bool；现在是 State.Dead 标签，条件因此可以对 GE 声明。
+	// State.Dead 期间抑制生命回复。
 	BlockRegenWhileTagPresent(RogueGameplayTags::State_Dead);
 }
 

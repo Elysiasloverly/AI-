@@ -25,11 +25,11 @@ public:
 	 *  逐帧心跳直接进 WeaponTick，不走能力的目标选择那三步。 */
 	virtual bool UsesTargetedFireLoop() const override { return false; }
 
-	/** 队友客户端收到服务端广播后，把这束地狱塔光束再画一遍（不索敌、不结算伤害） */
 	virtual ERogueUpgradeType GetCountUpgradeType() const override { return ERogueUpgradeType::HellTowerCount; }
+	/** 收到表现广播后在客户端补画地狱塔光束，不结算权威伤害。 */
 	virtual void PlayCosmeticFire(const FRogueWeaponCosmeticFire& Fire) override;
 
-	// ---- 生效数值：地狱塔的换算系数与其它武器都不同（沿用自研版本的行为）----
+	// ---- 生效数值：地狱塔的换算系数与其它武器都不同----
 	// 伤害只吃 12.5%（每跳递增吃 6.25%）、伤害跳间隔按 0.08 缩放、范围只吃 70%。
 
 	/** 塔基础伤害 = Config.BaseDamage + 伤害加成×0.125 */

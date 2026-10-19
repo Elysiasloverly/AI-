@@ -8,23 +8,11 @@ FRogueEnemyArchetype FRogueEnemyArchetypeRow::ToArchetype(bool bIsBoss) const
 {
 	FRogueEnemyArchetype Archetype = RogueEnemyArchetypes::BuildEnemyArchetype(EnemyType, bIsBoss);
 
-	// 基础移动属性
-	//
-	// ⚠️ 这一列会**覆盖** `BuildEnemyArchetype` 按类型给出的移动模型。
-	//    而移动模型基本就是每种敌人的身份：
-	//      Charger=BurstCharge / Orbiter=Orbit / Skirmisher=ZigZagChase /
-	//      Shooter·Artillery·Spitter=RangedKite / ShockPillar=Stationary
-	//    所以表里**漏填**这一列（于是取到结构体默认值 Direct）会让该类型静默退化成直追。
-	//    更麻烦的是 Hunter 本来就是 Direct —— 默认表根本测不出这个问题。
-	//
-	//    这里**不改变**"数据表优先"的设计（那是项目明确的取舍），
-	//    只把静默失效变成一条响亮的警告。若想改成"按类型固定、表不参与"，
-	//    删掉下面两行赋值即可。
+	// 数据表移动模型覆盖按类型构建的基线；未填时默认 Direct，需确认是否符合预期。
+	// ShockPillar 分支还会强制改成 Stationary。
 	if (MovementModel != Archetype.Movement.Model)
 	{
-		// 每个类型只警告一次：本函数每次刷怪会被调多次（配置 + 两个上限查询），
-		// 不加限制的话一场对局能刷出上百条同样的警告，反而把日志淹掉。
-		// 类型最多 9 种，用一个位掩码记录就够。
+		// 位掩码按类型限次提示，在进程/模块生命周期内共享，不按对局重置。
 		static uint32 WarnedTypesMask = 0;
 		const uint32 TypeBit = 1u << static_cast<uint32>(EnemyType);
 		if ((WarnedTypesMask & TypeBit) == 0)
@@ -32,7 +20,7 @@ FRogueEnemyArchetype FRogueEnemyArchetypeRow::ToArchetype(bool bIsBoss) const
 			WarnedTypesMask |= TypeBit;
 			UE_LOG(LogTemp, Warning,
 				TEXT("[Rogue] 敌人原型：类型 %d 的移动模型被数据表覆盖（表=%d，按类型基线=%d）。")
-				TEXT("若不是有意配置，请检查 DT_FRogueEnemyArchetypeRow 的 MovementModel 列是否漏填。"),
+				TEXT("若不是有意配置，请检查 DT_EnemyArchetypes 的 MovementModel 列是否漏填。"),
 				static_cast<int32>(EnemyType),
 				static_cast<int32>(MovementModel),
 				static_cast<int32>(Archetype.Movement.Model));
@@ -270,16 +258,16 @@ FRogueEnemyArchetype FRogueEnemyArchetypeRow::ToArchetype(bool bIsBoss) const
 			const FRogueShockPillarSpecialParams& P = ShockPillarParams;
 			Archetype.Movement.Model = ERogueEnemyMovementModel::Stationary;
 			Archetype.Movement.BaseMoveMultiplier = 0.0f;
-			Archetype.GroundWave.bUsesGroundWave = true;
-			Archetype.GroundWave.InitialCooldownMin = P.InitialCooldownMin;
-			Archetype.GroundWave.InitialCooldownMax = P.InitialCooldownMax;
-			Archetype.GroundWave.AttackCooldown = P.AttackCooldown;
-			Archetype.GroundWave.MaxRadius = P.MaxRadius;
-			Archetype.GroundWave.ExpansionDuration = P.ExpansionDuration;
-			Archetype.GroundWave.ExpansionSpeed = P.ExpansionSpeed;
-			Archetype.GroundWave.HitThickness = P.HitThickness;
-			Archetype.GroundWave.DamageMultiplier = P.DamageMultiplier;
-			Archetype.GroundWave.bJumpCanDodge = P.bJumpCanDodge;
+			Archetype.GroundWave.bUsesGroundWave = false;
+			Archetype.Ranged.bUsesRangedAttack = true;
+			Archetype.Ranged.ShotPattern = ERogueEnemyShotPattern::RadialRing;
+			Archetype.Ranged.InitialCooldownMin = FMath::Max(0.0f, P.InitialCooldownMin);
+			Archetype.Ranged.InitialCooldownMax = FMath::Max(Archetype.Ranged.InitialCooldownMin, P.InitialCooldownMax);
+			Archetype.Ranged.NextShotCooldown = FMath::Max(0.1f, P.AttackCooldown);
+			Archetype.Ranged.BulletRing = P.BulletRing.Sanitized();
+			Archetype.Ranged.ProjectileSpeed = Archetype.Ranged.BulletRing.ProjectileSpeed;
+			Archetype.Ranged.ProjectileDamageMultiplier = Archetype.Ranged.BulletRing.DamageMultiplier;
+			Archetype.Ranged.MaximumRange = Archetype.Ranged.ProjectileSpeed * Archetype.Ranged.BulletRing.ProjectileLifetime;
 		}
 		break;
 

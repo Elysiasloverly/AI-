@@ -25,7 +25,8 @@ enum class ERogueUpgradeType : uint8
 	HellTowerCount    UMETA(DisplayName = "地狱塔数量"),
 	LaserRefraction   UMETA(DisplayName = "激光折射"),
 	MortarCount       UMETA(DisplayName = "迫击炮数量"),
-	MortarBlastRadius UMETA(DisplayName = "迫击炮爆炸范围")
+	MortarBlastRadius UMETA(DisplayName = "迫击炮爆炸范围"),
+	ScytheSize        UMETA(DisplayName = "镰刀变大")
 };
 
 UENUM(BlueprintType)
@@ -73,23 +74,9 @@ struct FRogueEnemyProfile
 	bool bIsBoss = false;
 };
 
-/**
- * 武器加成的一份**跨端快照**（12 个加成值）。
- *
- * 为什么需要它，而不是直接让武器读玩家 ASC 上的属性：
- *   客户端读到的是**自己**那份属性副本，而武器生效值要按"数据表基础值 + 加成×本武器系数"
- *   在两端各算一遍，因此需要一份跨端一致的"加成输入"。这份快照就是那个输入。
- *
- * ⚠️ 一条踩坑记录（结论已推翻，但教训要留着）：
- *   早期自检只对 Players[0]（主机）施加升级，而客户端打印的是**它自己**那个玩家的属性 ——
- *   那个玩家从没被升级过，于是客户端恒为 0.00。两边比的根本不是同一个玩家，
- *   却被读成"这 12 个加成属性不复制"。现在自检改为**全员施加 + 每行带玩家名**，
- *   服务端/客户端同一玩家可直接对齐。
- *
- * 分层：
- *   · 真相源：URogueAttributeSet 上的 12 个加成属性（由升级 GE 写入，只有服务端能写）；
- *   · 同步管道：ARogueCharacter 上的这个快照（服务端每帧比对、变化才推）；
- *   · 消费方：武器读这个快照算"数据表基础值 + 加成×本武器系数"。
+/** 武器使用的 13 项角色侧加成快照；服务端从 AttributeSet 抽取，变化后写入 Character。
+ *  AttributeSet 本身也复制，此结构是统一武器输入接口，不证明 ASC 无法同步属性。
+ *  快照无自定义 NetSerialize，不能假定各成员或它与属性集同帧原子到达。
  */
 USTRUCT()
 struct FRogueWeaponBonusValues
@@ -108,8 +95,10 @@ struct FRogueWeaponBonusValues
 	UPROPERTY() float MortarCount = 0.0f;
 	UPROPERTY() float LaserRefraction = 0.0f;
 	UPROPERTY() float MortarBlastRadius = 0.0f;
+	/** 额外尺寸比例：0.2 对应基础尺寸的 1.2 倍。 */
+	UPROPERTY() float ScytheSize = 0.0f;
 
-	/** 12 个值是否相同（"变化才推"的脏检查，避免每帧无脑复制）。 */
+	/** 对 13 项做近似相等比较；用于跳过角色侧快照赋值，不等同于网络系统逐字段脏检测。 */
 	bool Equals(const FRogueWeaponBonusValues& Other) const
 	{
 		return FMath::IsNearlyEqual(AttackPower, Other.AttackPower)
@@ -123,7 +112,8 @@ struct FRogueWeaponBonusValues
 			&& FMath::IsNearlyEqual(HellTowerCount, Other.HellTowerCount)
 			&& FMath::IsNearlyEqual(MortarCount, Other.MortarCount)
 			&& FMath::IsNearlyEqual(LaserRefraction, Other.LaserRefraction)
-			&& FMath::IsNearlyEqual(MortarBlastRadius, Other.MortarBlastRadius);
+			&& FMath::IsNearlyEqual(MortarBlastRadius, Other.MortarBlastRadius)
+			&& FMath::IsNearlyEqual(ScytheSize, Other.ScytheSize);
 	}
 };
 
@@ -145,17 +135,9 @@ struct FRogueUpgradeOption
 	float Magnitude = 0.0f;
 };
 
-/**
- * 一次武器开火的**表现载荷**。
- *
- * 玩家武器在联机下的分工是"本人本地预测 + 服务端权威 + 广播给别人"：
- *   · 本人的机器自己算出这一发（开火零延迟，手感不变）；
- *   · 服务端权威地再算一遍，伤害只在这里结算；
- *   · 其他客户端不模拟别人的武器（旧行为是每台机器各算一份，弹道和锁敌会各显示各的），
- *     改由服务端把这一发广播过去，让队友看得见。
- *
- * 这个结构体就是广播的内容：只带"画出来需要什么"，**不带伤害** ——
- * 伤害永远只在服务端的权威那一发里算，客户端拿到的这一发伤害恒为 0。
+/** 一次开火的表现载荷，不传伤害值。
+ *  拥有者可在本机产生开火反馈，服务器独立判定伤害并向其他相关客户端发送表现。
+ *  两端的时机/目标未由该结构强制统一，不能据此保证完整预测确认或弹道严格一致。
  */
 USTRUCT(BlueprintType)
 struct FRogueWeaponCosmeticFire
@@ -174,7 +156,7 @@ struct FRogueWeaponCosmeticFire
 	UPROPERTY(BlueprintReadWrite)
 	FVector_NetQuantizeNormal Direction = FVector::ForwardVector;
 
-	/** 弹体速度。客户端照着这个速度本地飞，视觉才和服务端那一发一致 */
+	/** 客户端表现弹体的速度输入；网络延迟与各端模拟仍可能造成位置差异。 */
 	UPROPERTY(BlueprintReadWrite)
 	float Speed = 0.0f;
 
@@ -189,20 +171,16 @@ struct FRogueWeaponCosmeticFire
 	bool bAlternateStyle = false;
 };
 
-/**
- * 批量广播里的一条：哪个武器 + 这一发的内容。
- *
- * 为什么要批量化：原来是"每发弹体一条 RPC"，高射速档 × 4 人时估算可达
- * 约 2700 条/秒（≈400KB/s），而引擎默认客户端预算是 100KB/s —— 真联机下会顶到天花板。
- * 改成每帧把所有待发表现合成一条（一次 5 连发 = 1 条而不是 5 条），
- * 稳态降到约 240 条/秒（≈35KB/s）。代价只是表现最多晚一帧。
+/** 表现批次中的一条武器索引与开火载荷。
+ *  按角色在刷新时合并发送，减少逐发 RPC 调用；一帧内仍可能有多个条目。
+ *  实际消息率、带宽与延迟取决于帧率、人数、条目和网络条件，需通过当前构建测量。
  */
 USTRUCT()
 struct FRogueWeaponCosmeticBatchEntry
 {
 	GENERATED_BODY()
 
-	/** 武器在角色 Weapons 数组里的下标（各端由同一张 DT_WeaponConfig 按同样顺序建，故一致） */
+	/** 角色 Weapons 数组下标；要求各端配置与生成顺序一致。接收端检查范围，不按武器类核对。 */
 	UPROPERTY()
 	int32 WeaponIndex = INDEX_NONE;
 

@@ -24,6 +24,11 @@ namespace
 		Option.Type = Type;
 		switch (Type)
 		{
+		case ERogueUpgradeType::ScytheSize:
+			Option.Title = TEXT("镰刀变大");
+			Option.Description = TEXT("镰刀尺寸与伤害碰撞范围增加基础值的 20%，不改变环绕距离。");
+			Option.Magnitude = 0.2f;
+			break;
 		case ERogueUpgradeType::MortarCount:
 			Option.Title = TEXT("迫击炮");
 			Option.Description = TEXT("解锁迫击炮，或额外增加 1 枚迫击炮弹。");

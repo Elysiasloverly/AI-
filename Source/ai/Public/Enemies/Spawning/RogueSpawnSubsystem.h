@@ -8,12 +8,13 @@
 #include "RogueSpawnSubsystem.generated.h"
 
 class ARogueEnemy;
-class ARogueArena;
+class ARogueEnemySpawnRegion;
 class ARogueCharacter;
 class URogueGameBalanceAsset;
 class URogueCombatPoolSubsystem;
 class URogueEnemyTrackerSubsystem;
 class UDataTable;
+struct FCollisionQueryParams;
 
 UCLASS()
 class AI_API URogueSpawnSubsystem : public UWorldSubsystem
@@ -22,8 +23,8 @@ class AI_API URogueSpawnSubsystem : public UWorldSubsystem
 
 public:
 	/** 配置生成参数（由 GameMode 在 BeginPlay 时调用）
-	 *  InEnemyArchetypeTable：敌人原型表（`DT_FRogueEnemyArchetypeRow`），
-	 *  用于读取每种敌人的"每波刷新上限"；传 nullptr 则视为全部不限。 */
+	 *  InEnemyArchetypeTable：敌人原型表（`DT_EnemyArchetypes`），
+	 *  用于读取各类型的每波累计与同时存活上限；传 nullptr 时这两类上限视为不限。 */
 	void Configure(
 		TSubclassOf<ARogueEnemy> InDefaultEnemyClass,
 		const TMap<ERogueEnemyType, TSubclassOf<ARogueEnemy>>& InEnemyClassMap,
@@ -33,24 +34,24 @@ public:
 		UDataTable* InEnemyArchetypeTable = nullptr);
 
 	/** 每帧调度生成（由 GameMode 在 Tick 中调用） */
-	void TickSpawning(float DeltaSeconds, FRogueRunState& RunState, ARogueCharacter* Character, const ARogueArena* Arena);
+	void TickSpawning(float DeltaSeconds, FRogueRunState& RunState, ARogueCharacter* Character, const ARogueEnemySpawnRegion* Region);
 
 	/** 生成普通敌人 */
-	bool SpawnEnemy(FRogueRunState& RunState, ARogueCharacter* Character, const ARogueArena* Arena);
+	bool SpawnEnemy(FRogueRunState& RunState, ARogueCharacter* Character, const ARogueEnemySpawnRegion* Region);
 
 	/** 生成 Boss */
-	void SpawnBoss(FRogueRunState& RunState, ARogueCharacter* Character, const ARogueArena* Arena);
+	void SpawnBoss(FRogueRunState& RunState, ARogueCharacter* Character, const ARogueEnemySpawnRegion* Region);
 
 private:
-	ARogueEnemy* SpawnConfiguredEnemy(const FRogueEnemyProfile& EnemyProfile, float DesiredDistance, float MinimumDistance, const ARogueArena* Arena, ARogueCharacter* Character);
-	FVector FindSpawnLocation(float DesiredDistance, float MinimumDistance, const ARogueArena* Arena, ARogueCharacter* Character) const;
+	ARogueEnemy* SpawnConfiguredEnemy(const FRogueEnemyProfile& EnemyProfile, float DesiredDistance, float MinimumDistance, const ARogueEnemySpawnRegion* Region, ARogueCharacter* Character);
+	bool FindSpawnLocation(float DesiredDistance, float MinimumDistance, const ARogueEnemySpawnRegion* Region,
+		ARogueCharacter* Character, const ARogueEnemy* Enemy, FVector& OutLocation) const;
 
-	/**
-	 * 候选出生点是否离**所有**活着的玩家都足够远。
-	 * 联机下的关键点：MinimumDistance 本来只对着"参照玩家"算，
-	 * 于是怪可以合法地刷在队友脸上（参照玩家是主机时尤其明显）。
-	 * "不刷脸上"这个约束必须对每个玩家都成立。
-	 */
+	/** 向下寻找可站立且能阻挡胶囊的地面，按实际胶囊尺寸放置，并检查头顶及周围空间。 */
+	bool TryGroundSpawnLocation(const FVector& Candidate, const ARogueEnemy* Enemy,
+		const FCollisionQueryParams& GroundQuery, const ARogueEnemySpawnRegion* Region, FVector& OutLocation) const;
+
+	/** 所有候选点（包括最后回退点）均需远离存活玩家并通过地面检测。 */
 	bool IsSpawnLocationClearOfPlayers(const FVector& CandidateLocation, float MinimumDistance) const;
 
 	ERogueEnemyType PickEnemyTypeForCurrentWave(int32 Wave) const;
@@ -71,7 +72,7 @@ private:
 	UPROPERTY()
 	TObjectPtr<URogueGameBalanceAsset> BalanceAsset;
 
-	/** 敌人原型表：每种敌人的"每波刷新上限"从这里读 */
+	/** 敌人原型表：各类型每波累计和同时存活上限从这里读取 */
 	UPROPERTY()
 	TObjectPtr<UDataTable> EnemyArchetypeTable;
 
@@ -80,6 +81,7 @@ private:
 
 	/** SpawnedCountThisWave 对应的波次号，用来判断"跨波了没有" */
 	int32 CountedWave = 0;
+	float BossSpawnRetryTimer = 0.0f;
 
 	/** 已为本波打过日志的（类型）；两道闸门各一套，保证每种怪每波每原因只刷一条日志 */
 	TSet<ERogueEnemyType> AliveCapLoggedTypes;

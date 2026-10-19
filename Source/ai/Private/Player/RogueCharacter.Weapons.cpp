@@ -31,8 +31,7 @@
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/InputComponent.h"
-// Enhanced Input（UE5 标准输入）。资产清单见 Docs/Enhanced-Input-Migration.md；
-// 资产缺失时 SetupEnhancedInput 会返回 false，输入整体回退到 legacy 绑定。
+// Enhanced Input：绑定与必需资产校验见 RogueCharacter.Input.cpp；缺失时不绑定本角色动作。
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputAction.h"
@@ -207,22 +206,9 @@ void ARogueCharacter::InitializeWeapons()
 
 void ARogueCharacter::TickWeapons(float DeltaSeconds)
 {
-	// 这里只剩"纯表现"了 —— 武器开火已经全部搬进 GameplayAbility
-	// （URogueWeaponAbility + URogueAbilityTask_WeaponFireLoop，见 EnsureWeaponAbilities）。
-	//
-	// 为什么还留着这条路径：环绕刀片（镰刀）的表现是一条**连续轨道**，没有"某一发"
-	// 可以让服务端广播，所以在谁那儿都得自己画；而技能列表只复制给本人
-	// （ASC 的 ActivatableAbilities 是 COND_OwnerOnly），队友客户端根本没有那份能力。
-	// 所以这类武器由 NeedsCosmeticTick() 标记，继续在这里跑。
-	//
-	// 联机分工（改造前后一致）：
-	//   · 服务端 / 本人客户端：开火（现在在能力里）；
-	//   · 其它客户端：只画服务端广播过来的那一发（见 BroadcastCosmeticFire）。
-	//
-	// 注意这里**不**加 `HasAuthority() || IsLocallyControlled()`：
-	// 改造前那条判据是 `bAuthoritative || bLocallyControlled || NeedsCosmeticTick()`，
-	// 对"持续型表现武器"来说恒为真（它们在任何机器上都要画自己的轨道），
-	// 所以循环里只留 NeedsCosmeticTick() 才与改造前逐台机器等价。
+	// 常规离散开火由 GA/Task 驱动；NeedsCosmeticTick 武器在此维护持续实体。
+	// 当前镰刀会在各端创建和配置环绕刀片，客户端用于表现，服务端刀片仍可结算命中。
+	// 因此整个函数不能概括为无伤害的纯表现路径。
 	for (ARogueWeaponBase* Weapon : Weapons)
 	{
 		if (IsValid(Weapon) && Weapon->NeedsCosmeticTick())
@@ -231,7 +217,7 @@ void ARogueCharacter::TickWeapons(float DeltaSeconds)
 		}
 	}
 
-	// 本帧所有武器表现合成一条 RPC 发出（见 BroadcastWeaponCosmetics 的说明）。
+	// 合并截至当前已排队的武器表现（见 BroadcastWeaponCosmetic）；Tick 次序可能使后续入队延至下次。
 	// 放在这里而不是每发即发：一次齐射（5 连发）从 5 条 RPC 降成 1 条。
 	FlushWeaponCosmetics();
 }
@@ -266,9 +252,8 @@ void ARogueCharacter::EnsureWeaponAbilities()
 
 	// ---- ① 授予：只在权威端，且幂等 ----
 	//
-	// 幂等判据不是"本角色是否授予过"，而是"这个 ASC 上有没有同类能力"：
-	// 角色重生时 Pawn 会换、但 PlayerState 与它上面的 ASC 是保留的，
-	// 用角色上的 bool 会导致重复授予 —— 表现就是**每把武器开两枪**。
+	// 以 ASC 内已存在的能力类查重，避免初始化重试时重复授予。
+	// 当前复活保留同 Pawn/ASC；查重并不负责替换 Pawn 后的能力 SourceObject 或武器引用更新。
 	if (bAuthority)
 	{
 		for (const ARogueWeaponBase* Weapon : Weapons)
@@ -319,7 +304,7 @@ void ARogueCharacter::EnsureWeaponAbilities()
 		}
 	}
 
-	// 一个都没有 = 能力还没复制到本机（客户端常见的前几帧）；不算失败，继续等。
+	// 尚未发现带自动攻击标签的能力时继续重试；可能是复制未到，也可能是武器未配置能力。
 	if (WeaponAbilityCount > 0 && !bAnyInactive)
 	{
 		bWeaponAbilitiesSettled = true;
@@ -330,18 +315,17 @@ void ARogueCharacter::EnsureWeaponAbilities()
 	if (bLocalController)
 	{
 		// 本人：本地激活（LocalPredicted 会顺带通知服务端在自己那份 ASC 上激活）。
-		// 一次调用把全部武器能力都激活（它们共用 Ability.Weapon.AutoAttack 资产标签）。
+		// 按公共资产标签尝试激活；是否成功仍取决于各能力的激活条件。
 		ASC->TryActivateAbilitiesByTag(AutoAttackTag);
 		return;
 	}
 
 	// ---- ④ 服务端上的远端玩家：等本人客户端的激活请求，超时再兜底 ----
 	//
-	// 为什么不能由服务端直接激活：LocalPredicted 的能力如果服务端已经激活，
-	// 客户端那条激活请求会被判失败（ClientActivateAbilityFailed），
-	// 于是**客户端本地那份会被结束** —— 本人玩家就失去了零延迟的开火表现。
-	// 但也不能干等：请求万一丢了，这个玩家的武器就永远不会权威开火（伤害全没），
-	// 而且这种失败是静默的。所以加一个看门狗，超时后由服务端接管。
+	// 先等所属客户端激活，避免服务端抢先激活与本地预测请求发生冲突。
+	// 具体拒绝行为取决于能力实例和重触发条件，不能认定任何服务端提前激活都必然失败。
+	// 初始化、所有权或激活失败可能让能力迟迟未运行；五秒后服务端尝试兜底，
+	// 这不是对 Reliable RPC 单次丢包的补偿，也不保证所有失败状态都能恢复。
 	const UWorld* World = GetWorld();
 	const float NowSeconds = World != nullptr ? World->GetTimeSeconds() : 0.0f;
 	if (WeaponAbilityWaitStartTime < 0.0f)
@@ -363,11 +347,9 @@ void ARogueCharacter::EnsureWeaponAbilities()
 
 void ARogueCharacter::BroadcastWeaponCosmetic(const ARogueWeaponBase* Weapon, const FRogueWeaponCosmeticFire& Fire)
 {
-	// ⚠️ 判据必须是 IsAuthoritySide()（GetNetMode）而不是 HasAuthority()：
-	// 客户端上**本机拥有**的角色 Role 也是 ROLE_Authority，HasAuthority() 会返回 true，
-	// 于是客户端的开火表现会被塞进队列，最后在 FlushWeaponCosmetics 里
-	// 从客户端发出一条 Multicast RPC（本地会被 IsLocallyControlled 兜住、看不出异常，
-	// 但那是一次无意义的上行广播，而且闸门本身已经失效）。
+	// 仅在非客户端世界排队；此处按执行环境限定服务端表现广播。
+	// HasAuthority 是 Actor Role 检查，本地控制不等于 Authority；
+	// 客户端调用 NetMulticast 只会本地执行，不会自动上行再向全体广播。
 	if (!IsAuthoritySide() || Weapon == nullptr)
 	{
 		return;
@@ -410,7 +392,7 @@ void ARogueCharacter::Multicast_WeaponCosmetics_Implementation(const TArray<FRog
 	//   · 服务端：权威那一发就是它自己生成的；
 	//   · 本人：自己那一发是本地预测。
 	// 这里用 IsAuthoritySide() 而不是 HasAuthority()：语义是"我是不是权威端"，
-	// 与广播侧保持同一判据（客户端上本机拥有的角色 HasAuthority() 也是 true）。
+	// 与广播侧保持同一执行环境判据；所属客户端还会通过 IsLocallyControlled 跳过回放。
 	if (IsAuthoritySide() || IsLocallyControlled())
 	{
 		return;
@@ -527,6 +509,36 @@ int32 ARogueCharacter::GetLaserRefractionCount() const
 	return LW != nullptr ? LW->GetRefractionCount() : 0;
 }
 
+void ARogueCharacter::RefreshWeaponBonusSnapshotFromAttributes()
+{
+	if (!IsAuthoritySide())
+	{
+		return;
+	}
+
+	const URogueAttributeSet* AttributeSet = GetRogueAttributeSet();
+	if (AttributeSet == nullptr)
+	{
+		return;
+	}
+
+	FRogueWeaponBonusValues Values;
+	Values.AttackPower = AttributeSet->GetAttackPowerBonus();
+	Values.AttackSpeed = AttributeSet->GetAttackSpeedBonus();
+	Values.AttackRange = AttributeSet->GetAttackRangeBonus();
+	Values.ProjectileSpeed = AttributeSet->GetProjectileSpeedBonus();
+	Values.ProjectileCount = AttributeSet->GetProjectileCountBonus();
+	Values.ScytheCount = AttributeSet->GetScytheCountBonus();
+	Values.RocketCount = AttributeSet->GetRocketCountBonus();
+	Values.LaserCount = AttributeSet->GetLaserCountBonus();
+	Values.HellTowerCount = AttributeSet->GetHellTowerCountBonus();
+	Values.MortarCount = AttributeSet->GetMortarCountBonus();
+	Values.LaserRefraction = AttributeSet->GetLaserRefractionBonus();
+	Values.MortarBlastRadius = AttributeSet->GetMortarBlastRadiusBonus();
+	Values.ScytheSize = AttributeSet->GetScytheSizeBonus();
+	ApplyWeaponBonusSnapshot(Values);
+}
+
 void ARogueCharacter::ApplyWeaponBonusSnapshot(const FRogueWeaponBonusValues& InValues)
 {
 	// 权威字段：只有服务端能写（客户端写会被下一次复制覆盖）
@@ -535,7 +547,7 @@ void ARogueCharacter::ApplyWeaponBonusSnapshot(const FRogueWeaponBonusValues& In
 		return;
 	}
 
-	// 脏检查：12 个值都没变就直接返回（调用方 GameMode 每帧都会推一次）
+	// 脏检查：13 个值都没变就直接返回（调用方 GameMode 每帧都会推一次）
 	if (WeaponBonusSnapshot.Equals(InValues))
 	{
 		return;

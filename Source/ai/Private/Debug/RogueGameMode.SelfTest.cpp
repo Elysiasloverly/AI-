@@ -133,7 +133,7 @@ void ARogueGameMode::RunWeaponUpgradeSelfTest()
 		}
 	};
 
-	// 把属性集里的 12 个加成立刻推成角色快照（不然本帧日志看到的快照还是旧值，要等下一帧 Tick）
+	// 把属性集里的 13 个加成立刻推成角色快照（不然本帧日志看到的快照还是旧值，要等下一帧 Tick）
 	auto PushSnapshots = [&Players]()
 	{
 		for (ARogueCharacter* Player : Players)
@@ -157,6 +157,7 @@ void ARogueGameMode::RunWeaponUpgradeSelfTest()
 			Values.MortarCount = Set->GetMortarCountBonus();
 			Values.LaserRefraction = Set->GetLaserRefractionBonus();
 			Values.MortarBlastRadius = Set->GetMortarBlastRadiusBonus();
+			Values.ScytheSize = Set->GetScytheSizeBonus();
 			Player->ApplyWeaponBonusSnapshot(Values);
 		}
 	};
@@ -260,9 +261,10 @@ void ARogueGameMode::RunWeaponUpgradeSelfTest()
 
 	switch (SelfTestPhase)
 	{
-	// ---- 阶段 2/4：在"所有人都已经连上"之后改属性 ----
+	// ---- 阶段 2/4：至少两名玩家就绪后修改属性，观察后续同步 ----
 	//
-	// 为什么必须有这一步：客户端总是在第一阶段之后才连上，所以第一阶段只能证明
+	// 此阶段等待至少两名玩家就绪，再改变数值，以补充连接后的增量同步观察；
+	// 第一阶段不保证所有客户端都已连接，只有对齐同玩家的日志才可讨论
 	// "初始同步带了这些属性"。只有在一端已经连上、看着数值**变化**，才能证明后续变化能到。
 	case 1:
 	case 3:
@@ -399,10 +401,9 @@ void ARogueGameMode::ProbeDeathAndRevive(ARogueCharacter* Target)
 		return;
 	}
 
-	// 为什么要主动打死一个玩家：现在的无头自检里武器太强，敌人根本贴不上来，
-	// 整局 0 次倒地 —— 于是"倒地等待 GE → 复活 → 复活无敌"这条链路一次都不会被执行，
-	// 改了也验证不到。这里直接施加一次致命伤害，让它走真实的死亡流程
-	// （伤害 → 血量归零 → 死亡 GE → Die() → ScheduleRevive）。
+	// 主动施加 GAS 致命伤害，覆盖标签回调 → 下一 Tick 的 ProcessDeath → Die → 服务端定时器。
+	// 有存活队友且本局继续时才会复活；若触发团灭则转为 Eliminated。
+	// 此探针只触发并记录，不代替专门的生命周期自动化/双进程自检。
 	RogueAbilitySystem::ApplyDamageToTarget(Target, Target, 1000000.0f, RogueGameplayTags::Damage_Source_Contact);
 
 	const float DownedRemaining = Target->GetReviveSecondsRemaining();
@@ -506,8 +507,8 @@ void ARogueGameMode::ProbeGroundWaveAttack(ARogueCharacter* Target)
 
 	FRogueEnemyProfile Profile;
 	Profile.EnemyType = ERogueEnemyType::ShockPillar;
-	// 够硬才能活到"起波"那一刻：地面波的初始冷却是随机的（实测这次 2.24 秒），
-	// 而 500 血在六把武器面前只够活 2 秒左右 —— 于是永远等不到起波，计数一直是 0。
+	// 使用探针专用高生命，增加敌人存活到初始随机冷却结束的机会；
+	// 实际存活时长仍取决于当前武器伤害，需检查后续攻击计数。
 	Profile.Health = ProbeEnemyHealth;
 	Profile.Speed = 0.0f;
 	Profile.Damage = 5.0f;
@@ -522,19 +523,19 @@ void ARogueGameMode::ProbeGroundWaveAttack(ARogueCharacter* Target)
 		Tracker->RegisterEnemy(Enemy);
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("[SelfTest] 地面波验证：已在玩家 %s 附近生成一只震荡柱（%s），等它起波"),
+	UE_LOG(LogTemp, Log, TEXT("[SelfTest] 地面波验证：已在玩家 %s 附近生成一只震荡柱（%s），等它发射整圈弹幕"),
 		Target->GetPlayerState() != nullptr ? *Target->GetPlayerState()->GetPlayerName() : *Target->GetName(),
 		*Enemy->GetName());
 
-	// 诊断：能力是否真的授予了、原型里地面波开关是不是开的、决策用的初始冷却还剩多久。
+	// 保留旧自测入口名；震荡柱现在使用远程攻击槽。
+	const FRogueEnemyRangedArchetype& Ranged = Enemy->GetRangedArchetype();
 	UE_LOG(LogTemp, Log,
-		TEXT("[SelfTest]   震荡柱诊断：地面波开关=%d 攻击能力=%s 初始冷却=%.2f 距离=%.1f 扩展半径参数=%.1f 可命中跳跃=%d"),
-		Enemy->GetCurrentArchetype().GroundWave.bUsesGroundWave ? 1 : 0,
-		Enemy->GroundWaveAttackAbilityHandle.IsValid() ? TEXT("已授予") : TEXT("未授予"),
-		Enemy->GetGroundWaveAttackCooldownRemaining(),
+		TEXT("[SelfTest]   震荡柱诊断：弹幕开关=%d 攻击能力=%s 初始冷却=%.2f 距离=%.1f 每圈=%d 速度=%.1f"),
+		Ranged.ShotPattern == ERogueEnemyShotPattern::RadialRing ? 1 : 0,
+		Enemy->RangedAttackAbilityHandle.IsValid() ? TEXT("已授予") : TEXT("未授予"),
+		Enemy->GetRangedAttackCooldownRemaining(),
 		FVector::Dist2D(Enemy->GetActorLocation(), Target->GetActorLocation()),
-		Enemy->GetCurrentArchetype().GroundWave.MaxRadius,
-		Enemy->GetCurrentArchetype().GroundWave.bJumpCanDodge ? 1 : 0);
+		Ranged.BulletRing.ProjectileCount, Ranged.BulletRing.ProjectileSpeed);
 }
 
 void ARogueGameMode::ProbeEnemyStress(ARogueCharacter* Target, int32 Count)
@@ -551,10 +552,9 @@ void ARogueGameMode::ProbeEnemyStress(ARogueCharacter* Target, int32 Count)
 		return;
 	}
 
-	// 压测怪的三条设定都是刻意的（见 RogueSelfTest.h 的说明）：
-	//   · 血厚  → 不会一轮齐射就被清空，敌人数量在一段时间内稳定在 N（否则量不到 200+）
-	//   · 伤害 0 → 玩家不会被打倒，测试过程稳定可比
-	//   · 距离 300–900 → 落在"全速 Tick"档（>950 会被 AI 自己降频，那样量不到最坏情况）
+	// 压测配置使用高生命、零接触伤害和约 300–814 的初始半径，减少初始负载波动。
+	// 初始位置位于当前 950 距离降频阈值内；玩家移动、击杀和池获取失败仍会改变实际负载。
+	// 不以生成请求数量代替活跃敌人数，也不把该场景视作所有配置下的最坏情况。
 	FRogueEnemyProfile Profile;
 	Profile.EnemyType = ERogueEnemyType::Hunter;
 	Profile.Health = 100000.0f;

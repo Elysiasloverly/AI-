@@ -13,12 +13,13 @@
 #include "GameFramework/PlayerController.h"
 #include "Net/UnrealNetwork.h"
 #include "Player/RoguePlayerState.h"
+#include "Player/RoguePlayerBalanceAsset.h"
 #include "PhysicsEngine/BodyInstance.h"
 #include "TimerManager.h"
 
 void ARogueCharacter::PreInitializeComponents()
 {
-	// Pawn 由 GameMode 分配给对应控制器；蓝图的 Player0 自动接管会让第二玩家夺走主机 Pawn。
+	// GameMode 负责玩家分配；禁用 Player0 自动接管，避免新 Pawn 额外抢占首个控制器。
 	AutoPossessPlayer = EAutoReceiveInput::Disabled;
 	Super::PreInitializeComponents();
 }
@@ -78,7 +79,7 @@ float ARogueCharacter::GetLifeServerTime() const
 float ARogueCharacter::GetReviveSecondsRemaining() const
 {
 	return IsRevivePending()
-		? FMath::Clamp(LifeState.ReviveServerTime - GetLifeServerTime(), 0.0f, RoguePlayerLifeCycle::DownedDurationSeconds)
+		? FMath::Max(0.0f, LifeState.ReviveServerTime - GetLifeServerTime())
 		: 0.0f;
 }
 
@@ -106,13 +107,17 @@ void ARogueCharacter::Die()
 	World->GetTimerManager().ClearTimer(PendingDeathTimerHandle);
 	bPendingDeath = false;
 	LifeState.Phase = ERoguePlayerLifePhase::Downed;
-	LifeState.ReviveServerTime = World->GetTimeSeconds() + RoguePlayerLifeCycle::DownedDurationSeconds;
+	const FRoguePlayerRevivalConfig Revival = LoadedPlayerBalanceAsset
+		? LoadedPlayerBalanceAsset->Revival : FRoguePlayerRevivalConfig();
+	const float WaitSeconds = FMath::IsFinite(Revival.DownedDuration)
+		? FMath::Max(0.01f, Revival.DownedDuration) : RoguePlayerLifeCycle::DownedDurationSeconds;
+	LifeState.ReviveServerTime = World->GetTimeSeconds() + WaitSeconds;
 	RemoveInvulnerableEffect();
 	ApplyLifeStateEffects();
 	ApplyDownedState();
 	StartReviveTimer();
 	ForceNetUpdate();
-	UE_LOG(LogTemp, Log, TEXT("[RogueLife] %s 濒死：幽灵状态，十秒后复活（服务端截止 %.3f）"), *GetName(), LifeState.ReviveServerTime);
+	UE_LOG(LogTemp, Log, TEXT("[RogueLife] %s 濒死：幽灵状态，%.2f 秒后复活（服务端截止 %.3f）"), *GetName(), WaitSeconds, LifeState.ReviveServerTime);
 	if (ARogueGameMode* Mode = World->GetAuthGameMode<ARogueGameMode>())
 	{
 		Mode->NotifyPlayerDied(this);
@@ -172,9 +177,12 @@ void ARogueCharacter::Revive()
 	LifeState.Phase = ERoguePlayerLifePhase::Alive;
 	LifeState.ReviveServerTime = 0.0f;
 	ApplyLifeStateEffects();
+	const FRoguePlayerRevivalConfig Revival = LoadedPlayerBalanceAsset
+		? LoadedPlayerBalanceAsset->Revival : FRoguePlayerRevivalConfig();
 	if (const URogueAttributeSet* Attributes = GetRogueAttributeSet())
 	{
-		SetCurrentHealth(FMath::Max(1.0f, Attributes->GetMaxHealth() * 0.5f));
+		SetCurrentHealth(FMath::Min(Attributes->GetMaxHealth(), FMath::Max(1.0f,
+			Attributes->GetMaxHealth() * FMath::Clamp(Revival.HealthRatio, 0.0f, 1.0f))));
 	}
 	ClearRecentlyDamagedState();
 	ClearDashCooldown();
@@ -184,14 +192,14 @@ void ARogueCharacter::Revive()
 	if (URogueAbilitySystemComponent* ASC = GetRogueAbilitySystemComponent())
 	{
 		RemoveInvulnerableEffect();
-		if (ReviveInvulnerableSeconds > 0.0f)
+		if (FMath::IsFinite(Revival.InvulnerableSeconds) && Revival.InvulnerableSeconds > 0.0f)
 		{
 			FGameplayEffectContextHandle Context = ASC->MakeEffectContext();
 			Context.AddSourceObject(this);
 			FGameplayEffectSpecHandle Spec = ASC->MakeOutgoingSpec(URogueInvulnerableEffect::StaticClass(), 1.0f, Context);
 			if (Spec.IsValid())
 			{
-				Spec.Data->SetSetByCallerMagnitude(RogueGameplayTags::Data_Duration, ReviveInvulnerableSeconds);
+				Spec.Data->SetSetByCallerMagnitude(RogueGameplayTags::Data_Duration, Revival.InvulnerableSeconds);
 				InvulnerableEffectHandle = ASC->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
 			}
 		}
@@ -351,7 +359,8 @@ void ARogueCharacter::ApplyDownedState()
 	{
 		Movement->SetMovementMode(MOVE_Walking);
 	}
-	// APawn 接受空控制器并恢复输入标志；Controller 可能晚于 Alive 快照解析。
+	// APawn::EnableInput 在参数等于 Controller 或为空时置输入标志；
+	// Controller 可能晚于 Alive 快照到达。这里只重新启用输入，不恢复先前禁用原因。
 	EnableInput(Cast<APlayerController>(GetController()));
 }
 

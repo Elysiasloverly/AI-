@@ -18,10 +18,11 @@
 #include "Combat/Pooling/RogueCombatPoolSubsystem.h"
 #include "Combat/Targeting/RogueEnemyTrackerSubsystem.h"
 #include "Combat/Visuals/RogueImpactEffect.h"
-#include "World/RogueArena.h"
+#include "World/RogueEnemySpawnRegion.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/MeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
@@ -50,39 +51,23 @@ namespace
 		return -Enemy.GetCapsuleComponent()->GetScaledCapsuleHalfHeight() + GroundWaveVisualHeight;
 	}
 
-	float CalculateFullMapGroundWaveRadius(const ARogueEnemy& Enemy, float ConfiguredRadius)
-	{
-		float EffectiveRadius = FMath::Max(ConfiguredRadius, GroundWaveFallbackFullMapRadius);
-		UWorld* World = Enemy.GetWorld();
-		if (World == nullptr)
-		{
-			return EffectiveRadius;
-		}
-
-		const ARogueArena* Arena = Cast<ARogueArena>(UGameplayStatics::GetActorOfClass(World, ARogueArena::StaticClass()));
-		if (Arena == nullptr)
-		{
-			return EffectiveRadius;
-		}
-
-		const float HalfExtent = Arena->GetArenaHalfExtent() + GroundWaveArenaPadding;
-		const FVector ArenaCenter = Arena->GetActorLocation();
-		const FVector Origin = Enemy.GetActorLocation();
-		const FVector Corners[] =
-		{
-			ArenaCenter + FVector(HalfExtent, HalfExtent, 0.0f),
-			ArenaCenter + FVector(HalfExtent, -HalfExtent, 0.0f),
-			ArenaCenter + FVector(-HalfExtent, HalfExtent, 0.0f),
-			ArenaCenter + FVector(-HalfExtent, -HalfExtent, 0.0f)
-		};
-
-		for (const FVector& Corner : Corners)
-		{
-			EffectiveRadius = FMath::Max(EffectiveRadius, FVector::Dist2D(Origin, Corner));
-		}
-
-		return EffectiveRadius;
-	}
+    float CalculateFullMapGroundWaveRadius(const ARogueEnemy& Enemy, float ConfiguredRadius)
+    {
+        float EffectiveRadius = FMath::Max(ConfiguredRadius, GroundWaveFallbackFullMapRadius);
+        UWorld* World = Enemy.GetWorld();
+        if (World == nullptr) { return EffectiveRadius; }
+        const ARogueEnemySpawnRegion* Region = Cast<ARogueEnemySpawnRegion>(UGameplayStatics::GetActorOfClass(World, ARogueEnemySpawnRegion::StaticClass()));
+        if (Region != nullptr)
+        {
+            TArray<FVector> Corners;
+            Region->GetWorldCorners(Corners);
+            for (const FVector& Corner : Corners)
+            {
+                EffectiveRadius = FMath::Max(EffectiveRadius, FVector::Dist2D(Enemy.GetActorLocation(), Corner) + GroundWaveArenaPadding);
+            }
+        }
+        return EffectiveRadius;
+    }
 
 	float CalculateReadableGroundWaveDuration(const FRogueEnemyGroundWaveArchetype& GroundWave, float EffectiveRadius)
 	{
@@ -100,31 +85,21 @@ ARogueEnemy::ARogueEnemy()
 {
 	PrimaryActorTick.bCanEverTick = true;
 
-	// 确保蓝图子类也使用 AAIController，并在 Spawn 时自动 Possess
+	// 原生默认使用 AAIController 并允许自动接管；蓝图默认值仍可覆盖。
 	AIControllerClass = AAIController::StaticClass();
 	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 
 	GetCapsuleComponent()->InitCapsuleSize(34.0f, 72.0f);
 
-	// ── 敌人之间互不阻挡（默认开启）──
-	// 背景：敌人的位移是 `AddActorWorldOffset(..., bSweep=true)`（见 HandleDefaultBehavior），
-	//      胶囊之间默认互相 Block，几十只挤向玩家时会互相顶死成"肉墙"，谁都到不了玩家身边。
-	// 做法：胶囊忽略 Pawn 通道。
-	// 为什么这样改是安全的：
-	//   · 玩家弹体 / 环绕刀片的 ObjectType 是 ECC_WorldDynamic，靠 "Overlap ECC_Pawn" 探测敌人
-	//     （RogueProjectile.cpp:23-27、RogueOrbitingBlade.cpp:20-23），走的是"弹体→敌人"这条通道，
-	//     与本改动无关 → 子弹与刀片照常命中。
-	//   · 接触伤害用的是距离判定（PerformContactDamage/TouchPlayer 里的 DistSquared2D），
-	//     不依赖碰撞事件 → 照常扣血。
-	// 代价：玩家本身也是 Pawn，所以玩家不再被敌群挡住（可以穿过敌人）。
-	//      若要做到"敌人之间不挡、但仍然挡住玩家"，需要给敌人单独开一个 ObjectType 通道
-	//      （DefaultEngine.ini 加 Custom Channel，并让弹体改查该通道），改动面更大，故未采用。
+	// 忽略 Pawn 可避免敌群胶囊互相阻挡，也允许玩家穿过敌人。
+	// 当前弹体/刀片为 WorldDynamic，并对 Pawn 请求重叠；最终结果仍由双方通道响应决定。
+	// 接触攻击使用二维距离判断，不依赖敌人与玩家的阻挡事件。
 	GetCapsuleComponent()->SetCollisionResponseToChannel(
 		ECC_Pawn, bIgnoreOtherPawnCollision ? ECR_Ignore : ECR_Block);
 
 	// ── GAS 组件 ──
 	// ASC 挂在敌人自己身上：敌人没有 PlayerState 那一层，也不需要跨 Pawn 重生保留状态。
-	// Minimal 复制模式在 URogueAbilitySystemComponent 的构造函数里设好（ConfigureAsEnemy）。
+	// 下面显式调用 ConfigureAsEnemy 选择 Minimal 复制模式。
 	AbilitySystemComponent = CreateDefaultSubobject<URogueAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
 	AbilitySystemComponent->SetIsReplicated(true);
 	AbilitySystemComponent->ConfigureAsEnemy();
@@ -132,46 +107,30 @@ ARogueEnemy::ARogueEnemy()
 	// 与玩家共用同一个属性集类型（只用到其中血量相关的几项）
 	AttributeSet = CreateDefaultSubobject<URogueAttributeSet>(TEXT("AttributeSet"));
 
-	// AttributeSet 是普通 UObject，要复制必须走"已注册子对象列表"这条路
+	// 这里选择已注册子对象列表复制 AttributeSet；传统 ReplicateSubobjects 路径也可实现子对象复制
 	bReplicateUsingRegisteredSubObjectList = true;
 
-	// ── 联机复制预算 ──
-	// 敌人是"数量最多、单体最不重要"的类别：对象池预热量 160，配合随波次增长的存活上限
-	// ── 最关键的一行：敌人必须复制 ──
-	//
-	// 敌人是**服务端生成**的（池预热也在 GameMode.BeginPlay、同样只在服务端跑），
-	// 不开复制的话客户端根本收不到这些 Actor —— 表现是"主机看得见怪、客户端一只都看不见"，
-	// 而且所有依赖它的复制全部失效：ASC/属性集（血条、伤害飘字）、地面波表现态、bReplicatedActive。
-	//
-	// ⚠️ 这个坑很隐蔽：`ACharacter` / `APawn` 的构造函数**都不会**自动打开 bReplicates
-	// （引擎 Character.cpp / Pawn.cpp 里都没有这一行），AActor 的默认值是 false。
-	// 单机与主机上一切正常，只有客户端能看出问题 —— 所以它能一直活到联机联调才暴露。
-	// 玩家角色之所以没事，是因为 BP_RogueCharacter 上勾了 Replicates；敌人这边漏了。
-	//
-	// 注意：蓝图默认值在 C++ 构造函数之后应用，所以**如果敌人 BP 上把 Replicates 手动取消勾选**，
-	// 会覆盖这里的设置 —— 那种情况下需要在 BP 里勾回来。
+	// 明确本类需要复制。UE 5.5 的 APawn 构造已将 bReplicates 设为 true，
+	// ACharacter 继承该默认；这里重复声明意图，蓝图默认值仍可覆盖。
 	bReplicates = true;
 	SetReplicatingMovement(true);
 
-	// 复制预算：敌人数量上限很高（40 + 每波 8）在后期可达 250+。若沿用 AActor 默认的 NetUpdateFrequency = 100，
-	// 峰值会产生 2.5 万次/秒量级的 actor 更新尝试，再叠加每个敌人的 ASC 与属性复制
-	// —— 联机下这是最先崩的地方，所以必须显式压预算。
-	//
-	// 注意 NetUpdateFrequency 在 5.5 已标记 UE_DEPRECATED（Actor.h:831），
-	// 直接对公有成员赋值只能编过但会告警，正确做法是用 SetNetUpdateFrequency()。
-	//
-	// 这里给的是**保守基线**，运行期还会按"离玩家多远"分档调整（见 UpdateReplicationBudget）。
+	// 设置初始复制频率预算，运行时再按目标距离分档；实际发送还受相关性与带宽影响。
+	// UE 5.5 废弃的是 NetUpdateFrequency 公有成员访问，使用 setter/getter，
+	// 该复制频率机制本身并未废弃。
 	SetNetUpdateFrequency(10.0f);
 	SetMinNetUpdateFrequency(2.0f);
 
 	// 优先级低于玩家（默认 1.0）：带宽紧张时先保玩家与弹体这类手感相关的 actor
 	NetPriority = 0.6f;
 
-	// 超出 150m 不再复制给该客户端（这是引擎默认值，显式写出来是为了让预算可见可调）
-	// 5.5 起公有成员已废弃，必须走 setter（否则每次编译都有一条 C4996）
+	// 设置距离相关性阈值为 15000uu 的平方；默认单位下约 150m。
+	// 它是相关性规则的一部分，拥有者/可见性等其他条件仍可影响结果。
 	SetNetCullDistanceSquared(FMath::Square(15000.0f));
 
-	GetCharacterMovement()->GravityScale = 0.0f;
+	// 敌人为地面角色；离开坡面或台阶后必须能自然落回地面。
+	GetCharacterMovement()->GravityScale = 1.0f;
+	GetCharacterMovement()->bEnablePhysicsInteraction = false;
 	GetCharacterMovement()->MaxWalkSpeed = MoveSpeed;
 	GetCharacterMovement()->bOrientRotationToMovement = true;
 	GetCharacterMovement()->RotationRate = FRotator(0.0f, 600.0f, 0.0f);
@@ -224,9 +183,40 @@ ARogueEnemy::ARogueEnemy()
 	OrbitDirection = FMath::RandBool() ? 1.0f : -1.0f;
 }
 
+void ARogueEnemy::ConfigureGroundedCollision()
+{
+	// 蓝图 SCS 模型可能默认 BlockAllDynamic。只修改外观组件，不影响胶囊和独立攻击触发器。
+	TInlineComponentArray<UMeshComponent*> Meshes(this);
+	for (UMeshComponent* CosmeticMesh : Meshes)
+	{
+		CosmeticMesh->SetSimulatePhysics(false);
+		CosmeticMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		CosmeticMesh->SetGenerateOverlapEvents(false);
+		CosmeticMesh->CanCharacterStepUpOn = ECB_No;
+		CosmeticMesh->SetCanEverAffectNavigation(false);
+	}
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		// 旧蓝图序列化了 0，单改 C++ 构造默认值不能修正它；保留有效的正重力覆盖值。
+		if (!FMath::IsFinite(Movement->GravityScale) || Movement->GravityScale <= 0.0f)
+		{
+			Movement->GravityScale = 1.0f;
+		}
+		Movement->bEnablePhysicsInteraction = false;
+	}
+}
+
+void ARogueEnemy::PostInitializeComponents()
+{
+	Super::PostInitializeComponents();
+	// 此时蓝图组件已经创建，在第一次物理更新前关闭配饰碰撞。
+	ConfigureGroundedCollision();
+}
+
 void ARogueEnemy::BeginPlay()
 {
 	Super::BeginPlay();
+	ConfigureGroundedCollision();
 
 	// GAS 初始化。敌人既是 OwnerActor 也是 AvatarActor（没有 PlayerState 那一层）。
 	// 必须在 BeginPlay 做而不是构造里：构造阶段 World / 复制都还没就绪。
@@ -235,8 +225,8 @@ void ARogueEnemy::BeginPlay()
 		AbilitySystemComponent->InitAbilityActorInfo(this, this);
 	}
 
-	// AttributeSet 是普通 UObject（不是组件），要复制必须登记进 Actor 的已注册子对象列表，
-	// 且只需服务端登记 —— 客户端那份实例由构造函数创建，等属性同步即可。
+	// 当前采用已注册子对象列表，由服务端在 ASC 上登记属性集供复制。
+	// 客户端已有构造出的属性集，后续接受复制值。
 	if (HasAuthority() && AbilitySystemComponent != nullptr && AttributeSet != nullptr)
 	{
 		AbilitySystemComponent->AddReplicatedSubObject(AttributeSet);
@@ -259,21 +249,15 @@ void ARogueEnemy::BeginPlay()
 	CachedPlayerCharacter = nullptr;
 	TargetRefreshCooldown = 0.0f;
 
-	// 服务端：池化对象"出生即在池里"，这是它的初始状态。
-	//
-	// ⚠️ 客户端**绝不能**在这里调 DeactivateToPool()：
-	// 它会写本地状态，其中的 bReplicatedActive 是**权威独占**的复制位 ——
-	// 客户端一写就把刚复制过来的真实值（true）覆盖成 false，
-	// 紧接着 ApplyReplicatedActiveState() 读到 false，于是把自己隐藏+停 Tick+关碰撞，
-	// 表现就是"客户端永远看不见这只怪"。
-	// （这不是推测：实测日志里能看到 Active=1 紧跟 Active=0，就是这条路径。）
+	// 权威端初始化为回池；客户端通过复制的在场标记应用本地状态，
+	// 避免在 BeginPlay 用回池逻辑覆盖已收到的活动状态。
 	if (HasAuthority())
 	{
 		DeactivateToPool();
 	}
 
-	// 客户端：按复制过来的"在场"状态落地。
-	// 初始复制值也会走这条路径（实测 RepNotify 对初始值是会触发的，但这里兜一次更稳）。
+	// BeginPlay 同样应用当前在场值，避免仅依赖初始 RepNotify；
+	// 初始值与默认相同等情况并不保证产生一次通知。
 	ApplyReplicatedActiveState();
 }
 
@@ -305,6 +289,7 @@ void ARogueEnemy::OnRep_ReplicatedActive()
 
 void ARogueEnemy::ApplyReplicatedActiveState()
 {
+	ConfigureGroundedCollision();
 	// 只在客户端做：服务端的状态由 ActivatePooledEnemy / DeactivateToPool 直接维护，
 	// 这里再写一遍反而可能覆盖掉服务端刚设好的值。
 	if (HasAuthority())
@@ -317,22 +302,11 @@ void ARogueEnemy::ApplyReplicatedActiveState()
 		// 在场：把"池里 + 已死"这套本地状态翻回来。
 		bPoolAvailable = false;
 		bDead = false;
-		// 显隐也要按这一位对齐，不能只依赖 bHidden 的复制：
-		// 中途加入的客户端会先收到"这只怪是活的"（bHidden=false），紧接着 BeginPlay 里
-		// 那次本地 DeactivateToPool() 又把它隐藏掉，而服务端的 bHidden 之后没再变化、
-		// 不会再发一次 false —— 结果那只怪对这名客户端永久隐形。
+		// 显隐也按当前在场位应用，避免本地隐藏状态与活动状态不一致。
 		SetActorHiddenInGame(false);
 		SetActorTickEnabled(true);
 
-		// ★ 客户端也必须把敌人登记进**本机的**追踪器。
-		//
-		// 为什么关键：客户端的"武器索敌"（ARogueWeaponBase::FindNearestEnemy →
-		// URogueEnemyTrackerSubsystem::FindNearestEnemyInRange）和 "HUD 敌人血条"
-		// （ARogueHUD::DrawEnemyHealthBars 遍历同一个子系统）都依赖它，
-		// 而注册原本只发生在**服务端的生成路径**（URogueSpawnSubsystem::SpawnConfiguredEnemy）。
-		// 结果就是客户端：有武器、有输入，但**索敌永远返回 null → 自己一发子弹都不打**，
-		// 同时敌人血条也一条都画不出来。
-		// 追踪器是 WorldSubsystem、纯本机数据，客户端登记自己的副本完全安全。
+		// 客户端本地索敌与血条遍历依赖此 World 的追踪器，服务端注册不会复制该容器。
 		if (URogueEnemyTrackerSubsystem* Tracker = GetWorld() != nullptr ? GetWorld()->GetSubsystem<URogueEnemyTrackerSubsystem>() : nullptr)
 		{
 			Tracker->RegisterEnemy(this);
@@ -370,9 +344,8 @@ void ARogueEnemy::ApplyReplicatedActiveState()
 
 void ARogueEnemy::Multicast_SpawnCosmeticProjectile_Implementation(FVector_NetQuantize SpawnLocation, FVector_NetQuantizeNormal Direction, float Speed, bool bLargeVisual)
 {
-	// 这个函数在所有端都会执行。服务端**直接返回** ——
-	// 服务端已经生成过"真实"弹体了（带伤害与命中判定），再生成一发就会双份。
-	// 所以这里的语义实际是"仅客户端"的广播。
+	// 服务端调用的多播会在服务端及收到此 RPC 的客户端执行；不保证全员收到。
+	// 此实现跳过权威端，避免再生成一份已由 FireRangedShot 创建的弹体。
 	if (HasAuthority())
 	{
 		return;
@@ -393,9 +366,44 @@ void ARogueEnemy::Multicast_SpawnCosmeticProjectile_Implementation(FVector_NetQu
 		return;
 	}
 
-	// 客户端这发**不参与伤害**：伤害早已在服务端结算。
-	// 传 0 伤害是为了万一它碰到了什么也不会造成二次扣血。
+	// 客户端副本伤害为 0，只有命中表现；服务端权威弹体在后续命中时结算。
 	Projectile->ActivatePooledProjectile(this, this, SpawnLocation, SpawnRotation, Direction, Speed, /*ProjectileDamage=*/0.0f, bLargeVisual);
+}
+
+void ARogueEnemy::Multicast_SpawnCosmeticBulletRing_Implementation(FVector_NetQuantize Center, float StartYaw, float SpawnRadius, const FRogueEnemyBulletRingSettings& Settings)
+{
+	if (!HasAuthority())
+	{
+		SpawnBulletRing(Center, StartYaw, SpawnRadius, Settings, 0.0f);
+	}
+}
+
+void ARogueEnemy::SpawnBulletRing(const FVector& Center, float StartYaw, float SpawnRadius, const FRogueEnemyBulletRingSettings& Settings, float ProjectileDamage)
+{
+	UWorld* World = GetWorld();
+	if (World == nullptr) { return; }
+	URogueCombatPoolSubsystem* Pools = World->GetSubsystem<URogueCombatPoolSubsystem>();
+	const FRogueEnemyBulletRingSettings Ring = Settings.Sanitized();
+	for (int32 Index = 0; Index < Ring.ProjectileCount; ++Index)
+	{
+		// 不包含 360 度终点，避免第一发与最后一发重合；每个方向只发一颗。
+		const float Yaw = StartYaw + 360.0f * static_cast<float>(Index) / Ring.ProjectileCount;
+		const FRotator Rotation(0.0f, Yaw, 0.0f);
+		const FVector Direction = Rotation.Vector();
+		const FVector Location = Center + Direction * SpawnRadius;
+		FActorSpawnParameters Params;
+		Params.Owner = this;
+		Params.Instigator = this;
+		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		ARogueEnemyProjectile* Projectile = Pools != nullptr
+			? Pools->AcquireEnemyProjectile(ARogueEnemyProjectile::StaticClass(), this, this, Location, Rotation)
+			: World->SpawnActor<ARogueEnemyProjectile>(ARogueEnemyProjectile::StaticClass(), Location, Rotation, Params);
+		if (Projectile != nullptr)
+		{
+			Projectile->ActivatePooledProjectile(this, this, Location, Rotation, Direction,
+				Ring.ProjectileSpeed, ProjectileDamage, false, Ring.ProjectileLifetime, Ring.ProjectileScale, true);
+		}
+	}
 }
 
 void ARogueEnemy::SyncHealthToAbilitySystem()
@@ -448,8 +456,7 @@ void ARogueEnemy::UpdateReplicationBudget(float DistanceToPlayer)
 		DesiredFrequency = 15.0f;
 	}
 
-	// 只有跨档才写：SetNetUpdateFrequency 会触碰网络对象的更新频率，
-	// 每帧无脑写会让 NetDriver 反复重排优先级队列。
+	// 只在跨档时修改，避免不必要的重复 setter 调用。
 	if (!FMath::IsNearlyEqual(GetNetUpdateFrequency(), DesiredFrequency, 0.5f))
 	{
 		SetNetUpdateFrequency(DesiredFrequency);
@@ -513,10 +520,8 @@ void ARogueEnemy::HandleDeathTagChanged(FGameplayTag Tag, int32 NewCount)
 
 	bPendingDeath = true;
 
-	// 延到本帧末尾再处理死亡。
-	// 原因：这个回调正在"施加授予 State.Dead 的 GE"的过程中执行，
-	// 而死亡处理链路（Die → DeactivateToPool → ResetForPool）会去移除那个 GE，
-	// 在它自己的标签回调里移除它属于重入。SetTimerForNextTick 把它挪出当前调用栈。
+	// SetTimerForNextTick 将死亡处理移出施加死亡 GE 的当前调用栈，
+	// 避免回池清除 GE 时在其标签通知里重入；执行时刻取决于 TimerManager 调度。
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().SetTimerForNextTick(this, &ARogueEnemy::ProcessDeath);
@@ -574,13 +579,10 @@ void ARogueEnemy::Tick(float DeltaSeconds)
 	{
 		UpdateGroundWaveVisualFromReplication();
 
-		// 客户端自己轮询复制过来的血量 —— 这是**实测得出的必要做法**：
-		// 属性变化回调（HandleHealthChanged）在"属性经复制到达客户端"这条路径上不会触发
-		// （取证：客户端 ShowDamageNumber 一次都没被调用，而服务端同一局调用了 222 次），
-		// 所以客户端必须自己比对上一帧的镜像值，才能：
-		//   · 刷新 CurrentHealth 镜像（血条读的是这个）
-		//   · 产生伤害飘字
-		// 表现上飘字会比主机晚一个复制间隔（由 UpdateReplicationBudget 分档决定），这是固有代价。
+		// 客户端从已复制的 Health 更新镜像，并以差值生成飘字。
+		// 标准 GAS RepNotify 可经 GAMEPLAYATTRIBUTE_REPNOTIFY 通知变化，
+		// 不能泛称属性复制不会触发回调；此轮询只是当前实现的补偿路径。
+		// 复制可能合并多次变化，表现差值不等同于逐次权威伤害事件。
 		if (AttributeSet != nullptr)
 		{
 			const float ReplicatedHealth = AttributeSet->GetHealth();
@@ -664,6 +666,8 @@ void ARogueEnemy::HandleDefaultBehavior(float DeltaSeconds)
 		const FRotator DesiredRotation = MoveDirection.Rotation();
 		SetActorRotation(FMath::RInterpTo(GetActorRotation(), DesiredRotation, DeltaSeconds, 8.0f));
 		AddActorWorldOffset(MoveDirection * MoveSpeed * DeltaSeconds, true);
+		// 手动平移绕过了 CharacterMovement 的位移，不能继续沿用旧位置的地面缓存。
+		GetCharacterMovement()->bForceNextFloorCheck = true;
 	}
 
 	if (bUsesGroundWave)
@@ -673,7 +677,10 @@ void ARogueEnemy::HandleDefaultBehavior(float DeltaSeconds)
 	}
 
 	// 接触与远程攻击都走"AI 决策 → 能力执行"（见各自函数的说明）。
-	DecideContactAttack(DeltaSeconds);
+	if (EnemyType != ERogueEnemyType::ShockPillar)
+	{
+		DecideContactAttack(DeltaSeconds);
+	}
 	DecideRangedAttack(PlayerCharacter, DistanceToPlayer, DeltaSeconds);
 }
 
@@ -683,7 +690,7 @@ void ARogueEnemy::HandleDefaultBehavior(float DeltaSeconds)
 
 void ARogueEnemy::GrantAttackAbilities()
 {
-	// 敌人没有"本人客户端"，能力只在服务端有；客户端连技能列表都没有（ServerOnly）。
+	// 敌人攻击由服务端授予；ServerOnly 指执行策略，技能列表是否复制由 ASC 的复制条件决定。
 	if (!HasAuthority() || AbilitySystemComponent == nullptr)
 	{
 		return;
@@ -749,9 +756,8 @@ void ARogueEnemy::GrantAttackAbilities()
 
 	// ---- ② 回退：按原型标志推导（改造前的硬编码逻辑，老数据表走这条）----
 
-	// 用地面波的敌人（震荡柱）不贴身打人 —— 改造前 HandleDefaultBehavior 里
-	// `if (bUsesGroundWave) { HandleGroundWaveAttack(); return; }` 就是这个语义。
-	if (!CurrentArchetype.GroundWave.bUsesGroundWave)
+	// 震荡柱只发射弹幕；保留旧地面波原型不贴身攻击的行为。
+	if (EnemyType != ERogueEnemyType::ShockPillar && !CurrentArchetype.GroundWave.bUsesGroundWave)
 	{
 		ContactAttackAbilityHandle = AbilitySystemComponent->GiveAbility(
 			FGameplayAbilitySpec(URogueEnemyContactAttackAbility::StaticClass(), /*Level=*/1, /*InputID=*/INDEX_NONE, /*SourceObject=*/this));
@@ -782,13 +788,8 @@ bool ARogueEnemy::TryActivateAttackAbility(const FGameplayAbilitySpecHandle& Han
 
 void ARogueEnemy::BackOffMissingAttack(float& Timer, const FGameplayAbilitySpecHandle& Handle)
 {
-	// 能力句柄无效 = 这只怪身上根本没有这种攻击能力（结构性问题，不是"这次不能打"）。
-	// 不处理的话 AI 会**每帧**重试一次注定失败的激活：实测在 200 敌人压测里
-	// （用 Rogue.SelfTest.DisableEnemyAttackAbilities 人为关掉授予）跑出了 370 万次空转尝试。
-	// 这里退避半秒，代价是"能力真的缺失时"最多晚半秒才发现，收益是不会有每帧空转。
-	//
-	// ⚠️ 只在**句柄无效**时退避，不在"激活被冷却挡住"时退避 ——
-	// 后者是正常情况（冷却 GE 与 AI 节流可能差一帧），退避会让攻击变慢。
+	// 缺失句柄时至少退避 0.5s，避免满足距离条件后每 Tick 重试。
+	// 有效句柄的激活失败可能由正常冷却/标签阻挡造成，这里不额外延长节拍。
 	if (!Handle.IsValid())
 	{
 		Timer = FMath::Max(Timer, 0.5f);
@@ -914,7 +915,6 @@ void ARogueEnemy::DecideGroundWaveAttack(ARogueCharacter* PlayerCharacter, float
 	// 冷却在"波结束"时由能力给（改造前是 UpdateGroundWave 结束分支里设 GroundWaveAttackTimer），
 	// 所以这里激活成功后不动计时器 —— 动了就会变成"起波即冷却"。
 	RogueEnemyAttackStats::CountGroundWaveAttempt();
-	TryActivateAttackAbility(GroundWaveAttackAbilityHandle);
 	if (!TryActivateAttackAbility(GroundWaveAttackAbilityHandle))
 	{
 		BackOffMissingAttack(GroundWaveAttackTimer, GroundWaveAttackAbilityHandle);
@@ -959,7 +959,7 @@ bool ARogueEnemy::ExecuteContactAttack()
 bool ARogueEnemy::ExecuteRangedAttack()
 {
 	ARogueCharacter* PlayerCharacter = GetPlayerCharacter();
-	if (!IsValid(PlayerCharacter) || GetWorld() == nullptr)
+	if (!HasAuthority() || bDead || bPoolAvailable || !IsValid(PlayerCharacter) || GetWorld() == nullptr)
 	{
 		return false;
 	}
@@ -1036,19 +1036,16 @@ void ARogueEnemy::InitializeEnemy(const FRogueEnemyProfile& InProfile)
 
 	// 通知蓝图子类初始化完成
 	OnEnemyInitialized(InProfile);
+	ConfigureGroundedCollision();
 
-	// ⚠️ 攻击能力必须**在这里**授予，而不是 ActivatePooledEnemy 里：
-	//    生成方的调用顺序是 ActivatePooledEnemy() → InitializeEnemy()
-	//    （见 URogueSpawnSubsystem::SpawnEnemy），而 CurrentArchetype 是本函数上面才赋值的。
-	//    在 ActivatePooledEnemy 里授予会照着**上一只怪**的原型发技能
-	//    （第一次生成时甚至是默认原型）—— 症状是"远程怪不会远程、震荡柱不起波"，
-	//    而且因为技能列表看起来正常，日志里一点报错都没有。
-	//    ASC->ResetForPool() 已经在 ActivatePooledEnemy 里跑过，所以这里是干净的。
+	// 生成顺序为 ActivatePooledEnemy → InitializeEnemy。先清旧 ASC 状态，
+	// 再按本次已加载的 CurrentArchetype 授予，避免使用上次池周期的原型。
 	GrantAttackAbilities();
 }
 
 void ARogueEnemy::ActivatePooledEnemy(AActor* InOwner, const FVector& SpawnLocation, const FRotator& SpawnRotation)
 {
+	ConfigureGroundedCollision();
 	SetOwner(InOwner);
 	SetActorLocationAndRotation(SpawnLocation, SpawnRotation, false, nullptr, ETeleportType::TeleportPhysics);
 	SetActorHiddenInGame(false);
@@ -1068,9 +1065,7 @@ void ARogueEnemy::ActivatePooledEnemy(AActor* InOwner, const FVector& SpawnLocat
 		AbilitySystemComponent->ResetForPool();
 	}
 
-	// 攻击能力的授予**不在这里**：本函数由生成方在 InitializeEnemy() **之前**调用
-	// （见 URogueSpawnSubsystem::SpawnEnemy），这时 CurrentArchetype 还是上一只留下的值，
-	// 照着它授予会得到"错的攻击组合"。所以授予放在 InitializeEnemy() 的末尾。
+	// 攻击能力待 InitializeEnemy 设置本次原型后授予。
 
 	if (UCapsuleComponent* Capsule = GetCapsuleComponent())
 	{
@@ -1102,6 +1097,7 @@ void ARogueEnemy::ActivatePooledEnemy(AActor* InOwner, const FVector& SpawnLocat
 
 	// 通知蓝图子类
 	OnEnemyActivated();
+	ConfigureGroundedCollision();
 }
 
 void ARogueEnemy::DeactivateToPool()
@@ -1124,8 +1120,7 @@ void ARogueEnemy::DeactivateToPool()
 	bDead = true;
 	CurrentHealth = 0.0f;
 
-	// bReplicatedActive 是**权威独占**的状态位：客户端写它等于破坏刚复制到的真实值
-	// （客户端的 BeginPlay 与死亡处理都会走到这里，见 BeginPlay 里的说明）。
+	// 只允许权威端写复制的在场位；客户端通过 OnRep 应用已收到的状态。
 	if (HasAuthority())
 	{
 		bReplicatedActive = false;
@@ -1133,8 +1128,7 @@ void ARogueEnemy::DeactivateToPool()
 	ContactTimer = 0.0f;
 	RangedAttackTimer = 0.0f;
 	GroundWaveAttackTimer = 0.0f;
-	// 攻击能力句柄一并作废：技能列表已经在下次激活时被 ResetForPool 清掉，
-	// 留着旧句柄只会在日志里出现"激活了一个不存在的技能"这种噪音。
+	// 当前池周期结束，立即作废句柄；技能列表由下次激活的 ResetForPool 清理。
 	ContactAttackAbilityHandle = FGameplayAbilitySpecHandle();
 	RangedAttackAbilityHandle = FGameplayAbilitySpecHandle();
 	GroundWaveAttackAbilityHandle = FGameplayAbilitySpecHandle();
@@ -1282,6 +1276,8 @@ void ARogueEnemy::MoveInDirection(const FVector& Direction, float SpeedMultiplie
 	const FRotator DesiredRotation = NormalizedDirection.Rotation();
 	SetActorRotation(FMath::RInterpTo(GetActorRotation(), DesiredRotation, DeltaSeconds, 8.0f));
 	AddActorWorldOffset(NormalizedDirection * MoveSpeed * SpeedMultiplier * DeltaSeconds, true);
+	// 手动平移绕过了 CharacterMovement 的位移，不能继续沿用旧位置的地面缓存。
+	GetCharacterMovement()->bForceNextFloorCheck = true;
 }
 
 void ARogueEnemy::PerformContactDamage(float DeltaSeconds)
@@ -1415,8 +1411,22 @@ void ARogueEnemy::FireRangedShot(ARogueCharacter* PlayerCharacter)
 	// 本函数是"开火"的唯一出口，测试里出现过"玩家已经倒地、怪物仍然每秒朝他开一枪"
 	// （伤害被 State.Dead 闸门挡下，所以只表现为一堆无意义弹体和特效）。
 	// 把闸门放在出口上，无论上游是谁调用的都拦得住。
-	if (!PlayerCharacter->IsAlive())
+	if (!HasAuthority() || bDead || bPoolAvailable || !PlayerCharacter->IsAlive())
 	{
+		return;
+	}
+
+	const FRogueEnemyRangedArchetype& RangedArchetype = CurrentArchetype.Ranged;
+	if (RangedArchetype.ShotPattern == ERogueEnemyShotPattern::RadialRing)
+	{
+		const FRogueEnemyBulletRingSettings Settings = RangedArchetype.BulletRing.Sanitized();
+		const UCapsuleComponent* Capsule = GetCapsuleComponent();
+		const FVector Center = GetActorLocation() + FVector(0.0f, 0.0f,
+			-Capsule->GetScaledCapsuleHalfHeight() + Settings.HeightAboveGround);
+		const float SpawnRadius = Capsule->GetScaledCapsuleRadius() + 24.0f;
+		const float StartYaw = GetActorRotation().Yaw;
+		SpawnBulletRing(Center, StartYaw, SpawnRadius, Settings, ContactDamage * Settings.DamageMultiplier);
+		Multicast_SpawnCosmeticBulletRing(Center, StartYaw, SpawnRadius, Settings);
 		return;
 	}
 
@@ -1428,7 +1438,6 @@ void ARogueEnemy::FireRangedShot(ARogueCharacter* PlayerCharacter)
 		return;
 	}
 
-	const FRogueEnemyRangedArchetype& RangedArchetype = CurrentArchetype.Ranged;
 	const FVector ShotDirection = ShotVector.GetSafeNormal();
 	const FVector RightVector = FVector::CrossProduct(ShotDirection, FVector::UpVector).GetSafeNormal();
 	FActorSpawnParameters SpawnParameters;
@@ -1683,7 +1692,7 @@ void ARogueEnemy::Die(AActor* Killer)
 
 void ARogueEnemy::ApplyEnemyStyle()
 {
-	const bool bIsShockPillar = EnemyType == ERogueEnemyType::ShockPillar && CurrentArchetype.GroundWave.bUsesGroundWave;
+	const bool bIsShockPillar = EnemyType == ERogueEnemyType::ShockPillar;
 	const bool bShowBuiltInShockPillar = bIsShockPillar && bUseBuiltInShockPillarVisual;
 	if (ShockPillarMesh != nullptr)
 	{
@@ -1759,42 +1768,6 @@ void ARogueEnemy::ApplyEnemyStyle()
 
 	OnApplyVisualStyle();
 
-	/*
-	if (BodyMesh == nullptr)
-	{
-		return;
-	}
-
-	const FRogueEnemyVisualArchetype& VisualArchetype = CurrentArchetype.Visual;
-	FRogueEnemyVisualResourceSelection VisualSelection = RogueEnemyVisualResources::ResolveSelection(VisualResourceLibrary, VisualArchetype.VisualKey);
-	UStaticMesh* SelectedMesh = VisualSelection.Mesh;
-	UMaterialInterface* SelectedMaterial = VisualSelection.Material;
-
-	if (VisualArchetype.bUseBossMaterialOverride)
-	{
-		SelectedMaterial = VisualResourceLibrary.BossMaterial != nullptr ? VisualResourceLibrary.BossMaterial : SelectedMaterial;
-	}
-
-	GetCapsuleComponent()->SetCapsuleSize(VisualArchetype.CapsuleRadius, VisualArchetype.CapsuleHalfHeight);
-
-	if (SelectedMesh != nullptr)
-	{
-		BodyMesh->SetStaticMesh(SelectedMesh);
-	}
-
-	if (SelectedMaterial != nullptr)
-	{
-		BodyMesh->SetMaterial(0, SelectedMaterial);
-	}
-
-	BodyMesh->SetRelativeLocation(VisualArchetype.MeshLocation);
-	BodyMesh->SetRelativeRotation(VisualArchetype.MeshRotation);
-	BodyMesh->SetRelativeScale3D(VisualArchetype.MeshScale);
-	GetCharacterMovement()->MaxWalkSpeed = MoveSpeed;
-
-	// 通知蓝图子类可自定义外观
-	OnApplyVisualStyle();
-	*/
 }
 
 // ===========================================================

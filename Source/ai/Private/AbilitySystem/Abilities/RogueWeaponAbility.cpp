@@ -23,8 +23,8 @@ URogueWeaponAbility::URogueWeaponAbility()
 	// 一个武器一份实例：每把武器都有自己的冷却句柄与缓存，必须是独立实例。
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 
-	// LocalPredicted：本人在本机预测开火（零延迟手感，改造前就是这样），
-	// 服务端由这条激活请求在自己的 ASC 上跑一份权威的。别人的客户端不参与。
+	// 拥有者与服务端分别执行能力；其他客户端不执行这份拥有者能力。
+	// 自定义开火、冷却和表现并不会仅因 LocalPredicted 就获得完整预测校正。
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
 
 	// 持续能力不允许"再来一次"：重复激活没有意义，还会把冷却句柄弄乱。
@@ -37,10 +37,8 @@ URogueWeaponAbility::URogueWeaponAbility()
 	AutoAttackTags.AddTag(RogueGameplayTags::Ability_WeaponAutoAttack);
 	SetAssetTags(AutoAttackTags);
 
-	// 刻意**不**加 ActivationBlockedTags = State.Dead：
-	// 死亡时能力的循环自己会停（见 RunFireLoopStep 第 0 步），而"倒地时连激活都被挡"
-	// 会让"加载时就已经倒地"的客户端永远激活不了这份能力（本项目踩过一次同类坑：
-	// 诊断代码被 bDead 早退挡掉，看起来像功能失效）。等复活后循环自然恢复。
+	// 不用死亡标签阻止本持续能力激活；循环按角色状态暂停，存活后可继续。
+	// 本策略依赖角色生命周期保持能力/武器有效，不能概括为所有死亡重生方式均自动恢复。
 }
 
 void URogueWeaponAbility::ActivateAbility(
@@ -49,9 +47,7 @@ void URogueWeaponAbility::ActivateAbility(
 	const FGameplayAbilityActivationInfo ActivationInfo,
 	const FGameplayEventData* TriggerEventData)
 {
-	// 武器解析不出来（例如本机武器还没生成、或技能先于武器到达）就**不激活**：
-	// 调用方每帧会重试，等条件具备再激活。这样比"先激活再每帧判空"更干净 ——
-	// 后者会在日志里留下一堆"激活了但什么也没做"的实例。
+	// 武器尚未生成/解析失败时立即结束；角色的 EnsureWeaponAbilities 后续会重试。
 	if (GetDrivenWeapon() == nullptr)
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, /*bReplicateEndAbility=*/false, /*bWasCancelled=*/false);
@@ -67,8 +63,7 @@ void URogueWeaponAbility::ActivateAbility(
 		FireLoopTask->ReadyForActivation();
 	}
 
-	// 激活只发生一次（持续能力），所以这条日志不会刷屏；
-	// 但它能一眼看出"哪台机器上、哪把武器进入了能力驱动"。
+	// 记录每次成功进入循环的实例；取消后重新激活或角色重建时还会再次记录。
 	UE_LOG(LogTemp, Log, TEXT("[武器技能] %s 已激活：驱动武器=%s（本机=%s 玩家=%s）"),
 		*GetClass()->GetName(),
 		*GetNameSafe(GetDrivenWeapon()),
@@ -84,9 +79,7 @@ bool URogueWeaponAbility::RunFireLoopStep(float DeltaSeconds)
 		return false;
 	}
 
-	// 0) 拥有者状态。改造前 ARogueCharacter::Tick 在 `if (bDead) return;` 之后就不到
-	//    TickWeapons 了，也就是"倒地期间所有武器停火、复活后自动恢复"。
-	//    这里用同一条判据，行为不变。
+	// 0) 非存活期间暂停本次循环，保留持续能力供复活后继续使用。
 	const ARogueCharacter* Character = GetOwnerCharacter();
 	if (Character == nullptr || Character->IsDead())
 	{
@@ -103,7 +96,7 @@ bool URogueWeaponAbility::RunFireLoopStep(float DeltaSeconds)
 		return false;
 	}
 
-	// 2) 冷却：**唯一真相源是 ASC 上的冷却 GE**，不是武器里的 float 计时器。
+	// 目标型武器检查本地句柄对应的冷却 GE；服务端与拥有者各自维护实例。
 	if (IsWeaponCoolingDown())
 	{
 		return false;
@@ -185,10 +178,9 @@ void URogueWeaponAbility::StampWeaponCooldown(float Seconds)
 		return;
 	}
 
-	// 先清掉上一发的冷却再施加新的：ApplyGameplayEffectSpecToSelf 默认是"叠加"语义，
-	// 不清的话同一把武器身上会挂着好几个冷却 GE，而句柄只记住最后一个 ——
-	// 表现就是"冷却偶尔变得很长"（前一个更长的还在跑）。改造前是 `Timer = Cooldown` 直接覆盖，
-	// 语义就是"覆盖"，所以这里显式对齐。
+	// 显式移除本句柄记录的上一个效果，再应用本次冷却。
+	// 该 GE 未配置 Stacking，多次应用可产生独立实例；本循环只检查所保存的句柄。
+	// 因此旧实例未清理会残留状态/开销，但并不会自动延长本句柄查询到的冷却。
 	if (CooldownHandle.IsValid())
 	{
 		ASC->RemoveActiveGameplayEffect(CooldownHandle);
@@ -213,23 +205,12 @@ void URogueWeaponAbility::StampWeaponCooldown(float Seconds)
 	// "加成怎么换算成冷却"是武器的知识，GE 只负责按这个秒数计时。
 	SpecHandle.Data->SetSetByCallerMagnitude(RogueGameplayTags::Data_Cooldown, Seconds);
 
-	// ⚠️⚠️ 施加冷却 GE 必须**显式带上这次激活的预测键**。踩过的坑（完整链路）：
-	//
-	//   1) 一开始用 `ASC->ApplyGameplayEffectSpecToSelf(Spec)`（不带预测键）。
-	//      引擎在 `HasNetworkAuthorityToApplyGameplayEffect` 里有硬规则：
-	//      `IsOwnerActorAuthoritative() || PredictionKey.IsValidForMorePrediction()`
-	//      （AbilitySystemComponent.cpp:383）。客户端两者都不满足 → 返回**空句柄**。
-	//   2) 于是改成引擎自己的写法 `ApplyGameplayEffectSpecToOwner(...)`（ApplyCooldown 就这么写）。
-	//      结果客户端**依然是空句柄** —— 因为它内部用的是
-	//      `GetPredictionKeyForNewAction()`（GameplayAbility.cpp 的 ApplyGameplayEffectSpecToOwner），
-	//      那个键只有在**预测窗口内**（即能力激活的调用栈里）才有效；
-	//      而我们的调用发生在逐帧心跳任务 `TickTask` 里，窗口早就关了。
-	//   3) 正确做法：用 `CurrentActivationInfo.GetActivationPredictionKey()` ——
-	//      它是这次激活的预测键，实测在客户端上"有效/本地客户端键/可继续预测"三项都为真。
-	//
-	// 失效时的症状非常隐蔽：冷却 GE 挂不上 → IsWeaponCoolingDown() 恒为假 →
-	// **这把武器每帧开一枪**（实测客户端火箭 1531 发 / 迫击炮 9486 发，服务端只有 11/71）。
-	// 所以下面保留了显式报错。
+	// 当前每次心跳复用激活时的 PredictionKey。权威端可直接应用；客户端需有效预测键。
+	// UE 5.5 的 IsValidForMorePrediction 仅检查本地客户端键形态，不证明该动作
+	// 仍处于有效预测窗口，或服务器会为本次开火生成一一对应的确认。
+	// 预测 GE 会在键拒绝/追平时移除；当前实现没有为后续每次开火创建并同步新预测窗口，
+	// 也没有把 CooldownHandle 重新映射为确认后的实例，不能视为完整的持续开火预测方案。
+	// 下方日志仅能检测立即应用失败，不能验证长期同步正确性。
 	const FPredictionKey ActivationPredictionKey = CurrentActivationInfo.GetActivationPredictionKey();
 	const FActiveGameplayEffectHandle NewHandle =
 		ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get(), ActivationPredictionKey);
@@ -268,10 +249,8 @@ ARogueWeaponBase* URogueWeaponAbility::GetDrivenWeapon() const
 		return nullptr;
 	}
 
-	// 按**类**找武器：每类武器在角色身上只有一把（ARogueCharacter::InitializeWeapons
-	// 按 DT_WeaponConfig 每行生成一把，缺迫击炮时再补一把）。
-	// 之所以能这么找：武器是本机各自生成的本地 Actor（不复制），
-	// 而"类"两端都知道，所以这是唯一不需要额外复制字段的身份。
+	// 本地武器由各端生成，不复制；按类型匹配对应实例。
+	// 当前约定每个类型仅一把，若允许同类多把需增加可跨端对应的稳定身份。
 	for (ARogueWeaponBase* Weapon : Character->GetWeapons())
 	{
 		if (IsValid(Weapon) && Weapon->GetClass() == WeaponClass.Get())
@@ -289,12 +268,8 @@ ARogueCharacter* URogueWeaponAbility::GetOwnerCharacter() const
 	return Cast<ARogueCharacter>(GetAvatarActorFromActorInfo());
 }
 
-// ===========================================================
-//  六把武器的能力子类：一行"我驱动哪把武器"
-// ===========================================================
-//  刻意不把这些映射写进数据表：DT_WeaponConfig 的架构（列与行）是"数据资产唯一入口"
-//  这条约束的一部分，不该为了 C++ 类型映射去加列。这也和武器侧的
-//  GetCountUpgradeType()（每把武器硬编码自己的数量升级类型）是同一种做法。
+// 每个能力子类返回对应武器类型，与武器 GetFireAbilityClass 构成配对映射。
+// 新增武器类型时需同时维护两个方向。
 
 TSubclassOf<ARogueWeaponBase> URogueWeaponAbility_Projectile::GetDrivenWeaponClass() const
 {

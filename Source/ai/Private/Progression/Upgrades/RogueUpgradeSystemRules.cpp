@@ -26,18 +26,19 @@ namespace
 
 	int32 GetWeaponSourceCount(const ARogueCharacter& Character, ERogueWeaponUpgradeSource Source)
 	{
+		// 解锁奖励保存在 GAS 加成中；前置条件与实际开火共用合并并应用上限后的数量。
 		switch (Source)
 		{
 		case ERogueWeaponUpgradeSource::Scythe:
-			return Character.GetScytheCount();
+			return Character.GetEffectiveScytheCount();
 		case ERogueWeaponUpgradeSource::Rocket:
-			return Character.GetRocketLauncherCount();
+			return Character.GetEffectiveRocketLauncherCount();
 		case ERogueWeaponUpgradeSource::Laser:
-			return Character.GetLaserCannonCount();
+			return Character.GetEffectiveLaserCannonCount();
 		case ERogueWeaponUpgradeSource::HellTower:
-			return Character.GetHellTowerCount();
+			return Character.GetEffectiveHellTowerCount();
 		case ERogueWeaponUpgradeSource::Mortar:
-			return Character.GetMortarCount();
+			return Character.GetEffectiveMortarCount();
 		default:
 			return 0;
 		}
@@ -142,7 +143,7 @@ namespace
 		if (!bHasMortarRule)
 		{
 			OutTypes.AddUnique(ERogueUpgradeType::MortarCount);
-			if (Character.GetMortarCount() > 0)
+			if (GetWeaponSourceCount(Character, ERogueWeaponUpgradeSource::Mortar) > 0)
 			{
 				OutTypes.AddUnique(ERogueUpgradeType::MortarBlastRadius);
 			}
@@ -175,10 +176,21 @@ void RogueUpgradeSystemRules::BuildUpgradePool(TArray<ERogueUpgradeType>& OutTyp
 	if (Character == nullptr)
 	{
 		AppendDefaultWeaponUpgradeTypes(OutTypes, RuleAsset);
+		// 镰刀尺寸升级需要实际武器，不能由无角色的通用池提供。
+		OutTypes.Remove(ERogueUpgradeType::ScytheSize);
 		return;
 	}
 
 	AppendCharacterSpecificUpgradeTypes(OutTypes, *Character, RuleAsset);
+	// 对默认规则和自定义资产共用同一前置，避免被误放进基础池后提前出现。
+	if (Character->GetEffectiveScytheCount() > 0)
+	{
+		OutTypes.AddUnique(ERogueUpgradeType::ScytheSize);
+	}
+	else
+	{
+		OutTypes.Remove(ERogueUpgradeType::ScytheSize);
+	}
 }
 
 

@@ -30,10 +30,10 @@ struct AI_API FRogueCombatPoolPrewarmClasses
 /** 单个池的运行时诊断数据（不参与反射，纯 C++ 统计） */
 struct FRoguePoolRuntime
 {
-	/** 环形扫描起点：上次命中位置 +1。避免每次都从池尾重扫整个池 */
+	/** 环形扫描起点：上次命中位置 +1；最坏仍需遍历整个池 */
 	int32 Cursor = 0;
 
-	/** 累计"池内未命中 → 运行时新建"的次数。>0 就说明预热不够，需要调高预热量 */
+	/** 池内未命中后尝试运行时 SpawnActor 的累计次数（含生成失败）。需结合类匹配、占用率与内存预算判断是否增加预热 */
 	int32 RuntimeSpawnCount = 0;
 
 	/** 池达到过的最大长度，用来反推"到底该预热多少" */
@@ -63,8 +63,7 @@ public:
 	ARogueLaserBeam* AcquireLaserBeam(UWorld* World, TSubclassOf<ARogueLaserBeam> BeamClass, AActor* OwnerActor, const FVector& SpawnLocation, const FRotator& SpawnRotation);
 	ARogueOrbitingBlade* AcquireOrbitingBlade(UWorld* World, TSubclassOf<ARogueOrbitingBlade> BladeClass, AActor* OwnerActor, const FVector& SpawnLocation, const FRotator& SpawnRotation);
 
-	/** 打印所有池的运行时诊断（池大小 / 峰值 / 运行时新建次数）。
-	 *  排查"池够不够"用：RuntimeSpawnCount > 0 就说明该调高对应的预热量。 */
+	/** 打印池大小、记录的峰值与运行时生成尝试次数；用于定位容量或类配置问题。 */
 	void LogPoolDiagnostics();
 
 private:

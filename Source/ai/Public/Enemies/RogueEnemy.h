@@ -38,24 +38,21 @@ public:
 	virtual void Tick(float DeltaSeconds) override;
 
 	// ---- GAS ----
-	// 敌人的 ASC 挂在**敌人自己**身上（OwnerActor = AvatarActor = this）：
-	// 敌人没有 PlayerState 那一层，也不需要跨 Pawn 重生保留状态。
-	// ReplicationMode = Minimal（在 URogueAbilitySystemComponent 构造里设）：
-	//   服务端权威跑 AI 与全部 GE 结算；
-	//   客户端只收属性同步（血条）与 GameplayCue（特效），不收 GE 明细。
+	// 敌人持有自己的 ASC（OwnerActor = AvatarActor = this），构造时 ConfigureAsEnemy。
+	// Minimal 模式不复制活动 GE 明细；标签/Cue 及已声明复制的属性仍可同步。
+	// 攻击能力由服务端授予并激活，AI 默认行为也在服务端执行。
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
-	/** 服务端 → 所有客户端：在本地生成一发**纯表现**的敌方弹体。
-	 *
-	 *  为什么不直接复制弹体 actor：弹体数量大、生命周期短、而且走对象池，
-	 *  逐个复制 actor 会和池复用冲突（回收/复用的瞬间状态会乱）。
-	 *  而弹体的**逻辑**（命中、伤害、回收）现在全在服务端，
-	 *  客户端只需要"看起来有一发弹从敌人身上飞出去"，所以用广播让各端各自本地生成。
-	 *
-	 *  Unreliable：掉一发纯表现弹体无所谓；用 Reliable 反而会在丢包时堆积重传。 */
+	/** 服务端调用的不可靠表现多播；在接收该敌人 RPC 的相关客户端生成零伤害弹体。
+	 *  权威弹体单独在服务器模拟，客户端不复制每发弹体 Actor；丢失表现消息可造成少画一发。
+	 *  可靠性、相关性与 Actor 通道共同决定接收范围，不保证所有客户端收到。 */
 	UFUNCTION(NetMulticast, Unreliable)
 	void Multicast_SpawnCosmeticProjectile(FVector_NetQuantize SpawnLocation, FVector_NetQuantizeNormal Direction, float Speed, bool bLargeVisual);
+
+	/** 整圈只发送一条可靠消息；客户端在本地对象池中重建零伤害弹幕。 */
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_SpawnCosmeticBulletRing(FVector_NetQuantize Center, float StartYaw, float SpawnRadius, const FRogueEnemyBulletRingSettings& Settings);
 
 	URogueAttributeSet* GetRogueAttributeSet() const { return AttributeSet; }
 
@@ -171,7 +168,7 @@ public:
 	//  行为树/蓝图可调用的动作接口
 	// ===========================================================
 
-	/** 获取**当前锁定的目标玩家**（联机下 = 活着的玩家里最近的那一个） */
+	/** 获取当前有效的缓存目标；刷新时选择最近存活玩家，刷新间隔内不保证仍是最近者 */
 	UFUNCTION(BlueprintCallable, Category = "Enemy|Action")
 	ARogueCharacter* GetPlayerCharacter() const;
 
@@ -228,13 +225,10 @@ public:
 	void SetRangedAttackCooldown(float NewCooldown);
 
 	// ===========================================================
-	//  攻击能力接口（Phase 3：AI 只决定"要不要打"，能力负责"怎么打"）
+	//  攻击能力接口
 	// ===========================================================
-	//
-	// 为什么要分这层：`ARogueEnemy::Tick` 每帧都要为 200+ 敌人跑一遍，
-	// 而 GAS 的一次激活（标签检查、冷却查询、实例取用）比一次距离比较贵得多。
-	// 所以决策留在 AI（纯 float + 距离判断），只有**真的决定要打**时才进 GAS；
-	// GAS 的调用次数因此与"实际攻击次数"成正比，而不是"敌人数量 × 帧数"。
+	// AI 先检查距离/计时器，再尝试激活攻击能力；伤害执行由能力调用下方接口。
+	// 激活失败可能在后续 Tick 重试，调用数不等同于成功攻击数。
 
 	/** 本敌人能用的攻击能力句柄（服务端授予后填写；无效句柄 = 这种攻击不适用）。 */
 	FGameplayAbilitySpecHandle ContactAttackAbilityHandle;
@@ -260,7 +254,7 @@ public:
 	/** 接触攻击：对**所有**贴身玩家各结算一次。返回是否打到了人。 */
 	bool ExecuteContactAttack();
 
-	/** 远程攻击：对当前锁定目标打一发。返回是否真的打出去了。 */
+	/** 远程攻击：按原型发射单弹、扇形或整圈弹幕。返回是否执行了发射。 */
 	bool ExecuteRangedAttack();
 
 	/** 地面波：起一波 / 推进一帧（推进由持续型能力逐帧调用）。 */
@@ -308,6 +302,7 @@ public:
 	void OnGroundWaveFinished();
 
 protected:
+	virtual void PostInitializeComponents() override;
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
@@ -319,11 +314,8 @@ protected:
 	UPROPERTY(VisibleAnywhere, Category = "Enemy|GAS")
 	TObjectPtr<URogueAbilitySystemComponent> AbilitySystemComponent;
 
-	/** 属性集。与玩家共用同一个 URogueAttributeSet —— 敌人只用到其中
-	 *  Health / MaxHealth / Damage(元属性) / DamageReductionPercent 这几项，
-	 *  其余玩家专属属性在敌人身上恒为 0。
-	 *  取舍：拆成"共享血量集 + 玩家专属集"更干净，但要动已经跑通的玩家侧；
-	 *  当前规模下一套共用集更省事，代价只是敌人多带几个恒定空的浮点。 */
+	/** 与玩家共用属性集类型；敌人初始化写生命并清零护甲、减伤和 Damage 元属性。
+	 *  其余属性仍有属性集默认值，不能假定恒为 0。 */
 	UPROPERTY(VisibleAnywhere, Category = "Enemy|GAS")
 	TObjectPtr<URogueAttributeSet> AttributeSet;
 
@@ -341,15 +333,13 @@ protected:
 	/** State.Dead 标签出现 → 安排死亡处理。
 	 *  不在这里直接调 Die()：这个回调是在"施加死亡 GE"的过程中被触发的，
 	 *  而 Die() → DeactivateToPool() → ResetForPool() 会去移除那个 GE，
-	 *  在它自己的标签回调里移除它就是重入。所以延到本帧末尾处理。 */
+	 *  在它自己的标签回调里移除它就是重入。所以用 SetTimerForNextTick 移出当前调用栈。 */
 	void HandleDeathTagChanged(FGameplayTag Tag, int32 NewCount);
 
-	/** 按"离玩家多远"分档调整网络复制频率（只有服务端有效）。
-	 *  敌人数量最多、单体最不重要，是复制预算里最先要压的一类：
-	 *  预热量 160、后期存活上限 250+，按默认 100Hz 会产生 2.5 万次/秒量级的更新尝试。 */
+	/** 服务端按当前目标距离设置复制频率预算；不是每连接独立频率，也不保证实际发送频率。 */
 	void UpdateReplicationBudget(float DistanceToPlayer);
 
-	/** 延后执行的死亡处理（本帧末尾） */
+	/** 通过 SetTimerForNextTick 延后执行的死亡处理 */
 	void ProcessDeath();
 
 	/** 死亡处理已排队（防止标签回调与 Tick 重复触发） */
@@ -362,7 +352,7 @@ protected:
 	 *  初始化写入不是战斗伤害，必须排除掉。 */
 	bool bSuppressDamageFeedback = false;
 
-	/** 弹一次伤害飘字（带 0.12s 节流 + 窗口内累加） */
+	/** 提交伤害飘字：普通敌人 0.12s、Boss 0.06s 节流，窗口内累加 */
 	void ShowDamageNumber(float AppliedDamage);
 
 	// ===========================================================
@@ -372,9 +362,6 @@ protected:
 	/** 敌人原型配置表（DataTable），如果设置则优先从表中读取原型数据 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Config", meta = (DisplayName = "敌人原型配置表"))
 	TObjectPtr<UDataTable> EnemyArchetypeDataTable;
-
-	//UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Enemy|Components")
-	//TObjectPtr<UStaticMeshComponent> BodyMesh;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "敌人|组件", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UStaticMeshComponent> ShockPillarMesh;
@@ -401,11 +388,8 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "敌人|震荡柱|视觉", meta = (DisplayName = "地面波材质"))
 	TObjectPtr<UMaterialInterface> ShockWaveMaterial;
 
-	// ---- 战斗数值（**每次从池里激活时被 FRogueEnemyProfile 覆盖**）----
-	// ⚠️ 这些值不由蓝图默认值决定：ARogueEnemy::InitializeEnemy() 会用刷怪方传进来的
-	// FRogueEnemyProfile（来自 GameMode / DT_FRogueEnemyArchetypeRow）重写它们，
-	// 所以想调数值请改数据表或平衡资产，改这里的默认值不会有任何效果。
-	// 保留 EditAnywhere 是为了运行时调试与蓝图特例（例如某个 Boss 想临时放大血量）。
+	// InitializeEnemy 按 Profile 重写血量、移速、接触伤害、类型与奖励；ContactInterval 保留配置值。
+	// 实际血量以 AttributeSet 为准，CurrentHealth 为镜像，直接改镜像不等于修改 GAS 血量。
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Stats")
 	float MaxHealth = 40.0f;
@@ -465,14 +449,8 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "Enemy|Runtime")
 	float GroundWaveElapsed = 0.0f;
 
-	// ---- 地面波的**表现态**（复制给客户端）----
-	// 为什么这几个要复制：AI 现在只在服务端跑（见 Tick），客户端的震荡柱不会再自己
-	// 推进地面波；但那条扩散的波纹必须看得见，所以把"扩散到哪了"作为状态同步过去，
-	// 客户端据此自己更新环形视觉。
-	//
-	// 复制的是半径/透明度而不是发 RPC：地面波是**连续变化**的，
-	// 逐帧广播 RPC 既费带宽又会被不可靠通道丢包导致视觉跳变；
-	// 复制状态则由引擎按变化量自动节流，丢包后下一帧自然追上。
+	// 服务端复制地面波状态，客户端据已收到的半径/进度刷新视觉。
+	// GroundWaveAlpha 是扩散进度；复制不是逐帧保证，延迟/丢包仍可能造成跳变。
 
 	UPROPERTY(BlueprintReadOnly, Replicated, Category = "Enemy|Runtime")
 	bool bGroundWaveActive = false;
@@ -491,16 +469,14 @@ protected:
 
 	float LastDamageNumberTime = -100.0f;
 
-	/** 伤害飘字节流窗口内攒下的伤害，窗口打开时一起弹出（保证飘字总量 == 实际掉血量） */
+	/** 节流窗口累积伤害，在下一次符合间隔的伤害事件到来时合并显示；回池前未刷出的尾项会清零 */
 	float PendingDamageNumber = 0.0f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Enemy|Runtime")
 	TWeakObjectPtr<ARogueCharacter> CachedPlayerCharacter;
 
-	/** 目标重选节流（秒）。
-	 *  选目标要在"所有玩家"里比距离，没必要每帧做：0.2s 的过期在 900uu/s 下
-	 *  只有不到 200uu 的位置误差，对追赶型 AI 完全够用；
-	 *  而 250 只怪 × 每帧一次全玩家扫描是纯浪费。 */
+	/** 目标重选间隔；缓存有效时按此节流，失去存活状态时下次 Tick 立即重选。
+	 *  目标位置与距离排序在间隔内可能变化，容许误差需按玩法验证。 */
 	UPROPERTY(EditDefaultsOnly, Category = "Enemy|AI")
 	float TargetRefreshInterval = 0.2f;
 
@@ -514,10 +490,8 @@ private:
 
 	// ---- 攻击决策（AI 侧：只判断"要不要打"，打出去由能力做）----
 	//
-	// 三个函数都保持与改造前完全相同的判据（节流计时器 + 距离），
-	// 区别只在于"决定要打"之后不是直接结算，而是 TryActivateAttackAbility()。
-	// 计时器只在**激活成功**后重置：这样万一能力被挡住（例如将来加了沉默标签），
-	// AI 下一帧会再试，而不是白白等一整个冷却。
+	// 接触/远程成功激活后重置各自计时器，地面波在结束时设置冷却。
+	// 句柄缺失退避 0.5s，其他失败可在后续 Tick 重试。
 	void DecideContactAttack(float DeltaSeconds);
 	void DecideRangedAttack(ARogueCharacter* PlayerCharacter, float DistanceToPlayer, float DeltaSeconds);
 	void DecideGroundWaveAttack(ARogueCharacter* PlayerCharacter, float DistanceToPlayer, float DeltaSeconds);
@@ -528,6 +502,7 @@ private:
 	void HideGroundWave();
 	bool CanGroundWaveHitPlayer(const ARogueCharacter* PlayerCharacter) const;
 	void FireRangedShot(ARogueCharacter* PlayerCharacter);
+	void SpawnBulletRing(const FVector& Center, float StartYaw, float SpawnRadius, const FRogueEnemyBulletRingSettings& Settings, float ProjectileDamage);
 	void Die(AActor* Killer);
 	void ApplyEnemyStyle();
 	FVector GetMovementDirection(const FVector& ToPlayer, float DistanceToPlayer, float DeltaSeconds);
@@ -546,7 +521,7 @@ private:
 	 * 收集当前所有活着的玩家。
 	 * 接触伤害、地面波这类"范围判定"必须遍历全部玩家，
 	 * 不能只看当前锁定的那一个目标（否则队友站在同一圈里反而无伤）。
-	 * 用 TInlineAllocator<4> 是为了不做堆分配：联机人数上限就是 4。
+	 * TInlineAllocator<4> 为前 4 项提供内联存储，超过后仍可分配；它不限制联机人数。
 	 */
 	void GatherAlivePlayers(TArray<ARogueCharacter*, TInlineAllocator<4>>& OutPlayers) const;
 
@@ -558,19 +533,9 @@ private:
 	 */
 	TArray<TWeakObjectPtr<ARogueCharacter>, TInlineAllocator<4>> GroundWaveHitPlayers;
 
-	// ---- 联机：把"敌人在不在场"这**一位**复制给客户端 ----
-	//
-	// 为什么必须复制：ActivatePooledEnemy / DeactivateToPool 改的全是**本机状态** ——
-	//   SetActorTickEnabled / SetActorEnableCollision / bPoolAvailable / bDead，
-	//   这些都不是复制属性。于是客户端上的敌人一辈子停在"在池里 + 已死"：
-	//     · Tick 被关 → UpdateGroundWaveVisualFromReplication() 永不执行
-	//       （复制过来的地面波状态没人用 → 客户端看不到震荡柱那条扩散波纹）；
-	//     · bDead 恒真 → HandleDeathTagChanged 提前 return（客户端没有死亡表现）；
-	//     · 碰撞被关 → 客户端本地生成的弹体直接穿过敌人（打中了也没有命中特效）。
-	//   而敌人的显隐（bHidden）是复制属性，所以客户端**看得见**敌人，
-	//   只是它的"活动状态"全是错的 —— 表现上就是"主机一切正常、客队那边怪像纸片"。
-	//
-	// 只复制这一位：具体怎么表现（开 tick / 开碰撞 / 清 bDead）由各端自己决定。
+	// 复制在场标记，由客户端映射为 Tick、碰撞和本地池/死亡标记。
+	// bHidden 也独立复制；不能仅靠显隐推断其他本地活动状态。
+	// 快速回池再激活可能在复制间隔内合并，中间转换不保证逐次到达客户端。
 	UPROPERTY(ReplicatedUsing = OnRep_ReplicatedActive)
 	bool bReplicatedActive = false;
 
@@ -580,10 +545,11 @@ private:
 	/** 把复制来的"在场"状态翻译成本机状态（只在客户端做，服务端自己就是权威）。 */
 	void ApplyReplicatedActiveState();
 
+	/** 模型/配饰只显示，胶囊负责碰撞；补正旧蓝图的零重力配置。构造后与出池时应用。 */
+	void ConfigureGroundedCollision();
+
 	// ---- 出池时复用的材质实例 ----
-	// 这两个材质在本敌人身上只用一套**常量**参数（颜色/自发光），
-	// 而 ApplyEnemyStyle 每次出池都会跑 —— 每次新建 MID 等于每波数次 UObject 分配与 GC 垃圾
-	// （一局下来是数千个）。建一次缓存起来即可。
+	// 常量颜色/自发光参数的 MID 按敌人实例缓存，减少池复用时的重复 UObject 创建。
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> CachedShockPillarMID;
 

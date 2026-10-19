@@ -6,13 +6,9 @@
 
 class URogueEnemyAttackAbility;
 
-/**
- * 敌人攻击能力的逐帧心跳（与 `URogueAbilityTask_WeaponFireLoop` 同构）。
- *
- * 只有"持续到结束"的攻击需要它（地面波）。一次性攻击（接触 / 远程）在 `ActivateAbility`
- * 里干完就 `EndAbility`，一个任务都不创建 —— 200+ 敌人时这一点很重要：
- * 一次性攻击每次尝试都建任务的话，光是 UObject 分配就够呛。
- */
+/** 敌人持续攻击的逐帧任务，目前用于地面波。
+ * 接触/远程攻击在激活中完成执行并结束，不创建此任务。
+ * 所属能力结束时 GAS 通知任务清理；EndTask 本身不反向结束能力。 */
 UCLASS()
 class AI_API URogueAbilityTask_AttackTick : public UAbilityTask
 {

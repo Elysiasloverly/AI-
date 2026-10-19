@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Engine/EngineTypes.h"
 #include "RogueGameModeConfig.generated.h"
 
 USTRUCT(BlueprintType)
@@ -53,11 +54,9 @@ struct AI_API FRoguePoolSettings
 	UPROPERTY(EditAnywhere, Category = "Pools")
 	int32 InitialEnemyProjectilePoolSize = 96;
 
-	/** 敌人池预热量。
-	 *  定值依据：存活上限 = 40 + 每波 8 × (波次-1)（见 RogueGameModeRules::BuildSpawnCadence）。
-	 *  160 约等于第 16 波的存活上限；更后期的缺口由池的运行时扩容兜底，
-	 *  并会打 Warning 提示（可调 FRogueCombatPools::LogPoolDiagnostics 查看实际峰值）。
-	 *  注意：预热是启动期一次性成本（每个敌人 ≈ 亚毫秒级），不要为了"永不扩容"而盲目调大。 */
+	/** 敌人池预热量；默认 160 对应默认无 Boss 时第 16 波的存活上限（40 + 8×15）。
+	 *  运行资产、Boss 调整与硬顶可改变实际需求。池耗尽时可扩容，具体启动成本和内存应实测。
+	 *  用 FRogueCombatPools::LogPoolDiagnostics 查看池容量与运行时分配计数。 */
 	UPROPERTY(EditAnywhere, Category = "Pools")
 	int32 InitialEnemyPoolSize = 160;
 
@@ -91,17 +90,30 @@ struct AI_API FRogueSpawnSettings
 	UPROPERTY(EditAnywhere, Category = "Spawning")
 	float WaveDuration = 25.0f;
 
-	/** 第 1 波的存活敌人上限（基础上限）。
-	 *  实际上限 = 这里 + "每波存活上限增长" × (波次-1)，见 RogueGameModeRules::BuildSpawnCadence。
-	 *  增长系数与硬顶在 URogueGameBalanceAsset 上配。 */
+	/** 第 1 波的基础存活上限；按波次增长后还会应用硬顶与 Boss 在场时的减量/下限。
+	 *  参数在 GameBalanceAsset 配置，完整顺序见 BuildSpawnCadence。 */
 	UPROPERTY(EditAnywhere, Category = "Spawning")
 	int32 MaxAliveEnemies = 40;
 
 	UPROPERTY(EditAnywhere, Category = "Spawning")
 	float EnemySpawnMinimumDistance = 1100.0f;
 
-	UPROPERTY(EditAnywhere, Category = "Spawning")
+	/** 旧资产兼容字段，不再参与计算；边缘留白在关卡刷怪框上配置。 */
+	UPROPERTY()
 	float ArenaSpawnPadding = 220.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Spawning|Ground", meta = (DisplayName = "地面射线向上起点距离", ToolTip = "从参照玩家高度向上偏移，再裁剪到关卡刷怪框内，向下寻找地面。", ClampMin = "0", Units = "cm"))
+	float GroundTraceHeight = 2000.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Spawning|Ground", meta = (DisplayName = "地面射线向下检测距离", ToolTip = "射线终点相对参照玩家的向下距离；没有命中可站立地面时更换候选点。", ClampMin = "1", Units = "cm"))
+	float GroundTraceDepth = 10000.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Spawning|Ground", meta = (DisplayName = "出生胶囊离地间隙", ToolTip = "在地面和实际胶囊尺寸计算出的高度上增加此间隙，避免初始穿插。", ClampMin = "0", Units = "cm"))
+	float GroundClearance = 2.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Spawning|Ground", meta = (DisplayName = "地面射线检测通道", ToolTip = "地面需阻挡此通道，并能阻挡敌人胶囊；默认 Visibility。玩家和怪物不会被当成地面。"))
+	TEnumAsByte<ECollisionChannel> GroundTraceChannel = ECC_Visibility;
+
 };
 
 USTRUCT(BlueprintType)

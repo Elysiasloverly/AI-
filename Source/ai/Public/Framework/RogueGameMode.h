@@ -9,7 +9,7 @@
 #include "RogueGameMode.generated.h"
 
 class ARogueCharacter;
-class ARogueArena;
+class ARogueEnemySpawnRegion;
 class ARogueEnemy;
 class ARogueExperiencePickup;
 class ARogueShopTerminal;
@@ -24,6 +24,7 @@ class UPrimitiveComponent;
 class URogueUpgradeRuleAsset;
 struct FRogueCombatPoolPrewarmClasses;
 
+/** 服务端局内调度：刷怪、奖励、玩家商店/选卡协调、团灭与重开；共享显示数据交给 GameState。 */
 UCLASS()
 class AI_API ARogueGameMode : public AGameModeBase
 {
@@ -49,25 +50,17 @@ public:
 	/** 把商店快照写进各玩家的 PlayerState（服务端每帧调用，供客户端 HUD 读取与操作） */
 	void PushShopStateToPlayers();
 
-	/** 把某个玩家的商店运行态写成快照，复制给他的客户端。
-	 *  打开/关闭/购买/刷新后**立即**调用一次，避免客户端要等下一帧才看到变化。 */
+	/** 操作后立即将该玩家商店运行态写入 PlayerState 镜像；客户端显示仍需等待复制。 */
 	void PushShopSnapshotForPlayer(ARoguePlayerState* PlayerState);
 
 	void TryOpenShop(ARogueCharacter* Character);
-	/** 关闭商店。Requester 用于只解除请求者的菜单交互输入（联机下不能只动一个人）。 */
+	/** 关闭请求者的商店运行态并推送镜像；本机 HUD 结合全部菜单状态推导输入模式。 */
 	void CloseShop(ARogueCharacter* Requester = nullptr);
 	/** 购买。Purchaser 是**请求者**——升级要加到他身上，不能用 GameMode 缓存的角色。 */
 	void TryBuyShopOffer(int32 OfferIndex, ARogueCharacter* Purchaser);
 	void TryRefreshShop(ARogueCharacter* Requester);
-	/**
-	 * 某个玩家阵亡。
-	 *
-	 * 联机语义：**整局只在全员阵亡时结束**，不是"谁死了就结束"。
-	 * 旧实现一有人死就 `bGameOver = true`，后果是队友还活着却再也不能选升级
-	 * （QueueUpgradeSelections 一开头就因为 bGameOver 早退）、商店也被强行关掉。
-	 * 现在：死者自己收尾（作废他未选的卡、关他的商店、给他 UI 输入好点结算界面），
-	 * 只要还有队友活着，本局继续。
-	 */
+	/** 收起濒死玩家的商店与待选卡，并检查团灭；尚有存活队友时继续本局。
+	 *  等待复活界面由本机 HUD 根据 LifeState 推导，团灭后才显示结算。 */
 	void NotifyPlayerDied(ARogueCharacter* DeadCharacter);
 	/** 统一团灭判定；致死处理已排队的玩家也不算存活。 */
 	bool EvaluateTeamWipe();
@@ -76,17 +69,12 @@ public:
 	/** 登录完成后检查 Pawn 归属；已结束的局中加入者保持出局。 */
 	virtual void PostLogin(APlayerController* NewPlayer) override;
 
-	/** 本作**永不暂停世界**：从入口直接拒绝一切暂停请求。
-	 *
-	 *  为什么是"拒绝"而不是"事后恢复"：实测有蓝图（具体哪个未知，死亡界面里没有该节点）
-	 *  在**每帧**重新暂停，事后恢复会变成"暂停→恢复"的每帧拉锯，玩家看到的仍然是停住。
-	 *  而本作的设计本来就是任何时候都不暂停（暂停菜单/商店/选卡/死亡界面都不暂停），
-	 *  所以入口拒绝既符合设计，也是唯一彻底的做法。
-	 *  代价：控制台 `pause` 调试不再生效。 */
+	/** 拒绝经 GameMode::SetPause 入口提出的暂停请求，使菜单、商店和选卡保持实时玩法。
+	 *  Tick 中另有恢复世界暂停的兜底；这两个入口不保证世界不会被其他机制冻结。 */
 	virtual bool SetPause(APlayerController* PC, FCanUnpause CanUnpauseDelegate = FCanUnpause()) override;
 
-	/** 服务端：把"没有 Pawn 的 PlayerController"与"没有控制器的本命角色"重新配对。
-	 *  判据是 PlayerState 相同（引擎在 possess 时会把角色的 PlayerState 设为该 PC 的）。 */
+	/** 为无 Pawn 的控制器重新认领现有角色：先尝试记录的失控 Pawn，再按 PlayerState 查找无控制器角色。
+	 *  首选记录路径只检查有效性与控制器，不额外比较 PlayerState。 */
 	void RepairPlayerPawnOwnership();
 
 	/** 客户端 → 服务端"重开一局"的落地实现（入口是 ARoguePlayerState::Server_RequestRestartRun）。
@@ -134,70 +122,32 @@ private:
 	TMap<TWeakObjectPtr<UPrimitiveComponent>, uint8> LifeCycleSelfTestCollisionSnapshot;
 	bool bLifeCycleSelfTestActorCollision = true;
 
-	void SpawnRuntimeWorldActors();
+	void FindLevelGameplayActors();
 	void ConfigureRuntimeAssets();
 	void ConfigureRuntimeSubsystems();
 	void PrewarmCombatPools();
 	void BuildCombatPoolPrewarmClasses(FRogueCombatPoolPrewarmClasses& OutClasses) const;
 
-	/**
-	 * 刷怪的参照玩家：**随机挑一个活着的玩家**。
-	 *
-	 * 为什么不能用 GetCachedCharacter()（它基本就是玩家 0 / 主机）：
-	 *   1) 所有怪都围着主机刷，队伍分开走时队友那边一个怪都不来；
-	 *   2) 主机一死，SpawnEnemy 的 IsDead() 闸门会让**整局停止刷怪**，
-	 *      而队友可能还活着在打 —— 这是联机下最刺眼的 bug 之一。
-	 * 随机取一个活着的人，既修掉这两点，又让怪的来向自然分散。
-	 */
+	/** 从存活玩家中随机选择刷怪参照；无人存活或尚无角色时返回 nullptr。
+	 *  不固定使用玩家 0，避免所有刷新点只围绕主机。 */
 	ARogueCharacter* GetSpawnReferenceCharacter() const;
 
-	/** 收集当前所有活着的玩家角色（用 TInlineAllocator<4> 避免堆分配：联机上限 4 人）。 */
+	/** 收集存活角色；内联容量为 4，超过时容器仍可扩容，不构成联机人数限制。 */
 	void CollectAlivePlayers(TArray<ARogueCharacter*, TInlineAllocator<4>>& OutPlayers) const;
-	/** 把每个玩家属性集里的 12 个武器加成推到**各自的角色**身上
-	 *  （`ARogueCharacter::ApplyWeaponBonusSnapshot`）。
-	 *
-	 *  载体是 `ARogueCharacter`（**不是** PlayerState —— 早期注释曾这么写，已纠正）：
-	 *  这份数据本来就是"角色的战斗参数"，与生命状态走同一条角色复制通道，分层也更合理。
-	 *
-	 *  ⚠️ 早期这里写的理由是"那 12 个加成属性没有复制到客户端"，该结论已被推翻
-	 *  （见 Docs/GAS-Main-Architecture-Plan.md 的「已结案」：错在自检拿两个不同玩家对比）。
-	 *  保留这一层的**真实**理由是：武器要在两端各算一遍"数据表基础值 + 加成×本武器系数"，
-	 *  所以需要一份跨端一致的"加成输入"。 */
+	/** 将各玩家 AttributeSet 的 12 项加成写入其 Character 快照，由武器统一读取。
+	 *  属性本身也参与复制；这层提供角色侧输入接口与近似相等脏检查，不证明 ASC 属性未同步。
+	 *  快照与 AttributeSet 属于不同复制路径，客户端不能假设二者同帧到达。 */
 	void PushWeaponBonusSnapshots();
 
-	/**
-	 * 开发自检：验证「升级 → GAS 加成属性 → 武器生效值」这条链是否真的通。
-	 *
-	 * 为什么需要它：GAS 改造把"升级改武器配置"换成了"升级改玩家 ASC 上的加成属性，
-	 * 武器读 基础值+加成"。这条链跨了升级 GE 叠层 → 属性集 → 角色快照 → 武器，
-	 * 任何一层接错都只表现为"卡牌抽到了但没效果"，靠手玩很难定位。
-	 * 这个自检在服务端跑：逐项施加升级、打印加成属性与每把武器的生效数值，
-	 * 用日志证明数值按预期变化（也顺带证明了加成是加在**正确的武器**上的）。
-	 *
-	 * ⚠️ 两条不能改的规矩（都是踩坑换来的）：
-	 *   1. **所有**存活玩家逐个施加（不能只对 Players[0]）—— Players[0] 在 listen server 上
-	 *      恒为主机，只改它会让客户端打印自己那份"从没被升级过"的值，看起来就像属性没复制。
-	 *   2. 每行日志带**玩家名** —— 服务端与客户端打的是各自机器上的同一个玩家，
-	 *      名字对上才能逐行比较。
-	 *
-	 * 阶段机（见 SelfTestPhase）：①全员 5 项升级 → ②等客户端连上再全员 +5 伤害（验证**变化**复制）
-	 * → ③等 3 秒打印服务端地面真值 → ④全员再 +5（此时必定都在线）→ ⑤再打印地面真值。
-	 *
-	 * 开关（默认关）：`Rogue.SelfTest.WeaponUpgradeChain 1`
-	 * 例：无头验证
-	 *   UnrealEditor.exe <uproject> <map>?listen -game -nullrhi
-	 *     -ExecCmds="Rogue.SelfTest.WeaponUpgradeChain 1" -log
-	 */
+	/** 开发自检：向当前参与玩家施加升级，按玩家名记录属性与武器生效值。
+	 *  入口：Rogue.SelfTest.WeaponUpgradeChain 1；具体等待阶段见 SelfTest.cpp。
+	 *  比较两端时必须对应同一玩家；固定等待时间不构成网络已同步的保证。 */
 	void RunWeaponUpgradeSelfTest();
 
-	/** 自检辅助：把最近的一只敌人瞬移到玩家身上，用来真的验证一次"接触攻击"能力路径。
-	 *  为什么需要它：无头测试里武器会在敌人靠近前把它打死，接触攻击的决策永远不会触发 ——
-	 *  只统计执行次数的话，"没实现"和"没机会触发"看起来完全一样。 */
+	/** 将敌人放到目标附近，给接触攻击创造可重复的触发条件；用于开发自检。 */
 	void ProbeContactAttack(ARogueCharacter* Target);
 
-	/** 自检辅助：在玩家附近**直接生成一只震荡柱**，用来验证"地面波攻击"能力路径。
-	 *  常规刷怪按波次/权重选类型，短时间内不一定出震荡柱 —— 实测跑 2 分钟一次都没出，
-	 *  那条路径就整场没被验证过。 */
+	/** 在目标附近生成震荡柱，减少随机刷怪对地面波攻击覆盖的影响。 */
 	void ProbeGroundWaveAttack(ARogueCharacter* Target);
 
 	/** 三个攻击路径探针是否已经跑过（自检完成时只跑一次）。 */
@@ -206,24 +156,13 @@ private:
 	/** 压测敌人是否已经刷过（与阶段机无关：压测用单进程跑，不需要等客户端）。 */
 	bool bSelfTestStressSpawned = false;
 
-	/** 自检辅助：对目标玩家施加一次致命伤害，用来验证"濒死十秒 → 复活 → 复活无敌 GE"这条链路。
-	 *  无头自检里武器太强、敌人贴不上来，整局 0 次倒地 —— 不主动打死一个就验证不到。 */
+	/** 对目标施加致命伤害以观察濒死/复活；团灭和真实连接另由生命周期自检覆盖。 */
 	void ProbeDeathAndRevive(ARogueCharacter* Target);
 
 	/** 自检辅助：刷 N 只"很硬、伤害 0"的敌人在玩家周围，用来量 200+ 敌人时的帧时（见 RogueSelfTest.h）。 */
 	void ProbeEnemyStress(ARogueCharacter* Target, int32 Count);
 
-	/** 自检阶段机：
-	 *    0 = 未跑
-	 *    1 = 第一阶段已跑（全员施加 5 项升级），等"客户端连上 + 20 秒"
-	 *    2 = 第二阶段已跑（连接后再 +5 伤害），等 3 秒让复制落定
-	 *    3 = 已打印服务端地面真值，等 8 秒
-	 *    4 = 第三阶段已跑（**全员在线时再改一次**），等 3 秒让复制落定
-	 *    5 = 全部完成
-	 *
-	 *  为什么要"在线时再改一次"：客户端总是在第一阶段之后才连上，所以第一阶段只能验证
-	 *  "初始同步带没带"；只有在一端已经连上、看着数值**变化**，才能验证后续变化能不能到。
-	 *  每次打印都带**玩家名**，服务端/客户端同一玩家可直接对齐比较。 */
+	/** 武器升级自检阶段（0未启动，1–4执行中，5完成）；时间点与日志以实现为准。 */
 	int32 SelfTestPhase = 0;
 
 	/** 当前阶段开始时的世界时间（用于阶段之间的等待） */
@@ -236,18 +175,8 @@ private:
 	void AdvanceShopAutoRefresh(float DeltaSeconds, bool bWorldPaused);
 	void TickRunSystems(float DeltaSeconds);
 
-	/**
-	 * 击杀奖励（金币）归谁。
-	 *
-	 * 解析顺序：
-	 *   1) Killer 本身就是玩家；
-	 *   2) Killer 是弹体/刀片/塔 → 顺着 Owner / Instigator 找回玩家；
-	 *   3) 都解析不出来 → **离现场最近的存活玩家**。
-	 *
-	 * 第 3 条原来是回退到 CachedCharacter（联机下就是玩家 0 / 主机），
-	 * 于是玩家 2 打死的怪，赏金可能进了主机口袋 —— 联机里最容易被察觉的那种"抢人头"。
-	 * 单机时两种回退结果完全一致（场上只有一个人）。
-	 */
+	/** 奖励归属依次尝试 Killer、本层 Owner、本层 Instigator；不递归遍历拥有链。
+	 *  无法解析时回退到奖励位置最近的存活玩家；直接解析出的玩家不在这里再过滤存活状态。 */
 	ARogueCharacter* ResolveRewardCharacter(AActor* Killer, const AActor* RewardOrigin) const;
 	void AwardEnemyCurrency(const ARogueEnemy* Enemy, ARogueCharacter* RewardCharacter);
 	void SpawnExperienceReward(ARogueEnemy* Enemy, URogueEnemyTrackerSubsystem* Tracker, URogueCombatPoolSubsystem* Pools);
@@ -264,15 +193,6 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Spawning")
 	TSubclassOf<ARogueExperiencePickup> ExperiencePickupClass;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Arena")
-	TSubclassOf<ARogueArena> ArenaClass;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Arena")
-	TSubclassOf<ARogueShopTerminal> ShopTerminalClass;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Config")
-	FRogueSceneOptimizationSettings SceneOptimizationSettings;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Config")
 	FRogueRuntimePerformanceSettings RuntimePerformanceSettings;
@@ -296,7 +216,7 @@ private:
 	TSoftObjectPtr<URogueUpgradeRuleAsset> UpgradeRuleAsset;
 
 	/** 敌人原型表（行结构 `FRogueEnemyArchetypeRow`）——"每波刷新上限"从这里读。
-	 *  留空则用 `/Game/DataTable/DT_FRogueEnemyArchetypeRow`。 */
+	 *  留空则用 `/Game/Data/Enemies/DT_EnemyArchetypes`。 */
 	UPROPERTY(EditDefaultsOnly, Category = "Config")
 	TSoftObjectPtr<UDataTable> EnemyArchetypeTable;
 
@@ -315,6 +235,6 @@ private:
 	TObjectPtr<UDataTable> LoadedEnemyArchetypeTable;
 
 	TWeakObjectPtr<ARogueCharacter> CachedCharacter;
-	TWeakObjectPtr<ARogueArena> SpawnedArena;
-	TWeakObjectPtr<ARogueShopTerminal> SpawnedShopTerminal;
+	/** 关卡中唯一的刷怪区域；缺少或重复时停止自动刷怪。 */
+	TWeakObjectPtr<ARogueEnemySpawnRegion> LevelSpawnRegion;
 };

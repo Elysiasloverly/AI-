@@ -105,11 +105,9 @@ namespace
 	/**
 	 * 取"这个 HUD 所服务的那个本地玩家"的角色。
 	 *
-	 * ⚠️ 绝对不能用 UGameplayStatics::GetPlayerCharacter(this, 0)：
-	 * 索引 0 是**这个进程里的第一个本地玩家**。在 PIE 的 2 人模式下（默认 Run Under One Process）
-	 * 或者分屏下，两个玩家共用一个进程 —— 于是第二个窗口的 HUD 会拿到**主机**的角色，
-	 * 表现是"UI 显示的是别人的数据"，甚至因为判断不到自己的角色而整个 HUD 不刷新。
-	 * 只有"每个玩家一个独立进程"（真正的联机、打包后多开）时索引 0 才恰好等于自己。
+	 * 使用 HUD 的所属控制器，支持本地多玩家并避免依赖固定玩家索引。
+	 * GetPlayerCharacter(..., 0) 按当前 World 查找控制器；同进程 PIE 的多个 World
+	 * 并不自动共享同一个索引 0，分屏同一 World 才更直接暴露固定索引选错玩家的问题。
 	 */
 	ARogueCharacter* GetLocalPlayerCharacter(const AHUD* HUD)
 	{
@@ -152,7 +150,7 @@ void ARogueHUD::RefreshMenuWidgets()
 	// HUD 需要的一切都从 GameState / 本地 PlayerState / 本地角色上读（它们客户端都有）。
 
 	// 菜单/界面更新与 Canvas 无关：先把状态推给 widget。
-	// 顺序上放在 Canvas 判空之前，这样无头/nullrhi 运行时菜单逻辑仍然是活的
+	// 由 Tick 和 DrawHUD 入口触发，创建了 HUD/UMG 的无画布测试仍可检查菜单状态
 	// （否则"界面不刷新"的 bug 会被无头测试掩盖掉）。
 	UpdateShopWidget(PlayerCharacter);
 	UpdateUpgradeSelectionWidget();
@@ -456,14 +454,12 @@ void ARogueHUD::RequestToggleDisplayModeFromSettingsMenu()
 void ARogueHUD::RequestRestartAfterDeath()
 {
 	PauseMenuPage = ERoguePauseMenuPage::None;
-	// 这两处 SetGamePaused(false) 是**离开关卡前的防御性清理**，不是"恢复游戏"。
-	// 万一世界因为别的原因处于暂停（控制台 pause、将来某个功能），
-	// 带着暂停状态切关卡/退出会留下坏状态。保留它们成本为零。
+	// 请求清除当前世界的暂停状态；是否允许由权威 GameMode/控制器规则决定。
 	UGameplayStatics::SetGamePaused(this, false);
 
 	// 重开必须由**服务端**执行：客户端自己 OpenLevel 只会加载出一份单机关卡副本，
 	// 表现为"点了重开之后队友全没了"。所以这里只发一个请求，
-	// 服务端会校验"本局是否已结束"再决定要不要 OpenLevel（server travel 把所有人一起带走）。
+	// 服务端校验本局已结束后，联机使用 ServerTravel；单机路径使用 OpenLevel。
 	if (ARoguePlayerState* LocalPlayerState = GetLocalRoguePlayerState())
 	{
 		LocalPlayerState->Server_RequestRestartRun();
@@ -520,11 +516,8 @@ void ARogueHUD::DrawEnemyHealthBars(UFont* Font)
 		const float BarX = ScreenPosition.X - BarWidth * 0.5f;
 		const float BarY = ScreenPosition.Y;
 		const FLinearColor FillColor = CachedBar.bBoss ? FLinearColor(0.95f, 0.30f, 0.20f, 0.95f) : FLinearColor(0.95f, 0.15f, 0.20f, 0.90f);
-		// 钳制后再乘宽度。
-		// 为什么必须钳：只要比例是 NaN（MaxHealth 还没复制到客户端 → 除零）或大于 1
-		// （当前值暂时超过上限、镜像未同步），`BarWidth * HealthPercent` 就会变成一个
-		// 巨长甚至非法的宽度 —— 表现正是"怪物血条突然变得很长"。
-		// 这里只保证"画出来的东西永远合法"，根因（比例来源）另外处理。
+		// 显式排除非有限比例，再钳到 [0,1]，防止异常比例传给填充宽度。
+		// 这只保护本处比例计算，不证明属性来源或其他绘制参数正确。
 		const float RawHealthPercent = Enemy->GetHealthPercent();
 		const float HealthPercent = FMath::IsFinite(RawHealthPercent)
 			? FMath::Clamp(RawHealthPercent, 0.0f, 1.0f)
@@ -569,9 +562,8 @@ void ARogueHUD::DrawDamageNumbers(UFont* Font)
 
 	const float RefreshInterval = bHeavyCombat ? DamageProjectionRefreshIntervalHeavy : DamageProjectionRefreshIntervalNormal;
 
-	// 没有飘字时直接跳过：RefreshDamageNumberProjectionCache 的全部工作就是遍历 DamageNumbers
-	// 做世界→屏幕投影，数组为空时它只剩一次子系统查询与时间推进，纯属白跑。
-	// （满屏 42 条时这个函数每秒要投影 800 次以上，是 HUD 里最贵的一项，所以值得在入口拦一下。）
+	// 飘字为空时跳过投影缓存更新；有数据时按设定间隔更新屏幕位置。
+	// 是否为 HUD 性能瓶颈需要在具体场景测量，不能仅由元素数推断。
 	if (DamageNumbers.Num() > 0 && CurrentTime >= NextDamageNumberProjectionRefreshTime)
 	{
 		RefreshDamageNumberProjectionCache(PlayerController, Tracker);
@@ -749,19 +741,8 @@ void ARogueHUD::UpdateInteractionInputMode(const ARogueCharacter* PlayerCharacte
 
 	const int32 NewState = bRunOver ? 2 : (bWantUIInput ? 1 : 0);
 
-	// ⚠️ 除了比对推导出的状态，还必须检查"**实际状态是否被别人改过**"。
-	//
-	// 这个缓存的前提是"本函数是唯一的写入者"，而那个前提曾经不成立：
-	// ARogueCharacter::SetMenuInteractionInput（由 GameMode 在开关商店/死亡时调用）
-	// 也在直接写 bShowMouseCursor。于是出现过这样一条真实的故障链 ——
-	//   开商店 → 推导=需要UI → 缓存记 1
-	//   商店里升级（待选卡出现）→ 推导仍是"需要UI" → 缓存没变，本函数不动
-	//   关闭商店 → 另一个写入者把光标关掉
-	//   本函数推导仍是"需要UI" → 但缓存已是 1 → **提前返回，光标永远回不来**
-	// 表现就是"关掉商店后鼠标消失、升级卡点不了"。
-	//
-	// 现在那个竞争写入者已经删掉，但这个漂移检查保留：它让本函数在
-	// "有人从背后改了光标"时仍然能自我纠正，而不是被自己的缓存锁死。
+	// 除状态缓存外，还核对光标/点击/悬停三个标志，纠正其他入口对这些标志的改动。
+	// 本检查不读取当前 Slate 输入模式或焦点；若仅这些状态被改动，缓存仍可能提前返回。
 	const bool bAppliedStateMatches = PlayerController->bShowMouseCursor == bWantUIInput
 		&& PlayerController->bEnableClickEvents == bWantUIInput
 		&& PlayerController->bEnableMouseOverEvents == bWantUIInput;
@@ -892,7 +873,7 @@ void ARogueHUD::UpdateUpgradeSelectionWidget()
 	// 结果就是"客户端玩家看不到升级界面"（迁移前的真实故障）。
 	// PlayerState 会被复制到拥有者客户端，而且每个玩家有自己的卡牌。
 	const ARoguePlayerState* LocalPlayerState = GetLocalRoguePlayerState();
-	// 用静态空数组而不是临时对象：下面按引用使用，且生命周期要跨过函数体
+	// 无 PlayerState 时提供静态空数组作为只读回退；此处引用仅在当前调用中使用。
 	static const TArray<FRogueUpgradeOption> EmptyUpgradeOptions;
 	const TArray<FRogueUpgradeOption>& Options =
 		LocalPlayerState != nullptr ? LocalPlayerState->GetPendingUpgrades() : EmptyUpgradeOptions;
@@ -1040,7 +1021,7 @@ void ARogueHUD::UpdateReviveCountdownWidget(const ARogueCharacter* PlayerCharact
 	const bool bRunOver = IsRogueRunOver(RogueGameState, PlayerCharacter);
 	const bool bVisible = bDowned && !bRunOver;
 	const int32 SecondsRemaining = bVisible
-		? FMath::Clamp(FMath::CeilToInt(PlayerCharacter->GetReviveSecondsRemaining()), 0, 10) : 0;
+		? FMath::Max(0, FMath::CeilToInt(PlayerCharacter->GetReviveSecondsRemaining())) : 0;
 
 	// 缓存必须属于当前 HUD：函数 static 会让同进程的多个玩家共用最后一次状态。
 	// 队友先推送"隐藏 / 0 秒"时，刚复活的玩家也会命中这个缓存，自己的界面便一直不隐藏。
@@ -1054,8 +1035,8 @@ void ARogueHUD::UpdateReviveCountdownWidget(const ARogueCharacter* PlayerCharact
 	LastReviveCountdownSeconds = SecondsRemaining;
 	bLastReviveCountdownVisible = bVisible;
 
-	// 只在状态真正变化时打一行（每秒最多一条）：下次联机自测时，
-	// "主机/客户端到底有没有拿到倒计时界面"可以直接从日志判断，不用靠肉眼盯。
+	// 秒数、可见性或实际 widget 可见性不匹配时输出；状态切换可在同一秒发生多次。
+	// 日志记录数据推送，不等于已验证实际渲染、样式或所有蓝图异步行为。
 	UE_LOG(LogTemp, Log, TEXT("[Rogue] 复活倒计时界面：%s（剩余 %d 秒，本机角色 IsDowned=%d）"),
 		bVisible ? TEXT("显示") : TEXT("隐藏"), SecondsRemaining,
 		bDowned ? 1 : 0);

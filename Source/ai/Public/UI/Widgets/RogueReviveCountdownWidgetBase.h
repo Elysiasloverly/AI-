@@ -7,12 +7,12 @@
 class ARogueHUD;
 
 /**
- * 复活倒计时界面基类（联机合作：倒下后等待复活的 10 秒）。
+ * 复活倒计时界面基类（联机合作：默认等待 10 秒，实际时长由 DA_PlayerBalance.Revival 配置）。
  *
  * 与死亡结算界面**刻意分开**：
  *   · 这个界面表示"我暂时倒下、还会回来"——只显示倒计时与提示，不带结算/重开按钮；
  *   · WBP_DeathScreen 只在**全员同时倒下**（本局结束）时出现。
- * 可见性来自复制的生命状态；秒数来自同一份状态的服务器截止时刻，蓝图负责样式与动画。
+ * 可见性来自复制的生命状态；秒数按同一份状态的服务器复活截止时刻计算，蓝图负责样式与动画。
  */
 UCLASS(Abstract, Blueprintable)
 class AI_API URogueReviveCountdownWidgetBase : public UUserWidget

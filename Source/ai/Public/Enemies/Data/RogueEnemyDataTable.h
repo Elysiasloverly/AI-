@@ -30,7 +30,7 @@ struct AI_API FRogueChargerSpecialParams
 	float BurstIdleMultiplier = 1.0f;
 };
 
-/** 坦克（Tank）专属属性 - 减速参数 */
+/** 坦克（Tank）专属属性 - 自身移动倍率 */
 USTRUCT(BlueprintType)
 struct AI_API FRogueTankSpecialParams
 {
@@ -333,37 +333,41 @@ struct AI_API FRogueSpitterSpecialParams
 	float SpreadSpawnOffset = 12.0f;
 };
 
-/** 震荡柱（ShockPillar）专属属性 - 固定柱体 + 地面波参数 */
+/** 震荡柱（ShockPillar）专属属性 - 固定柱体 + 一次向四周齐射的密集弹幕 */
 USTRUCT(BlueprintType)
 struct AI_API FRogueShockPillarSpecialParams
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "地面波", meta = (DisplayName = "初始冷却最小值"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "环形弹幕", meta = (DisplayName = "初始冷却最小值"))
 	float InitialCooldownMin = 1.6f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "地面波", meta = (DisplayName = "初始冷却最大值"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "环形弹幕", meta = (DisplayName = "初始冷却最大值"))
 	float InitialCooldownMax = 3.2f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "地面波", meta = (DisplayName = "攻击冷却时间"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "环形弹幕", meta = (DisplayName = "攻击冷却时间"))
 	float AttackCooldown = 4.8f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "地面波", meta = (DisplayName = "最大半径"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "环形弹幕", meta = (DisplayName = "子弹参数"))
+	FRogueEnemyBulletRingSettings BulletRing;
+
+	// 旧地面波字段仅为读取历史资产保留，震荡柱不再使用这些参数。
+	UPROPERTY()
 	float MaxRadius = 980.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "地面波", meta = (DisplayName = "最短扩散持续时间"))
+	UPROPERTY()
 	float ExpansionDuration = 1.05f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "地面波", meta = (DisplayName = "扩散速度（单位/秒）"))
+	UPROPERTY()
 	float ExpansionSpeed = 2600.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "地面波", meta = (DisplayName = "命中厚度"))
+	UPROPERTY()
 	float HitThickness = 92.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "地面波", meta = (DisplayName = "伤害倍率"))
+	UPROPERTY()
 	float DamageMultiplier = 1.2f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "地面波", meta = (DisplayName = "跳跃可躲避"))
+	UPROPERTY()
 	bool bJumpCanDodge = true;
 };
 
@@ -413,7 +417,7 @@ struct AI_API FRogueEnemyBossOverride
 //  DataTable 行结构体 - 敌人原型配置表
 // ===================================================================
 
-/** 敌人原型配置表行 - 用于 DataTable 配置每种敌人的完整属性 */
+/** 敌人原型配置表行：移动/攻击/视觉原型与生成上限；生命、伤害等奖励数值由生成方的 Profile 提供 */
 USTRUCT(BlueprintType)
 struct AI_API FRogueEnemyArchetypeRow : public FTableRowBase
 {
@@ -429,15 +433,8 @@ struct AI_API FRogueEnemyArchetypeRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Base", meta = (DisplayName = "基础移动倍率"))
 	float BaseMoveMultiplier = 1.0f;
 
-	/** 这种敌人的攻击能力集（**数据驱动**）。详见 `URogueAbilitySet`。
-	 *
-	 *  **留空 = 回退**：`ARogueEnemy::GrantAttackAbilities` 会按下面的
-	 *  `Ranged.bUsesRangedAttack` / `GroundWave.bUsesGroundWave` 标志推导该授予哪些能力
-	 *  —— 也就是改造前的硬编码逻辑。所以**老数据表不动也能跑**。
-	 *
-	 *  填了它之后，"加一种敌人攻击方式"就只需要改资产：
-	 *    ① 写能力子类 → ② 建一个 URogueAbilitySet 资产 → ③ 在表里这一列挂上。
-	 *  C++ 一行都不用动。 */
+	/** 可选攻击能力集；加载失败或未配置时按原型标志授予默认接触/远程/地面波能力。
+	 *  默认 AI 只识别这三类能力槽；新增独立攻击决策仍需扩展 C++ 或蓝图调用路径。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Base", meta = (DisplayName = "攻击能力集(留空=按标志推导)"))
 	TSoftObjectPtr<URogueAbilitySet> AttackAbilitySet;
 

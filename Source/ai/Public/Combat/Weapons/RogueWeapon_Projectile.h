@@ -20,8 +20,8 @@ public:
 	virtual void CollectFireTargets(TArray<ARogueEnemy*>& OutTargets) const override;
 	virtual void FireAtTargets(const TArray<ARogueEnemy*>& Targets) override;
 
-	/** 队友客户端收到服务端广播后，照着补画这一发（纯表现弹体，伤害恒为 0） */
 	virtual ERogueUpgradeType GetCountUpgradeType() const override { return ERogueUpgradeType::ProjectileCount; }
+	/** 收到表现广播后在客户端补画弹体，不结算权威伤害。 */
 	virtual void PlayCosmeticFire(const FRogueWeaponCosmeticFire& Fire) override;
 
 	// ---- 对外查询：全部是"数据表基础值 + GAS 加成"的生效值 ----

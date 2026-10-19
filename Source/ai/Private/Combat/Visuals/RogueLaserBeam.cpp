@@ -146,37 +146,15 @@ void ARogueLaserBeam::ActivatePooledBeam(AActor* InOwner, const FVector& StartLo
 	SetActorLocation(MidPoint);
 	SetActorRotation(Direction.Rotation());
 
-	if (bUseInfernoStyle)
+	// 独立地狱塔蓝图使用组件材质；对象池激活与切换光束样式均不覆盖作者设置的槽位。
+	// 旧材质配置模式仍供激光及其他已有类使用，空值也必须写回以清理上次激活的覆盖。
+	if (!bUseBlueprintComponentMaterials)
 	{
-		if (InfernoBeamMaterial != nullptr)
-		{
-			BeamMesh->SetMaterial(0, InfernoBeamMaterial);
-		}
-		if (InfernoGlowMaterial != nullptr)
-		{
-			GlowMesh->SetMaterial(0, InfernoGlowMaterial);
-		}
-		if (InfernoRingMaterial != nullptr)
-		{
-			StartRingMesh->SetMaterial(0, InfernoRingMaterial);
-			EndRingMesh->SetMaterial(0, InfernoRingMaterial);
-		}
-	}
-	else
-	{
-		if (PlayerBeamMaterial != nullptr)
-		{
-			BeamMesh->SetMaterial(0, PlayerBeamMaterial);
-		}
-		if (PlayerGlowMaterial != nullptr)
-		{
-			GlowMesh->SetMaterial(0, PlayerGlowMaterial);
-		}
-		if (PlayerRingMaterial != nullptr)
-		{
-			StartRingMesh->SetMaterial(0, PlayerRingMaterial);
-			EndRingMesh->SetMaterial(0, PlayerRingMaterial);
-		}
+		BeamMesh->SetMaterial(0, bUseInfernoStyle ? InfernoBeamMaterial.Get() : PlayerBeamMaterial.Get());
+		GlowMesh->SetMaterial(0, bUseInfernoStyle ? InfernoGlowMaterial.Get() : PlayerGlowMaterial.Get());
+		UMaterialInterface* RingMaterial = bUseInfernoStyle ? InfernoRingMaterial.Get() : PlayerRingMaterial.Get();
+		StartRingMesh->SetMaterial(0, RingMaterial);
+		EndRingMesh->SetMaterial(0, RingMaterial);
 	}
 
 	StartRingMesh->SetVisibility(VisualStyle.bShowStartAndEndRings);
