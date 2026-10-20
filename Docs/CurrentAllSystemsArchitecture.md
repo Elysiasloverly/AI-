@@ -16,7 +16,7 @@ flowchart TD
     GM --> Subsystems["WorldSubsystem 系统\n刷怪 / 追踪 / 对象池 / 场景优化"]
     GM --> UI["UI 系统\nHUD / WBP"]
 
-    Player --> Combat["Combat 武器系统\n普通子弹 / 火箭 / 迫击炮 / 激光 / 地狱塔 / 镰刀"]
+    Player --> Combat["Combat 武器系统\n御札 / 八卦炉 / 阴阳玉 / 极限火花 / 御柱 / 银刃"]
     Player --> PlayerBalance["URoguePlayerBalanceAsset\n玩家基础数值"]
     Player --> Visuals["URogueCharacterVisualComponent\n玩家视觉表现"]
 
@@ -101,12 +101,12 @@ flowchart TD
     Character --> WeaponInit["InitializeWeapons\n生成武器 Actor"]
     WeaponInit --> WeaponBase["ARogueWeaponBase"]
 
-    WeaponBase --> ProjectileWeapon["ARogueWeapon_Projectile\n普通子弹"]
-    WeaponBase --> RocketWeapon["ARogueWeapon_Rocket\n火箭"]
-    WeaponBase --> MortarWeapon["ARogueWeapon_Mortar\n迫击炮"]
-    WeaponBase --> LaserWeapon["ARogueWeapon_Laser\n激光"]
-    WeaponBase --> HellTower["ARogueWeapon_HellTower\n地狱塔"]
-    WeaponBase --> Scythe["ARogueWeapon_Scythe\n镰刀"]
+    WeaponBase --> ProjectileWeapon["ARogueWeapon_Projectile\n御札"]
+    WeaponBase --> RocketWeapon["ARogueWeapon_Rocket\n八卦炉"]
+    WeaponBase --> MortarWeapon["ARogueWeapon_Mortar\n阴阳玉"]
+    WeaponBase --> LaserWeapon["ARogueWeapon_Laser\n极限火花"]
+    WeaponBase --> HellTower["ARogueWeapon_HellTower\n御柱"]
+    WeaponBase --> Scythe["ARogueWeapon_Scythe\n银刃"]
 
     WeaponBase --> Targeting["索敌辅助\nFindNearest / CollectEnemies"]
     Targeting --> Tracker["URogueEnemyTrackerSubsystem"]
@@ -151,7 +151,7 @@ flowchart TD
     Archetype --> EnemyDT["敌人原型 DataTable\n编辑器覆盖"]
 
     Enemy --> Movement["移动行为\n直追 / 冲锋 / 环绕 / 远程风筝 / Z字 / 固定"]
-    Enemy --> Ranged["远程攻击\n单发 / 散射 / 震荡柱整圈弹幕"]
+    Enemy --> Ranged["远程攻击\n单发 / 散射 / 地藏整圈弹幕"]
     Enemy --> Contact["接触伤害"]
     Enemy --> Death["死亡回收"]
 

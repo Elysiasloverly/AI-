@@ -168,6 +168,71 @@ bool URogueWidgetBuilder::BuildEnemyHealthBar(UWidgetBlueprint* Blueprint)
 	return true;
 }
 
+bool URogueWidgetBuilder::BuildDamageFlash(UWidgetBlueprint* Blueprint)
+{
+	if (Blueprint == nullptr || Blueprint->WidgetTree == nullptr)
+	{
+		return false;
+	}
+
+	UCanvasPanel* Root = ResetCanvas(Blueprint);
+
+	// FlashRoot 是 C++ 唯一按名字找的控件（BindWidgetOptional）：它承载整个泛红层，
+	// C++ 只改它的 RenderOpacity，里面的配色/边缘宽度/材质都归 WBP。
+	UCanvasPanel* FlashRoot = Blueprint->WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("FlashRoot"));
+	// 默认完全透明：本控件的语义是"受伤才出现"。留 1 的话，只要创建即加视口，
+	// 整屏泛红就会从进游戏起一直挂着（C++ 只在受伤后才会写这个值）。
+	// 勾了 bBlueprintHandlesOpacity 由蓝图自己驱动透明度时，这个初值同样必须留 0。
+	FlashRoot->SetRenderOpacity(0.0f);
+	if (UCanvasPanelSlot* FlashSlot = Root->AddChildToCanvas(FlashRoot))
+	{
+		FlashSlot->SetAnchors(FAnchors(0.0f, 0.0f, 1.0f, 1.0f));
+		FlashSlot->SetOffsets(FMargin(0.0f));
+	}
+
+	// 中心底色：很淡的一层，让"掉血"在屏幕中间也有感知，但不会盖住画面。
+	UBorder* CoreTint = Blueprint->WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("CoreTint"));
+	CoreTint->SetBrushColor(FLinearColor(0.62f, 0.02f, 0.04f, 0.10f));
+	if (UCanvasPanelSlot* CoreSlot = FlashRoot->AddChildToCanvas(CoreTint))
+	{
+		CoreSlot->SetAnchors(FAnchors(0.0f, 0.0f, 1.0f, 1.0f));
+		CoreSlot->SetOffsets(FMargin(0.0f));
+	}
+
+	// 四周边缘：占位用纯色 Border，后续换成径向渐变材质或加噪点都在这四条上改。
+	const float EdgeThickness = 180.0f;
+	const FLinearColor EdgeColor(0.72f, 0.01f, 0.03f, 0.55f);
+
+	struct FEdgeSpec
+	{
+		const TCHAR* Name;
+		FAnchors Anchors;
+		FMargin Offsets;
+	};
+
+	const FEdgeSpec Edges[] =
+	{
+		{ TEXT("TopEdge"), FAnchors(0.0f, 0.0f, 1.0f, 0.0f), FMargin(0.0f, 0.0f, 0.0f, EdgeThickness) },
+		{ TEXT("BottomEdge"), FAnchors(0.0f, 1.0f, 1.0f, 1.0f), FMargin(0.0f, -EdgeThickness, 0.0f, 0.0f) },
+		{ TEXT("LeftEdge"), FAnchors(0.0f, 0.0f, 0.0f, 1.0f), FMargin(0.0f, 0.0f, EdgeThickness, 0.0f) },
+		{ TEXT("RightEdge"), FAnchors(1.0f, 0.0f, 1.0f, 1.0f), FMargin(-EdgeThickness, 0.0f, 0.0f, 0.0f) },
+	};
+
+	for (const FEdgeSpec& Edge : Edges)
+	{
+		UBorder* Strip = Blueprint->WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), Edge.Name);
+		Strip->SetBrushColor(EdgeColor);
+		if (UCanvasPanelSlot* StripSlot = FlashRoot->AddChildToCanvas(Strip))
+		{
+			StripSlot->SetAnchors(Edge.Anchors);
+			StripSlot->SetOffsets(Edge.Offsets);
+		}
+	}
+
+	Finish(Blueprint);
+	return true;
+}
+
 FString URogueWidgetBuilder::DescribeTextFonts(UWidgetBlueprint* Blueprint)
 {
 	if (Blueprint == nullptr || Blueprint->WidgetTree == nullptr)

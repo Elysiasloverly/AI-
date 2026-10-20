@@ -77,14 +77,14 @@
 | 玩法动作 | 能力 | 持续/一次性 | 联机策略 | 谁决定"什么时候" |
 |---|---|---|---|---|
 | 冲刺 | `URogueGameplayAbility_Dash` | 一次性 | LocalPredicted | 玩家输入 |
-| 武器自动开火 | `URogueWeaponAbility` 系列 | 持续（逐帧心跳任务） | LocalPredicted | 能力与冷却 GE；镰刀持续轨道保留表现 Tick |
+| 武器自动开火 | `URogueWeaponAbility` 系列 | 持续（逐帧心跳任务） | LocalPredicted | 能力与冷却 GE；银刃持续轨道保留表现 Tick |
 | 敌人接触 / 远程攻击 | `URogueEnemyAttackAbility` 两子类 | 一次性 | ServerOnly | AI 决策（距离 + 节流） |
-| 震荡柱整圈弹幕 | `URogueEnemyRangedAttackAbility` | 一次性齐射 | ServerOnly | AI 冷却决策，一条多播同步整圈 |
-| 旧地面波（兼容） | `URogueEnemyGroundWaveAttackAbility` | 持续到波结束 | ServerOnly | 震荡柱不再启用 |
+| 地藏整圈弹幕 | `URogueEnemyRangedAttackAbility` | 一次性齐射 | ServerOnly | AI 冷却决策，一条多播同步整圈 |
+| 旧地面波（兼容） | `URogueEnemyGroundWaveAttackAbility` | 持续到波结束 | ServerOnly | 地藏不再启用 |
 
 **其余 GAS 构件**：
 
-- **GameplayEffect**：伤害、21 种升级、死亡 / 刚受伤 / 三种冷却 / 复活无敌；濒死 GE 为 Infinite，承载由 `LifeState` 同步的标签与表现，复活时机由服务端定时器决定
+- **GameplayEffect**：伤害、22 种升级、死亡 / 刚受伤 / 三种冷却 / 复活无敌；濒死 GE 为 Infinite，承载由 `LifeState` 同步的标签与表现，复活时机由服务端定时器决定
 - **Periodic GE**：生命与护甲的自然回复 —— `Period`（0.25s 周期）+ `AttributeBased` 修饰器量级（每次结算重读属性，升级自动生效）+ `OngoingTagRequirements`（`State.Dead` / `State.RecentlyDamaged` 期间自动暂停，条件消失后自动恢复）
 - **Infinite GE Stacking**：每种升级对应一个 GE 子类，固定目标属性；`AggregateByTarget` 按目标叠层，`SetByCaller(Data.Magnitude)` 提供单次数值，层数上限为 0（不限）。最大生命 / 护甲上限变化后的补量由角色属性变化委托处理
 - **AbilitySet**：玩家默认技能与敌人攻击支持 `URogueAbilitySet` 数据驱动授予，缺少配置时保留原有回退路径。武器能力由各武器的 `GetFireAbilityClass()` 提供，在角色侧幂等授予；能力授予与基础属性 / 常驻 GE 初始化分别管理
@@ -103,15 +103,15 @@
 
 ### 战斗
 
-- **6 种武器族**：普通子弹、火箭、迫击炮、激光、地狱塔、镰刀
-- 每种武器有独立的升级换算系数（例如攻速加成在火箭上 ×2.5、镰刀转速 +280）
-- **21 种升级类型**，通过 DataAsset / DataTable 驱动默认数值
+- **6 种武器族**：御札、八卦炉、阴阳玉、极限火花、御柱、银刃
+- 每种武器有独立的升级换算系数（例如攻速加成在八卦炉上 ×2.5、银刃转速 +280）
+- **22 种升级类型**，通过 DataAsset / DataTable 驱动默认数值
 
 ### 敌人
 
 - **统一运行时类 + 原型模式**：所有敌人共用 `ARogueEnemy`，差异由原型组合 + 数据表配置驱动，无蓝图子类爆炸
-- **9 种敌人**（猎手 / 冲锋者 / 坦克 / 环绕者 / 射手 / 游击者 / 炮兵 / 喷射者 / 震荡柱）
-- **6 种移动模型** + **3 种射击模式**（单发 / 散射 / 整圈弹幕）；震荡柱使用整圈弹幕，旧地面波代码保留兼容
+- **13 种敌人**（妖精 / 夜雀 / 鬼 / 人魂 / 鸦天狗 / 妖狐 / 山蜘蛛 / 唐伞 / 地藏 / 月兔 / 毒茸 / 血蝠 / 亡灵）
+- **6 种移动模型** + **3 种射击模式**（单发 / 散射 / 整圈弹幕）；地藏使用整圈弹幕，旧地面波代码保留兼容
 
 ### 成长
 
@@ -129,7 +129,7 @@
 
 ## 性能优化
 
-- **全局对象池**：池化敌人、玩家子弹、敌方弹体、火箭 / 迫击炮、激光 Beam、镰刀、命中特效、经验球共 **8 类**高频对象
+- **全局对象池**：池化敌人、御札、敌方弹体、八卦炉 / 阴阳玉、极限火花 Beam、银刃、命中特效、经验球共 **8 类**高频对象
 - **空间哈希索敌**：为自动索敌、范围攻击和 HUD 提供候选查询；遍历格子数由原点、半径与格尺寸决定，还要检查格内候选并维护/重建索引，密集分布可能退化
 - **高负载特效裁剪**：按存活敌人数自动降级表现（判据唯一：`URogueEnemyTrackerSubsystem::ShouldCullCombatEffects()`）
 - **复制调度**：敌人按距离设置 5 / 15 / 30 的复制候选频率；武器表现按角色合批发送不可靠 RPC。实际消息率和流量受帧率、人数、相关性与网络条件影响
@@ -165,8 +165,10 @@ UnrealEditor.exe ai.uproject <map> -game -nullrhi -log \
 | **GAS 是怎么迁过来的** | [GAS-Main-Architecture-Plan.md](Docs/GAS-Main-Architecture-Plan.md) — 分阶段改造过程、验证数据、踩坑记录 |
 | **各系统职责与协作** | [System-Architecture-Overview.md](Docs/System-Architecture-Overview.md) |
 | **要加武器/卡牌/敌人** | [Maintenance-Extension-Guide.md](Docs/Maintenance-Extension-Guide.md) |
+| **中文名和代码英文名怎么对应** | [Content-Naming.md](Docs/Content-Naming.md) — 显示名 ↔ 枚举 ↔ 表行键，改名要动的 6 个位置 |
 | **血条 / 护甲条 / 经验条怎么改** | [HUD-Vitals-And-Enemy-Bars.md](Docs/HUD-Vitals-And-Enemy-Bars.md) — WBP 基类、生成脚本与数据流 |
-| **敌人子弹怎么换外观** | [Enemy-Projectile-Blueprints.md](Docs/Enemy-Projectile-Blueprints.md) — `BP_EnemyProjectile`、每敌人覆盖与池化 |
+| **受伤泛红与镜头震动怎么调** | [Damage-Feedback.md](Docs/Damage-Feedback.md) — 掉血检测、`FlashRoot` 结构、震动参数与替换方式 |
+| **敌方弹幕怎么换外观** | [Enemy-Projectile-Blueprints.md](Docs/Enemy-Projectile-Blueprints.md) — `BP_EnemyProjectile`、每敌人覆盖与池化 |
 | **经验球怎么换外观** | [Experience-Pickup-Blueprint.md](Docs/Experience-Pickup-Blueprint.md) — `BP_ExperiencePickup`、BP 钩子与尺寸规则 |
 | **全部系统架构图** | [CurrentAllSystemsArchitecture.md](Docs/CurrentAllSystemsArchitecture.md) |
 | **历史：自研属性系统** | [Attribute-System-Migration.md](Docs/Attribute-System-Migration.md) — ⚠️ 描述的是已删除的系统，保留用于解释"为何转向 GAS" |

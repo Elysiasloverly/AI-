@@ -4,7 +4,7 @@
 
 > 历史记录：本文 Phase 4 的「GE 到期驱动复活 / 三个复活驱动」已被 `LifeState` 原子复制、固定 10 秒与单服务端定时器方案取代；当前规则以 [Player-LifeCycle.md](Player-LifeCycle.md) 为准。
 
-> 历史记录：旧地面波能力（`URogueEnemyGroundWaveAttackAbility`）、`FRogueEnemyGroundWaveArchetype` 与震荡柱地面波视觉已在当前实现中删除；本文相关段落只说明当时的迁移过程。
+> 历史记录：旧地面波能力（`URogueEnemyGroundWaveAttackAbility`）、`FRogueEnemyGroundWaveArchetype` 与地藏地面波视觉已在当前实现中删除；本文相关段落只说明当时的迁移过程。
 
 > 目标：把项目从"GAS 只做数值层"改造成 **GAS 作为 Gameplay 框架**（能力驱动），
 > 同时**完整保留现有数据资产**（`DT_WeaponConfig` / `DT_EnemyArchetypes` /
@@ -45,8 +45,8 @@
 ### ✅ Phase 1b：武器读取"数据表基础值 + GAS 加成"（已完成，服务端数值逐项验证一致）
 
 - 6 把武器全部改为读 `GetEffective*()`；**每把武器的换算系数原样保留**
-  （火箭攻速 ×2.5/下限 0.55、迫击炮 ×2.0/下限 0.7、激光 ×2.0/下限 0.35、
-   地狱塔伤害 ×0.125/跳间隔 ×0.08/范围 ×0.70、镰刀转速 ×280/半径 ×0.12）
+  （八卦炉攻速 ×2.5/下限 0.55、阴阳玉 ×2.0/下限 0.7、极限火花 ×2.0/下限 0.35、
+   御柱伤害 ×0.125/跳间隔 ×0.08/范围 ×0.70、银刃转速 ×280/半径 ×0.12）
 - `ARogueCharacter::ApplyUpgrade` 的武器分支改为**与属性升级同一条 GE 路径**；
   删除 `Multicast_ApplyWeaponUpgrade`（Reliable 多播重放）、`ApplySharedWeapon*Bonus`、
   `DispatchWeaponUpgrade`、以及武器基类与 6 个子类的 `OnUpgradeApplied` / `ApplyShared*Bonus`
@@ -73,8 +73,8 @@
 UnrealEditor.exe <uproject> <map>?listen -game -nullrhi -log
   -ExecCmds="Rogue.SelfTest.WeaponUpgradeChain 1"
 ```
-实测输出（服务端）：伤害 20→30、主武器数量 0→1（只有它 +1）、火箭冷却 2.00→1.75（×2.5）、
-迫击炮爆炸范围 2400→2500、地狱塔范围 800→870（×0.70）—— 与自研版本公式逐项一致。
+实测输出（服务端）：伤害 20→30、主武器数量 0→1（只有它 +1）、八卦炉冷却 2.00→1.75（×2.5）、
+阴阳玉爆炸范围 2400→2500、御柱范围 800→870（×0.70）—— 与自研版本公式逐项一致。
 
 ### ✅ 已结案（原"待查根因"）：不是复制 bug，是**自检本身拿两个玩家对比**
 
@@ -104,7 +104,7 @@ UnrealEditor.exe <uproject> <map>?listen -game -nullrhi -log
 
 ⚠️ **同一个升级在不同武器上的换算系数不同**，迁移/回归时必须逐个照搬（否则数值会变）：
 
-| 升级类型 | 主武器 | 火箭 | 迫击炮 | 激光 | 地狱塔 | 镰刀 |
+| 升级类型 | 主武器 | 八卦炉 | 阴阳玉 | 极限火花 | 御柱 | 银刃 |
 |---|---|---|---|---|---|---|
 | 伤害 | `Damage += M` | `+= M` | `+= M` | `+= M` | `BaseDamage += M×0.125`<br>`DamageRampPerTick += M×0.0625` | `Damage += M` |
 | 攻速 | `Cooldown −= M`（下限 0.15） | 同左 | 同左 | 同左 | `DamageTickInterval = max(0.03, −M×0.08)` | `RotationSpeed += M×280` |
@@ -120,7 +120,7 @@ UnrealEditor.exe <uproject> <map>?listen -game -nullrhi -log
 每把的改法：
 1. 删掉该武器的 `OnUpgradeApplied` / `ApplyShared*Bonus` override（连带头文件声明与本地加成成员）
 2. 把开火代码里的 `Config.Damage/Cooldown/Range/Count/…` 换成 `GetEffective*()`；
-   换算系数不同的（地狱塔伤害/攻速、镰刀转速）在武器侧写成本地 effective 访问器，读**同一个加成属性**
+   换算系数不同的（御柱伤害/攻速、银刃转速）在武器侧写成本地 effective 访问器，读**同一个加成属性**
 3. 完成后：`ARogueCharacter::ApplyUpgrade` 的武器分支改为 `ApplyUpgradeEffectViaGAS`，
    删除 `Multicast_ApplyWeaponUpgrade` 与 `DispatchWeaponUpgrade`
 
@@ -135,9 +135,9 @@ UnrealEditor.exe <uproject> <map>?listen -game -nullrhi -log
   `WeaponTick`）—— 换成定时器轮询会让"敌人刚进射程"时多等一帧到几十毫秒。
 - `URogueWeaponCooldownEffect`：冷却 GE（`HasDuration`，时长 = SetByCaller `Data.Cooldown`，
   授予 `Cooldown.Weapon.AutoAttack`）。**它是开火节奏的唯一真相源**，武器里的 float 计时器全部删除。
-- 四把事件型武器（子弹/火箭/迫击炮/激光）的 `WeaponTick` 拆成 `CollectFireTargets` + `FireAtTargets`；
-  地狱塔保留自己的持续模拟（`UsesTargetedFireLoop() == false`，能力只给逐帧心跳）；
-  镰刀不参与能力驱动（纯表现轨道，任何机器都要画）。
+- 四把事件型武器（御札/八卦炉/阴阳玉/极限火花）的 `WeaponTick` 拆成 `CollectFireTargets` + `FireAtTargets`；
+  御柱保留自己的持续模拟（`UsesTargetedFireLoop() == false`，能力只给逐帧心跳）；
+  银刃不参与能力驱动（纯表现轨道，任何机器都要画）。
 - `ARogueCharacter::EnsureWeaponAbilities`：授予（只在权威端、幂等）+ 激活（本人本地激活；
   服务端上远端玩家等本人客户端的请求 + 5 秒看门狗兜底）。
 - `ARogueCharacter::TickWeapons` **只剩纯表现**（环绕刀片 + 每帧一次的表现 RPC 合并）。
@@ -170,7 +170,7 @@ UnrealEditor.exe <uproject> <map>?listen -game -nullrhi -log
 3. 正确做法：显式传 `CurrentActivationInfo.GetActivationPredictionKey()`。
 
 症状极隐蔽：冷却挂不上 → `IsWeaponCoolingDown()` 恒为假 → **客户端那把武器每帧开一枪**
-（实测客户端火箭 1531 发 / 迫击炮 9486 发，而服务端只有 11/71，表现就是"伤害莫名其妙高好几倍"）。
+（实测客户端八卦炉 1531 发 / 阴阳玉 9486 发，而服务端只有 11/71，表现就是"伤害莫名其妙高好几倍"）。
 所以代码里保留了显式报错（句柄无效就 `UE_LOG(Error)`），并且自检报告会打出
 `冷却中 / 剩余 / 目标数 / 持续心跳`，让这类失效一眼可见。
 
@@ -207,13 +207,13 @@ UnrealEditor.exe <uproject> <map>?listen -game -nullrhi -log
 1. **授予时机**：`URogueSpawnSubsystem::SpawnEnemy` 的调用顺序是
    `ActivatePooledEnemy()` → `InitializeEnemy()`，而 `CurrentArchetype` 是后者才赋值的。
    最初把 `GrantAttackAbilities()` 放在 `ActivatePooledEnemy` 里 → 照着**上一只怪**的原型发技能
-   （首次生成时是默认原型）。症状是"远程怪不远程、震荡柱不起波"，而且没有任何报错。
+   （首次生成时是默认原型）。症状是"远程怪不远程、地藏不起波"，而且没有任何报错。
    → 现在授予放在 `InitializeEnemy()` 末尾（那之前 `ResetForPool()` 已经清过技能表）。
 2. **验证方法本身**：无头测试里武器会在敌人靠近前把它打死，于是接触/地面波两条路径
    **根本不会被触发**。只统计"执行次数"的话，"没实现"和"没机会触发"完全一样（实测两者都是 0）。
    → 自检加了两个探针（在自检全部完成之后才跑，避免干扰数值对比）：
    `ProbeContactAttack`（把最近的敌人改硬并瞬移到玩家身上）与
-   `ProbeGroundWaveAttack`（直接在玩家附近刷一只震荡柱）。
+   `ProbeGroundWaveAttack`（直接在玩家附近刷一只地藏）。
    探针必须要**先把敌人改硬**：普通怪在六把武器面前活不过一次决策 + 起波初始冷却（实测踩了两次）。
 
 **验证（Development + DebugGame 编译通过；双进程无头）**
@@ -222,7 +222,7 @@ UnrealEditor.exe <uproject> <map>?listen -game -nullrhi -log
 |---|---|---|---|
 | 接触 | 1 | 1 | 探针触发（`HasTouching=1`、能力=已授予、蓝图未重写行为 Tick） |
 | 远程 | 4 | 4 | 自然发生（远程原型进入射程） |
-| 地面波 | 1 | 1 | 探针触发（震荡柱起波并扩散到结束） |
+| 地面波 | 1 | 1 | 探针触发（地藏起波并扩散到结束） |
 
 无 `Fatal` / `Ensure` / `LogAbilitySystem: Error`；帧时在波次 1→4 之间稳定在 ~1.0 ms
 （无头 nullrhi 下主要由游戏线程逻辑决定）。自检报告同时打印**尝试**与**执行**两个计数 ——

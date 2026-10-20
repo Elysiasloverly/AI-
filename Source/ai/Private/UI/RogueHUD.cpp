@@ -8,9 +8,13 @@
 #include "UI/Widgets/RogueMenuWidgetBases.h"
 #include "UI/Widgets/RogueHUDViewData.h"
 #include "UI/Widgets/RogueVitalsWidgetBase.h"
+#include "UI/Widgets/RogueDamageFlashWidgetBase.h"
 #include "UI/Widgets/RogueEnemyHealthBarWidgetBase.h"
+#include "Player/RogueDamageCameraShake.h"
 #include "Combat/Targeting/RogueEnemyTrackerSubsystem.h"
 #include "AudioDevice.h"
+#include "Camera/CameraShakeBase.h"
+#include "Camera/PlayerCameraManager.h"
 #include "Engine/Canvas.h"
 #include "Engine/Engine.h"
 #include "Engine/Font.h"
@@ -90,6 +94,9 @@ ARogueHUD::ARogueHUD()
 {
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.bStartWithTickEnabled = true;
+
+	// 原生震动类做默认值：不配 BP 也有手感；想要不同风格就继承它做个 BP 再覆盖这个字段。
+	DamageCameraShakeClass = URogueDamageCameraShake::StaticClass();
 }
 
 void ARogueHUD::BeginPlay()
@@ -176,6 +183,10 @@ void ARogueHUD::RefreshMenuWidgets()
 
 	// 常驻状态条与敌人血条：与 Canvas 无关，无画布测试也能检查数据是否推到位。
 	UpdateVitalsWidget(PlayerCharacter);
+
+	// 掉血反馈：血量是普通复制，没有 RepNotify，只能按帧比较。
+	UpdateLocalDamageFeedback(PlayerCharacter);
+
 	UpdateEnemyHealthBarWidgets();
 
 	// 输入模式（光标/UI 捕获）：按本地可见状态推导，见函数注释
@@ -474,6 +485,81 @@ void ARogueHUD::UpdateVitalsWidget(const ARogueCharacter* PlayerCharacter)
 	VitalsWidget->UpdateVitals(View);
 }
 
+void ARogueHUD::UpdateLocalDamageFeedback(ARogueCharacter* PlayerCharacter)
+{
+	// 泛红淡出由 HUD 按帧推进：即使这一帧没有受伤，也要继续把上一次的残影收干净。
+	if (DamageFlashWidget != nullptr)
+	{
+		const UWorld* World = GetWorld();
+		DamageFlashWidget->AdvanceFlash(World != nullptr ? World->GetDeltaSeconds() : 0.0f);
+	}
+
+	if (PlayerCharacter == nullptr)
+	{
+		// 观战 / 团灭 / 尚未 Possess：没有"我的血量"可比，清掉基线。
+		// 否则下一个角色上线时会把它的满血当成"从 0 涨回来"，或者把残血当成一次重击。
+		LastObservedHealthPawn = nullptr;
+		LastObservedHealth = -1.0f;
+		return;
+	}
+
+	if (LastObservedHealthPawn.Get() != PlayerCharacter)
+	{
+		// 换 Pawn（重生、重连、分屏另一个玩家）：只建立基线，不触发反馈。
+		LastObservedHealthPawn = PlayerCharacter;
+		LastObservedHealth = PlayerCharacter->GetCurrentHealth();
+		return;
+	}
+
+	const float CurrentHealth = PlayerCharacter->GetCurrentHealth();
+	const float PreviousHealth = LastObservedHealth;
+	LastObservedHealth = CurrentHealth;
+
+	// 只在血量**下降**时触发。0.5 的容差用来吸收浮点与护甲/再生同帧抵消带来的抖动；
+	// 治疗、上限提升（HandleMaxHealthChanged 补满增量）都走上升方向，不会误触发。
+	const float DamageTaken = PreviousHealth - CurrentHealth;
+	if (DamageTaken <= 0.5f)
+	{
+		return;
+	}
+
+	const float MaxHealth = FMath::Max(PlayerCharacter->GetMaxHealth(), 1.0f);
+	TriggerDamageFeedback(DamageTaken / MaxHealth);
+}
+
+void ARogueHUD::TriggerDamageFeedback(float Intensity)
+{
+	const float Normalized = FMath::Clamp(Intensity, 0.0f, 1.0f);
+
+	// 泛红交给 WBP：这里只传强度，颜色/边缘宽度/动画都由蓝图决定。
+	if (DamageFlashWidget != nullptr)
+	{
+		DamageFlashWidget->PlayDamageFlash(Normalized);
+	}
+
+	APlayerController* PlayerController = GetOwningPlayerController();
+	if (PlayerController == nullptr
+		|| PlayerController->PlayerCameraManager == nullptr
+		|| DamageCameraShakeClass == nullptr)
+	{
+		return;
+	}
+
+	// 连续受击（多段伤害、多个敌人同帧命中）会叠加震动实例，抖成一片。
+	// 用最小间隔压成一次，但下一次仍会按新伤害重新评估强度。
+	const UWorld* World = GetWorld();
+	const float Now = World != nullptr ? World->GetTimeSeconds() : 0.0f;
+	if (Now - LastCameraShakeTime < CameraShakeMinInterval)
+	{
+		return;
+	}
+	LastCameraShakeTime = Now;
+
+	// 小伤害也保留可感知的震动：缩放不低于 0.55，避免"掉了血但画面完全没反应"。
+	const float Scale = FMath::Lerp(0.55f, 1.0f, Normalized);
+	PlayerController->PlayerCameraManager->StartCameraShake(DamageCameraShakeClass, Scale);
+}
+
 void ARogueHUD::UpdateEnemyHealthBarWidgets()
 {
 	APlayerController* PlayerController = GetOwningPlayerController();
@@ -760,6 +846,21 @@ void ARogueHUD::InitializeMenuWidgets()
 		{
 			UE_LOG(LogTemp, Warning, TEXT("[Rogue] 玩家状态条创建失败：Vitals=%s"), *GetNameSafe(VitalsWidgetClass.Get()));
 		}
+
+		ResolveWidgetClass(DamageFlashWidgetClassPath, DamageFlashWidgetClass);
+		// 受伤泛红：ZOrder 3，压在所有菜单与状态条之下 —— 泛红是背景层，
+		// 盖在血条/文字上会让本来就要读的信息被染色。
+		DamageFlashWidget = CreateRogueMenuWidget(PlayerController, DamageFlashWidgetClass, this, 3);
+		if (DamageFlashWidget != nullptr)
+		{
+			// CreateRogueMenuWidget 按菜单语义把它设成了 Collapsed；泛红层要一直可见才会 tick。
+			DamageFlashWidget->SetVisibility(ESlateVisibility::HitTestInvisible);
+		}
+		if (DamageFlashWidgetClass == nullptr)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[Rogue] 未配置受伤泛红 WBP：DamageFlashWidgetClass 为空，受击时只会有镜头震动。"));
+		}
+
 		if (EnemyHealthBarWidgetClass == nullptr)
 		{
 			UE_LOG(LogTemp, Warning, TEXT("[Rogue] 未配置敌人血条 WBP：EnemyHealthBarWidgetClass 为空，敌人血条将不显示。"));

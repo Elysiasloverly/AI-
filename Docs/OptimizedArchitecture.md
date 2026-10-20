@@ -43,7 +43,7 @@ flowchart TD
 ```mermaid
 flowchart TD
     Character["ARogueCharacter\n玩家角色"] --> WeaponTable["DT_WeaponConfig\n武器数据表"]
-    Character --> Weapons["ARogueWeaponBase 子类\n普通子弹/火箭/迫击炮/激光/地狱塔/镰刀"]
+    Character --> Weapons["ARogueWeaponBase 子类\n御札/八卦炉/阴阳玉/极限火花/御柱/银刃"]
 
     WeaponTable --> WeaponRow["FRogueWeaponTableRow\n武器统一配置行"]
     WeaponRow --> PrewarmCollect["CollectPoolPrewarmClasses\n收集对象池预热类"]
@@ -53,11 +53,11 @@ flowchart TD
     Weapons --> PoolSub
     Weapons --> Damage["ApplyDamage / 命中反馈"]
 
-    PoolSub --> PlayerBullet["玩家子弹池"]
-    PoolSub --> EnemyBullet["敌人子弹池"]
-    PoolSub --> RocketPool["火箭/迫击炮弹池"]
-    PoolSub --> LaserPool["激光池"]
-    PoolSub --> BladePool["镰刀池"]
+    PoolSub --> PlayerBullet["御札池"]
+    PoolSub --> EnemyBullet["敌方弹幕池"]
+    PoolSub --> RocketPool["八卦炉/阴阳玉弹池"]
+    PoolSub --> LaserPool["极限火花池"]
+    PoolSub --> BladePool["银刃池"]
     PoolSub --> ImpactPool["命中特效池"]
     PoolSub --> EnemyPool["敌人池"]
     PoolSub --> PickupPool["经验/掉落池"]

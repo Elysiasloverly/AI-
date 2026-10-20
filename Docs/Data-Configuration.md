@@ -48,7 +48,7 @@ Content/Data/
 
 `DA_GameBalance` 已按七个区域重新分组（敌人、刷怪、普通敌人、首领、奖励、商店、运行时），刷怪位置/Boss 节奏/池大小/性能阈值/场景优化都在资产里；具体调参位置与合并后的规则见 [DA_GameBalance 调参说明](Game-Balance-Configuration.md)。
 
-升级定义负责“卡片是什么、加多少”，升级规则负责“哪些类型参与抽取”。当前激光折射和迫击炮扩爆由 `RogueUpgradeSystemRules.cpp` 根据实际生效的武器数量追加，规则资产中的五条武器来源映射无需额外补写这两行。解锁武器会立即刷新奖励快照，供连续升级的下一轮判断。
+升级定义负责“卡片是什么、加多少”，升级规则负责“哪些类型参与抽取”。当前星尘折射和阴阳玉·扩散由 `RogueUpgradeSystemRules.cpp` 根据实际生效的武器数量追加，规则资产中的五条武器来源映射无需额外补写这两行。解锁武器会立即刷新奖励快照，供连续升级的下一轮判断。
 
 敌人原型表描述移动、攻击行为、原型生成上限和 `Visual`/`BossVisual`；生命、伤害和经验奖励由 `DA_GameBalance` 参与计算的 Profile 提供。`DA_UpgradeRules.MinimumDashCooldown` 控制冲刺卡何时出池，实际冷却数值下限由 `DA_PlayerBalance.BaseStats.DashMinCooldown` 提供。
 
@@ -60,6 +60,6 @@ GameMode 蓝图或关卡指定的配置优先；未指定时，代码从上述�
 
 这次整理按系统归类并统一了 7 个配置资产的位置与名称；三张表的数据与行名、四个 DataAsset 的参数，以及已有蓝图覆盖值均保留，同步修改的只有默认加载路径和资产引用。
 
-震荡柱的整圈弹幕参数见 [震荡柱攻击说明](Shock-Pillar-Attack.md)。玩家出生状态、成长、武器加成与复活参数见 [玩家配置说明](Player-Balance-Configuration.md)。
+地藏的整圈弹幕参数见 [地藏攻击说明](Shock-Pillar-Attack.md)。玩家出生状态、成长、武器加成与复活参数见 [玩家配置说明](Player-Balance-Configuration.md)。
 
-地狱塔与激光现在使用各自的光束蓝图；材质与粗细入口见 [地狱塔光束配置](Hell-Tower-Beam.md)。
+御柱与极限火花现在使用各自的光束蓝图；材质与粗细入口见 [御柱光束配置](Hell-Tower-Beam.md)。

@@ -663,6 +663,7 @@ private:
 	void RemoveInvulnerableEffect();
 	friend struct FRoguePlayerLifeCycleTestAccess;
 	friend struct FRoguePlayerBalanceTestAccess;
+	friend struct FRogueExperiencePickupTestAccess;
 
 public:
 	/** 只用于显示，零秒时仍等待服务端 Alive 确认，不在客户端触发复活。 */

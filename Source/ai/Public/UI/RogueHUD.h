@@ -19,7 +19,9 @@ class URogueSettingsMenuWidgetBase;
 class URogueDeathScreenWidgetBase;
 class URogueReviveCountdownWidgetBase;
 class URogueVitalsWidgetBase;
+class URogueDamageFlashWidgetBase;
 class URogueEnemyHealthBarWidgetBase;
+class UCameraShakeBase;
 class URogueEnemyTrackerSubsystem;
 
 enum class ERoguePauseMenuPage : uint8
@@ -94,6 +96,13 @@ private:
 
 	/** 本地玩家生命 / 护甲 / 经验条：每帧组装视图数据推给常驻 WBP。 */
 	void UpdateVitalsWidget(const ARogueCharacter* PlayerCharacter);
+
+	/** 本地玩家掉血检测：血量是普通复制（没有 RepNotify），只能按帧比较。
+	 *  发现下降就触发泛红 + 镜头震动；治疗与复活只更新缓存，不触发。 */
+	void UpdateLocalDamageFeedback(ARogueCharacter* PlayerCharacter);
+
+	/** 受伤反馈的本地表现：泛红 WBP + 相机震动。Intensity 是"伤害 / 最大生命"。 */
+	void TriggerDamageFeedback(float Intensity);
 
 	/** 敌人血条：复用 RefreshEnemyHealthBarCache 的筛选结果，把可见敌人分配给池中的 WBP。 */
 	void UpdateEnemyHealthBarWidgets();
@@ -227,6 +236,33 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<URogueVitalsWidgetBase> VitalsWidget = nullptr;
+
+	/** 受伤泛红：全屏 WBP，ZOrder 3（在所有菜单与状态条之下，避免给 UI 染色）。
+	 *  只想改观感就改 WBP；要让 WBP 动画全权控制透明度，勾上它的 bBlueprintHandlesOpacity。 */
+	UPROPERTY(EditDefaultsOnly, Config, Category = "Rogue UI|Widgets")
+	TSoftClassPtr<URogueDamageFlashWidgetBase> DamageFlashWidgetClassPath;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Rogue UI|Widgets")
+	TSubclassOf<URogueDamageFlashWidgetBase> DamageFlashWidgetClass;
+
+	UPROPERTY(Transient)
+	TObjectPtr<URogueDamageFlashWidgetBase> DamageFlashWidget = nullptr;
+
+	/** 受伤镜头震动；未配置时只做泛红。继承 URogueDamageCameraShake 的 BP 可直接调手感。 */
+	UPROPERTY(EditDefaultsOnly, Category = "Rogue UI|Feedback")
+	TSubclassOf<UCameraShakeBase> DamageCameraShakeClass;
+
+	/** 连续受击时两次震动的最小间隔，避免叠加成持续抖动。 */
+	UPROPERTY(EditDefaultsOnly, Category = "Rogue UI|Feedback", meta = (ClampMin = "0.0"))
+	float CameraShakeMinInterval = 0.08f;
+
+	/** 上一次观察到的本地玩家血量；< 0 表示尚未建立基线（换 Pawn / 观战 / 首次生成）。 */
+	float LastObservedHealth = -1.0f;
+
+	/** 基线对应的角色：换 Pawn 时重置，避免把新角色的满血误判成掉血。 */
+	TWeakObjectPtr<ARogueCharacter> LastObservedHealthPawn;
+
+	float LastCameraShakeTime = -1000.0f;
 
 	/** 单个敌人血条；HUD 按可见数量从池中复用，ZOrder 6。 */
 	UPROPERTY(EditDefaultsOnly, Config, Category = "Rogue UI|Widgets")

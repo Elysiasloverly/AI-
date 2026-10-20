@@ -8,15 +8,38 @@
 #include "GameFramework/WorldSettings.h"
 #include "Misc/AutomationTest.h"
 #include "Player/RogueCharacter.h"
+#include "Player/RoguePlayerBalanceAsset.h"
 #include "Player/RoguePlayerController.h"
 #include "Tests/AutomationCommon.h"
+#include "UObject/StrongObjectPtr.h"
+
+/** 与 RoguePlayerBalanceTests.cpp 里的同名结构同一用途：在 BeginPlay/Possess 之前
+ *  把测试用的平衡资产塞进 Pawn（`PlayerBalanceAsset` 是私有字段，靠友元暴露）。 */
+struct FRogueExperiencePickupTestAccess
+{
+	static void SetBalanceAsset(ARogueCharacter* Character, URoguePlayerBalanceAsset* Asset)
+	{
+		Character->PlayerBalanceAsset = Asset;
+	}
+};
 
 namespace RogueExperiencePickupTests
 {
 	constexpr EAutomationTestFlags Flags = EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter;
 
+	/** 夹具里钉死的升级阈值。
+	 *
+	 * 本组用例只验证"拾取有没有把经验发到角色身上"，不验证升级曲线。
+	 * 必须**高于**用例发放的经验值：`ARogueCharacter::AddExperience` 达到阈值会立刻升级并扣掉阈值，
+	 * 于是 CurrentExperience 回到 0 —— 那不是拾取丢了经验。
+	 * 之所以要自己钉死：不塞资产时角色会加载线上 `DA_PlayerBalance`，而它的首级阈值是 2，
+	 * 正好等于用例发的 2 点，升级会把整笔经验吃掉，断言永远看到 0。 */
+	constexpr int32 PinnedExperienceRequirement = 100;
+
 	struct FPickupFixture
 	{
+		// 不读线上数值资产，避免用例结论随调参漂移。
+		TStrongObjectPtr<URoguePlayerBalanceAsset> Balance{NewObject<URoguePlayerBalanceAsset>()};
 		FTestWorldWrapper TestWorld;
 		UWorld* World = nullptr;
 		ARogueGameMode* GameMode = nullptr;
@@ -37,6 +60,8 @@ namespace RogueExperiencePickupTests
 				FTransform(FVector(0.0f, 0.0f, 120.0f)), nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
 			if (!Test.TestNotNull(TEXT("The controller exists"), Controller)
 				|| !Test.TestNotNull(TEXT("The player exists"), Player)) { return false; }
+			Balance->BaseStats.ExperienceToNextLevel = PinnedExperienceRequirement;
+			FRogueExperiencePickupTestAccess::SetBalanceAsset(Player, Balance.Get());
 			Player->AutoPossessPlayer = EAutoReceiveInput::Disabled;
 			Player->FinishSpawning(FTransform(FVector(0.0f, 0.0f, 120.0f)));
 			Controller->Possess(Player);
@@ -49,7 +74,9 @@ namespace RogueExperiencePickupTests
 				Player->GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 				Player->GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Overlap);
 			}
-			return Test.TestTrue(TEXT("The player is alive"), Player->IsAlive());
+			return Test.TestTrue(TEXT("The player is alive"), Player->IsAlive())
+				&& Test.TestEqual(TEXT("The fixture pins a level threshold above the awarded experience"),
+					Player->GetExperienceToNextLevel(), PinnedExperienceRequirement);
 		}
 
 		ARogueExperiencePickup* SpawnPickup()

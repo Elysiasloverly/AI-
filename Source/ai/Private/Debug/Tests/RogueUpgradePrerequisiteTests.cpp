@@ -263,7 +263,7 @@ bool FRogueScytheSizePrerequisiteTest::RunTest(const FString& Parameters)
 	});
 	if (!TestNotNull(TEXT("The actual option generator includes the unlocked size card"), FoundCard)) { return false; }
 	const FRogueUpgradeOption Card = *FoundCard;
-	TestEqual(TEXT("The fallback card has the real Chinese title"), Card.Title, FString(TEXT("镰刀变大")));
+	TestEqual(TEXT("The fallback card has the real Chinese title"), Card.Title, FString(TEXT("银刃巨化")));
 	TestEqual(TEXT("The fallback card increases size by twenty percent of the base"), Card.Magnitude, 0.2f);
 	Fixture.Player->ApplyUpgrade(Card);
 	TestTrue(TEXT("The first card reaches the new continuous GAS attribute"), FMath::IsNearlyEqual(Fixture.Attributes->GetScytheSizeBonus(), 0.2f));
@@ -330,7 +330,7 @@ bool FRogueScytheLifestealPrerequisiteTest::RunTest(const FString& Parameters)
 	});
 	if (!TestNotNull(TEXT("The actual option generator includes the unlocked lifesteal card"), FoundCard)) { return false; }
 	const FRogueUpgradeOption Card = *FoundCard;
-	TestEqual(TEXT("The fallback card has the real Chinese title"), Card.Title, FString(TEXT("吸血收割")));
+	TestEqual(TEXT("The fallback card has the real Chinese title"), Card.Title, FString(TEXT("红雾吸血")));
 	TestEqual(TEXT("The per-level magnitude is five percent"), Card.Magnitude, 0.05f);
 
 	Fixture.Player->ApplyUpgrade(Card);

@@ -55,7 +55,7 @@ GameplayEffect 放 `AbilitySystem/GameplayEffects/`；战斗视觉表现放 `Com
 | `Framework/RogueGameMode.cpp` | 开局配置、世界对象创建、子系统配置与预热、整局 Tick 与快照推送 |
 | `Framework/RogueGameMode.Progression.cpp` | 击杀归属、金币/经验/Boss 奖励、抽卡队列、商店请求与镜像推送 |
 | `Framework/RogueGameMode.Players.cpp` | 存活玩家查询、复活兜底、归属恢复、登录、暂停及重开 |
-| `Debug/RogueGameMode.SelfTest.cpp` | 升级链路阶段机、接触攻击、震荡柱弹幕、死亡复活和敌人压测探针 |
+| `Debug/RogueGameMode.SelfTest.cpp` | 升级链路阶段机、接触攻击、地藏弹幕、死亡复活和敌人压测探针 |
 
 读完整流程时，从主文件里的调度入口沿方法名跳转到对应实现。新增同类方法时，声明放回原类头，实现放到对应文件。改变类职责或引入新组件应作为单独的架构改动。
 

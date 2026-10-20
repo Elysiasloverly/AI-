@@ -1,19 +1,19 @@
 # 敌人弹体蓝图
 
-敌人子弹现在和玩家子弹一样走蓝图类，而且**外观完全由蓝图决定**：
+敌方弹幕现在和御札一样走蓝图类，而且**外观完全由蓝图决定**：
 
 ```text
 /Game/BP/Enemy/Projectiles/
 ├── BP_EnemyProjectile                  占位模板（独立 BP，不再作为其它变体的父类）
 ├── BP_EnemyProjectile_Boss            Boss
-├── BP_EnemyProjectile_Marksman       精准射手 / 环绕射手
-├── BP_EnemyProjectile_Cannoneer      重炮手 / 重装兵
-├── BP_EnemyProjectile_Scatterer      散射者 / 游击射手
-├── BP_EnemyProjectile_ShockPillar    震荡柱
-├── BP_EnemyProjectile_Sniper         狙击手
-├── BP_EnemyProjectile_Shotgunner     霰弹手 / 突击手
-├── BP_EnemyProjectile_Repeater       速射手 / 步枪手
-└── BP_EnemyProjectile_Ringcaster     环击者
+├── BP_EnemyProjectile_Marksman       鸦天狗 / 人魂
+├── BP_EnemyProjectile_Cannoneer      山蜘蛛 / 鬼
+├── BP_EnemyProjectile_Scatterer      唐伞 / 妖狐
+├── BP_EnemyProjectile_ShockPillar    地藏
+├── BP_EnemyProjectile_Sniper         月兔
+├── BP_EnemyProjectile_Shotgunner     毒茸 / 夜雀
+├── BP_EnemyProjectile_Repeater       血蝠 / 妖精
+└── BP_EnemyProjectile_Ringcaster     亡灵
 ```
 
 这 10 个 BP 都**直接继承 C++ 的 `ARogueEnemyProjectile`**，各自持有一套 SCS 组件，互不继承。
@@ -58,19 +58,19 @@ C++ **不写死任何弹体资产路径**：没有配置就回退原生类，不
 
 | 敌人类型 | 弹体 |
 |---|---|
-| Rifleman（步枪手） | `BP_EnemyProjectile_Repeater` |
-| Assault（突击手） | `BP_EnemyProjectile_Shotgunner` |
-| Juggernaut（重装兵） | `BP_EnemyProjectile_Cannoneer` |
-| Orbiter（环绕射手） | `BP_EnemyProjectile_Marksman` |
-| Marksman（精准射手） | `BP_EnemyProjectile_Marksman` |
-| Skirmisher（游击射手） | `BP_EnemyProjectile_Scatterer` |
-| Cannoneer（重炮手） | `BP_EnemyProjectile_Cannoneer` |
-| Scatterer（散射者） | `BP_EnemyProjectile_Scatterer` |
-| ShockPillar（震荡柱） | `BP_EnemyProjectile_ShockPillar` |
-| Sniper（狙击手） | `BP_EnemyProjectile_Sniper` |
-| Shotgunner（霰弹手） | `BP_EnemyProjectile_Shotgunner` |
-| Repeater（速射手） | `BP_EnemyProjectile_Repeater` |
-| Ringcaster（环击者） | `BP_EnemyProjectile_Ringcaster` |
+| Rifleman（妖精） | `BP_EnemyProjectile_Repeater` |
+| Assault（夜雀） | `BP_EnemyProjectile_Shotgunner` |
+| Juggernaut（鬼） | `BP_EnemyProjectile_Cannoneer` |
+| Orbiter（人魂） | `BP_EnemyProjectile_Marksman` |
+| Marksman（鸦天狗） | `BP_EnemyProjectile_Marksman` |
+| Skirmisher（妖狐） | `BP_EnemyProjectile_Scatterer` |
+| Cannoneer（山蜘蛛） | `BP_EnemyProjectile_Cannoneer` |
+| Scatterer（唐伞） | `BP_EnemyProjectile_Scatterer` |
+| ShockPillar（地藏） | `BP_EnemyProjectile_ShockPillar` |
+| Sniper（月兔） | `BP_EnemyProjectile_Sniper` |
+| Shotgunner（毒茸） | `BP_EnemyProjectile_Shotgunner` |
+| Repeater（血蝠） | `BP_EnemyProjectile_Repeater` |
+| Ringcaster（亡灵） | `BP_EnemyProjectile_Ringcaster` |
 
 批量写入用 `Tools/assign_enemy_projectiles.py`，只改 `ProjectileClass` 一列；
 改前自动备份到 `Saved/Backup/DT_EnemyArchetypes_before_projectiles.uasset`。
@@ -118,7 +118,7 @@ C++ 不会按名字查找，也不会改它们的 Transform。
 
 ## 排查
 
-- 子弹看不见：检查对应弹体 BP 里是否已经加了视觉组件（C++ 不再提供默认外观）。
+- 弹体看不见：检查对应弹体 BP 里是否已经加了视觉组件（C++ 不再提供默认外观）。
 - 改了 BP 但游戏里没变：确认敌人 BP/数据表引用的是这个 BP，并重启编辑器加载新 DLL。
-- 客户端看不到子弹：确认客户端能加载相同资产；表现为不可靠多播，丢包会少画一发，伤害仍在服务端。
+- 客户端看不到弹体：确认客户端能加载相同资产；表现为不可靠多播，丢包会少画一发，伤害仍在服务端。
 - 命中范围不对：改 `Collision` 组件的 Sphere Radius；整圈弹幕会再乘 `VisualScale`。

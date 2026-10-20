@@ -51,7 +51,7 @@
 | 功能 | 当前状态 | 项目里本可以用在哪 |
 |---|---|---|
 | **Stacking**（`StackLimitCount` / `StackingType`） | ❌ 零使用 | 可叠加的升级卡 / 层数展示 |
-| **Periodic GE**（`Period` / `bExecutePeriodicEffectOnApplication`） | ❌ 零使用 | 地狱塔持续伤害、经验球磁吸、燃烧 dot |
+| **Periodic GE**（`Period` / `bExecutePeriodicEffectOnApplication`） | ❌ 零使用 | 御柱持续伤害、经验球磁吸、燃烧 dot |
 | **MMC**（`UGameplayModMagnitudeCalculation`） | ❌ 零使用 | 运行时按属性算加成（目前只有 ExecutionCalculation 一种算法） |
 | **Cost GE**（`CostGameplayEffectClass`） | ❌ 零使用 | 技能资源消耗（耐力/弹药） |
 | **原生冷却 GE** | ⚠️ 10 个能力只有 1 个用 | 武器 6 把 + 敌人 3 种攻击都是**手搓"节拍" GE** |
@@ -99,11 +99,11 @@
 
 | 项 | 内容 |
 |---|---|
-| **现状** | 地狱塔在 `WeaponTick` 里自己维护 `HellTowerDamageTickTimers` 数组手动计时 |
+| **现状** | 御柱在 `WeaponTick` 里自己维护 `HellTowerDamageTickTimers` 数组手动计时 |
 | **目标** | 改用 Infinite GE + `Period` + `bExecutePeriodicEffectOnApplication`，让 GAS 自己按周期结算 |
 | **改动** | `RogueWeapon_HellTower.cpp`（删逐帧计时数组）、`RogueStateEffects.h` 新增周期 GE |
 | **收益** | 真实减少逐帧代码；补上 Periodic GE 这个**项目零使用**的常用特性 |
-| **风险** | **低**——只影响地狱塔一把武器，可单独回归 |
+| **风险** | **低**——只影响御柱一把武器，可单独回归 |
 | **工时** | **1 人日** |
 | **可讲点** | "哪些逻辑该交给 GE 周期、哪些必须留在 Tick" |
 

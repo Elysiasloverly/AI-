@@ -15,37 +15,37 @@ enum class ERogueUpgradeType : uint8
 	Recovery          UMETA(DisplayName = "生命恢复"),
 	AttackRange       UMETA(DisplayName = "攻击范围"),
 	ProjectileSpeed   UMETA(DisplayName = "弹体速度"),
-	ProjectileCount   UMETA(DisplayName = "普通子弹数量"),
+	ProjectileCount   UMETA(DisplayName = "御札数量"),
 	Armor             UMETA(DisplayName = "护甲恢复"),
 	ArmorCapacity     UMETA(DisplayName = "护甲上限"),
 	ExperienceGain    UMETA(DisplayName = "经验获取"),
-	ScytheCount       UMETA(DisplayName = "镰刀数量"),
-	RocketCount       UMETA(DisplayName = "火箭数量"),
-	LaserCount        UMETA(DisplayName = "激光数量"),
-	HellTowerCount    UMETA(DisplayName = "地狱塔数量"),
-	LaserRefraction   UMETA(DisplayName = "激光折射"),
-	MortarCount       UMETA(DisplayName = "迫击炮数量"),
-	MortarBlastRadius UMETA(DisplayName = "迫击炮爆炸范围"),
-	ScytheSize        UMETA(DisplayName = "镰刀变大"),
-	ScytheLifesteal   UMETA(DisplayName = "吸血收割")
+	ScytheCount       UMETA(DisplayName = "银刃数量"),
+	RocketCount       UMETA(DisplayName = "八卦炉数量"),
+	LaserCount        UMETA(DisplayName = "极限火花数量"),
+	HellTowerCount    UMETA(DisplayName = "御柱数量"),
+	LaserRefraction   UMETA(DisplayName = "星尘折射"),
+	MortarCount       UMETA(DisplayName = "阴阳玉数量"),
+	MortarBlastRadius UMETA(DisplayName = "阴阳玉爆炸范围"),
+	ScytheSize        UMETA(DisplayName = "银刃巨化"),
+	ScytheLifesteal   UMETA(DisplayName = "红雾吸血")
 };
 
 UENUM(BlueprintType)
 enum class ERogueEnemyType : uint8
 {
-	Rifleman    UMETA(DisplayName = "步枪手"),
-	Assault     UMETA(DisplayName = "突击手"),
-	Juggernaut  UMETA(DisplayName = "重装兵"),
-	Orbiter     UMETA(DisplayName = "环绕射手"),
-	Marksman    UMETA(DisplayName = "精准射手"),
-	Skirmisher  UMETA(DisplayName = "游击射手"),
-	Cannoneer   UMETA(DisplayName = "重炮手"),
-	Scatterer   UMETA(DisplayName = "散射者"),
-	ShockPillar UMETA(DisplayName = "震荡柱"),
-	Sniper      UMETA(DisplayName = "狙击手"),
-	Shotgunner  UMETA(DisplayName = "霰弹手"),
-	Repeater    UMETA(DisplayName = "速射手"),
-	Ringcaster  UMETA(DisplayName = "环击者")
+	Rifleman    UMETA(DisplayName = "妖精"),
+	Assault     UMETA(DisplayName = "夜雀"),
+	Juggernaut  UMETA(DisplayName = "鬼"),
+	Orbiter     UMETA(DisplayName = "人魂"),
+	Marksman    UMETA(DisplayName = "鸦天狗"),
+	Skirmisher  UMETA(DisplayName = "妖狐"),
+	Cannoneer   UMETA(DisplayName = "山蜘蛛"),
+	Scatterer   UMETA(DisplayName = "唐伞"),
+	ShockPillar UMETA(DisplayName = "地藏"),
+	Sniper      UMETA(DisplayName = "月兔"),
+	Shotgunner  UMETA(DisplayName = "毒茸"),
+	Repeater    UMETA(DisplayName = "血蝠"),
+	Ringcaster  UMETA(DisplayName = "亡灵")
 };
 
 struct FRogueSpawnCadence

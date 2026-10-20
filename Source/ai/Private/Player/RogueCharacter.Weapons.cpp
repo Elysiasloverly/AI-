@@ -57,7 +57,7 @@ namespace
 			MortarProjectileClass = ARogueMortarProjectile::StaticClass();
 		}
 
-		Row.DisplayName = TEXT("迫击炮");
+		Row.DisplayName = TEXT("阴阳玉");
 		Row.WeaponClass = ARogueWeapon_Mortar::StaticClass();
 		Row.Count = 0;
 		Row.Damage = 12.0f;

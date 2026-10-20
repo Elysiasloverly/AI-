@@ -51,7 +51,7 @@ GAS 基础设施、能力、效果与表现：
 ### `Combat/`
 
 - `Weapons/`：`RogueWeaponBase` + 6 个武器子类，以及行结构 `FRogueWeaponTableRow`
-- `Projectiles/`：玩家子弹、火箭、迫击炮、敌方弹体、环绕刀片
+- `Projectiles/`：御札、八卦炉、阴阳玉、敌方弹体、环绕刀片
 - `Visuals/`：光束、命中特效、伤害飘字
 - `Pooling/`：`RogueCombatPools` 与 `URogueCombatPoolSubsystem`
 - `Targeting/`：敌人注册表、空间哈希与候选查询
@@ -232,20 +232,20 @@ GAS 基础设施、能力、效果与表现：
 
 #### D. 当前项目里的真实例子
 
-##### 激光
+##### 极限火花
 
-- 激光武器玩法参数放在 `DT_WeaponConfig` 的 `Laser` 行（行结构 `FRogueWeaponTableRow`）
-- 激光 Beam 的视觉厚度、环大小、最短显示时间放在 `ARogueLaserBeam`
+- 极限火花武器玩法参数放在 `DT_WeaponConfig` 的 `Laser` 行（行结构 `FRogueWeaponTableRow`）
+- 极限火花 Beam 的视觉厚度、环大小、最短显示时间放在 `ARogueLaserBeam`
 
-##### 普通子弹
+##### 御札
 
-- 子弹速度、伤害、数量是玩法参数
-- 子弹外层 glow、ring 尺寸、trail 脉冲是表现参数
+- 御札速度、伤害、数量是玩法参数
+- 御札外层 glow、ring 尺寸、trail 脉冲是表现参数
 
-##### 火箭
+##### 八卦炉
 
-- 火箭伤害、爆炸半径、速度是玩法参数
-- 火箭尾焰、光晕、尾迹、灯光脉冲是表现参数
+- 八卦炉伤害、爆炸半径、速度是玩法参数
+- 八卦炉尾焰、光晕、尾迹、灯光脉冲是表现参数
 
 #### E. 什么时候可以不分这么细
 
@@ -265,12 +265,12 @@ GAS 基础设施、能力、效果与表现：
 
 当前武器族如下（6 族，均以 `ARogueWeaponBase` 子类实现）：
 
-- 普通子弹：`Projectile`
-- 镰刀：`Scythe`
-- 火箭：`Rocket`
-- 激光：`Laser`
-- 地狱塔：`HellTower`
-- 迫击炮：`Mortar`
+- 御札：`Projectile`
+- 银刃：`Scythe`
+- 八卦炉：`Rocket`
+- 极限火花：`Laser`
+- 御柱：`HellTower`
+- 阴阳玉：`Mortar`
 
 它们共同特点是：
 
@@ -286,9 +286,9 @@ GAS 基础设施、能力、效果与表现：
 
 例子：
 
-- 激光增加“穿透”
-- 火箭增加“多段爆炸”
-- 地狱塔增加“锁定时间越久越快”
+- 极限火花增加“穿透”
+- 八卦炉增加“多段爆炸”
+- 御柱增加“锁定时间越久越快”
 
 这种情况通常不需要新武器族，只需要：
 
@@ -347,8 +347,8 @@ GAS 基础设施、能力、效果与表现：
 运行时状态留在**武器或能力**里，不要塞回 `Character`，例如：
 
 - 开火计时与冷却（能力 + 冷却 GE）
-- 地狱塔的锁定目标、伤害层数与 Beam 刷新累积器（`ARogueWeapon_HellTower`）
-- 镰刀的公共环绕角度与刀片增删（`ARogueWeapon_Scythe`）
+- 御柱的锁定目标、伤害层数与 Beam 刷新累积器（`ARogueWeapon_HellTower`）
+- 银刃的公共环绕角度与刀片增删（`ARogueWeapon_Scythe`）
 
 `ARogueCharacter` 只保留武器实例数组、加成快照和跨武器查询入口。
 
@@ -439,10 +439,10 @@ GAS 基础设施、能力、效果与表现：
 
 例如：
 
-- 子弹
-- 火箭
+- 御札
+- 八卦炉
 - 命中特效
-- 激光 Beam
+- 极限火花 Beam
 
 #### 可以不池化
 
@@ -476,7 +476,7 @@ GAS 基础设施、能力、效果与表现：
 2. `ARogueCharacter::EnsureWeaponAbilities()` 每帧幂等地授予并激活能力（客户端能力列表复制会晚到）。
 3. `URogueWeaponAbility` 通过 `URogueAbilityTask_WeaponFireLoop` 每帧执行 `RunFireLoopStep()`：
    `CanFireNow()` → `CollectFireTargets()` → `FireAtTargets()` → 按 `GetAbilityCooldown()` 提交冷却 GE。
-4. 只有持续型表现武器（镰刀轨道）保留 `WeaponTick` / `NeedsCosmeticTick()`；事件型武器的表现通过 `Multicast_WeaponCosmetics` 合批发送。
+4. 只有持续型表现武器（银刃轨道）保留 `WeaponTick` / `NeedsCosmeticTick()`；事件型武器的表现通过 `Multicast_WeaponCosmetics` 合批发送。
 
 新增武器族时，在 `RogueWeaponAbility.h` 里加一个子类并实现 `GetDrivenWeaponClass()` 即可；不要在 `Character` 里新增 `HandleXxx(DeltaSeconds)` 计时器。
 
@@ -632,7 +632,7 @@ GAS 基础设施、能力、效果与表现：
 - 代码默认：`Source/ai/Private/Progression/Upgrades/RogueUpgradeSystemRules.cpp`
 - 资产覆盖：`Content/Data/Upgrades/DA_UpgradeRules`
 
-基础通用卡进 `BaseUpgradeTypes`（或资产的同名字段）；武器专属卡进 `WeaponUpgradeRules` / `AppendDefaultWeaponRules`。带前置条件的卡（如镰刀变大要求实际镰刀数 > 0）在 `BuildUpgradePool()` 里处理。
+基础通用卡进 `BaseUpgradeTypes`（或资产的同名字段）；武器专属卡进 `WeaponUpgradeRules` / `AppendDefaultWeaponRules`。带前置条件的卡（如银刃巨化要求实际银刃数 > 0）在 `BuildUpgradePool()` 里处理。
 
 #### 第四步：让它真正生效
 
@@ -876,13 +876,13 @@ GAS 基础设施、能力、效果与表现：
 当前已经池化的核心对象包括：
 
 - 敌人
-- 玩家子弹
-- 敌人子弹
-- 火箭
-- 激光 Beam
+- 御札
+- 敌方弹幕
+- 八卦炉
+- 极限火花 Beam
 - 命中特效
 - 经验球
-- 镰刀
+- 银刃
 
 如果你再加一个高频短命对象，不池化通常很快就会重新把中后期性能打回去。
 

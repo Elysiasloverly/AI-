@@ -58,7 +58,7 @@
 1. **持续预测的确认范围有限**：武器循环复用激活预测键，Dash 直接移动 Actor；应通过真实连接、延迟与丢包场景评估预测、纠正和冷却表现。
 2. **敌人冷却 GE 尚未阻止激活**：未接入 `CooldownGameplayEffectClass`/`CheckCooldown`，也没有效果句柄守卫；实际尝试节流依赖 AI 计时器。
 3. **非 Pawn 伤害来源的归属需复核**：伤害入口从目标 ASC 创建 Context，只有 Pawn 来源路径额外写入 Instigator；不能保证任意 AActor 来源都具有正确的 EffectCauser 和击杀归属。
-4. **旧地面波已移除**：`URogueEnemyGroundWaveAttackAbility`、`FRogueEnemyGroundWaveArchetype` 及震荡柱的地面波状态/视觉组件已删除；震荡柱只使用远程 GAS 槽的 `RadialRing` 整圈弹幕。
+4. **旧地面波已移除**：`URogueEnemyGroundWaveAttackAbility`、`FRogueEnemyGroundWaveArchetype` 及地藏的地面波状态/视觉组件已删除；地藏只使用远程 GAS 槽的 `RadialRing` 整圈弹幕。
 5. **武器加成存在两条复制路径**：AttributeSet 和 Character 快照独立更新；项目尚需区分网络数值到达与 GAS 属性通知是否完整。
 6. **经验球尺寸改由复制的经验值驱动**：`ExperienceValue` 已单独复制，客户端在 `OnRep_ExperienceValue` 里按同一公式重算 Actor 缩放，因此不再依赖 `FRepMovement`（它本来就不带 Scale）。仍是**跳变**、无插值；BP 若再缩放子组件，会与 Actor 缩放叠加。
 7. **归属修复的时间变量是函数 static**：它跨相同进程中的调用实例保留；多个 World/重开场景不宜当成每个 World 独立的计时状态。

@@ -19,20 +19,20 @@
 | **第 1 批 ②** | 统一性能裁剪阈值（`RogueWeaponBase.cpp` 1 处 + `RogueHUD.cpp` 4 处） | 全树 grep 复核，残留命中只剩注释与唯一实现 |
 | **第 1 批 ③** | 清理注释与文档债（共 9 处） | — |
 | **第 1 批 ④** | 修正 `GAS-Main-Architecture-Plan.md` 的 Phase 5 状态与 Phase 1a 的失效描述 | — |
-| **第 2 批 ⑥′** | **生命/护甲回复改为 Periodic GE**（替换原"地狱塔"项，理由见下） | 见下方数值验证 |
+| **第 2 批 ⑥′** | **生命/护甲回复改为 Periodic GE**（替换原"御柱"项，理由见下） | 见下方数值验证 |
 | **第 2 批 ⑦** | **倒地表现：Actor 型 GameplayCue**（`ARogueGameplayCue_Downed`） | 见下方 cue 验证 |
 
 ### 🔄 计划修正（两处，都基于实际读码后的判断）
 
-**修正 1：原第 6 项「地狱塔改 Periodic GE」→ 改为「生命/护甲回复改 Periodic GE」**
+**修正 1：原第 6 项「御柱改 Periodic GE」→ 改为「生命/护甲回复改 Periodic GE」**
 
-读码后发现地狱塔**不适合** Periodic GE，原因是结构性的：
+读码后发现御柱**不适合** Periodic GE，原因是结构性的：
 
 - 它的伤害**逐跳递增**（`HellTowerCurrentDamages[Index] += DamageRampPerTick`）——Periodic GE 的修饰器量级无法表达"每次比上次多"；
 - 它打的是**动态外部目标**（塔自己锁定的那只敌人，状态存在武器上）——而 Periodic GE 的修饰器只能作用于**自己的 Target**（玩家）。
 
 强行迁移只会把武器状态塞进 GE 的 ExecutionCalculation，是更差的架构。
-**所以地狱塔保留在 Tick 里** —— 这条边界本身就是"哪些逻辑该留在 Tick"的好素材。
+**所以御柱保留在 Tick 里** —— 这条边界本身就是"哪些逻辑该留在 Tick"的好素材。
 
 替代落点选 **生命/护甲回复**：它才是 Periodic GE 的教科书场景，而且一次补齐了项目里**三个零使用**的机制：
 
@@ -90,7 +90,7 @@
 - **回复 GE 挂载日志 2 条、属性初始化 2 次** → 第二次初始化跳过了重复挂载，**幂等性得到验证**
 
 回归对照（武器生效值，与 `GAS-Main-Architecture-Plan.md` 记录的历史基线一致）：
-火箭冷却 **1.75**、迫击炮范围 **2500**、地狱塔范围 **870**、伤害 **30**。**数值红线未被触碰。**
+八卦炉冷却 **1.75**、阴阳玉范围 **2500**、御柱范围 **870**、伤害 **30**。**数值红线未被触碰。**
 
 ### Actor Cue 验证（无头运行实测）
 
@@ -245,13 +245,13 @@ RogueHUD.cpp:421 / 484 / 535 / 606  ShouldCull() || count >= 40        ← 硬�
 - **故事**：「MMC / ExecutionCalculation / SetByCaller 分别适合什么场景」——GAS 经典面试题，你现在只答得出两种
 - **工时**：0.5 人日　**风险**：🟢 极低（纯新增，不动现有链路）
 
-### 6. 地狱塔改为 Periodic GE
+### 6. 御柱改为 Periodic GE
 
 - **现状**：`RogueWeapon_HellTower.cpp` 自己维护 `HellTowerDamageTickTimers` 数组手动计时
 - **要做**：改用 Infinite GE + `Period` + `bExecutePeriodicEffectOnApplication`，删掉逐帧计时数组
 - **故事**：「哪些逻辑该交给 GE 周期、哪些必须留在 Tick」——**边界判断力比会用 API 更值钱**
 - **工时**：1.0 人日　**风险**：🟢 低（只影响一把武器，可单独回归）
-- **验收**：地狱塔伤害频率与总量与改造前逐项一致
+- **验收**：御柱伤害频率与总量与改造前逐项一致
 
 ### 7. 补一个 GameplayCueNotify_Actor
 
@@ -296,7 +296,7 @@ RogueHUD.cpp:421 / 484 / 535 / 606  ShouldCull() || count >= 40        ← 硬�
 ③ Enhanced Input        ── 独立模块，不碰数值/网络
    ↓
 ④ MMC（纯新增）          ── 零风险，先拿一个故事
-⑤ Periodic GE（地狱塔）   ── 只影响一把武器
+⑤ Periodic GE（御柱）   ── 只影响一把武器
 ⑥ Actor Cue             ── 纯表现
    ↓
 ⑦ UI 事件化（选做）

@@ -38,9 +38,9 @@
 | 玩法动作 | 能力 | 持续/一次性 | 联机策略 | 谁决定时机 |
 |---|---|---|---|---|
 | 冲刺 | `URogueGameplayAbility_Dash` | 一次性 | LocalPredicted | 输入经 `AbilityLocalInputPressed` 激活 |
-| 武器自动开火 | `URogueWeaponAbility` 系列 | 持续心跳 | LocalPredicted | 能力与冷却 GE；镰刀持续轨道保留表现 Tick |
+| 武器自动开火 | `URogueWeaponAbility` 系列 | 持续心跳 | LocalPredicted | 能力与冷却 GE；银刃持续轨道保留表现 Tick |
 | 敌人接触 / 远程攻击 | `URogueEnemyAttackAbility` 子类 | 一次性 | ServerOnly | AI 决策，能力执行 |
-| 震荡柱整圈弹幕 | `URogueEnemyRangedAttackAbility` | 一次性齐射 | ServerOnly | AI 冷却决策，单条多播同步客户端表现 |
+| 地藏整圈弹幕 | `URogueEnemyRangedAttackAbility` | 一次性齐射 | ServerOnly | AI 冷却决策，单条多播同步客户端表现 |
 
 ---
 
@@ -345,7 +345,7 @@ sequenceDiagram
 | `BP_RogueCharacter` | Blueprint | `ARogueCharacter`（蓝图里只配资源/数值引用） |
 | `BP_RogueHUD` | Blueprint | `ARogueHUD`（挂 8 个 WBP 类：6 个菜单 + 玩家状态条 + 敌人血条） |
 | `BP_EnemyBase` + 13 个敌人 BP | Blueprint | `ARogueEnemy`（原型参数全部来自数据表） |
-| `BP_Projectile/*` | Blueprint | 玩家弹体/火箭/迫击炮/光束/刀片（只配外观） |
+| `BP_Projectile/*` | Blueprint | 玩家弹体/八卦炉/阴阳玉/光束/刀片（只配外观） |
 | `BP/Enemy/Projectiles/BP_EnemyProjectile(_Boss/_Shooter/_Artillery/_Spitter/_ShockPillar/_Sniper/_Shotgunner/_Burst/_Ringer)` | Blueprint | `ARogueEnemyProjectile`（敌人弹体外观；原型表按类型指定，敌人 BP 可覆盖） |
 | `WBP_*`（10 个） | UMG | `UI/Widgets/` 下的 10 个基类；8 个菜单走聚合头，两个 HUD 状态条单独 include |
 
@@ -379,7 +379,7 @@ sequenceDiagram
 | 本人客户端 | 可获得自己 ASC 的能力列表 | 按 LocalPredicted 策略提前产生操作反馈；服务器仍需确认，移动/冷却预测存在实现边界 |
 | 其它客户端 | 没有别人的技能 | 只画服务端广播的那一发（`Multicast_WeaponCosmetics`） |
 
-分工由能力授予/复制、NetExecutionPolicy、Actor 权限和实际调用路径共同决定。拥有一个能力实例不代表可以在任意端执行所有行为。镰刀轨道在各端表现；敌人攻击按 ServerOnly 执行；伤害入口还检查目标 ASC 的权威性。
+分工由能力授予/复制、NetExecutionPolicy、Actor 权限和实际调用路径共同决定。拥有一个能力实例不代表可以在任意端执行所有行为。银刃轨道在各端表现；敌人攻击按 ServerOnly 执行；伤害入口还检查目标 ASC 的权威性。
 
 当前 Dash 任务直接移动 Actor；持续武器循环复用激活预测键；这些实现不等价于完整的移动重放或持续预测确认。敌人攻击 GE 记录冷却效果，但重复尝试的节奏还由 AI 侧计时器控制。
 
@@ -396,7 +396,7 @@ sequenceDiagram
 4. **濒死/复活**：`LifeState` 的阶段、服务器复活截止时刻与剩余秒数，复活后的 `State.Invulnerable`；独立回归用例见 [Player-LifeCycle.md](Player-LifeCycle.md)
 
 外加四个探针（前三个在自检全部完成之后才跑，避免干扰数值对比；压测可单进程运行，但仍需开启 WeaponUpgradeChain 入口）：
-`ProbeContactAttack`（把敌人改硬并瞬移到玩家身上）、`ProbeShockPillarBarrage`（直接刷一只震荡柱验证整圈弹幕）、
+`ProbeContactAttack`（把敌人改硬并瞬移到玩家身上）、`ProbeShockPillarBarrage`（直接刷一只地藏验证整圈弹幕）、
 `ProbeDeathAndRevive`（对玩家施加致命伤害）、`ProbeEnemyStress`（一次刷 N 只压测敌人）。
 **为什么必须用探针**：无头自检里武器太强，敌人贴不上来、玩家也不会倒地 ——
 "没实现"与"没机会触发"在计数上完全一样（这两条路径各踩过一次）。

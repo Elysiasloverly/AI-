@@ -12,7 +12,8 @@ public class ai : ModuleRules
 		// EnhancedInput 处理玩家输入，UMG/Slate 用于界面，AIModule 用于敌人控制。
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "AIModule", "GameplayTasks", "UMG", "GameplayAbilities", "GameplayTags", "NetCore", "EnhancedInput" });
 
-		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
+		// EngineCameras：提供 ULegacyCameraShake（受伤镜头震动的参数化基类）。
+		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore", "EngineCameras" });
 		
 		// Uncomment if you are using online features
 		// PrivateDependencyModuleNames.Add("OnlineSubsystem");

@@ -198,12 +198,12 @@ void ARogueGameMode::RunWeaponUpgradeSelfTest()
 		{ ERogueUpgradeType::AttackSpeed,       0.1f, TEXT("攻速+0.1") },
 		{ ERogueUpgradeType::AttackRange,     100.0f, TEXT("范围+100") },
 		{ ERogueUpgradeType::ProjectileSpeed, 200.0f, TEXT("弹速+200") },
-		{ ERogueUpgradeType::ProjectileCount,   1.0f, TEXT("主武器数量+1") },
-		{ ERogueUpgradeType::ScytheCount,       1.0f, TEXT("镰刀数量+1") },
-		{ ERogueUpgradeType::RocketCount,       1.0f, TEXT("火箭数量+1") },
-		{ ERogueUpgradeType::LaserCount,        1.0f, TEXT("激光数量+1") },
-		{ ERogueUpgradeType::HellTowerCount,    1.0f, TEXT("地狱塔数量+1") },
-		{ ERogueUpgradeType::MortarCount,       1.0f, TEXT("迫击炮数量+1") },
+		{ ERogueUpgradeType::ProjectileCount,   1.0f, TEXT("御札数量+1") },
+		{ ERogueUpgradeType::ScytheCount,       1.0f, TEXT("银刃数量+1") },
+		{ ERogueUpgradeType::RocketCount,       1.0f, TEXT("八卦炉数量+1") },
+		{ ERogueUpgradeType::LaserCount,        1.0f, TEXT("极限火花数量+1") },
+		{ ERogueUpgradeType::HellTowerCount,    1.0f, TEXT("御柱数量+1") },
+		{ ERogueUpgradeType::MortarCount,       1.0f, TEXT("阴阳玉数量+1") },
 	};
 
 	auto ApplyStandardUpgrades = [&Cases, &PlayerName](ARogueCharacter* InCharacter, const TCHAR* Stage, bool bLogEach)

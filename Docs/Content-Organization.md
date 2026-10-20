@@ -17,7 +17,7 @@ Content/
 │   ├── CharacterAssetse/        角色套装（10 套：网格、贴图与材质）
 │   ├── Environment/             夜景天空等环境资源
 │   ├── Map/                     场景网格与地形材质（1=森林，2=神社）
-│   ├── WEapon/                  武器与弹体外观（冰锥、弹幕、冰刃、激光）
+│   ├── WEapon/                  武器与弹体外观（冰锥、弹幕、冰刃、光束）
 │   ├── Library/                 原 Content 外层素材包，保留包内结构
 │   │   ├── StarterContent/
 │   │   ├── Grid_Materials/

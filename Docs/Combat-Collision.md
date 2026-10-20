@@ -6,11 +6,11 @@
 
 | 类 | 命中球 | 视觉/其它组件 | 物理模拟 |
 |---|---|---|---|
-| `ARogueProjectile`（玩家子弹） | `QueryOnly`；Pawn Overlap、WorldStatic Block、WorldDynamic Ignore | `Mesh` / `GlowMesh` / `RingMesh` / `TrailMesh` 全部 `NoCollision` | 无 |
-| `ARogueRocketProjectile`（火箭） | `QueryOnly`；Pawn Overlap、WorldStatic Block | C++ 不建网格；蓝图追加的组件在 BeginPlay 被关闭 | 无 |
-| `ARogueMortarProjectile`（迫击炮） | 继承火箭 | `LandingIndicatorMesh` `NoCollision` | 无 |
+| `ARogueProjectile`（御札） | `QueryOnly`；Pawn Overlap、WorldStatic Block、WorldDynamic Ignore | `Mesh` / `GlowMesh` / `RingMesh` / `TrailMesh` 全部 `NoCollision` | 无 |
+| `ARogueRocketProjectile`（八卦炉） | `QueryOnly`；Pawn Overlap、WorldStatic Block | C++ 不建网格；蓝图追加的组件在 BeginPlay 被关闭 | 无 |
+| `ARogueMortarProjectile`（阴阳玉） | 继承八卦炉 | `LandingIndicatorMesh` `NoCollision` | 无 |
 | `ARogueEnemyProjectile`（敌人弹体） | `QueryOnly`；Pawn Overlap、WorldStatic Block | 模板网格 `NoCollision`；蓝图追加的组件在 BeginPlay 被关闭 | 无 |
-| `ARogueOrbitingBlade`（镰刀） | `QueryOnly`；Pawn Overlap | `Mesh` `NoCollision` | 无 |
+| `ARogueOrbitingBlade`（银刃） | `QueryOnly`；Pawn Overlap | `Mesh` `NoCollision` | 无 |
 | `ARogueLaserBeam`（光束） | 无命中球 | `BeamMesh` / `GlowMesh` / 圆环全部 `NoCollision` | 无 |
 | `ARogueImpactEffect`（命中特效） | 无命中球 | `EffectMesh` `NoCollision` | 无 |
 
@@ -40,4 +40,4 @@ RogueCombatCollision::DisableNonHitCollision(Actor, HitCollision);
 - 与 `Pawn` **Overlap**（判定命中玩家/敌人）
 - 与 `WorldStatic` **Block**（撞墙后停下/消失）
 
-如果希望子弹穿墙，需要单独把 `WorldStatic` 响应改成 `Ignore`；那会改变玩法命中规则，不建议直接全局改。
+如果希望御札穿墙，需要单独把 `WorldStatic` 响应改成 `Ignore`；那会改变玩法命中规则，不建议直接全局改。

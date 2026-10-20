@@ -27,6 +27,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Rogue|Editor")
 	static bool BuildEnemyHealthBar(UWidgetBlueprint* Blueprint);
 
+	/** 清空并重建受伤泛红占位：Canvas + 名为 FlashRoot 的全屏容器，内含中心底色与四条边缘。
+	 *  FlashRoot 与 C++ 的可选绑定同名，所以不写事件图也能看到闪烁与淡出。 */
+	UFUNCTION(BlueprintCallable, Category = "Rogue|Editor")
+	static bool BuildDamageFlash(UWidgetBlueprint* Blueprint);
+
 	/** 返回 "类名:控件名" 列表，便于脚本/日志核对生成结果。 */
 	UFUNCTION(BlueprintCallable, Category = "Rogue|Editor")
 	static FString DescribeWidgetTree(UWidgetBlueprint* Blueprint);

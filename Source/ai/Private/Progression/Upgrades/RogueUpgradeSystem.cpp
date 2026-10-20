@@ -27,25 +27,25 @@ namespace
 		switch (Type)
 		{
 		case ERogueUpgradeType::ScytheSize:
-			Option.Title = TEXT("镰刀变大");
-			Option.Description = TEXT("镰刀尺寸与伤害碰撞范围增加基础值的 20%，不改变环绕距离。");
+			Option.Title = TEXT("银刃巨化");
+			Option.Description = TEXT("银刃尺寸与伤害碰撞范围增加基础值的 20%，不改变环绕距离。");
 			Option.Magnitude = 0.2f;
 			break;
 		case ERogueUpgradeType::ScytheLifesteal:
-			Option.Title = TEXT("吸血收割");
-			Option.Description = TEXT("镰刀造成伤害的 20% 回复生命；首次获得 20%，之后每级 +5%。");
+			Option.Title = TEXT("红雾吸血");
+			Option.Description = TEXT("银刃造成伤害的 20% 回复生命；首次获得 20%，之后每级 +5%。");
 			Option.Magnitude = 0.05f;
 			Option.FirstMagnitude = 0.20f;
 			Option.MaxMagnitude = 1.0f;
 			break;
 		case ERogueUpgradeType::MortarCount:
-			Option.Title = TEXT("迫击炮");
-			Option.Description = TEXT("解锁迫击炮，或额外增加 1 枚迫击炮弹。");
+			Option.Title = TEXT("阴阳玉连投");
+			Option.Description = TEXT("解锁阴阳玉，或额外增加 1 枚阴阳玉。");
 			Option.Magnitude = 1.0f;
 			break;
 		case ERogueUpgradeType::MortarBlastRadius:
-			Option.Title = TEXT("迫击炮扩爆");
-			Option.Description = TEXT("迫击炮爆炸范围扩大，覆盖更大的区域。");
+			Option.Title = TEXT("阴阳玉·扩散");
+			Option.Description = TEXT("阴阳玉爆炸范围扩大，覆盖更大的区域。");
 			Option.Magnitude = 90.0f;
 			break;
 		default:
