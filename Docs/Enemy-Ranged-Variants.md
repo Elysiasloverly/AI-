@@ -6,19 +6,19 @@
 
 | 新名字 | 定位 | 弹道 | 起始波次 |
 |---|---|---|---:|
-| `Rifleman` 步枪手 | 基础单发 | `Single`，950 cm/s，1.25s 冷却 | 1 |
-| `Assault` 突击手 | 冲锋 + 散射 | `Spread3`，850 cm/s，1.7s 冷却 | 2 |
-| `Juggernaut` 重装兵 | 缓慢重单发 | `Single`，680 cm/s，2.6s 冷却 | 4 |
-| `Orbiter` 环绕射手 | 环绕 + 单发 | `Single`，1000 cm/s，1.4s 冷却 | 3 |
-| `Marksman` 精准射手 | 标准单发 | `Single`，980 cm/s，1.18s 冷却 | 3 |
-| `Skirmisher` 游击射手 | Z 字 + 散射 | `Spread3`，900 cm/s，1.3s 冷却 | 2 |
-| `Cannoneer` 重炮手 | 远距离重单发 | `Single`，860 cm/s，1.85s 冷却 | 5 |
-| `Scatterer` 散射者 | 三发散射 | `Spread3`，980 cm/s，0.70s 冷却 | 4 |
-| `ShockPillar` 震荡柱 | 固定环形弹幕 | `RadialRing`，48 发，720 cm/s | 7 |
-| `Sniper` 狙击手 | 超远距离单发 | `Single`，1700 cm/s，2.1s 冷却 | 6 |
-| `Shotgunner` 霰弹手 | 五发宽散射 | `Spread3`，5 发，860 cm/s | 5 |
-| `Repeater` 速射手 | 高频单发 | `Single`，1180 cm/s，0.48s 冷却 | 7 |
-| `Ringcaster` 环击者 | 移动环形弹幕 | `RadialRing`，16 发，760 cm/s | 9 |
+| `Rifleman` 妖精 | 基础单发 | `Single`，950 cm/s，1.25s 冷却 | 1 |
+| `Assault` 夜雀 | 冲锋 + 散射 | `Spread3`，850 cm/s，1.7s 冷却 | 2 |
+| `Juggernaut` 鬼 | 缓慢重单发 | `Single`，680 cm/s，2.6s 冷却 | 4 |
+| `Orbiter` 人魂 | 环绕 + 单发 | `Single`，1000 cm/s，1.4s 冷却 | 3 |
+| `Marksman` 鸦天狗 | 标准单发 | `Single`，980 cm/s，1.18s 冷却 | 3 |
+| `Skirmisher` 妖狐 | Z 字 + 散射 | `Spread3`，900 cm/s，1.3s 冷却 | 2 |
+| `Cannoneer` 山蜘蛛 | 远距离重单发 | `Single`，860 cm/s，1.85s 冷却 | 5 |
+| `Scatterer` 唐伞 | 三发散射 | `Spread3`，980 cm/s，0.70s 冷却 | 4 |
+| `ShockPillar` 地藏 | 固定环形弹幕 | `RadialRing`，48 发，720 cm/s | 7 |
+| `Sniper` 月兔 | 超远距离单发 | `Single`，1700 cm/s，2.1s 冷却 | 6 |
+| `Shotgunner` 毒茸 | 五发宽散射 | `Spread3`，5 发，860 cm/s | 5 |
+| `Repeater` 血蝠 | 高频单发 | `Single`，1180 cm/s，0.48s 冷却 | 7 |
+| `Ringcaster` 亡灵 | 移动环形弹幕 | `RadialRing`，16 发，760 cm/s | 9 |
 
 起始波次以 `DA_GameBalance.EnemyWaveEntries` 为准；清空该数组时才回退到 `RogueGameModeRules.cpp` 的内置表。
 
@@ -31,12 +31,14 @@
 
 ## 内部参数块说明
 
-`FRogueEnemySpecialParams` 里的 `Shooter` / `Spitter` / `Artillery` / `Charger` 等**参数块名是表结构字段**，不是怪物显示名，因此保留原名以兼容已有数据和导入 JSON：
+`FRogueEnemySpecialParams` 现在是**一怪一块**，块名与 `ERogueEnemyType` 一一对应
+（`Rifleman` / `Assault` / `Juggernaut` / `Orbiter` / `Marksman` / `Skirmisher` / `Cannoneer` /
+`Scatterer` / `ShockPillar` / `Sniper` / `Shotgunner` / `Repeater` / `Ringcaster`）：
 
-- `Marksman` / `Repeater` / `Rifleman` 使用 `SpecialParams.Shooter`
-- `Scatterer` / `Skirmisher` / `Assault` 使用 `SpecialParams.Spitter`
-- `Cannoneer` / `Juggernaut` 使用 `SpecialParams.Artillery`
-- `ShockPillar` / `Ringcaster` 使用 `SpecialParams.ShockPillar`
+- `ToArchetype()` 只读取当前 `EnemyType` 对应的块，互不共享；
+- 旧共享块（`Charger` / `Shooter` / `Artillery` / `Spitter`）已通过 `[CoreRedirects]`
+  重定向到族首怪物块，表数据由 `Tools/migrate_enemy_per_type_params.py` 重分布；
+- 详见 [敌人原型表结构](Enemy-Archetype-Table.md)。
 
 ## 行为约束
 

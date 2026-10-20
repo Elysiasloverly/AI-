@@ -8,3 +8,5 @@ Packaged/
 .idea/
 *.VC.db
 *.sln
+__pycache__/
+*.pyc

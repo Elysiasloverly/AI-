@@ -21,18 +21,18 @@
 | 组 | 已进资产 |
 |---|---|
 | `BaseStats` | 生命、护甲、移速、跳跃、重力、土狼时间、输入缓冲、Dash、回复、经验、拾取半径等 |
-| `WeaponBonusCaps` | 攻击、攻速、范围、弹体/火箭/激光/迫击炮/镰刀数量、镰刀尺寸、**镰刀吸血上限**等 |
+| `WeaponBonusCaps` | 攻击、攻速、范围、弹体/八卦炉/极限火花/阴阳玉/银刃数量、银刃尺寸、**红雾吸血上限**等 |
 | `InitialWeaponBonuses` | 初始武器加成 |
 | `Progression` / `SpawnState` / `Revival` | 升级、出生、复活配置 |
 
 ### `/Game/Data/Weapons/DT_WeaponConfig`
 
-已覆盖：`WeaponClass`、`ProjectileClass`、`RocketClass`、`MortarProjectileClass`、`BeamClass`、`BladeClass`、伤害、冷却、范围、数量、弹速、爆炸半径、激光折射、迫击炮参数、随机弹道开关等。
+已覆盖：`WeaponClass`、`ProjectileClass`、`RocketClass`、`MortarProjectileClass`、`BeamClass`、`BladeClass`、伤害、冷却、范围、数量、弹速、爆炸半径、星尘折射、阴阳玉参数、随机弹道开关等。
 
 ### `/Game/Data/Enemies/DT_EnemyArchetypes`
 
-已覆盖：`EnemyType`、`BaseMoveMultiplier`、`AttackAbilitySet`、`MaxAlive`、`MaxSpawnPerWave`、`ProjectileClass`、`SpecialParams`、`BossOverride`。  
-移动、射击、特殊攻击参数从 `SpecialParams` 读取。
+已覆盖：`EnemyType`、`BaseMoveMultiplier`、`AttackAbilitySet`、`MaxAlive`、`MaxSpawnPerWave`、`ProjectileClass`、`MovementModelOverride`、`SpecialParams`、`BossOverride`。  
+移动、射击、特殊攻击参数从 `SpecialParams` 读取（一怪一块，见 [敌人原型表结构](Enemy-Archetype-Table.md)）。
 
 ### 升级
 
@@ -90,10 +90,10 @@
 以下默认值在 C++，没有统一数据资产入口：
 
 - 玩家弹体：`CollisionRadius=16`、`PooledLifetime=3`、`Speed=1600`、`Damage=20`
-- 火箭：`CollisionRadius=18`、`PooledLifetime=5`、`Damage=40`
+- 八卦炉：`CollisionRadius=18`、`PooledLifetime=5`、`Damage=40`
 - 敌人弹体：`CollisionRadius=22`、`BaseSpeed=920`、`PooledLifetime=4`、`ImpactEffectScale=0.24`
-- 环绕镰刀：碰撞半径 `46`、命中冷却 `0.35`
-- 迫击炮：`MinimumLaunchSpeed=680`、落点脉冲 `4.8`
+- 环绕银刃：碰撞半径 `46`、命中冷却 `0.35`
+- 阴阳玉：`MinimumLaunchSpeed=680`、落点脉冲 `4.8`
 
 其中一部分会被 `DT_WeaponConfig` 或 BP 覆盖，但碰撞尺寸、寿命、部分表现参数没有统一来源。
 
@@ -109,14 +109,14 @@
 已经把 C++ 视觉组件删掉、改由 BP SCS 提供的：
 
 - 玩家弹体：`RogueProjectile.cpp` + `BP_RogueProjectile`（Mesh/Glow/Ring/Trail/GlowLight）
-- 环绕镰刀：`RogueOrbitingBlade.cpp` + `BP_RogueOrbitingBlade`（Mesh + Overlay）
-- 迫击炮落点指示：`RogueMortarProjectile.cpp` + `BP_RogueMortarProjectile`（LandingIndicator）
+- 环绕银刃：`RogueOrbitingBlade.cpp` + `BP_RogueOrbitingBlade`（Mesh + Overlay）
+- 阴阳玉落点指示：`RogueMortarProjectile.cpp` + `BP_RogueMortarProjectile`（LandingIndicator）
 
 仍由 C++ 创建/加载、尚未迁移的：
 
 - 命中特效：`RogueImpactEffect.cpp`
-- 激光束：`RogueLaserBeam.cpp`
-- 震荡柱内置视觉：`RogueEnemy.cpp`
+- 极限火花束：`RogueLaserBeam.cpp`
+- 地藏内置视觉：`RogueEnemy.cpp`
 - 经验球：`RogueExperiencePickup.cpp`
 - 倒地 cue：`RogueGameplayCue_Downed.cpp`
 

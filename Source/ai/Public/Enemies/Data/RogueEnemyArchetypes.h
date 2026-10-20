@@ -160,10 +160,6 @@ struct AI_API FRogueEnemyRangedArchetype
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ranged|Cooldown")
 	float InitialCooldownMax = 0.0f;
 
-	/** 远距离移动的目标距离；攻击距离门控已删除。 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ranged|Range")
-	float PreferredRange = 0.0f;
-
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ranged|Cooldown")
 	float NextShotCooldown = 0.0f;
 

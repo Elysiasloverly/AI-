@@ -22,7 +22,6 @@ namespace
 		Archetype.Ranged.ShotPattern = ERogueEnemyShotPattern::Single;
 		Archetype.Ranged.InitialCooldownMin = bIsBoss ? 0.25f : 0.4f;
 		Archetype.Ranged.InitialCooldownMax = bIsBoss ? 0.6f : 0.9f;
-		Archetype.Ranged.PreferredRange = Archetype.Movement.PreferredRange;
 		Archetype.Ranged.NextShotCooldown = bIsBoss ? 0.85f : 1.25f;
 		Archetype.Ranged.ProjectileSpeed = bIsBoss ? 1100.0f : 950.0f;
 		Archetype.Ranged.ProjectileDamageMultiplier = bIsBoss ? 0.75f : 0.55f;
@@ -50,7 +49,6 @@ namespace
 		Archetype.Ranged.ShotPattern = ERogueEnemyShotPattern::Spread3;
 		Archetype.Ranged.InitialCooldownMin = bIsBoss ? 0.4f : 0.65f;
 		Archetype.Ranged.InitialCooldownMax = bIsBoss ? 0.8f : 1.1f;
-		Archetype.Ranged.PreferredRange = bIsBoss ? 620.0f : 520.0f;
 		Archetype.Ranged.NextShotCooldown = bIsBoss ? 1.2f : 1.7f;
 		Archetype.Ranged.ProjectileSpeed = bIsBoss ? 980.0f : 850.0f;
 		Archetype.Ranged.ProjectileDamageMultiplier = bIsBoss ? 0.48f : 0.35f;
@@ -78,7 +76,6 @@ namespace
 		Archetype.Ranged.ShotPattern = ERogueEnemyShotPattern::Single;
 		Archetype.Ranged.InitialCooldownMin = bIsBoss ? 0.9f : 1.4f;
 		Archetype.Ranged.InitialCooldownMax = bIsBoss ? 1.5f : 2.2f;
-		Archetype.Ranged.PreferredRange = bIsBoss ? 850.0f : 700.0f;
 		Archetype.Ranged.NextShotCooldown = bIsBoss ? 1.8f : 2.6f;
 		Archetype.Ranged.ProjectileSpeed = bIsBoss ? 820.0f : 680.0f;
 		Archetype.Ranged.ProjectileDamageMultiplier = bIsBoss ? 1.8f : 1.4f;
@@ -111,7 +108,6 @@ namespace
 		Archetype.Ranged.ShotPattern = ERogueEnemyShotPattern::Single;
 		Archetype.Ranged.InitialCooldownMin = bIsBoss ? 0.4f : 0.65f;
 		Archetype.Ranged.InitialCooldownMax = bIsBoss ? 0.8f : 1.2f;
-		Archetype.Ranged.PreferredRange = bIsBoss ? 780.0f : 650.0f;
 		Archetype.Ranged.NextShotCooldown = bIsBoss ? 0.95f : 1.4f;
 		Archetype.Ranged.ProjectileSpeed = bIsBoss ? 1150.0f : 1000.0f;
 		Archetype.Ranged.ProjectileDamageMultiplier = bIsBoss ? 0.8f : 0.6f;
@@ -145,7 +141,6 @@ namespace
 		Archetype.Ranged.ShotPattern = ERogueEnemyShotPattern::Single;
 		Archetype.Ranged.InitialCooldownMin = 0.35f;
 		Archetype.Ranged.InitialCooldownMax = 0.85f;
-		Archetype.Ranged.PreferredRange = Archetype.Movement.PreferredRange;
 		Archetype.Ranged.NextShotCooldown = bIsBoss ? 0.72f : 1.18f;
 		Archetype.Ranged.ProjectileSpeed = bIsBoss ? 1220.0f : 980.0f;
 		Archetype.Ranged.ProjectileDamageMultiplier = bIsBoss ? 1.0f : 0.85f;
@@ -177,7 +172,6 @@ namespace
 		Archetype.Ranged.ShotPattern = ERogueEnemyShotPattern::Spread3;
 		Archetype.Ranged.InitialCooldownMin = bIsBoss ? 0.35f : 0.55f;
 		Archetype.Ranged.InitialCooldownMax = bIsBoss ? 0.7f : 1.0f;
-		Archetype.Ranged.PreferredRange = bIsBoss ? 620.0f : 520.0f;
 		Archetype.Ranged.NextShotCooldown = bIsBoss ? 0.95f : 1.3f;
 		Archetype.Ranged.ProjectileSpeed = bIsBoss ? 1000.0f : 900.0f;
 		Archetype.Ranged.ProjectileDamageMultiplier = bIsBoss ? 0.42f : 0.35f;
@@ -214,7 +208,6 @@ namespace
 		Archetype.Ranged.ShotPattern = ERogueEnemyShotPattern::Single;
 		Archetype.Ranged.InitialCooldownMin = 0.75f;
 		Archetype.Ranged.InitialCooldownMax = 1.30f;
-		Archetype.Ranged.PreferredRange = Archetype.Movement.PreferredRange;
 		Archetype.Ranged.NextShotCooldown = bIsBoss ? 1.08f : 1.85f;
 		Archetype.Ranged.ProjectileSpeed = bIsBoss ? 1120.0f : 860.0f;
 		Archetype.Ranged.ProjectileDamageMultiplier = bIsBoss ? 1.25f : 1.10f;
@@ -248,7 +241,6 @@ namespace
 		Archetype.Ranged.ShotPattern = ERogueEnemyShotPattern::Spread3;
 		Archetype.Ranged.InitialCooldownMin = 0.18f;
 		Archetype.Ranged.InitialCooldownMax = 0.48f;
-		Archetype.Ranged.PreferredRange = Archetype.Movement.PreferredRange;
 		Archetype.Ranged.NextShotCooldown = bIsBoss ? 0.42f : 0.70f;
 		Archetype.Ranged.ProjectileSpeed = bIsBoss ? 1180.0f : 980.0f;
 		Archetype.Ranged.ProjectileDamageMultiplier = bIsBoss ? 0.48f : 0.42f;
@@ -310,7 +302,6 @@ namespace
 		Archetype.Ranged.ShotPattern = ERogueEnemyShotPattern::Single;
 		Archetype.Ranged.InitialCooldownMin = bIsBoss ? 0.8f : 1.2f;
 		Archetype.Ranged.InitialCooldownMax = bIsBoss ? 1.4f : 2.0f;
-		Archetype.Ranged.PreferredRange = Archetype.Movement.PreferredRange;
 		Archetype.Ranged.NextShotCooldown = bIsBoss ? 1.5f : 2.1f;
 		Archetype.Ranged.ProjectileSpeed = bIsBoss ? 1950.0f : 1700.0f;
 		Archetype.Ranged.ProjectileDamageMultiplier = bIsBoss ? 1.65f : 1.35f;
@@ -346,7 +337,6 @@ namespace
 		Archetype.Ranged.ShotPattern = ERogueEnemyShotPattern::Single;
 		Archetype.Ranged.InitialCooldownMin = bIsBoss ? 0.15f : 0.25f;
 		Archetype.Ranged.InitialCooldownMax = bIsBoss ? 0.35f : 0.55f;
-		Archetype.Ranged.PreferredRange = Archetype.Movement.PreferredRange;
 		Archetype.Ranged.NextShotCooldown = bIsBoss ? 0.30f : 0.48f;
 		Archetype.Ranged.ProjectileSpeed = bIsBoss ? 1380.0f : 1180.0f;
 		Archetype.Ranged.ProjectileDamageMultiplier = bIsBoss ? 0.38f : 0.28f;
@@ -381,7 +371,6 @@ namespace
 		Archetype.Ranged.ShotPattern = ERogueEnemyShotPattern::Spread3;
 		Archetype.Ranged.InitialCooldownMin = bIsBoss ? 0.25f : 0.4f;
 		Archetype.Ranged.InitialCooldownMax = bIsBoss ? 0.55f : 0.85f;
-		Archetype.Ranged.PreferredRange = Archetype.Movement.PreferredRange;
 		Archetype.Ranged.NextShotCooldown = bIsBoss ? 1.1f : 1.65f;
 		Archetype.Ranged.ProjectileSpeed = bIsBoss ? 1000.0f : 860.0f;
 		Archetype.Ranged.ProjectileDamageMultiplier = bIsBoss ? 0.38f : 0.30f;
