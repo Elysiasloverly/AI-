@@ -6,13 +6,8 @@
 #include "Player/RogueCharacter.h"
 #include "Player/RoguePlayerQuery.h"
 #include "Combat/Targeting/RogueEnemyTrackerSubsystem.h"
-#include "Components/PointLightComponent.h"
 #include "Components/SphereComponent.h"
-#include "Components/StaticMeshComponent.h"
-#include "Engine/StaticMesh.h"
 #include "GameFramework/PlayerController.h"
-#include "Materials/MaterialInterface.h"
-#include "UObject/ConstructorHelpers.h"
 
 ARogueExperiencePickup::ARogueExperiencePickup()
 {
@@ -24,55 +19,15 @@ ARogueExperiencePickup::ARogueExperiencePickup()
 	bReplicates = true;
 
 	// 服务端计算磁吸位移，客户端通过标准移动复制跟随根组件位置/旋转。
-	// FRepMovement 不携带缩放；这里只开移动复制不能保证经验值变化后的球大小同步。
+	// FRepMovement 不携带缩放，所以 ExperienceValue 单独复制，两侧各自换算外观尺寸。
 	SetReplicatingMovement(true);
 
+	// 只建碰撞：网格、特效、灯光全部由 BP 子类用 SCS 组件添加，
+	// 代码里不出现任何资产路径，换外观不需要改 C++。
 	Collision = CreateDefaultSubobject<USphereComponent>(TEXT("Collision"));
 	Collision->InitSphereRadius(40.0f);
 	Collision->SetCollisionProfileName(TEXT("OverlapAllDynamic"));
 	RootComponent = Collision;
-
-	Mesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Mesh"));
-	Mesh->SetupAttachment(RootComponent);
-	Mesh->SetRelativeScale3D(FVector(0.24f, 0.24f, 0.24f));
-	Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	Mesh->SetCastShadow(false);
-
-	GlowMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("GlowMesh"));
-	GlowMesh->SetupAttachment(RootComponent);
-	GlowMesh->SetRelativeScale3D(FVector(0.46f, 0.46f, 0.46f));
-	GlowMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	GlowMesh->SetCastShadow(false);
-
-	GlowLight = CreateDefaultSubobject<UPointLightComponent>(TEXT("GlowLight"));
-	GlowLight->SetupAttachment(RootComponent);
-	GlowLight->SetIntensity(780.0f);
-	GlowLight->SetLightColor(FLinearColor(0.14f, 0.72f, 1.0f));
-	GlowLight->SetAttenuationRadius(125.0f);
-	GlowLight->SetSourceRadius(12.0f);
-	GlowLight->SetSoftSourceRadius(16.0f);
-	GlowLight->SetUseInverseSquaredFalloff(false);
-	GlowLight->SetCastShadows(false);
-	GlowLight->SetVisibility(false);
-
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> PickupMesh(TEXT("/Game/GameAssets/StarterContent/Shapes/Shape_Sphere.Shape_Sphere"));
-	if (PickupMesh.Succeeded())
-	{
-		Mesh->SetStaticMesh(PickupMesh.Object);
-		GlowMesh->SetStaticMesh(PickupMesh.Object);
-	}
-
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> PickupMaterial(TEXT("/Game/GameAssets/Realistic_Starter_VFX_Pack_Vol2/Materials/M_Glow_C_Inst.M_Glow_C_Inst"));
-	if (PickupMaterial.Succeeded())
-	{
-		Mesh->SetMaterial(0, PickupMaterial.Object);
-	}
-
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> PickupGlowMaterial(TEXT("/Game/GameAssets/Vefects/Stylized_Galaxy_Shader/Galaxy/Materials/MI_VFX_Lush_Galaxy_Shader_01.MI_VFX_Lush_Galaxy_Shader_01"));
-	if (PickupGlowMaterial.Succeeded())
-	{
-		GlowMesh->SetMaterial(0, PickupGlowMaterial.Object);
-	}
 
 	Collision->OnComponentBeginOverlap.AddDynamic(this, &ARogueExperiencePickup::HandleOverlap);
 }
@@ -96,13 +51,25 @@ void ARogueExperiencePickup::GetLifetimeReplicatedProps(TArray<FLifetimeProperty
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-	// 本类显式复制活跃位；标准移动载荷负责位姿，不包含经验值或缩放。
+	// 本类显式复制活跃位与经验值；标准移动载荷负责位姿，不含经验值与缩放。
 	DOREPLIFETIME_CONDITION(ARogueExperiencePickup, bReplicatedActive, COND_None);
+	DOREPLIFETIME_CONDITION(ARogueExperiencePickup, ExperienceValue, COND_None);
 }
 
 void ARogueExperiencePickup::OnRep_ReplicatedActive()
 {
 	ApplyReplicatedActiveState();
+}
+
+void ARogueExperiencePickup::OnRep_ExperienceValue()
+{
+	// 合并会让经验值变大，客户端要跟着改尺寸，否则队友看到的球一直是旧大小。
+	ApplyExperienceScale();
+
+	if (!bPoolAvailable)
+	{
+		OnPickupMerged(ExperienceValue);
+	}
 }
 
 bool ARogueExperiencePickup::IsNetRelevantFor(const AActor* RealViewer, const AActor* ViewTarget, const FVector& SrcLocation) const
@@ -117,6 +84,17 @@ bool ARogueExperiencePickup::IsNetRelevantFor(const AActor* RealViewer, const AA
 	return Super::IsNetRelevantFor(RealViewer, ViewTarget, SrcLocation);
 }
 
+bool ARogueExperiencePickup::ShouldSimplifyVisuals() const
+{
+	// GetWorld() 在 const 成员里返回非 const 指针，WorldSubsystem 查询不受影响。
+	UWorld* World = GetWorld();
+	const URogueEnemyTrackerSubsystem* Tracker = World != nullptr
+		? World->GetSubsystem<URogueEnemyTrackerSubsystem>()
+		: nullptr;
+
+	return Tracker != nullptr && Tracker->ShouldCullCombatEffects();
+}
+
 void ARogueExperiencePickup::ApplyReplicatedActiveState()
 {
 	// 服务端自己就是权威，状态由 ActivatePooledPickup / DeactivateToPool 维护
@@ -125,10 +103,12 @@ void ARogueExperiencePickup::ApplyReplicatedActiveState()
 		return;
 	}
 
+	// 刚复制出来的池对象本来是"未激活"，此时不该补发一次回收通知。
+	const bool bWasActive = !bPoolAvailable;
+
 	if (bReplicatedActive)
 	{
 		bPoolAvailable = false;
-		bVisualsSimplified = false;
 		SetActorHiddenInGame(false);
 		SetActorTickEnabled(true);
 		SetActorEnableCollision(true);
@@ -137,6 +117,10 @@ void ARogueExperiencePickup::ApplyReplicatedActiveState()
 			// 客户端只需要能被查询到（本地表现靠 Tick，拾取判定只在服务端）
 			Collision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 		}
+
+		// 复制可能晚于一帧到达，入场时按当前经验值补一次尺寸与外观初始化。
+		ApplyExperienceScale();
+		OnPickupActivated(ExperienceValue);
 	}
 	else
 	{
@@ -147,6 +131,11 @@ void ARogueExperiencePickup::ApplyReplicatedActiveState()
 		if (Collision != nullptr)
 		{
 			Collision->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		}
+
+		if (bWasActive)
+		{
+			OnPickupDeactivated();
 		}
 	}
 }
@@ -173,31 +162,8 @@ void ARogueExperiencePickup::Tick(float DeltaSeconds)
 		return;
 	}
 
-	URogueEnemyTrackerSubsystem* Tracker = GetWorld() ? GetWorld()->GetSubsystem<URogueEnemyTrackerSubsystem>() : nullptr;
-	const bool bCullCombatEffects = Tracker != nullptr && Tracker->ShouldCullCombatEffects();
-	float HoverAlpha = 0.5f;
-
-	// ── 视觉部分：所有端都跑 ──
-	// 悬浮/脉冲是纯本地表现，客户端也要动，否则复制过来的球是死的。
-	if (bCullCombatEffects)
-	{
-		if (!bVisualsSimplified)
-		{
-			bVisualsSimplified = true;
-			Mesh->SetRelativeLocation(FVector::ZeroVector);
-			GlowMesh->SetRelativeLocation(FVector::ZeroVector);
-			GlowMesh->SetRelativeScale3D(FVector(0.40f, 0.40f, 0.40f));
-		}
-	}
-	else
-	{
-		bVisualsSimplified = false;
-		PulseTime += DeltaSeconds;
-		HoverAlpha = 0.5f + 0.5f * FMath::Sin(PulseTime * 3.6f);
-		const float HoverOffset = FMath::Sin(PulseTime * 2.0f) * 10.0f;
-		Mesh->SetRelativeLocation(FVector(0.0f, 0.0f, HoverOffset));
-		GlowMesh->SetRelativeLocation(FVector(0.0f, 0.0f, HoverOffset));
-	}
+	// 悬浮、缩放脉冲、拖尾这类表现由 BP 自己驱动（BP 的 Event Tick 与本函数挂在同一个
+	// Actor Tick 上，回池时 SetActorTickEnabled(false) 会一起停掉，不需要额外开关）。
 
 	// ── 以下是权威逻辑：只在服务端跑 ──
 	// 生命周期、磁吸位移都由服务端决定，客户端只接收复制结果。
@@ -219,10 +185,6 @@ void ARogueExperiencePickup::Tick(float DeltaSeconds)
 	ARogueCharacter* MagnetTarget = FindMagnetTarget();
 	if (!IsValid(MagnetTarget))
 	{
-		if (!bCullCombatEffects)
-		{
-			GlowMesh->SetRelativeScale3D(FVector(0.40f + HoverAlpha * 0.10f, 0.40f + HoverAlpha * 0.10f, 0.40f + HoverAlpha * 0.10f));
-		}
 		return;
 	}
 
@@ -235,16 +197,9 @@ void ARogueExperiencePickup::Tick(float DeltaSeconds)
 	}
 
 	// 开启碰撞时已在玩家内部或没有重叠事件时，抵达后仍应由服务端完成收取。
-	if (FVector::DistSquared(GetActorLocation(), MagnetTarget->GetActorLocation()) <= FMath::Square(Collision->GetScaledSphereRadius())
-		&& TryCollect(MagnetTarget))
+	if (FVector::DistSquared(GetActorLocation(), MagnetTarget->GetActorLocation()) <= FMath::Square(Collision->GetScaledSphereRadius()))
 	{
-		return;
-	}
-
-	if (!bCullCombatEffects)
-	{
-		const float AttractionAlpha = 0.5f + 0.5f * FMath::Sin(PulseTime * 8.0f);
-		GlowMesh->SetRelativeScale3D(FVector(0.42f + AttractionAlpha * 0.12f, 0.42f + AttractionAlpha * 0.12f, 0.42f + AttractionAlpha * 0.12f));
+		TryCollect(MagnetTarget);
 	}
 }
 
@@ -289,21 +244,30 @@ ARogueCharacter* ARogueExperiencePickup::FindMagnetTarget() const
 	return BestTarget;
 }
 
+void ARogueExperiencePickup::ApplyExperienceScale()
+{
+	// 尺寸跟着经验值走：BP 的网格/灯光都挂在根组件下，会一起放大。
+	// 注意这里同时放大了碰撞球半径，与磁吸抵达判定、BP 手感的观感一致。
+	SetActorScale3D(FVector(FMath::Clamp(1.0f + static_cast<float>(ExperienceValue) * 0.015f, 1.0f, 2.4f)));
+}
+
 void ARogueExperiencePickup::InitializePickup(int32 InExperienceValue)
 {
 	ExperienceValue = FMath::Max(1, InExperienceValue);
-	PulseTime = 0.0f;
 	ActiveTimeSeconds = 0.0f;
-	SetActorScale3D(FVector(FMath::Clamp(1.0f + static_cast<float>(ExperienceValue) * 0.015f, 1.0f, 2.4f)));
+	ApplyExperienceScale();
+	OnPickupActivated(ExperienceValue);
 }
 
 void ARogueExperiencePickup::AddExperienceValue(int32 InExperienceValue)
 {
 	ExperienceValue += InExperienceValue;
-	SetActorScale3D(FVector(FMath::Clamp(1.0f + static_cast<float>(ExperienceValue) * 0.015f, 1.0f, 2.4f)));
+	ApplyExperienceScale();
 
 	// 合并后刷新寿命与自动磁吸计时，避免新经验随旧球立即过期。
 	ActiveTimeSeconds = 0.0f;
+
+	OnPickupMerged(ExperienceValue);
 }
 
 void ARogueExperiencePickup::ActivatePooledPickup(AActor* InOwner, const FVector& SpawnLocation, int32 InExperienceValue)
@@ -317,9 +281,7 @@ void ARogueExperiencePickup::ActivatePooledPickup(AActor* InOwner, const FVector
 	SetActorEnableCollision(false);
 	SetOwner(InOwner);
 	SetActorLocation(SpawnLocation, false, nullptr, ETeleportType::TeleportPhysics);
-	InitializePickup(InExperienceValue);
 	bPoolAvailable = false;
-	bVisualsSimplified = false;
 	bReplicatedActive = true;
 	SetActorHiddenInGame(false);
 	SetActorTickEnabled(true);
@@ -327,6 +289,8 @@ void ARogueExperiencePickup::ActivatePooledPickup(AActor* InOwner, const FVector
 	{
 		Collision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 	}
+	// 经验值与外观必须排在开启碰撞之前：重叠回调可能立刻把球收走并归池。
+	InitializePickup(InExperienceValue);
 	SetActorEnableCollision(true);
 	// 碰撞回调可能已将球收取归池，此后不能再覆盖活跃位。
 	ForceNetUpdate();
@@ -334,7 +298,9 @@ void ARogueExperiencePickup::ActivatePooledPickup(AActor* InOwner, const FVector
 
 void ARogueExperiencePickup::DeactivateToPool()
 {
-	if (!bPoolAvailable)
+	const bool bWasActive = !bPoolAvailable;
+
+	if (bWasActive)
 	{
 		if (UWorld* World = GetWorld())
 		{
@@ -346,15 +312,13 @@ void ARogueExperiencePickup::DeactivateToPool()
 	}
 
 	bPoolAvailable = true;
-	bVisualsSimplified = false;
-	PulseTime = 0.0f;
 	ActiveTimeSeconds = 0.0f;
 	if (HasAuthority())
 	{
 		// 权威独占的状态位：客户端写它会覆盖刚复制到的真实值（见 BeginPlay 的说明）
 		bReplicatedActive = false;
+		ExperienceValue = 1;
 	}
-	ExperienceValue = 1;
 	SetActorHiddenInGame(true);
 	SetActorTickEnabled(false);
 	SetActorEnableCollision(false);
@@ -364,6 +328,13 @@ void ARogueExperiencePickup::DeactivateToPool()
 		Collision->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	}
 	SetOwner(nullptr);
+
+	// 只有真的从"在场"变"回池"才通知，避免出生时的初始化归池触发一次空回收。
+	if (bWasActive)
+	{
+		OnPickupDeactivated();
+	}
+
 	if (HasAuthority())
 	{
 		ForceNetUpdate();
