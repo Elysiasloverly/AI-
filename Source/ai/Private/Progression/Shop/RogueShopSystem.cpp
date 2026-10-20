@@ -7,12 +7,13 @@ void FRogueShopSystem::Reset()
 {
 	Offers.Reset();
 	OfferTypePurchaseCounts.Reset();
-	OfferCount = 6;
-	BaseOfferCost = 22;
-	BaseRefreshCost = 14;
-	CurrentRefreshCost = BaseRefreshCost;
-	AutoRefreshInterval = 60.0f;
-	TimeUntilAutoRefresh = AutoRefreshInterval;
+	// 报价/价格/刷新间隔只由 Configure(DA_GameBalance.Shop) 写入；这里不再保留第二份默认值。
+	OfferCount = 0;
+	BaseOfferCost = 0;
+	BaseRefreshCost = 0;
+	CurrentRefreshCost = 0;
+	AutoRefreshInterval = 0.0f;
+	TimeUntilAutoRefresh = 0.0f;
 	bOpen = false;
 	bAutoRefreshPending = false;
 }
@@ -29,7 +30,7 @@ void FRogueShopSystem::Configure(int32 InOfferCount, int32 InOfferCost, int32 In
 		CurrentRefreshCost = BaseRefreshCost;
 	}
 
-	if (TimeUntilAutoRefresh < 0.0f || TimeUntilAutoRefresh > AutoRefreshInterval)
+	if (TimeUntilAutoRefresh <= 0.0f || TimeUntilAutoRefresh > AutoRefreshInterval)
 	{
 		TimeUntilAutoRefresh = AutoRefreshInterval;
 	}

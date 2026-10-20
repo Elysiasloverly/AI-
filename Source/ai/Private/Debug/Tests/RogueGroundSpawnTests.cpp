@@ -62,7 +62,7 @@ namespace RogueGroundSpawnTests
 			Player->GetCharacterMovement()->SetComponentTickEnabled(false);
 			Player->SetActorEnableCollision(false);
 			Spawner = World->GetSubsystem<URogueSpawnSubsystem>();
-			EnemyClass = LoadClass<ARogueEnemy>(nullptr, TEXT("/Game/BP/Enemy/BP_EnemyHunter.BP_EnemyHunter_C"));
+			EnemyClass = LoadClass<ARogueEnemy>(nullptr, TEXT("/Game/BP/Enemy/BP_EnemyRifleman.BP_EnemyRifleman_C"));
 			if (!Test.TestNotNull(TEXT("The actual spawner exists"), Spawner) || !Test.TestNotNull(TEXT("The actual enemy Blueprint loads"), EnemyClass)) { return false; }
 			Settings.SpawnRadius = 1500.0f;
 			Settings.EnemySpawnMinimumDistance = 300.0f;

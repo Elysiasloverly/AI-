@@ -97,7 +97,7 @@ private:
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<USphereComponent> Collision;
 
-	UPROPERTY(VisibleAnywhere)
+	UPROPERTY(Transient)
 	TObjectPtr<UStaticMeshComponent> Mesh;
 
 	/** 发光用的动态材质实例（挂在 Mesh 的 Overlay Material 槽上） */

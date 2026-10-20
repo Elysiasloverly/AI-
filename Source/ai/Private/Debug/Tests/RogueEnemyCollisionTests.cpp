@@ -62,7 +62,7 @@ bool FRogueEnemyBlueprintCosmeticCollisionTest::RunTest(const FString& Parameter
 {
 	using namespace RogueEnemyCollisionTests;
 	FFixture F; if (!F.Initialize()) { return false; }
-	const TCHAR* Names[] = {TEXT("Base"),TEXT("Hunter"),TEXT("Charger"),TEXT("Tank"),TEXT("Orbit"),TEXT("Shooter"),TEXT("Spitter"),TEXT("Skirmisher"),TEXT("Artillery"),TEXT("ShockPillar")};
+	const TCHAR* Names[] = {TEXT("Base"),TEXT("Rifleman"),TEXT("Assault"),TEXT("Juggernaut"),TEXT("Orbiter"),TEXT("Marksman"),TEXT("Scatterer"),TEXT("Skirmisher"),TEXT("Cannoneer"),TEXT("ShockPillar"),TEXT("Sniper"),TEXT("Shotgunner"),TEXT("Repeater"),TEXT("Ringcaster")};
 	for (const TCHAR* Name : Names)
 	{
 		const FString Path = FString::Printf(TEXT("/Game/BP/Enemy/BP_Enemy%s.BP_Enemy%s_C"), Name, Name);

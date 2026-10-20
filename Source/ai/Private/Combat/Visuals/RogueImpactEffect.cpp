@@ -1,4 +1,5 @@
 #include "Combat/Visuals/RogueImpactEffect.h"
+#include "Combat/RogueCombatCollision.h"
 
 #include "Combat/Pooling/RogueCombatPoolSubsystem.h"
 #include "Combat/Targeting/RogueEnemyTrackerSubsystem.h"
@@ -124,6 +125,9 @@ ARogueImpactEffect::ARogueImpactEffect()
 void ARogueImpactEffect::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// 命中特效是纯表现 Actor，不参与物理或碰撞。
+	RogueCombatCollision::DisableNonHitCollision(this, nullptr);
 	DeactivateToPool();
 }
 

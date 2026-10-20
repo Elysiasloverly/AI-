@@ -17,3 +17,5 @@
 数据链：`ScytheSize` 升级类型 → `URogueUpgradeEffect_ScytheSize` → PlayerState 的 ASC / `ScytheSizeBonus` → Character 的复制武器加成快照 `ScytheSize` → `ARogueWeapon_Scythe::GetEffectiveSizeMultiplier` → `ConfigureBlade` 同步外观与碰撞。服务器判定伤害，各端根据快照维护本地轨道表现。
 
 刀片在 BeginPlay 缓存蓝图组件的基础尺寸。变大使用该基准乘倍率；回池和再次激活恢复基础尺寸，避免大镰刀被下一个玩家复用时继承大小。升级扩大范围后更新真实重叠列表，不能只改变可见网格。
+
+同系列的吸血卡见 [Scythe-Lifesteal-Upgrade.md](Scythe-Lifesteal-Upgrade.md)。

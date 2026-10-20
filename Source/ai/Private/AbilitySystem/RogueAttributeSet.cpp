@@ -50,6 +50,7 @@ void URogueAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, LaserRefractionBonus, COND_None);
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, MortarBlastRadiusBonus, COND_None);
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, ScytheSizeBonus, COND_None);
+	DOREPLIFETIME_CONDITION(URogueAttributeSet, ScytheLifestealBonus, COND_None);
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, MoveSpeed,            COND_None);
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, DashCooldownDuration, COND_None);
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, MinDashCooldown,      COND_None);
@@ -78,8 +79,9 @@ float URogueAttributeSet::GetWeaponBonusCapFor(const FGameplayAttribute& Attribu
 	if (Attribute == GetMortarCountBonusAttribute())       { return WeaponBonusCaps.MortarCount; }
 	if (Attribute == GetMortarBlastRadiusBonusAttribute()) { return WeaponBonusCaps.MortarBlastRadius; }
 	if (Attribute == GetScytheSizeBonusAttribute())        { return WeaponBonusCaps.ScytheSize; }
+	if (Attribute == GetScytheLifestealBonusAttribute())   { return WeaponBonusCaps.ScytheLifesteal; }
 
-	// 不是 13 个加成属性之一 → 返回 -1（不限制），
+	// 不是武器加成属性之一 → 返回 -1（不限制），
 	// 这样调用方不需要自己判断"这个属性是否适用上限"。
 	return -1.0f;
 }
@@ -100,7 +102,8 @@ void URogueAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute,
 		|| Attribute == GetMortarCountBonusAttribute()
 		|| Attribute == GetLaserRefractionBonusAttribute()
 		|| Attribute == GetMortarBlastRadiusBonusAttribute()
-		|| Attribute == GetScytheSizeBonusAttribute())
+		|| Attribute == GetScytheSizeBonusAttribute()
+		|| Attribute == GetScytheLifestealBonusAttribute())
 	{
 		NewValue = FMath::Max(0.0f, NewValue);
 
@@ -122,6 +125,12 @@ void URogueAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute,
 			|| Attribute == GetLaserRefractionBonusAttribute())
 		{
 			NewValue = FMath::RoundToFloat(NewValue);
+		}
+
+		// 吸血比例最多 100%，防止高等级叠加后回复量超过实际伤害。
+		if (Attribute == GetScytheLifestealBonusAttribute())
+		{
+			NewValue = FMath::Min(NewValue, 1.0f);
 		}
 	}
 	Super::PreAttributeChange(Attribute, NewValue);

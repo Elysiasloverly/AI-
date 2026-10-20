@@ -1,4 +1,5 @@
 #include "Combat/Projectiles/RogueEnemyProjectile.h"
+#include "Combat/RogueCombatCollision.h"
 
 #include "Player/RogueCharacter.h"
 #include "AbilitySystem/RogueAbilitySystemLibrary.h"
@@ -6,113 +7,22 @@
 #include "Combat/Targeting/RogueEnemyTrackerSubsystem.h"
 #include "Combat/Visuals/RogueImpactEffect.h"
 #include "Enemies/RogueEnemy.h"
-#include "Components/PointLightComponent.h"
 #include "Components/SphereComponent.h"
-#include "Components/StaticMeshComponent.h"
-#include "Engine/StaticMesh.h"
 #include "GameFramework/ProjectileMovementComponent.h"
-#include "Kismet/GameplayStatics.h"
-#include "Materials/MaterialInterface.h"
-#include "UObject/ConstructorHelpers.h"
 
 ARogueEnemyProjectile::ARogueEnemyProjectile()
 {
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.TickInterval = 0.03f;
-	NormalVisualState.BodyScale = 0.58f;
-	NormalVisualState.CoreScale = 0.32f;
-	NormalVisualState.GlowScale = 1.12f;
-	NormalVisualState.SpineScale = 0.56f;
-	NormalVisualState.RingScale = 1.28f;
-	NormalVisualState.TrailScale = FVector(0.10f, 0.10f, 0.28f);
-	NormalVisualState.CollisionRadius = 22.0f;
-	NormalVisualState.LightIntensity = 4200.0f;
-	NormalVisualState.LightAttenuationRadius = 260.0f;
-	NormalVisualState.LightSourceRadius = 10.0f;
-	NormalVisualState.LightSoftSourceRadius = 16.0f;
-	NormalVisualState.ImpactEffectScale = FVector(0.24f, 0.24f, 0.24f);
-
-	BossVisualState = NormalVisualState;
-	BossVisualState.BodyScale = 0.80f;
-	BossVisualState.CoreScale = 0.46f;
-	BossVisualState.GlowScale = 1.48f;
-	BossVisualState.SpineScale = 0.74f;
-	BossVisualState.RingScale = 1.62f;
-	BossVisualState.TrailScale = FVector(0.10f, 0.10f, 0.44f);
-	BossVisualState.CollisionRadius = 28.0f;
-	BossVisualState.LightAttenuationRadius = 320.0f;
-	BossVisualState.LightSourceRadius = 14.0f;
-	BossVisualState.LightSoftSourceRadius = 22.0f;
-	BossVisualState.ImpactEffectScale = FVector(0.30f, 0.30f, 0.30f);
-
-	SimplifiedNormalVisualState = NormalVisualState;
-	SimplifiedNormalVisualState.TrailScale = FVector(0.09f, 0.09f, 0.28f);
-
-	SimplifiedBossVisualState = BossVisualState;
-	SimplifiedBossVisualState.TrailScale = FVector(0.09f, 0.09f, 0.44f);
-	SimplifiedBossVisualState.LightIntensity = 5600.0f;
 
 	Collision = CreateDefaultSubobject<USphereComponent>(TEXT("Collision"));
-	Collision->InitSphereRadius(NormalVisualState.CollisionRadius);
+	Collision->InitSphereRadius(22.0f);
 	Collision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 	Collision->SetCollisionObjectType(ECC_WorldDynamic);
 	Collision->SetCollisionResponseToAllChannels(ECR_Ignore);
 	Collision->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
 	Collision->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
 	RootComponent = Collision;
-
-	BodyMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BodyMesh"));
-	BodyMesh->SetupAttachment(RootComponent);
-	BodyMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	BodyMesh->SetCastShadow(false);
-	BodyMesh->SetRelativeScale3D(FVector(NormalVisualState.BodyScale));
-
-	CoreMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("CoreMesh"));
-	CoreMesh->SetupAttachment(RootComponent);
-	CoreMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	CoreMesh->SetCastShadow(false);
-	CoreMesh->SetTranslucentSortPriority(4);
-	CoreMesh->SetRelativeScale3D(FVector(NormalVisualState.CoreScale));
-
-	GlowMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("GlowMesh"));
-	GlowMesh->SetupAttachment(RootComponent);
-	GlowMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	GlowMesh->SetCastShadow(false);
-	GlowMesh->SetTranslucentSortPriority(2);
-	GlowMesh->SetRelativeScale3D(FVector(NormalVisualState.GlowScale));
-
-	SpineMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("SpineMesh"));
-	SpineMesh->SetupAttachment(RootComponent);
-	SpineMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	SpineMesh->SetCastShadow(false);
-	SpineMesh->SetTranslucentSortPriority(1);
-	SpineMesh->SetRelativeScale3D(FVector(NormalVisualState.SpineScale));
-
-	RingMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("RingMesh"));
-	RingMesh->SetupAttachment(RootComponent);
-	RingMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	RingMesh->SetCastShadow(false);
-	RingMesh->SetTranslucentSortPriority(1);
-	RingMesh->SetRelativeScale3D(FVector(NormalVisualState.RingScale));
-
-	TrailMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("TrailMesh"));
-	TrailMesh->SetupAttachment(RootComponent);
-	TrailMesh->SetRelativeLocation(FVector(-26.0f, 0.0f, 0.0f));
-	TrailMesh->SetRelativeRotation(FRotator(0.0f, 0.0f, 90.0f));
-	TrailMesh->SetTranslucentSortPriority(0);
-	TrailMesh->SetRelativeScale3D(NormalVisualState.TrailScale);
-	TrailMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	TrailMesh->SetCastShadow(false);
-
-	GlowLight = CreateDefaultSubobject<UPointLightComponent>(TEXT("GlowLight"));
-	GlowLight->SetupAttachment(RootComponent);
-	GlowLight->SetIntensity(NormalVisualState.LightIntensity);
-	GlowLight->SetLightColor(FLinearColor(1.0f, 0.10f, 0.08f));
-	GlowLight->SetAttenuationRadius(NormalVisualState.LightAttenuationRadius);
-	GlowLight->SetSourceRadius(NormalVisualState.LightSourceRadius);
-	GlowLight->SetSoftSourceRadius(NormalVisualState.LightSoftSourceRadius);
-	GlowLight->SetUseInverseSquaredFalloff(false);
-	GlowLight->SetCastShadows(false);
 
 	ProjectileMovement = CreateDefaultSubobject<UProjectileMovementComponent>(TEXT("ProjectileMovement"));
 	ProjectileMovement->SetUpdatedComponent(Collision);
@@ -124,66 +34,6 @@ ARogueEnemyProjectile::ARogueEnemyProjectile()
 	ProjectileMovement->bInitialVelocityInLocalSpace = false;
 	ProjectileMovement->bSweepCollision = true;
 
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereMesh(TEXT("/Game/GameAssets/StarterContent/Shapes/Shape_Sphere.Shape_Sphere"));
-	if (SphereMesh.Succeeded())
-	{
-		BodyMesh->SetStaticMesh(SphereMesh.Object);
-		CoreMesh->SetStaticMesh(SphereMesh.Object);
-		GlowMesh->SetStaticMesh(SphereMesh.Object);
-		SpineMesh->SetStaticMesh(SphereMesh.Object);
-		RingMesh->SetStaticMesh(SphereMesh.Object);
-	}
-
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> TrailStaticMesh(TEXT("/Game/GameAssets/StarterContent/Shapes/Shape_Cylinder.Shape_Cylinder"));
-	if (TrailStaticMesh.Succeeded())
-	{
-		TrailMesh->SetStaticMesh(TrailStaticMesh.Object);
-	}
-
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> BodyMaterial(TEXT("/Game/GameAssets/StarterContent/Materials/M_Metal_Copper.M_Metal_Copper"));
-	if (BodyMaterial.Succeeded())
-	{
-		BodyMesh->SetMaterial(0, BodyMaterial.Object);
-	}
-	else
-	{
-		static ConstructorHelpers::FObjectFinder<UMaterialInterface> BodyFallbackMaterial(TEXT("/Game/GameAssets/StarterContent/Materials/M_Metal_Rust.M_Metal_Rust"));
-		if (BodyFallbackMaterial.Succeeded())
-		{
-			BodyMesh->SetMaterial(0, BodyFallbackMaterial.Object);
-		}
-	}
-
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> CoreMaterial(TEXT("/Game/GameAssets/Realistic_Starter_VFX_Pack_Vol2/Materials/M_Glow_D.M_Glow_D"));
-	if (CoreMaterial.Succeeded())
-	{
-		CoreMesh->SetMaterial(0, CoreMaterial.Object);
-	}
-
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> GlowMaterial(TEXT("/Game/GameAssets/Realistic_Starter_VFX_Pack_Vol2/Materials/M_Glow_D.M_Glow_D"));
-	if (GlowMaterial.Succeeded())
-	{
-		GlowMesh->SetMaterial(0, GlowMaterial.Object);
-	}
-
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> RingMaterial(TEXT("/Game/GameAssets/Realistic_Starter_VFX_Pack_Vol2/Materials/M_Glow_D.M_Glow_D"));
-	if (RingMaterial.Succeeded())
-	{
-		RingMesh->SetMaterial(0, RingMaterial.Object);
-	}
-
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> SpineMaterial(TEXT("/Game/GameAssets/Realistic_Starter_VFX_Pack_Vol2/Materials/M_Glow_D.M_Glow_D"));
-	if (SpineMaterial.Succeeded())
-	{
-		SpineMesh->SetMaterial(0, SpineMaterial.Object);
-	}
-
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> TrailMaterial(TEXT("/Game/GameAssets/Realistic_Starter_VFX_Pack_Vol2/Materials/M_Glow_D.M_Glow_D"));
-	if (TrailMaterial.Succeeded())
-	{
-		TrailMesh->SetMaterial(0, TrailMaterial.Object);
-	}
-
 	Collision->OnComponentBeginOverlap.AddDynamic(this, &ARogueEnemyProjectile::HandleOverlap);
 	ProjectileMovement->OnProjectileStop.AddDynamic(this, &ARogueEnemyProjectile::HandleProjectileStop);
 }
@@ -191,7 +41,12 @@ ARogueEnemyProjectile::ARogueEnemyProjectile()
 void ARogueEnemyProjectile::BeginPlay()
 {
 	Super::BeginPlay();
-	UnscaledTrailLocation = TrailMesh->GetRelativeLocation();
+
+	// 外观组件完全由蓝图决定；这里只保证除命中球外的组件不参与物理/阻挡。
+	RogueCombatCollision::DisableNonHitCollision(this, Collision);
+
+	// 蓝图可以在组件面板里改碰撞球半径；这里以蓝图配置为准记录基础值。
+	BaseCollisionRadius = Collision != nullptr ? Collision->GetUnscaledSphereRadius() : 22.0f;
 	DeactivateToPool();
 }
 
@@ -201,6 +56,7 @@ void ARogueEnemyProjectile::ActivatePooledProjectile(AActor* InOwner, APawn* InI
 	SetActorEnableCollision(false);
 	Collision->SetGenerateOverlapEvents(false);
 	Collision->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
 	if (ProjectileMovement != nullptr)
 	{
 		ProjectileMovement->OnProjectileStop.RemoveDynamic(this, &ARogueEnemyProjectile::HandleProjectileStop);
@@ -213,11 +69,12 @@ void ARogueEnemyProjectile::ActivatePooledProjectile(AActor* InOwner, APawn* InI
 	bBossShot = bInBossShot;
 	bSimpleVisual = bInSimpleVisual;
 	VisualScale = FMath::Max(InVisualScale, KINDA_SMALL_NUMBER);
-	PulseTime = 0.0f;
 	RemainingLifetime = InLifetime > 0.0f ? InLifetime : PooledLifetime;
 	bResolvedImpact = false;
 	bPoolAvailable = false;
 	bVisualsSimplified = false;
+	bWasActivated = true;
+
 	SetOwner(InOwner);
 	SetInstigator(InInstigator);
 	SetActorLocationAndRotation(SpawnLocation, SpawnRotation, false, nullptr, ETeleportType::TeleportPhysics);
@@ -246,11 +103,13 @@ void ARogueEnemyProjectile::ActivatePooledProjectile(AActor* InOwner, APawn* InI
 		ProjectileMovement->Activate(true);
 	}
 
-	const FRogueEnemyProjectileVisualState& ActiveState = bBossShot ? BossVisualState : NormalVisualState;
-	Collision->SetSphereRadius(ActiveState.CollisionRadius * VisualScale, false);
-	ApplyVisualState(ActiveState, 0.0f);
+	Collision->SetSphereRadius(BaseCollisionRadius * VisualScale, false);
 	SetActorHiddenInGame(false);
 	SetActorTickEnabled(true);
+
+	// 外观完全交给蓝图：在开启碰撞前给蓝图一次设置材质/粒子/缩放的机会。
+	OnProjectileActivated(bBossShot, bSimpleVisual, VisualScale);
+
 	Collision->SetGenerateOverlapEvents(true);
 	SetActorEnableCollision(true);
 	// 此调用可能立即命中并归池；之后不再写入激活状态、运动或外观。
@@ -259,6 +118,9 @@ void ARogueEnemyProjectile::ActivatePooledProjectile(AActor* InOwner, APawn* InI
 
 void ARogueEnemyProjectile::DeactivateToPool()
 {
+	const bool bShouldNotify = bWasActivated;
+	bWasActivated = false;
+
 	bPoolAvailable = true;
 	bResolvedImpact = true;
 	SetActorEnableCollision(false);
@@ -280,7 +142,6 @@ void ARogueEnemyProjectile::DeactivateToPool()
 	bSimpleVisual = false;
 	VisualScale = 1.0f;
 	Damage = 0.0f;
-	PulseTime = 0.0f;
 	RemainingLifetime = 0.0f;
 	bVisualsSimplified = false;
 	SetActorTickEnabled(false);
@@ -291,35 +152,11 @@ void ARogueEnemyProjectile::DeactivateToPool()
 	Collision->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Collision->SetGenerateOverlapEvents(false);
 	Collision->ClearMoveIgnoreActors();
-	Collision->SetSphereRadius(NormalVisualState.CollisionRadius, false);
-	ApplyVisualState(NormalVisualState, 0.0f);
-	if (GlowLight != nullptr)
-	{
-		GlowLight->SetVisibility(false);
-		GlowLight->SetHiddenInGame(true);
-		GlowLight->SetIntensity(0.0f);
-	}
-}
+	Collision->SetSphereRadius(BaseCollisionRadius, false);
 
-void ARogueEnemyProjectile::ApplyVisualState(const FRogueEnemyProjectileVisualState& State, float PulseAlpha)
-{
-	// 保留蓝图组件缩放；普通/Boss/简化表现切换更新灯光、拖尾偏移与可见性。
-	TrailMesh->SetRelativeLocation(UnscaledTrailLocation * VisualScale);
-	SpineMesh->SetVisibility(!bSimpleVisual);
-	SpineMesh->SetHiddenInGame(bSimpleVisual);
-	RingMesh->SetVisibility(!bSimpleVisual);
-	RingMesh->SetHiddenInGame(bSimpleVisual);
-	TrailMesh->SetVisibility(!bSimpleVisual);
-	TrailMesh->SetHiddenInGame(bSimpleVisual);
-	if (GlowLight != nullptr)
+	if (bShouldNotify)
 	{
-		GlowLight->SetVisibility(!bSimpleVisual);
-		GlowLight->SetHiddenInGame(bSimpleVisual);
-		GlowLight->SetIntensity(bSimpleVisual ? 0.0f : (State.LightIntensity
-			+ PulseAlpha * (bBossShot ? LightPulseAmplitudeBoss : LightPulseAmplitudeNormal)) * VisualScale);
-		GlowLight->SetAttenuationRadius(State.LightAttenuationRadius * VisualScale);
-		GlowLight->SetSourceRadius(State.LightSourceRadius * VisualScale);
-		GlowLight->SetSoftSourceRadius(State.LightSoftSourceRadius * VisualScale);
+		OnProjectileDeactivated();
 	}
 }
 
@@ -341,24 +178,11 @@ void ARogueEnemyProjectile::Tick(float DeltaSeconds)
 
 	URogueEnemyTrackerSubsystem* Tracker = GetWorld() ? GetWorld()->GetSubsystem<URogueEnemyTrackerSubsystem>() : nullptr;
 	const bool bCullCombatEffects = Tracker != nullptr && Tracker->ShouldCullCombatEffects();
-	if (bCullCombatEffects)
+	if (bCullCombatEffects != bVisualsSimplified)
 	{
-		if (!bVisualsSimplified)
-		{
-			bVisualsSimplified = true;
-			const FRogueEnemyProjectileVisualState& SimplifiedState = bBossShot ? SimplifiedBossVisualState : SimplifiedNormalVisualState;
-			ApplyVisualState(SimplifiedState, 0.0f);
-		}
-		return;
+		bVisualsSimplified = bCullCombatEffects;
+		OnProjectileCulled(bVisualsSimplified);
 	}
-
-	bVisualsSimplified = false;
-
-	PulseTime += DeltaSeconds;
-	const FRogueEnemyProjectileVisualState& ActiveState = bBossShot ? BossVisualState : NormalVisualState;
-	const float PulseAlpha = 0.5f + 0.5f * FMath::Sin(PulseTime * (bBossShot ? PulseSpeedBoss : PulseSpeedNormal));
-
-	ApplyVisualState(ActiveState, PulseAlpha);
 }
 
 void ARogueEnemyProjectile::HandleOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
@@ -420,7 +244,7 @@ void ARogueEnemyProjectile::ResolveImpact(AActor* OtherActor, const FVector& Imp
 	AActor* DamageCauser = IsValid(GetOwner()) ? GetOwner() : this;
 	if (World != nullptr)
 	{
-		const FVector ImpactScale = (bBossShot ? BossVisualState.ImpactEffectScale : NormalVisualState.ImpactEffectScale) * VisualScale;
+		const FVector ImpactScale = ImpactEffectScale * VisualScale;
 		ARogueImpactEffect::SpawnImpactEffect(World, ImpactLocation, ImpactNormal.Rotation(), ERogueImpactVisualStyle::Spark, ImpactScale, 0.16f, this);
 	}
 

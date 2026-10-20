@@ -142,7 +142,7 @@ void ARogueWeapon_HellTower::WeaponTick(float DeltaSeconds)
 		const float LateralOffset = EffectiveCount % 2 == 0 ? (OffsetIndex + 0.5f) * BeamSpacing : OffsetIndex * BeamSpacing;
 		const FVector BeamOrigin = BeamOriginBase + LateralDirection * LateralOffset;
 		const FVector TargetLocation = TargetEnemy->GetActorLocation() + FVector(0.0f, 0.0f, 42.0f);
-		SpawnLaserBeam(BeamOrigin, TargetLocation, true, false, EffectiveBeamRefresh + 0.03f);
+		SpawnLaserBeam(BeamOrigin, TargetLocation, true, false, EffectiveBeamRefresh + Config.BeamLifetimePadding);
 		HellTowerBeamTimers[TowerIndex] = EffectiveBeamRefresh;
 	}
 }
@@ -162,28 +162,28 @@ float ARogueWeapon_HellTower::GetEffectiveBaseDamage() const
 {
 	const FRogueWeaponBonusValues& Bonuses = GetWeaponBonusValues();
 	const float Bonus = Bonuses.AttackPower;
-	return GetConfig().BaseDamage + Bonus * 0.125f;
+	return GetConfig().BaseDamage + Bonus * GetConfig().BaseDamageBonusScale;
 }
 
 float ARogueWeapon_HellTower::GetEffectiveDamageRampPerTick() const
 {
 	const FRogueWeaponBonusValues& Bonuses = GetWeaponBonusValues();
 	const float Bonus = Bonuses.AttackPower;
-	return GetConfig().DamageRampPerTick + Bonus * 0.0625f;
+	return GetConfig().DamageRampPerTick + Bonus * GetConfig().DamageRampBonusScale;
 }
 
 float ARogueWeapon_HellTower::GetEffectiveDamageTickInterval() const
 {
 	const FRogueWeaponBonusValues& Bonuses = GetWeaponBonusValues();
 	const float Bonus = Bonuses.AttackSpeed;
-	return FMath::Max(0.03f, GetConfig().DamageTickInterval - Bonus * 0.08f);
+	return FMath::Max(0.03f, GetConfig().DamageTickInterval - Bonus * GetConfig().DamageTickIntervalReductionScale);
 }
 
 float ARogueWeapon_HellTower::GetEffectiveRange() const
 {
 	const FRogueWeaponBonusValues& Bonuses = GetWeaponBonusValues();
 	const float Bonus = Bonuses.AttackRange;
-	return GetConfig().Range + Bonus * 0.70f;
+	return GetConfig().Range + Bonus * GetConfig().HellTowerRangeBonusScale;
 }
 
 void ARogueWeapon_HellTower::PlayCosmeticFire(const FRogueWeaponCosmeticFire& Fire)

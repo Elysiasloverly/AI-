@@ -18,6 +18,8 @@ class URogueUpgradeSelectionWidgetBase;
 class URogueSettingsMenuWidgetBase;
 class URogueDeathScreenWidgetBase;
 class URogueReviveCountdownWidgetBase;
+class URogueVitalsWidgetBase;
+class URogueEnemyHealthBarWidgetBase;
 class URogueEnemyTrackerSubsystem;
 
 enum class ERoguePauseMenuPage : uint8
@@ -47,7 +49,7 @@ struct FRogueCachedEnemyHealthBar
 	bool bBoss = false;
 };
 
-UCLASS()
+UCLASS(Config = Game)
 class AI_API ARogueHUD : public AHUD
 {
 	GENERATED_BODY()
@@ -85,8 +87,23 @@ private:
 
 	void RefreshEnemyHealthBarCache(const URogueEnemyTrackerSubsystem* Tracker);
 	void RefreshDamageNumberProjectionCache(APlayerController* PlayerController, const URogueEnemyTrackerSubsystem* Tracker);
+
+	/** 过渡兜底：敌人血条 WBP 未配置时仍用原生绘制，配置后自动停用。 */
 	void DrawEnemyHealthBars(UFont* Font);
 	void DrawDamageNumbers(UFont* Font);
+
+	/** 本地玩家生命 / 护甲 / 经验条：每帧组装视图数据推给常驻 WBP。 */
+	void UpdateVitalsWidget(const ARogueCharacter* PlayerCharacter);
+
+	/** 敌人血条：复用 RefreshEnemyHealthBarCache 的筛选结果，把可见敌人分配给池中的 WBP。 */
+	void UpdateEnemyHealthBarWidgets();
+
+	/** 取池中第 Index 个敌人血条 widget，不够时创建；类未配置或创建失败返回 nullptr。 */
+	URogueEnemyHealthBarWidgetBase* AcquireEnemyHealthBarWidget(int32 Index);
+
+	/** 收起所有敌人血条（无本地玩家、无 Tracker 或类未配置时）。 */
+	void HideAllEnemyHealthBarWidgets();
+
 	void InitializeMenuWidgets();
 	/** UMG 状态不依赖画布绘制，濒死与复活在本机每帧同步。 */
 	void RefreshMenuWidgets();
@@ -133,7 +150,6 @@ private:
 	ERoguePauseMenuPage PauseMenuPage = ERoguePauseMenuPage::None;
 	float MasterVolume = 1.0f;
 	float FrameRateLimitValue = 0.0f;
-	float SmoothedFramesPerSecond = 0.0f;
 	float NextHealthBarCacheRefreshTime = 0.0f;
 	float NextDamageNumberProjectionRefreshTime = 0.0f;
 	int32 GraphicsQualityLevel = 2;
@@ -182,6 +198,10 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<URogueSettingsMenuWidgetBase> SettingsMenuWidget = nullptr;
 
+	/** 默认 WBP 路径写在 DefaultGame.ini；C++ 不再硬编码资产路径。 */
+	UPROPERTY(EditDefaultsOnly, Config, Category = "Rogue UI|Widgets")
+	TSoftClassPtr<URogueDeathScreenWidgetBase> DeathScreenWidgetClassPath;
+
 	UPROPERTY(EditDefaultsOnly, Category = "Rogue UI|Widgets")
 	TSubclassOf<URogueDeathScreenWidgetBase> DeathScreenWidgetClass;
 
@@ -189,11 +209,34 @@ private:
 	TObjectPtr<URogueDeathScreenWidgetBase> DeathScreenWidget = nullptr;
 
 	/** 濒死期间的复活界面，默认使用 WBP_ResurrectionScreen；蓝图可覆盖样式。 */
+	UPROPERTY(EditDefaultsOnly, Config, Category = "Rogue UI|Widgets")
+	TSoftClassPtr<URogueReviveCountdownWidgetBase> ReviveCountdownWidgetClassPath;
+
 	UPROPERTY(EditDefaultsOnly, Category = "Rogue UI|Widgets")
 	TSubclassOf<URogueReviveCountdownWidgetBase> ReviveCountdownWidgetClass;
 
 	UPROPERTY(Transient)
 	TObjectPtr<URogueReviveCountdownWidgetBase> ReviveCountdownWidget = nullptr;
+
+	/** 本地玩家生命 / 护甲 / 经验条；常驻视口，ZOrder 5。 */
+	UPROPERTY(EditDefaultsOnly, Config, Category = "Rogue UI|Widgets")
+	TSoftClassPtr<URogueVitalsWidgetBase> VitalsWidgetClassPath;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Rogue UI|Widgets")
+	TSubclassOf<URogueVitalsWidgetBase> VitalsWidgetClass;
+
+	UPROPERTY(Transient)
+	TObjectPtr<URogueVitalsWidgetBase> VitalsWidget = nullptr;
+
+	/** 单个敌人血条；HUD 按可见数量从池中复用，ZOrder 6。 */
+	UPROPERTY(EditDefaultsOnly, Config, Category = "Rogue UI|Widgets")
+	TSoftClassPtr<URogueEnemyHealthBarWidgetBase> EnemyHealthBarWidgetClassPath;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Rogue UI|Widgets")
+	TSubclassOf<URogueEnemyHealthBarWidgetBase> EnemyHealthBarWidgetClass;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<URogueEnemyHealthBarWidgetBase>> EnemyHealthBarWidgets;
 
 	/** 濒死且本局未结束时可见，零秒不自行推断服务器已经复活。 */
 	void UpdateReviveCountdownWidget(const ARogueCharacter* PlayerCharacter);

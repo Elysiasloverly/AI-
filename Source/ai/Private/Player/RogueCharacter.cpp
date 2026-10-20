@@ -97,6 +97,8 @@ ARogueCharacter::ARogueCharacter()
 void ARogueCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+	
+	
 	ApplyBalanceAsset();
 
 	// 正式生命/护甲初始化在 PossessedBy → InitializeGASAttributes。
@@ -169,6 +171,9 @@ void ARogueCharacter::Tick(float DeltaSeconds)
 	// 属性镜像在 IsAlive() 早退前同步：
 	// 死亡后 HUD 仍要能读到最终血量（归零），所以这里不能因为死亡就跳过。
 	SyncAttributeMirrors();
+
+	// 跳跃手感：土狼时间、输入缓冲、下落重力。放在移动组件 Tick 之前生效。
+	UpdateJumpFeel(DeltaSeconds);
 
 	// 自检仅记录本机控制角色的属性集、角色快照与武器生效值，最多输出八组。
 	// 放在存活检查之前，允许倒地期间继续诊断；需与服务端同玩家、同阶段的日志对比。

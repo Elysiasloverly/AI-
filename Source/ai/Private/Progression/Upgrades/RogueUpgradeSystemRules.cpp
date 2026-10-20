@@ -102,6 +102,7 @@ namespace
 		static const FRogueWeaponUpgradeRuleRow DefaultWeaponRules[] =
 		{
 			{ ERogueWeaponUpgradeSource::Scythe, ERogueUpgradeType::ScytheCount },
+			{ ERogueWeaponUpgradeSource::Scythe, ERogueUpgradeType::ScytheLifesteal },
 			{ ERogueWeaponUpgradeSource::Rocket, ERogueUpgradeType::RocketCount },
 			{ ERogueWeaponUpgradeSource::Laser, ERogueUpgradeType::LaserCount },
 			{ ERogueWeaponUpgradeSource::HellTower, ERogueUpgradeType::HellTowerCount },
@@ -176,8 +177,9 @@ void RogueUpgradeSystemRules::BuildUpgradePool(TArray<ERogueUpgradeType>& OutTyp
 	if (Character == nullptr)
 	{
 		AppendDefaultWeaponUpgradeTypes(OutTypes, RuleAsset);
-		// 镰刀尺寸升级需要实际武器，不能由无角色的通用池提供。
+		// 镰刀专属升级需要实际武器，不能由无角色的通用池提供。
 		OutTypes.Remove(ERogueUpgradeType::ScytheSize);
+		OutTypes.Remove(ERogueUpgradeType::ScytheLifesteal);
 		return;
 	}
 
@@ -186,10 +188,12 @@ void RogueUpgradeSystemRules::BuildUpgradePool(TArray<ERogueUpgradeType>& OutTyp
 	if (Character->GetEffectiveScytheCount() > 0)
 	{
 		OutTypes.AddUnique(ERogueUpgradeType::ScytheSize);
+		OutTypes.AddUnique(ERogueUpgradeType::ScytheLifesteal);
 	}
 	else
 	{
 		OutTypes.Remove(ERogueUpgradeType::ScytheSize);
+		OutTypes.Remove(ERogueUpgradeType::ScytheLifesteal);
 	}
 }
 

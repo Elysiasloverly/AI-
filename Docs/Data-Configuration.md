@@ -40,17 +40,17 @@ Content/Data/
 |---|---|---|
 | 波次、刷怪、Boss、金币与商店平衡 | `Core/DA_GameBalance` | GameMode 加载并交给局内规则与子系统 |
 | 玩家基础生命、护甲、移动、实际冲刺冷却下限；武器奖励上限 | `Player/DA_PlayerBalance` | Character 初始化 PlayerState 中的 GAS 属性 |
-| 敌人原型、行为、攻击及原型限制参数 | `Enemies/DT_EnemyArchetypes` | 敌人蓝图与生成系统；行结构 `FRogueEnemyArchetypeRow` |
-| 武器初始数量、伤害、冷却、范围和数量上限 | `Weapons/DT_WeaponConfig` | `BP_RogueCharacter.WeaponDataTable`；行结构 `FRogueWeaponTableRow` |
+| 敌人原型、行为、攻击、弹体蓝图及原型限制参数 | `Enemies/DT_EnemyArchetypes` | 敌人蓝图与生成系统；行结构 `FRogueEnemyArchetypeRow`（专属参数统一在 `SpecialParams`，见 [敌人原型表结构](Enemy-Archetype-Table.md)，弹体列见 [敌人弹体蓝图](Enemy-Projectile-Blueprints.md)） |
+| 武器初始数量、伤害、冷却、范围、数量上限与派生公式系数 | `Weapons/DT_WeaponConfig` | `BP_RogueCharacter.WeaponDataTable`；行结构 `FRogueWeaponTableRow` |
 | 选择升级系统读取哪张定义表 | `Upgrades/DA_UpgradeDefinitions` | `UpgradeDefinitionTable` 指向 `DT_UpgradeDefinitions` |
 | 升级基础池、武器来源映射和冲刺冷却卡停止出现的阈值 | `Upgrades/DA_UpgradeRules` | `RogueUpgradeSystemRules::BuildUpgradePool` |
 | 升级卡名称、说明与数值 | `Upgrades/DT_UpgradeDefinitions` | 按行内 `Type` 匹配；行结构 `FRogueUpgradeDefinitionRow` |
 
-`DA_GameBalance` 已按六个区域重新分组，具体调参位置与合并后的规则见 [DA_GameBalance 调参说明](Game-Balance-Configuration.md)。
+`DA_GameBalance` 已按七个区域重新分组（敌人、刷怪、普通敌人、首领、奖励、商店、运行时），刷怪位置/Boss 节奏/池大小/性能阈值/场景优化都在资产里；具体调参位置与合并后的规则见 [DA_GameBalance 调参说明](Game-Balance-Configuration.md)。
 
 升级定义负责“卡片是什么、加多少”，升级规则负责“哪些类型参与抽取”。当前激光折射和迫击炮扩爆由 `RogueUpgradeSystemRules.cpp` 根据实际生效的武器数量追加，规则资产中的五条武器来源映射无需额外补写这两行。解锁武器会立即刷新奖励快照，供连续升级的下一轮判断。
 
-敌人原型表主要描述移动、攻击行为和原型生成上限；生命、伤害和经验奖励由 `DA_GameBalance` 参与计算的 Profile 提供。`DA_UpgradeRules.MinimumDashCooldown` 控制冲刺卡何时出池，实际冷却数值下限由 `DA_PlayerBalance.BaseStats.DashMinCooldown` 提供。
+敌人原型表描述移动、攻击行为、原型生成上限和 `Visual`/`BossVisual`；生命、伤害和经验奖励由 `DA_GameBalance` 参与计算的 Profile 提供。`DA_UpgradeRules.MinimumDashCooldown` 控制冲刺卡何时出池，实际冷却数值下限由 `DA_PlayerBalance.BaseStats.DashMinCooldown` 提供。
 
 GameMode 蓝图或关卡指定的配置优先；未指定时，代码从上述新目录加载默认资产。玩家平衡资产也支持角色蓝图覆盖。修改运行结果前，先确认当前关卡使用的 GameMode 和角色蓝图。
 

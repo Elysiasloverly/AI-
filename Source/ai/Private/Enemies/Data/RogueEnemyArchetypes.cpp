@@ -4,17 +4,40 @@
 
 namespace
 {
-	FRogueEnemyArchetype MakeHunterArchetype(bool bIsBoss)
+	FRogueEnemyArchetype MakeRiflemanArchetype(bool bIsBoss)
 	{
 		FRogueEnemyArchetype Archetype;
-		Archetype.Visual.VisualKey = ERogueEnemyVisualKey::Hunter;
+		Archetype.Movement.Model = ERogueEnemyMovementModel::RangedKite;
+		Archetype.Movement.PreferredRange = bIsBoss ? 760.0f : 620.0f;
+		Archetype.Movement.FarDistance = Archetype.Movement.PreferredRange + 160.0f;
+		Archetype.Movement.CloseDistance = bIsBoss ? 460.0f : 360.0f;
+		Archetype.Movement.FarTowardWeight = 0.95f;
+		Archetype.Movement.FarTangentWeight = 0.20f;
+		Archetype.Movement.CloseTowardWeight = -0.88f;
+		Archetype.Movement.CloseTangentWeight = 0.50f;
+		Archetype.Movement.MidTowardWeight = 0.28f;
+		Archetype.Movement.MidTangentWeight = 0.88f;
+
+		Archetype.Ranged.bUsesRangedAttack = true;
+		Archetype.Ranged.ShotPattern = ERogueEnemyShotPattern::Single;
+		Archetype.Ranged.InitialCooldownMin = bIsBoss ? 0.25f : 0.4f;
+		Archetype.Ranged.InitialCooldownMax = bIsBoss ? 0.6f : 0.9f;
+		Archetype.Ranged.PreferredRange = Archetype.Movement.PreferredRange;
+		Archetype.Ranged.NextShotCooldown = bIsBoss ? 0.85f : 1.25f;
+		Archetype.Ranged.ProjectileSpeed = bIsBoss ? 1100.0f : 950.0f;
+		Archetype.Ranged.ProjectileDamageMultiplier = bIsBoss ? 0.75f : 0.55f;
+		Archetype.Ranged.bSpawnMuzzleEffect = true;
+		Archetype.Ranged.MuzzleEffectScale = FVector(0.18f, 0.18f, 0.18f);
+		Archetype.Ranged.MuzzleEffectLifetime = 0.10f;
+
+		Archetype.Visual.VisualKey = ERogueEnemyVisualKey::Rifleman;
 		Archetype.Visual.MeshScale = FVector(0.52f, 0.52f, 0.96f);
 		Archetype.Visual.MeshLocation = FVector(0.0f, 0.0f, -40.0f);
 		Archetype.Visual.bUseBossMaterialOverride = bIsBoss;
 		return Archetype;
 	}
 
-	FRogueEnemyArchetype MakeChargerArchetype(bool bIsBoss)
+	FRogueEnemyArchetype MakeAssaultArchetype(bool bIsBoss)
 	{
 		FRogueEnemyArchetype Archetype;
 		Archetype.Movement.Model = ERogueEnemyMovementModel::BurstCharge;
@@ -22,19 +45,49 @@ namespace
 		Archetype.Movement.BurstDuration = 0.9f;
 		Archetype.Movement.BurstActiveMultiplier = 2.4f;
 		Archetype.Movement.BurstIdleMultiplier = 1.0f;
-		Archetype.Visual.VisualKey = ERogueEnemyVisualKey::Charger;
+
+		Archetype.Ranged.bUsesRangedAttack = true;
+		Archetype.Ranged.ShotPattern = ERogueEnemyShotPattern::Spread3;
+		Archetype.Ranged.InitialCooldownMin = bIsBoss ? 0.4f : 0.65f;
+		Archetype.Ranged.InitialCooldownMax = bIsBoss ? 0.8f : 1.1f;
+		Archetype.Ranged.PreferredRange = bIsBoss ? 620.0f : 520.0f;
+		Archetype.Ranged.NextShotCooldown = bIsBoss ? 1.2f : 1.7f;
+		Archetype.Ranged.ProjectileSpeed = bIsBoss ? 980.0f : 850.0f;
+		Archetype.Ranged.ProjectileDamageMultiplier = bIsBoss ? 0.48f : 0.35f;
+		Archetype.Ranged.SpreadShotCount = 3;
+		Archetype.Ranged.SpreadAngleStep = bIsBoss ? 14.0f : 12.0f;
+		Archetype.Ranged.SpreadSpawnOffset = 10.0f;
+		Archetype.Ranged.bSpawnMuzzleEffect = true;
+		Archetype.Ranged.MuzzleEffectScale = FVector(0.20f, 0.20f, 0.20f);
+		Archetype.Ranged.MuzzleEffectLifetime = 0.10f;
+
+		Archetype.Visual.VisualKey = ERogueEnemyVisualKey::Assault;
 		Archetype.Visual.MeshScale = FVector(0.72f, 0.72f, 1.08f);
 		Archetype.Visual.MeshLocation = FVector(0.0f, 0.0f, -44.0f);
 		Archetype.Visual.bUseBossMaterialOverride = bIsBoss;
 		return Archetype;
 	}
 
-	FRogueEnemyArchetype MakeTankArchetype(bool bIsBoss)
+	FRogueEnemyArchetype MakeJuggernautArchetype(bool bIsBoss)
 	{
 		FRogueEnemyArchetype Archetype;
 		Archetype.Movement.Model = ERogueEnemyMovementModel::Direct;
 		Archetype.Movement.BaseMoveMultiplier = 0.72f;
-		Archetype.Visual.VisualKey = ERogueEnemyVisualKey::Tank;
+
+		Archetype.Ranged.bUsesRangedAttack = true;
+		Archetype.Ranged.ShotPattern = ERogueEnemyShotPattern::Single;
+		Archetype.Ranged.InitialCooldownMin = bIsBoss ? 0.9f : 1.4f;
+		Archetype.Ranged.InitialCooldownMax = bIsBoss ? 1.5f : 2.2f;
+		Archetype.Ranged.PreferredRange = bIsBoss ? 850.0f : 700.0f;
+		Archetype.Ranged.NextShotCooldown = bIsBoss ? 1.8f : 2.6f;
+		Archetype.Ranged.ProjectileSpeed = bIsBoss ? 820.0f : 680.0f;
+		Archetype.Ranged.ProjectileDamageMultiplier = bIsBoss ? 1.8f : 1.4f;
+		Archetype.Ranged.bLargeVisual = true;
+		Archetype.Ranged.bSpawnMuzzleEffect = true;
+		Archetype.Ranged.MuzzleEffectScale = FVector(0.28f, 0.28f, 0.28f);
+		Archetype.Ranged.MuzzleEffectLifetime = 0.16f;
+
+		Archetype.Visual.VisualKey = ERogueEnemyVisualKey::Juggernaut;
 		Archetype.Visual.MeshScale = FVector(0.96f, 0.96f, 0.96f);
 		Archetype.Visual.MeshLocation = FVector(0.0f, 0.0f, -34.0f);
 		Archetype.Visual.bUseBossMaterialOverride = bIsBoss;
@@ -53,6 +106,19 @@ namespace
 		Archetype.Movement.CloseTangentWeight = 0.80f;
 		Archetype.Movement.MidTowardWeight = 0.25f;
 		Archetype.Movement.MidTangentWeight = 0.85f;
+
+		Archetype.Ranged.bUsesRangedAttack = true;
+		Archetype.Ranged.ShotPattern = ERogueEnemyShotPattern::Single;
+		Archetype.Ranged.InitialCooldownMin = bIsBoss ? 0.4f : 0.65f;
+		Archetype.Ranged.InitialCooldownMax = bIsBoss ? 0.8f : 1.2f;
+		Archetype.Ranged.PreferredRange = bIsBoss ? 780.0f : 650.0f;
+		Archetype.Ranged.NextShotCooldown = bIsBoss ? 0.95f : 1.4f;
+		Archetype.Ranged.ProjectileSpeed = bIsBoss ? 1150.0f : 1000.0f;
+		Archetype.Ranged.ProjectileDamageMultiplier = bIsBoss ? 0.8f : 0.6f;
+		Archetype.Ranged.bSpawnMuzzleEffect = true;
+		Archetype.Ranged.MuzzleEffectScale = FVector(0.18f, 0.18f, 0.18f);
+		Archetype.Ranged.MuzzleEffectLifetime = 0.10f;
+
 		Archetype.Visual.VisualKey = ERogueEnemyVisualKey::Orbiter;
 		Archetype.Visual.MeshScale = FVector(0.68f, 0.68f, 0.68f);
 		Archetype.Visual.MeshLocation = FVector(0.0f, 0.0f, -22.0f);
@@ -60,7 +126,7 @@ namespace
 		return Archetype;
 	}
 
-	FRogueEnemyArchetype MakeShooterArchetype(bool bIsBoss)
+	FRogueEnemyArchetype MakeMarksmanArchetype(bool bIsBoss)
 	{
 		FRogueEnemyArchetype Archetype;
 		Archetype.Movement.Model = ERogueEnemyMovementModel::RangedKite;
@@ -80,9 +146,6 @@ namespace
 		Archetype.Ranged.InitialCooldownMin = 0.35f;
 		Archetype.Ranged.InitialCooldownMax = 0.85f;
 		Archetype.Ranged.PreferredRange = Archetype.Movement.PreferredRange;
-		Archetype.Ranged.MinimumRange = Archetype.Movement.CloseDistance;
-		Archetype.Ranged.MaximumRange = bIsBoss ? 1550.0f : 1300.0f;
-		Archetype.Ranged.AttackRangeMinFactor = 0.55f;
 		Archetype.Ranged.NextShotCooldown = bIsBoss ? 0.72f : 1.18f;
 		Archetype.Ranged.ProjectileSpeed = bIsBoss ? 1220.0f : 980.0f;
 		Archetype.Ranged.ProjectileDamageMultiplier = bIsBoss ? 1.0f : 0.85f;
@@ -91,7 +154,7 @@ namespace
 		Archetype.Ranged.MuzzleEffectScale = FVector(0.24f, 0.24f, 0.24f);
 		Archetype.Ranged.MuzzleEffectLifetime = 0.12f;
 
-		Archetype.Visual.VisualKey = ERogueEnemyVisualKey::Shooter;
+		Archetype.Visual.VisualKey = ERogueEnemyVisualKey::Marksman;
 		Archetype.Visual.MeshScale = FVector(0.76f, 0.76f, 0.48f);
 		Archetype.Visual.MeshLocation = FVector(0.0f, 0.0f, -22.0f);
 		Archetype.Visual.MeshRotation = FRotator(0.0f, 90.0f, 0.0f);
@@ -109,6 +172,22 @@ namespace
 		Archetype.Movement.ZigZagFrequency = 7.5f;
 		Archetype.Movement.ZigZagTowardWeight = 0.96f;
 		Archetype.Movement.ZigZagTangentWeight = 0.82f;
+
+		Archetype.Ranged.bUsesRangedAttack = true;
+		Archetype.Ranged.ShotPattern = ERogueEnemyShotPattern::Spread3;
+		Archetype.Ranged.InitialCooldownMin = bIsBoss ? 0.35f : 0.55f;
+		Archetype.Ranged.InitialCooldownMax = bIsBoss ? 0.7f : 1.0f;
+		Archetype.Ranged.PreferredRange = bIsBoss ? 620.0f : 520.0f;
+		Archetype.Ranged.NextShotCooldown = bIsBoss ? 0.95f : 1.3f;
+		Archetype.Ranged.ProjectileSpeed = bIsBoss ? 1000.0f : 900.0f;
+		Archetype.Ranged.ProjectileDamageMultiplier = bIsBoss ? 0.42f : 0.35f;
+		Archetype.Ranged.SpreadShotCount = 3;
+		Archetype.Ranged.SpreadAngleStep = bIsBoss ? 12.0f : 10.0f;
+		Archetype.Ranged.SpreadSpawnOffset = 10.0f;
+		Archetype.Ranged.bSpawnMuzzleEffect = true;
+		Archetype.Ranged.MuzzleEffectScale = FVector(0.18f, 0.18f, 0.18f);
+		Archetype.Ranged.MuzzleEffectLifetime = 0.10f;
+
 		Archetype.Visual.VisualKey = ERogueEnemyVisualKey::Skirmisher;
 		Archetype.Visual.MeshScale = FVector(0.60f, 0.60f, 0.18f);
 		Archetype.Visual.MeshLocation = FVector(0.0f, 0.0f, -10.0f);
@@ -117,7 +196,7 @@ namespace
 		return Archetype;
 	}
 
-	FRogueEnemyArchetype MakeArtilleryArchetype(bool bIsBoss)
+	FRogueEnemyArchetype MakeCannoneerArchetype(bool bIsBoss)
 	{
 		FRogueEnemyArchetype Archetype;
 		Archetype.Movement.Model = ERogueEnemyMovementModel::RangedKite;
@@ -136,9 +215,6 @@ namespace
 		Archetype.Ranged.InitialCooldownMin = 0.75f;
 		Archetype.Ranged.InitialCooldownMax = 1.30f;
 		Archetype.Ranged.PreferredRange = Archetype.Movement.PreferredRange;
-		Archetype.Ranged.MinimumRange = Archetype.Movement.CloseDistance;
-		Archetype.Ranged.MaximumRange = bIsBoss ? 1950.0f : 1720.0f;
-		Archetype.Ranged.AttackRangeMinFactor = 0.82f;
 		Archetype.Ranged.NextShotCooldown = bIsBoss ? 1.08f : 1.85f;
 		Archetype.Ranged.ProjectileSpeed = bIsBoss ? 1120.0f : 860.0f;
 		Archetype.Ranged.ProjectileDamageMultiplier = bIsBoss ? 1.25f : 1.10f;
@@ -147,14 +223,14 @@ namespace
 		Archetype.Ranged.MuzzleEffectScale = FVector(0.28f, 0.28f, 0.28f);
 		Archetype.Ranged.MuzzleEffectLifetime = 0.18f;
 
-		Archetype.Visual.VisualKey = ERogueEnemyVisualKey::Artillery;
+		Archetype.Visual.VisualKey = ERogueEnemyVisualKey::Cannoneer;
 		Archetype.Visual.MeshScale = FVector(0.94f, 0.94f, 0.68f);
 		Archetype.Visual.MeshLocation = FVector(0.0f, 0.0f, -26.0f);
 		Archetype.Visual.bUseBossMaterialOverride = bIsBoss;
 		return Archetype;
 	}
 
-	FRogueEnemyArchetype MakeSpitterArchetype(bool bIsBoss)
+	FRogueEnemyArchetype MakeScattererArchetype(bool bIsBoss)
 	{
 		FRogueEnemyArchetype Archetype;
 		Archetype.Movement.Model = ERogueEnemyMovementModel::RangedKite;
@@ -173,9 +249,6 @@ namespace
 		Archetype.Ranged.InitialCooldownMin = 0.18f;
 		Archetype.Ranged.InitialCooldownMax = 0.48f;
 		Archetype.Ranged.PreferredRange = Archetype.Movement.PreferredRange;
-		Archetype.Ranged.MinimumRange = Archetype.Movement.CloseDistance;
-		Archetype.Ranged.MaximumRange = bIsBoss ? 1120.0f : 940.0f;
-		Archetype.Ranged.AttackRangeMinFactor = 0.40f;
 		Archetype.Ranged.NextShotCooldown = bIsBoss ? 0.42f : 0.70f;
 		Archetype.Ranged.ProjectileSpeed = bIsBoss ? 1180.0f : 980.0f;
 		Archetype.Ranged.ProjectileDamageMultiplier = bIsBoss ? 0.48f : 0.42f;
@@ -187,7 +260,7 @@ namespace
 		Archetype.Ranged.SpreadAngleStep = bIsBoss ? 12.0f : 10.0f;
 		Archetype.Ranged.SpreadSpawnOffset = 12.0f;
 
-		Archetype.Visual.VisualKey = ERogueEnemyVisualKey::Spitter;
+		Archetype.Visual.VisualKey = ERogueEnemyVisualKey::Scatterer;
 		Archetype.Visual.MeshScale = FVector(0.70f, 0.70f, 0.86f);
 		Archetype.Visual.MeshLocation = FVector(0.0f, 0.0f, -18.0f);
 		Archetype.Visual.bUseBossMaterialOverride = bIsBoss;
@@ -200,7 +273,7 @@ namespace
 		Archetype.Movement.Model = ERogueEnemyMovementModel::Stationary;
 		Archetype.Movement.BaseMoveMultiplier = 0.0f;
 
-		// 使用远程攻击槽发射弹幕，不再启动旧地面波能力。
+		// 使用远程攻击槽发射弹幕，不再有旧地面波能力。
 		Archetype.Ranged.bUsesRangedAttack = true;
 		Archetype.Ranged.ShotPattern = ERogueEnemyShotPattern::RadialRing;
 		Archetype.Ranged.InitialCooldownMin = bIsBoss ? 1.1f : 1.6f;
@@ -209,13 +282,160 @@ namespace
 		Archetype.Ranged.BulletRing = FRogueEnemyBulletRingSettings();
 		Archetype.Ranged.ProjectileSpeed = Archetype.Ranged.BulletRing.ProjectileSpeed;
 		Archetype.Ranged.ProjectileDamageMultiplier = Archetype.Ranged.BulletRing.DamageMultiplier;
-		Archetype.Ranged.MaximumRange = Archetype.Ranged.ProjectileSpeed * Archetype.Ranged.BulletRing.ProjectileLifetime;
 
 		Archetype.Visual.VisualKey = ERogueEnemyVisualKey::ShockPillar;
 		Archetype.Visual.MeshScale = FVector(0.74f, 0.74f, 1.72f);
 		Archetype.Visual.MeshLocation = FVector(0.0f, 0.0f, -10.0f);
 		Archetype.Visual.CapsuleRadius = bIsBoss ? 72.0f : 48.0f;
 		Archetype.Visual.CapsuleHalfHeight = bIsBoss ? 156.0f : 112.0f;
+		Archetype.Visual.bUseBossMaterialOverride = bIsBoss;
+		return Archetype;
+	}
+
+	FRogueEnemyArchetype MakeSniperArchetype(bool bIsBoss)
+	{
+		FRogueEnemyArchetype Archetype;
+		Archetype.Movement.Model = ERogueEnemyMovementModel::RangedKite;
+		Archetype.Movement.PreferredRange = bIsBoss ? 1350.0f : 1150.0f;
+		Archetype.Movement.FarDistance = Archetype.Movement.PreferredRange + 180.0f;
+		Archetype.Movement.CloseDistance = bIsBoss ? 760.0f : 680.0f;
+		Archetype.Movement.FarTowardWeight = 0.98f;
+		Archetype.Movement.FarTangentWeight = 0.12f;
+		Archetype.Movement.CloseTowardWeight = -0.95f;
+		Archetype.Movement.CloseTangentWeight = 0.35f;
+		Archetype.Movement.MidTowardWeight = 0.55f;
+		Archetype.Movement.MidTangentWeight = 0.65f;
+
+		Archetype.Ranged.bUsesRangedAttack = true;
+		Archetype.Ranged.ShotPattern = ERogueEnemyShotPattern::Single;
+		Archetype.Ranged.InitialCooldownMin = bIsBoss ? 0.8f : 1.2f;
+		Archetype.Ranged.InitialCooldownMax = bIsBoss ? 1.4f : 2.0f;
+		Archetype.Ranged.PreferredRange = Archetype.Movement.PreferredRange;
+		Archetype.Ranged.NextShotCooldown = bIsBoss ? 1.5f : 2.1f;
+		Archetype.Ranged.ProjectileSpeed = bIsBoss ? 1950.0f : 1700.0f;
+		Archetype.Ranged.ProjectileDamageMultiplier = bIsBoss ? 1.65f : 1.35f;
+		Archetype.Ranged.bLargeVisual = true;
+		Archetype.Ranged.bSpawnMuzzleEffect = true;
+		Archetype.Ranged.MuzzleEffectScale = FVector(0.30f, 0.30f, 0.30f);
+		Archetype.Ranged.MuzzleEffectLifetime = 0.16f;
+
+		Archetype.Visual.VisualKey = ERogueEnemyVisualKey::Sniper;
+		Archetype.Visual.MeshScale = FVector(0.54f, 0.54f, 1.0f);
+		Archetype.Visual.MeshLocation = FVector(0.0f, 0.0f, -42.0f);
+		Archetype.Visual.CapsuleRadius = 34.0f;
+		Archetype.Visual.CapsuleHalfHeight = 74.0f;
+		Archetype.Visual.bUseBossMaterialOverride = bIsBoss;
+		return Archetype;
+	}
+
+	FRogueEnemyArchetype MakeRepeaterArchetype(bool bIsBoss)
+	{
+		FRogueEnemyArchetype Archetype;
+		Archetype.Movement.Model = ERogueEnemyMovementModel::RangedKite;
+		Archetype.Movement.PreferredRange = bIsBoss ? 820.0f : 700.0f;
+		Archetype.Movement.FarDistance = Archetype.Movement.PreferredRange + 160.0f;
+		Archetype.Movement.CloseDistance = bIsBoss ? 440.0f : 380.0f;
+		Archetype.Movement.FarTowardWeight = 0.90f;
+		Archetype.Movement.FarTangentWeight = 0.22f;
+		Archetype.Movement.CloseTowardWeight = -0.82f;
+		Archetype.Movement.CloseTangentWeight = 0.55f;
+		Archetype.Movement.MidTowardWeight = 0.26f;
+		Archetype.Movement.MidTangentWeight = 0.88f;
+
+		Archetype.Ranged.bUsesRangedAttack = true;
+		Archetype.Ranged.ShotPattern = ERogueEnemyShotPattern::Single;
+		Archetype.Ranged.InitialCooldownMin = bIsBoss ? 0.15f : 0.25f;
+		Archetype.Ranged.InitialCooldownMax = bIsBoss ? 0.35f : 0.55f;
+		Archetype.Ranged.PreferredRange = Archetype.Movement.PreferredRange;
+		Archetype.Ranged.NextShotCooldown = bIsBoss ? 0.30f : 0.48f;
+		Archetype.Ranged.ProjectileSpeed = bIsBoss ? 1380.0f : 1180.0f;
+		Archetype.Ranged.ProjectileDamageMultiplier = bIsBoss ? 0.38f : 0.28f;
+		Archetype.Ranged.bSpawnMuzzleEffect = true;
+		Archetype.Ranged.MuzzleEffectScale = FVector(0.16f, 0.16f, 0.16f);
+		Archetype.Ranged.MuzzleEffectLifetime = 0.08f;
+
+		Archetype.Visual.VisualKey = ERogueEnemyVisualKey::Repeater;
+		Archetype.Visual.MeshScale = FVector(0.46f, 0.46f, 0.84f);
+		Archetype.Visual.MeshLocation = FVector(0.0f, 0.0f, -20.0f);
+		Archetype.Visual.CapsuleRadius = 30.0f;
+		Archetype.Visual.CapsuleHalfHeight = 68.0f;
+		Archetype.Visual.bUseBossMaterialOverride = bIsBoss;
+		return Archetype;
+	}
+
+	FRogueEnemyArchetype MakeShotgunnerArchetype(bool bIsBoss)
+	{
+		FRogueEnemyArchetype Archetype;
+		Archetype.Movement.Model = ERogueEnemyMovementModel::RangedKite;
+		Archetype.Movement.PreferredRange = bIsBoss ? 600.0f : 480.0f;
+		Archetype.Movement.FarDistance = Archetype.Movement.PreferredRange + 100.0f;
+		Archetype.Movement.CloseDistance = bIsBoss ? 320.0f : 250.0f;
+		Archetype.Movement.FarTowardWeight = 0.98f;
+		Archetype.Movement.FarTangentWeight = 0.20f;
+		Archetype.Movement.CloseTowardWeight = -0.78f;
+		Archetype.Movement.CloseTangentWeight = 0.72f;
+		Archetype.Movement.MidTowardWeight = 0.18f;
+		Archetype.Movement.MidTangentWeight = 0.94f;
+
+		Archetype.Ranged.bUsesRangedAttack = true;
+		Archetype.Ranged.ShotPattern = ERogueEnemyShotPattern::Spread3;
+		Archetype.Ranged.InitialCooldownMin = bIsBoss ? 0.25f : 0.4f;
+		Archetype.Ranged.InitialCooldownMax = bIsBoss ? 0.55f : 0.85f;
+		Archetype.Ranged.PreferredRange = Archetype.Movement.PreferredRange;
+		Archetype.Ranged.NextShotCooldown = bIsBoss ? 1.1f : 1.65f;
+		Archetype.Ranged.ProjectileSpeed = bIsBoss ? 1000.0f : 860.0f;
+		Archetype.Ranged.ProjectileDamageMultiplier = bIsBoss ? 0.38f : 0.30f;
+		Archetype.Ranged.SpreadShotCount = 5;
+		Archetype.Ranged.SpreadAngleStep = bIsBoss ? 13.0f : 11.0f;
+		Archetype.Ranged.SpreadSpawnOffset = 10.0f;
+		Archetype.Ranged.bSpawnMuzzleEffect = true;
+		Archetype.Ranged.MuzzleEffectScale = FVector(0.20f, 0.20f, 0.20f);
+		Archetype.Ranged.MuzzleEffectLifetime = 0.10f;
+
+		Archetype.Visual.VisualKey = ERogueEnemyVisualKey::Shotgunner;
+		Archetype.Visual.MeshScale = FVector(0.88f, 0.88f, 0.62f);
+		Archetype.Visual.MeshLocation = FVector(0.0f, 0.0f, -24.0f);
+		Archetype.Visual.CapsuleRadius = 38.0f;
+		Archetype.Visual.CapsuleHalfHeight = 76.0f;
+		Archetype.Visual.bUseBossMaterialOverride = bIsBoss;
+		return Archetype;
+	}
+
+	FRogueEnemyArchetype MakeRingcasterArchetype(bool bIsBoss)
+	{
+		FRogueEnemyArchetype Archetype;
+		Archetype.Movement.Model = ERogueEnemyMovementModel::RangedKite;
+		Archetype.Movement.PreferredRange = bIsBoss ? 760.0f : 650.0f;
+		Archetype.Movement.FarDistance = Archetype.Movement.PreferredRange + 140.0f;
+		Archetype.Movement.CloseDistance = bIsBoss ? 440.0f : 380.0f;
+		Archetype.Movement.FarTowardWeight = 0.86f;
+		Archetype.Movement.FarTangentWeight = 0.28f;
+		Archetype.Movement.CloseTowardWeight = -0.84f;
+		Archetype.Movement.CloseTangentWeight = 0.50f;
+		Archetype.Movement.MidTowardWeight = 0.22f;
+		Archetype.Movement.MidTangentWeight = 0.80f;
+
+		Archetype.Ranged.bUsesRangedAttack = true;
+		Archetype.Ranged.ShotPattern = ERogueEnemyShotPattern::RadialRing;
+		Archetype.Ranged.InitialCooldownMin = bIsBoss ? 1.0f : 1.5f;
+		Archetype.Ranged.InitialCooldownMax = bIsBoss ? 1.8f : 2.4f;
+		Archetype.Ranged.NextShotCooldown = bIsBoss ? 2.7f : 3.4f;
+		FRogueEnemyBulletRingSettings Ring;
+		Ring.ProjectileCount = bIsBoss ? 24 : 16;
+		Ring.ProjectileSpeed = bIsBoss ? 880.0f : 760.0f;
+		Ring.ProjectileLifetime = 3.2f;
+		Ring.ProjectileScale = 0.32f;
+		Ring.DamageMultiplier = bIsBoss ? 0.34f : 0.28f;
+		Ring.HeightAboveGround = 50.0f;
+		Archetype.Ranged.BulletRing = Ring;
+		Archetype.Ranged.ProjectileSpeed = Ring.ProjectileSpeed;
+		Archetype.Ranged.ProjectileDamageMultiplier = Ring.DamageMultiplier;
+
+		Archetype.Visual.VisualKey = ERogueEnemyVisualKey::Ringcaster;
+		Archetype.Visual.MeshScale = FVector(0.58f, 0.58f, 1.34f);
+		Archetype.Visual.MeshLocation = FVector(0.0f, 0.0f, -12.0f);
+		Archetype.Visual.CapsuleRadius = 40.0f;
+		Archetype.Visual.CapsuleHalfHeight = 84.0f;
 		Archetype.Visual.bUseBossMaterialOverride = bIsBoss;
 		return Archetype;
 	}
@@ -227,33 +447,45 @@ FRogueEnemyArchetype RogueEnemyArchetypes::BuildEnemyArchetype(ERogueEnemyType T
 
 	switch (Type)
 	{
-	case ERogueEnemyType::Charger:
-		Archetype = MakeChargerArchetype(bIsBoss);
+	case ERogueEnemyType::Assault:
+		Archetype = MakeAssaultArchetype(bIsBoss);
 		break;
-	case ERogueEnemyType::Tank:
-		Archetype = MakeTankArchetype(bIsBoss);
+	case ERogueEnemyType::Juggernaut:
+		Archetype = MakeJuggernautArchetype(bIsBoss);
 		break;
 	case ERogueEnemyType::Orbiter:
 		Archetype = MakeOrbiterArchetype(bIsBoss);
 		break;
-	case ERogueEnemyType::Shooter:
-		Archetype = MakeShooterArchetype(bIsBoss);
+	case ERogueEnemyType::Marksman:
+		Archetype = MakeMarksmanArchetype(bIsBoss);
+		break;
+	case ERogueEnemyType::Sniper:
+		Archetype = MakeSniperArchetype(bIsBoss);
+		break;
+	case ERogueEnemyType::Repeater:
+		Archetype = MakeRepeaterArchetype(bIsBoss);
+		break;
+	case ERogueEnemyType::Shotgunner:
+		Archetype = MakeShotgunnerArchetype(bIsBoss);
+		break;
+	case ERogueEnemyType::Ringcaster:
+		Archetype = MakeRingcasterArchetype(bIsBoss);
 		break;
 	case ERogueEnemyType::Skirmisher:
 		Archetype = MakeSkirmisherArchetype(bIsBoss);
 		break;
-	case ERogueEnemyType::Artillery:
-		Archetype = MakeArtilleryArchetype(bIsBoss);
+	case ERogueEnemyType::Cannoneer:
+		Archetype = MakeCannoneerArchetype(bIsBoss);
 		break;
-	case ERogueEnemyType::Spitter:
-		Archetype = MakeSpitterArchetype(bIsBoss);
+	case ERogueEnemyType::Scatterer:
+		Archetype = MakeScattererArchetype(bIsBoss);
 		break;
 	case ERogueEnemyType::ShockPillar:
 		Archetype = MakeShockPillarArchetype(bIsBoss);
 		break;
-	case ERogueEnemyType::Hunter:
+	case ERogueEnemyType::Rifleman:
 	default:
-		Archetype = MakeHunterArchetype(bIsBoss);
+		Archetype = MakeRiflemanArchetype(bIsBoss);
 		break;
 	}
 
@@ -278,7 +510,7 @@ FName RogueEnemyArchetypes::FindRowNameForEnemyType(const UDataTable* DataTable,
 	// 只缓存最近一次表/类型对应的行名，弱引用不延长表的生命周期。
 	// 命中率取决于查询顺序；表内容若原地修改，同一键不会自动重新解析行名。
 	static TWeakObjectPtr<const UDataTable> CachedTable;
-	static ERogueEnemyType CachedType = ERogueEnemyType::Hunter;
+	static ERogueEnemyType CachedType = ERogueEnemyType::Rifleman;
 	static FName CachedRowName = NAME_None;
 	static bool bCacheValid = false;
 

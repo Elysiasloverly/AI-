@@ -271,7 +271,14 @@ void ARogueGameMode::HandleRestartRequest(ARoguePlayerState* Requester)
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("[Rogue] 重开关卡：%s"), *LevelName);
-	if (GetNetMode() == NM_Standalone)
+
+	// PIE（含“作为监听服务器运行”）里 ServerTravel 会先拆掉当前 PIE 世界，
+	// 再依赖编辑器“重复上次 PIE 命令”把画面拉回来；某些情况下编辑器不会自动重开，
+	// 表现就是点了按钮后直接停在编辑器里。PIE 统一走 OpenLevel，让编辑器自己重载关卡；
+	// 只有真正打包后的联机服务器才使用 ServerTravel 带客户端一起走。
+	const bool bIsPIE = GetWorld()->IsPlayInEditor();
+	UE_LOG(LogTemp, Log, TEXT("[Rogue] 重开方式：%s"), bIsPIE ? TEXT("PIE/OpenLevel") : (GetNetMode() == NM_Standalone ? TEXT("Standalone/OpenLevel") : TEXT("ServerTravel")));
+	if (GetNetMode() == NM_Standalone || bIsPIE)
 	{
 		UGameplayStatics::OpenLevel(this, FName(*LevelName));
 	}

@@ -119,14 +119,12 @@ bool FRogueShockPillarAISalvoTest::RunTest(const FString& Parameters)
 	if (!Fixture.Initialize(*this)) { return false; }
 	TestTrue(TEXT("The pillar receives the ranged GAS slot"), Fixture.Pillar->RangedAttackAbilityHandle.IsValid());
 	TestFalse(TEXT("The pillar receives no contact attack"), Fixture.Pillar->ContactAttackAbilityHandle.IsValid());
-	TestFalse(TEXT("The pillar receives no legacy ground-wave attack"), Fixture.Pillar->GroundWaveAttackAbilityHandle.IsValid());
 	TestEqual(TEXT("No active enemy bullets precede the attack"), Fixture.ActiveProjectiles().Num(), 0);
 
 	Fixture.Pillar->SetRangedAttackCooldown(0.02f);
 	Fixture.Pillar->Tick(0.03f);
 	TArray<ARogueEnemyProjectile*> Projectiles = Fixture.ActiveProjectiles();
 	if (!TestEqual(TEXT("One AI/GAS attack emits exactly 48 bullets"), Projectiles.Num(), 48)) { return false; }
-	TestFalse(TEXT("The expanding ground wave remains inactive"), Fixture.Pillar->IsGroundWaveActive());
 	TestTrue(TEXT("Successful attack starts the configured cooldown"),
 		FMath::IsNearlyEqual(Fixture.Pillar->GetRangedAttackCooldownRemaining(),
 			Fixture.Pillar->GetRangedArchetype().NextShotCooldown));
@@ -171,33 +169,14 @@ bool FRogueShockPillarProjectileReuseTest::RunTest(const FString& Parameters)
 	ARogueEnemyProjectile* Projectile = Fixture.AcquireProjectile(Location);
 	if (!TestNotNull(TEXT("A real projectile is acquired from the combat pool"), Projectile)) { return false; }
 	USphereComponent* Collision = Projectile->FindComponentByClass<USphereComponent>();
-	UPointLightComponent* Light = Projectile->FindComponentByClass<UPointLightComponent>();
-	if (!TestNotNull(TEXT("The collision sphere exists"), Collision)
-		|| !TestNotNull(TEXT("The projectile light exists"), Light)) { return false; }
-	const FVector AuthoredBodyScale = Projectile->FindComponentByClass<UStaticMeshComponent>()->GetRelativeScale3D();
+	if (!TestNotNull(TEXT("The collision sphere exists"), Collision)) { return false; }
+
 	Projectile->ActivatePooledProjectile(Fixture.Pillar, Fixture.Pillar, Location, FRotator::ZeroRotator,
 		FVector::ForwardVector, 720.0f, 7.0f, false, 1.0f, 0.4f, true);
 	TestTrue(TEXT("Ring collision scales to 8.8 cm"), FMath::IsNearlyEqual(Collision->GetScaledSphereRadius(), 8.8f, 0.01f));
-	TestFalse(TEXT("Dense bullets disable individual point lights"), Light->IsVisible());
-	TInlineComponentArray<UStaticMeshComponent*> Meshes;
-	Projectile->GetComponents(Meshes);
-	for (UStaticMeshComponent* Mesh : Meshes)
-	{
-		if (Mesh->GetFName() == TEXT("SpineMesh") || Mesh->GetFName() == TEXT("RingMesh") || Mesh->GetFName() == TEXT("TrailMesh"))
-		{
-			TestFalse(TEXT("Dense bullets hide the decorative meshes"), Mesh->IsVisible());
-		}
-	}
 	Projectile->Tick(0.7f);
 	TestFalse(TEXT("A ring bullet survives before its own deadline"), Projectile->IsAvailableInPool());
 	TestTrue(TEXT("Visual ticks preserve the small collision size"), FMath::IsNearlyEqual(Collision->GetScaledSphereRadius(), 8.8f, 0.01f));
-	for (UStaticMeshComponent* Mesh : Meshes)
-	{
-		if (Mesh->GetFName() == TEXT("BodyMesh"))
-		{
-			TestTrue(TEXT("The ring bullet preserves the authored mesh scale while retaining its configured collision radius"), Mesh->GetRelativeScale3D().Equals(AuthoredBodyScale));
-		}
-	}
 	Projectile->Tick(0.31f);
 	TestTrue(TEXT("A ring bullet returns to the pool at its configured lifetime"), Projectile->IsAvailableInPool());
 
@@ -205,14 +184,6 @@ bool FRogueShockPillarProjectileReuseTest::RunTest(const FString& Parameters)
 	Projectile->ActivatePooledProjectile(Fixture.Pillar, Fixture.Pillar, Location, FRotator::ZeroRotator,
 		FVector::ForwardVector, 920.0f, 7.0f, false);
 	TestTrue(TEXT("Ordinary reuse restores the original 22 cm collision"), FMath::IsNearlyEqual(Collision->GetScaledSphereRadius(), 22.0f));
-	TestTrue(TEXT("Ordinary reuse restores its light"), Light->IsVisible());
-	for (UStaticMeshComponent* Mesh : Meshes)
-	{
-		if (Mesh->GetFName() == TEXT("SpineMesh") || Mesh->GetFName() == TEXT("RingMesh") || Mesh->GetFName() == TEXT("TrailMesh"))
-		{
-			TestTrue(TEXT("Ordinary reuse restores the decorative meshes"), Mesh->IsVisible());
-		}
-	}
 	Projectile->Tick(1.1f);
 	TestFalse(TEXT("Ordinary reuse does not retain the short ring lifetime"), Projectile->IsAvailableInPool());
 	Projectile->Tick(3.0f);

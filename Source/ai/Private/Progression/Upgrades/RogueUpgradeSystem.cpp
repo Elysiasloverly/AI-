@@ -14,6 +14,8 @@ namespace
 		Option.Title = Definition.Title;
 		Option.Description = Definition.Description;
 		Option.Magnitude = Definition.Magnitude;
+		Option.FirstMagnitude = Definition.FirstMagnitude;
+		Option.MaxMagnitude = Definition.MaxMagnitude;
 		return Option;
 	}
 
@@ -28,6 +30,13 @@ namespace
 			Option.Title = TEXT("镰刀变大");
 			Option.Description = TEXT("镰刀尺寸与伤害碰撞范围增加基础值的 20%，不改变环绕距离。");
 			Option.Magnitude = 0.2f;
+			break;
+		case ERogueUpgradeType::ScytheLifesteal:
+			Option.Title = TEXT("吸血收割");
+			Option.Description = TEXT("镰刀造成伤害的 20% 回复生命；首次获得 20%，之后每级 +5%。");
+			Option.Magnitude = 0.05f;
+			Option.FirstMagnitude = 0.20f;
+			Option.MaxMagnitude = 1.0f;
 			break;
 		case ERogueUpgradeType::MortarCount:
 			Option.Title = TEXT("迫击炮");

@@ -30,6 +30,14 @@ struct AI_API FRogueUpgradeDefinitionRow : public FTableRowBase
 	/** 数值幅度 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "升级", meta = (DisplayName = "数值"))
 	float Magnitude = 0.0f;
+
+	/** 首次获得的目标值；-1 表示使用代码默认（吸血收割为 0.20）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "升级", meta = (DisplayName = "首次目标值(-1=默认)"))
+	float FirstMagnitude = -1.0f;
+
+	/** 该升级允许的最大值；-1 表示使用代码默认。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "升级", meta = (DisplayName = "最大值(-1=默认)"))
+	float MaxMagnitude = -1.0f;
 };
 
 /**

@@ -1,6 +1,5 @@
 #include "AbilitySystem/Abilities/RogueEnemyAttackAbility.h"
 
-#include "AbilitySystem/Tasks/RogueAbilityTask_AttackTick.h"
 #include "AbilitySystem/GameplayEffects/RogueStateEffects.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystem/RogueGameplayTags.h"
@@ -29,11 +28,6 @@ namespace RogueEnemyAttackStats
 	void CountRangedAttempt()
 	{
 		++GCounters.RangedAttempts;
-	}
-
-	void CountGroundWaveAttempt()
-	{
-		++GCounters.GroundWaveAttempts;
 	}
 }
 
@@ -119,15 +113,6 @@ void URogueEnemyAttackAbility::ApplyAttackCooldown()
 	}
 }
 
-void URogueEnemyAttackAbility::StartTickTask()
-{
-	TickTask = URogueAbilityTask_AttackTick::RunAttackTick(this);
-	if (TickTask != nullptr)
-	{
-		TickTask->ReadyForActivation();
-	}
-}
-
 // ===========================================================
 //  接触攻击
 // ===========================================================
@@ -188,57 +173,4 @@ float URogueEnemyRangedAttackAbility::GetAttackCooldownSeconds() const
 	const ARogueEnemy* Enemy = GetEnemy();
 	// 改造前是 `RangedAttackTimer = RangedArchetype.NextShotCooldown`。
 	return Enemy != nullptr ? Enemy->GetRangedArchetype().NextShotCooldown : 0.0f;
-}
-
-// ===========================================================
-//  地面波（持续到波结束）
-// ===========================================================
-
-void URogueEnemyGroundWaveAttackAbility::ActivateAbility(
-	const FGameplayAbilitySpecHandle Handle,
-	const FGameplayAbilityActorInfo* ActorInfo,
-	const FGameplayAbilityActivationInfo ActivationInfo,
-	const FGameplayEventData* TriggerEventData)
-{
-	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
-
-	ARogueEnemy* Enemy = GetEnemy();
-	if (Enemy == nullptr)
-	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, /*bReplicateEndAbility=*/false, /*bWasCancelled=*/false);
-		return;
-	}
-
-	Enemy->ExecuteStartGroundWave();
-	++RogueEnemyAttackStats::GCounters.GroundWave;
-
-	// 波一旦开始就由本能力逐帧推进，直到 Enemy 报告"波结束了"（见 TickAttackStep）。
-	// 注意这里**不**结束能力：这正是"持续激活"的含义。
-	StartTickTask();
-}
-
-void URogueEnemyGroundWaveAttackAbility::TickAttackStep(float DeltaSeconds)
-{
-	ARogueEnemy* Enemy = GetEnemy();
-	if (Enemy == nullptr)
-	{
-		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, false, false);
-		return;
-	}
-
-	Enemy->ExecuteAdvanceGroundWave(DeltaSeconds);
-
-	// 波结束后记录 GE 冷却并结束能力；Enemy 侧仍负责下一次攻击的 AI 节流计时。
-	if (!Enemy->IsGroundWaveActive())
-	{
-		ApplyAttackCooldown();
-		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, false, false);
-	}
-}
-
-float URogueEnemyGroundWaveAttackAbility::GetAttackCooldownSeconds() const
-{
-	const ARogueEnemy* Enemy = GetEnemy();
-	// 改造前是波结束时 `GroundWaveAttackTimer = GroundWave.AttackCooldown`。
-	return Enemy != nullptr ? Enemy->GetCurrentArchetype().GroundWave.AttackCooldown : 0.0f;
 }

@@ -436,6 +436,10 @@ void ARogueCharacter::ApplyBalanceAsset()
 	JumpZVelocity = BaseStats.JumpZVelocity;
 	AirControl = BaseStats.AirControl;
 	GravityScale = BaseStats.GravityScale;
+	FallGravityMultiplier = FMath::Max(1.0f, BaseStats.FallGravityMultiplier);
+	JumpCutMultiplier = FMath::Clamp(BaseStats.JumpCutMultiplier, 0.0f, 1.0f);
+	JumpBufferSeconds = FMath::Max(0.0f, BaseStats.JumpBufferSeconds);
+	CoyoteTimeSeconds = FMath::Max(0.0f, BaseStats.CoyoteTimeSeconds);
 	JumpMaxCountConfig = BaseStats.JumpMaxCount;
 	GetCharacterMovement()->JumpZVelocity = JumpZVelocity;
 	GetCharacterMovement()->AirControl = AirControl;
@@ -448,6 +452,38 @@ void ARogueCharacter::ApplyBalanceAsset()
 	// 最后经 SyncAttributeMirrors() 每帧缓存回运行时字段。
 	//
 	// GAS 区分基值与持续修饰器，但重复施加效果仍可能重复累加；初始化和效果查重各有守卫。
+}
+
+float ARogueCharacter::GetScytheLifestealPercent() const
+{
+	const URogueAttributeSet* Attributes = GetRogueAttributeSet();
+	return Attributes != nullptr
+		? FMath::Clamp(Attributes->GetScytheLifestealBonus(), 0.0f, 1.0f)
+		: 0.0f;
+}
+
+void ARogueCharacter::ApplyScytheLifesteal(float DamageDealt)
+{
+	if (DamageDealt <= 0.0f || !IsAlive() || !IsAuthoritySide())
+	{
+		return;
+	}
+
+	URogueAttributeSet* Attributes = GetRogueAttributeSet();
+	if (Attributes == nullptr)
+	{
+		return;
+	}
+
+	const float Lifesteal = FMath::Clamp(Attributes->GetScytheLifestealBonus(), 0.0f, 1.0f);
+	if (Lifesteal <= 0.0f)
+	{
+		return;
+	}
+
+	// 只补到最大生命；SetHealth 的最终钳制仍由属性集负责。
+	const float HealAmount = DamageDealt * Lifesteal;
+	Attributes->SetHealth(FMath::Min(Attributes->GetHealth() + HealAmount, Attributes->GetMaxHealth()));
 }
 
 float ARogueCharacter::GetHealthPercent() const

@@ -1,17 +1,13 @@
 #include "Combat/Projectiles/RogueProjectile.h"
+#include "Combat/RogueCombatCollision.h"
 
 #include "Combat/Visuals/RogueImpactEffect.h"
 #include "Enemies/RogueEnemy.h"
 #include "AbilitySystem/RogueAbilitySystemLibrary.h"
 #include "AbilitySystem/RogueGameplayTags.h"
-#include "Components/PointLightComponent.h"
 #include "Components/SphereComponent.h"
-#include "Components/StaticMeshComponent.h"
-#include "Engine/StaticMesh.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
-#include "Materials/MaterialInterface.h"
-#include "UObject/ConstructorHelpers.h"
 
 ARogueProjectile::ARogueProjectile()
 {
@@ -28,43 +24,6 @@ ARogueProjectile::ARogueProjectile()
 	Collision->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Ignore);
 	RootComponent = Collision;
 
-	Mesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Mesh"));
-	Mesh->SetupAttachment(RootComponent);
-	Mesh->SetRelativeScale3D(FVector(VisualConfig.MeshScale));
-	Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	Mesh->SetCastShadow(false);
-
-	GlowMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("GlowMesh"));
-	GlowMesh->SetupAttachment(RootComponent);
-	GlowMesh->SetRelativeScale3D(FVector(VisualConfig.GlowScale));
-	GlowMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	GlowMesh->SetCastShadow(false);
-
-	RingMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("RingMesh"));
-	RingMesh->SetupAttachment(RootComponent);
-	RingMesh->SetRelativeScale3D(FVector(VisualConfig.RingScale));
-	RingMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	RingMesh->SetCastShadow(false);
-
-	TrailMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("TrailMesh"));
-	TrailMesh->SetupAttachment(RootComponent);
-	TrailMesh->SetRelativeLocation(VisualConfig.TrailOffset);
-	TrailMesh->SetRelativeRotation(VisualConfig.TrailRotation);
-	TrailMesh->SetRelativeScale3D(VisualConfig.TrailScale);
-	TrailMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	TrailMesh->SetCastShadow(false);
-
-	GlowLight = CreateDefaultSubobject<UPointLightComponent>(TEXT("GlowLight"));
-	GlowLight->SetupAttachment(RootComponent);
-	GlowLight->SetIntensity(VisualConfig.LightIntensity);
-	GlowLight->SetLightColor(VisualConfig.LightColor);
-	GlowLight->SetAttenuationRadius(VisualConfig.LightAttenuationRadius);
-	GlowLight->SetSourceRadius(VisualConfig.LightSourceRadius);
-	GlowLight->SetSoftSourceRadius(VisualConfig.LightSoftSourceRadius);
-	GlowLight->SetUseInverseSquaredFalloff(false);
-	GlowLight->SetCastShadows(false);
-	GlowLight->SetVisibility(false);
-
 	ProjectileMovement = CreateDefaultSubobject<UProjectileMovementComponent>(TEXT("ProjectileMovement"));
 	ProjectileMovement->SetUpdatedComponent(Collision);
 	ProjectileMovement->InitialSpeed = Speed;
@@ -75,45 +34,6 @@ ARogueProjectile::ARogueProjectile()
 	ProjectileMovement->bInitialVelocityInLocalSpace = false;
 	ProjectileMovement->bSweepCollision = true;
 
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> ProjectileMesh(TEXT("/Game/GameAssets/StarterContent/Shapes/Shape_Sphere.Shape_Sphere"));
-	if (ProjectileMesh.Succeeded())
-	{
-		Mesh->SetStaticMesh(ProjectileMesh.Object);
-		GlowMesh->SetStaticMesh(ProjectileMesh.Object);
-	}
-
-	RingMesh->SetStaticMesh(ProjectileMesh.Succeeded() ? ProjectileMesh.Object : nullptr);
-
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> TrailStaticMesh(TEXT("/Game/GameAssets/StarterContent/Shapes/Shape_Cylinder.Shape_Cylinder"));
-	if (TrailStaticMesh.Succeeded())
-	{
-		TrailMesh->SetStaticMesh(TrailStaticMesh.Object);
-	}
-
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> CoreMaterial(TEXT("/Game/GameAssets/Realistic_Starter_VFX_Pack_Vol2/Materials/M_Glow_C_Inst.M_Glow_C_Inst"));
-	if (CoreMaterial.Succeeded())
-	{
-		Mesh->SetMaterial(0, CoreMaterial.Object);
-	}
-
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> GlowMaterial(TEXT("/Game/GameAssets/HologramShader/Materials/HologramShader/MI/MI_Hologram_10.MI_Hologram_10"));
-	if (GlowMaterial.Succeeded())
-	{
-		GlowMesh->SetMaterial(0, GlowMaterial.Object);
-	}
-
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> RingMaterial(TEXT("/Game/GameAssets/HologramShader/Materials/HologramShader/MI/MI_Hologram_12.MI_Hologram_12"));
-	if (RingMaterial.Succeeded())
-	{
-		RingMesh->SetMaterial(0, RingMaterial.Object);
-	}
-
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> TrailMaterial(TEXT("/Game/GameAssets/Realistic_Starter_VFX_Pack_Vol2/Materials/M_Glow_C_Inst.M_Glow_C_Inst"));
-	if (TrailMaterial.Succeeded())
-	{
-		TrailMesh->SetMaterial(0, TrailMaterial.Object);
-	}
-
 	Collision->OnComponentBeginOverlap.AddDynamic(this, &ARogueProjectile::HandleOverlap);
 	ProjectileMovement->OnProjectileStop.AddDynamic(this, &ARogueProjectile::HandleProjectileStop);
 }
@@ -121,6 +41,9 @@ ARogueProjectile::ARogueProjectile()
 void ARogueProjectile::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// 只允许命中球参与查询；蓝图追加的网格/特效组件不参与物理和碰撞。
+	RogueCombatCollision::DisableNonHitCollision(this, Collision);
 	DeactivateToPool();
 }
 

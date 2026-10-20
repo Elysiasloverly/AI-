@@ -1,4 +1,5 @@
 #include "Combat/Visuals/RogueLaserBeam.h"
+#include "Combat/RogueCombatCollision.h"
 
 #include "Combat/Visuals/RogueImpactEffect.h"
 #include "Components/SceneComponent.h"
@@ -116,6 +117,9 @@ ARogueLaserBeam::ARogueLaserBeam()
 void ARogueLaserBeam::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// 光束是纯表现 Actor，不参与物理或碰撞。
+	RogueCombatCollision::DisableNonHitCollision(this, nullptr);
 	DeactivateToPool();
 }
 

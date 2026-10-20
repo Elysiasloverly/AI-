@@ -11,6 +11,6 @@ public class aiEditorTarget : TargetRules
 		DefaultBuildSettings = BuildSettingsVersion.V5;
 		IncludeOrderVersion = EngineIncludeOrderVersion.Unreal5_5;
 
-		ExtraModuleNames.AddRange( new string[] { "ai" } );
+		ExtraModuleNames.AddRange( new string[] { "ai", "aiEditor" } );
 	}
 }

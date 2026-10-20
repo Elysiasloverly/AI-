@@ -8,37 +8,19 @@ FRogueEnemyArchetype FRogueEnemyArchetypeRow::ToArchetype(bool bIsBoss) const
 {
 	FRogueEnemyArchetype Archetype = RogueEnemyArchetypes::BuildEnemyArchetype(EnemyType, bIsBoss);
 
-	// 数据表移动模型覆盖按类型构建的基线；未填时默认 Direct，需确认是否符合预期。
-	// ShockPillar 分支还会强制改成 Stationary。
-	if (MovementModel != Archetype.Movement.Model)
-	{
-		// 位掩码按类型限次提示，在进程/模块生命周期内共享，不按对局重置。
-		static uint32 WarnedTypesMask = 0;
-		const uint32 TypeBit = 1u << static_cast<uint32>(EnemyType);
-		if ((WarnedTypesMask & TypeBit) == 0)
-		{
-			WarnedTypesMask |= TypeBit;
-			UE_LOG(LogTemp, Warning,
-				TEXT("[Rogue] 敌人原型：类型 %d 的移动模型被数据表覆盖（表=%d，按类型基线=%d）。")
-				TEXT("若不是有意配置，请检查 DT_EnemyArchetypes 的 MovementModel 列是否漏填。"),
-				static_cast<int32>(EnemyType),
-				static_cast<int32>(MovementModel),
-				static_cast<int32>(Archetype.Movement.Model));
-		}
-	}
-	Archetype.Movement.Model = MovementModel;
+	// 移动模型由 EnemyType 的基线决定；数据表只覆盖移动倍率，避免每行都要重复填模型。
 	Archetype.Movement.BaseMoveMultiplier = BaseMoveMultiplier;
 
 	// 攻击能力集（数据驱动）。留空时 ARogueEnemy::GrantAttackAbilities 会回退到
-	// 按 Ranged/GroundWave 标志推导的硬编码逻辑 —— 所以老数据表不动也能跑。
+	// 按远近/接触标志推导的硬编码逻辑 —— 所以老数据表不动也能跑。
 	Archetype.AttackAbilitySet = AttackAbilitySet;
 
 	// 根据敌人类型填充专属属性
 	switch (EnemyType)
 	{
-	case ERogueEnemyType::Charger:
+	case ERogueEnemyType::Assault:
 		{
-			const FRogueChargerSpecialParams& P = ChargerParams;
+			const FRogueChargerSpecialParams& P = SpecialParams.Charger;
 			Archetype.Movement.BurstCycleTime = P.BurstCycleTime;
 			Archetype.Movement.BurstDuration = P.BurstDuration;
 			Archetype.Movement.BurstActiveMultiplier = P.BurstActiveMultiplier;
@@ -46,16 +28,13 @@ FRogueEnemyArchetype FRogueEnemyArchetypeRow::ToArchetype(bool bIsBoss) const
 		}
 		break;
 
-	case ERogueEnemyType::Tank:
-		{
-			const FRogueTankSpecialParams& P = TankParams;
-			Archetype.Movement.BaseMoveMultiplier = P.BaseMoveMultiplier;
-		}
+	case ERogueEnemyType::Juggernaut:
+		// 坦克没有专属参数；BaseMoveMultiplier 在 switch 前已统一写入。
 		break;
 
 	case ERogueEnemyType::Orbiter:
 		{
-			const FRogueOrbiterSpecialParams& P = OrbiterParams;
+			const FRogueOrbiterSpecialParams& P = SpecialParams.Orbiter;
 			Archetype.Movement.FarDistance = P.FarDistance;
 			Archetype.Movement.CloseDistance = P.CloseDistance;
 			Archetype.Movement.FarTowardWeight = P.FarTowardWeight;
@@ -67,12 +46,13 @@ FRogueEnemyArchetype FRogueEnemyArchetypeRow::ToArchetype(bool bIsBoss) const
 		}
 		break;
 
-	case ERogueEnemyType::Shooter:
+	case ERogueEnemyType::Sniper:
+	case ERogueEnemyType::Repeater:
+	case ERogueEnemyType::Marksman:
 		{
-			const FRogueShooterSpecialParams& P = ShooterParams;
+			const FRogueShooterSpecialParams& P = SpecialParams.Shooter;
 			float EffectivePreferredRange = P.PreferredRange;
 			float EffectiveCloseDistance = P.CloseDistance;
-			float EffectiveMaximumRange = P.MaximumRange;
 			float EffectiveNextShotCooldown = P.NextShotCooldown;
 			float EffectiveProjectileSpeed = P.ProjectileSpeed;
 			float EffectiveProjectileDamageMultiplier = P.ProjectileDamageMultiplier;
@@ -83,7 +63,6 @@ FRogueEnemyArchetype FRogueEnemyArchetypeRow::ToArchetype(bool bIsBoss) const
 			{
 				if (BossOverride.BossPreferredRange > 0.0f) EffectivePreferredRange = BossOverride.BossPreferredRange;
 				if (BossOverride.BossCloseDistance > 0.0f) EffectiveCloseDistance = BossOverride.BossCloseDistance;
-				if (BossOverride.BossMaximumRange > 0.0f) EffectiveMaximumRange = BossOverride.BossMaximumRange;
 				if (BossOverride.BossNextShotCooldown > 0.0f) EffectiveNextShotCooldown = BossOverride.BossNextShotCooldown;
 				if (BossOverride.BossProjectileSpeed > 0.0f) EffectiveProjectileSpeed = BossOverride.BossProjectileSpeed;
 				if (BossOverride.BossProjectileDamageMultiplier > 0.0f) EffectiveProjectileDamageMultiplier = BossOverride.BossProjectileDamageMultiplier;
@@ -111,9 +90,6 @@ FRogueEnemyArchetype FRogueEnemyArchetypeRow::ToArchetype(bool bIsBoss) const
 			Archetype.Ranged.InitialCooldownMin = P.InitialCooldownMin;
 			Archetype.Ranged.InitialCooldownMax = P.InitialCooldownMax;
 			Archetype.Ranged.PreferredRange = EffectivePreferredRange;
-			Archetype.Ranged.MinimumRange = EffectiveCloseDistance;
-			Archetype.Ranged.MaximumRange = EffectiveMaximumRange;
-			Archetype.Ranged.AttackRangeMinFactor = P.AttackRangeMinFactor;
 			Archetype.Ranged.NextShotCooldown = EffectiveNextShotCooldown;
 			Archetype.Ranged.ProjectileSpeed = EffectiveProjectileSpeed;
 			Archetype.Ranged.ProjectileDamageMultiplier = EffectiveProjectileDamageMultiplier;
@@ -126,7 +102,7 @@ FRogueEnemyArchetype FRogueEnemyArchetypeRow::ToArchetype(bool bIsBoss) const
 
 	case ERogueEnemyType::Skirmisher:
 		{
-			const FRogueSkirmisherSpecialParams& P = SkirmisherParams;
+			const FRogueSkirmisherSpecialParams& P = SpecialParams.Skirmisher;
 			Archetype.Movement.CloseDistance = P.CloseDistance;
 			Archetype.Movement.CloseTowardWeight = P.CloseTowardWeight;
 			Archetype.Movement.CloseTangentWeight = P.CloseTangentWeight;
@@ -136,12 +112,11 @@ FRogueEnemyArchetype FRogueEnemyArchetypeRow::ToArchetype(bool bIsBoss) const
 		}
 		break;
 
-	case ERogueEnemyType::Artillery:
+	case ERogueEnemyType::Cannoneer:
 		{
-			const FRogueArtillerySpecialParams& P = ArtilleryParams;
+			const FRogueArtillerySpecialParams& P = SpecialParams.Artillery;
 			float EffectivePreferredRange = P.PreferredRange;
 			float EffectiveCloseDistance = P.CloseDistance;
-			float EffectiveMaximumRange = P.MaximumRange;
 			float EffectiveNextShotCooldown = P.NextShotCooldown;
 			float EffectiveProjectileSpeed = P.ProjectileSpeed;
 			float EffectiveProjectileDamageMultiplier = P.ProjectileDamageMultiplier;
@@ -152,7 +127,6 @@ FRogueEnemyArchetype FRogueEnemyArchetypeRow::ToArchetype(bool bIsBoss) const
 			{
 				if (BossOverride.BossPreferredRange > 0.0f) EffectivePreferredRange = BossOverride.BossPreferredRange;
 				if (BossOverride.BossCloseDistance > 0.0f) EffectiveCloseDistance = BossOverride.BossCloseDistance;
-				if (BossOverride.BossMaximumRange > 0.0f) EffectiveMaximumRange = BossOverride.BossMaximumRange;
 				if (BossOverride.BossNextShotCooldown > 0.0f) EffectiveNextShotCooldown = BossOverride.BossNextShotCooldown;
 				if (BossOverride.BossProjectileSpeed > 0.0f) EffectiveProjectileSpeed = BossOverride.BossProjectileSpeed;
 				if (BossOverride.BossProjectileDamageMultiplier > 0.0f) EffectiveProjectileDamageMultiplier = BossOverride.BossProjectileDamageMultiplier;
@@ -179,9 +153,6 @@ FRogueEnemyArchetype FRogueEnemyArchetypeRow::ToArchetype(bool bIsBoss) const
 			Archetype.Ranged.InitialCooldownMin = P.InitialCooldownMin;
 			Archetype.Ranged.InitialCooldownMax = P.InitialCooldownMax;
 			Archetype.Ranged.PreferredRange = EffectivePreferredRange;
-			Archetype.Ranged.MinimumRange = EffectiveCloseDistance;
-			Archetype.Ranged.MaximumRange = EffectiveMaximumRange;
-			Archetype.Ranged.AttackRangeMinFactor = P.AttackRangeMinFactor;
 			Archetype.Ranged.NextShotCooldown = EffectiveNextShotCooldown;
 			Archetype.Ranged.ProjectileSpeed = EffectiveProjectileSpeed;
 			Archetype.Ranged.ProjectileDamageMultiplier = EffectiveProjectileDamageMultiplier;
@@ -192,12 +163,12 @@ FRogueEnemyArchetype FRogueEnemyArchetypeRow::ToArchetype(bool bIsBoss) const
 		}
 		break;
 
-	case ERogueEnemyType::Spitter:
+	case ERogueEnemyType::Shotgunner:
+	case ERogueEnemyType::Scatterer:
 		{
-			const FRogueSpitterSpecialParams& P = SpitterParams;
+			const FRogueSpitterSpecialParams& P = SpecialParams.Spitter;
 			float EffectivePreferredRange = P.PreferredRange;
 			float EffectiveCloseDistance = P.CloseDistance;
-			float EffectiveMaximumRange = P.MaximumRange;
 			float EffectiveNextShotCooldown = P.NextShotCooldown;
 			float EffectiveProjectileSpeed = P.ProjectileSpeed;
 			float EffectiveProjectileDamageMultiplier = P.ProjectileDamageMultiplier;
@@ -209,7 +180,6 @@ FRogueEnemyArchetype FRogueEnemyArchetypeRow::ToArchetype(bool bIsBoss) const
 			{
 				if (BossOverride.BossPreferredRange > 0.0f) EffectivePreferredRange = BossOverride.BossPreferredRange;
 				if (BossOverride.BossCloseDistance > 0.0f) EffectiveCloseDistance = BossOverride.BossCloseDistance;
-				if (BossOverride.BossMaximumRange > 0.0f) EffectiveMaximumRange = BossOverride.BossMaximumRange;
 				if (BossOverride.BossNextShotCooldown > 0.0f) EffectiveNextShotCooldown = BossOverride.BossNextShotCooldown;
 				if (BossOverride.BossProjectileSpeed > 0.0f) EffectiveProjectileSpeed = BossOverride.BossProjectileSpeed;
 				if (BossOverride.BossProjectileDamageMultiplier > 0.0f) EffectiveProjectileDamageMultiplier = BossOverride.BossProjectileDamageMultiplier;
@@ -237,9 +207,6 @@ FRogueEnemyArchetype FRogueEnemyArchetypeRow::ToArchetype(bool bIsBoss) const
 			Archetype.Ranged.InitialCooldownMin = P.InitialCooldownMin;
 			Archetype.Ranged.InitialCooldownMax = P.InitialCooldownMax;
 			Archetype.Ranged.PreferredRange = EffectivePreferredRange;
-			Archetype.Ranged.MinimumRange = EffectiveCloseDistance;
-			Archetype.Ranged.MaximumRange = EffectiveMaximumRange;
-			Archetype.Ranged.AttackRangeMinFactor = P.AttackRangeMinFactor;
 			Archetype.Ranged.NextShotCooldown = EffectiveNextShotCooldown;
 			Archetype.Ranged.ProjectileSpeed = EffectiveProjectileSpeed;
 			Archetype.Ranged.ProjectileDamageMultiplier = EffectiveProjectileDamageMultiplier;
@@ -253,12 +220,9 @@ FRogueEnemyArchetype FRogueEnemyArchetypeRow::ToArchetype(bool bIsBoss) const
 		}
 		break;
 
-	case ERogueEnemyType::ShockPillar:
+	case ERogueEnemyType::Ringcaster:
 		{
-			const FRogueShockPillarSpecialParams& P = ShockPillarParams;
-			Archetype.Movement.Model = ERogueEnemyMovementModel::Stationary;
-			Archetype.Movement.BaseMoveMultiplier = 0.0f;
-			Archetype.GroundWave.bUsesGroundWave = false;
+			const FRogueShockPillarSpecialParams& P = SpecialParams.ShockPillar;
 			Archetype.Ranged.bUsesRangedAttack = true;
 			Archetype.Ranged.ShotPattern = ERogueEnemyShotPattern::RadialRing;
 			Archetype.Ranged.InitialCooldownMin = FMath::Max(0.0f, P.InitialCooldownMin);
@@ -267,15 +231,32 @@ FRogueEnemyArchetype FRogueEnemyArchetypeRow::ToArchetype(bool bIsBoss) const
 			Archetype.Ranged.BulletRing = P.BulletRing.Sanitized();
 			Archetype.Ranged.ProjectileSpeed = Archetype.Ranged.BulletRing.ProjectileSpeed;
 			Archetype.Ranged.ProjectileDamageMultiplier = Archetype.Ranged.BulletRing.DamageMultiplier;
-			Archetype.Ranged.MaximumRange = Archetype.Ranged.ProjectileSpeed * Archetype.Ranged.BulletRing.ProjectileLifetime;
 		}
 		break;
 
-	case ERogueEnemyType::Hunter:
+	case ERogueEnemyType::ShockPillar:
+		{
+			const FRogueShockPillarSpecialParams& P = SpecialParams.ShockPillar;
+			Archetype.Movement.Model = ERogueEnemyMovementModel::Stationary;
+			Archetype.Movement.BaseMoveMultiplier = 0.0f;
+			Archetype.Ranged.bUsesRangedAttack = true;
+			Archetype.Ranged.ShotPattern = ERogueEnemyShotPattern::RadialRing;
+			Archetype.Ranged.InitialCooldownMin = FMath::Max(0.0f, P.InitialCooldownMin);
+			Archetype.Ranged.InitialCooldownMax = FMath::Max(Archetype.Ranged.InitialCooldownMin, P.InitialCooldownMax);
+			Archetype.Ranged.NextShotCooldown = FMath::Max(0.1f, P.AttackCooldown);
+			Archetype.Ranged.BulletRing = P.BulletRing.Sanitized();
+			Archetype.Ranged.ProjectileSpeed = Archetype.Ranged.BulletRing.ProjectileSpeed;
+			Archetype.Ranged.ProjectileDamageMultiplier = Archetype.Ranged.BulletRing.DamageMultiplier;
+		}
+		break;
+
+	case ERogueEnemyType::Rifleman:
 	default:
 		// 猎手使用基础属性，无专属参数
 		break;
 	}
 
+	Archetype.ProjectileClass = ProjectileClass;
+	Archetype.Visual = bIsBoss ? BossVisual : Visual;
 	return Archetype;
 }

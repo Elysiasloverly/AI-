@@ -28,7 +28,7 @@ protected:
 };
 
 // ===================================================================
-//  21 个子类 —— 一种升级一个。
+//  22 个子类 —— 一种升级一个。
 //  命名与 ERogueUpgradeType 一一对应（映射见 RogueUpgradeEffectMap）。
 //  每个子类的 .cpp 里只有一行：ConfigureUpgrade(对应的属性访问器)。
 // ===================================================================
@@ -199,6 +199,14 @@ class AI_API URogueUpgradeEffect_ScytheSize : public URogueAttributeUpgradeEffec
 	GENERATED_BODY()
 public:
 	URogueUpgradeEffect_ScytheSize();
+};
+
+UCLASS()
+class AI_API URogueUpgradeEffect_ScytheLifesteal : public URogueAttributeUpgradeEffect
+{
+	GENERATED_BODY()
+public:
+	URogueUpgradeEffect_ScytheLifesteal();
 };
 
 /** 升级枚举到效果类的映射；目标属性由对应子类配置。

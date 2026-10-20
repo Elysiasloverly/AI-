@@ -1,4 +1,5 @@
 #include "Combat/Projectiles/RogueRocketProjectile.h"
+#include "Combat/RogueCombatCollision.h"
 
 #include "Combat/Visuals/RogueImpactEffect.h"
 #include "Enemies/RogueEnemy.h"
@@ -62,6 +63,9 @@ ARogueRocketProjectile::ARogueRocketProjectile()
 void ARogueRocketProjectile::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// 只保留命中球；蓝图追加的火箭模型/拖尾不参与物理碰撞。
+	RogueCombatCollision::DisableNonHitCollision(this, Collision);
 	DeactivateToPool();
 }
 

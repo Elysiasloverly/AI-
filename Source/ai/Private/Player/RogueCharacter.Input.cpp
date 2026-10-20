@@ -422,18 +422,91 @@ void ARogueCharacter::Dash()
 	}
 }
 
-void ARogueCharacter::StartJump()
+void ARogueCharacter::UpdateJumpFeel(float DeltaSeconds)
 {
-	if (!IsAlive() || bDashActive || GetWorld()->IsPaused() || JumpMaxCount <= 0)
+	UCharacterMovementComponent* Movement = GetCharacterMovement();
+	if (Movement == nullptr)
 	{
 		return;
 	}
 
-	Jump();
+	// 土狼时间：刚离开地面仍保留一次起跳机会。
+	if (Movement->IsMovingOnGround())
+	{
+		CoyoteTimeRemaining = FMath::Max(0.0f, CoyoteTimeSeconds);
+		bJumpedSinceGrounded = false;
+	}
+	else if (CoyoteTimeRemaining > 0.0f)
+	{
+		CoyoteTimeRemaining = FMath::Max(0.0f, CoyoteTimeRemaining - DeltaSeconds);
+	}
+
+	// 跳跃输入缓冲：落地/恢复可跳时消费。
+	if (JumpBufferRemaining > 0.0f)
+	{
+		JumpBufferRemaining = FMath::Max(0.0f, JumpBufferRemaining - DeltaSeconds);
+		if (IsAlive() && !bDashActive && CanJump())
+		{
+			JumpBufferRemaining = 0.0f;
+			CoyoteTimeRemaining = 0.0f;
+			bJumpedSinceGrounded = true;
+			Jump();
+		}
+	}
+
+	// 下落阶段额外加一份重力：上升慢、下落快，落地不拖沓。
+	const bool bShouldFallFast = Movement->IsFalling() && Movement->Velocity.Z < 0.0f && !bDashActive;
+	const float DesiredGravity = GravityScale * (bShouldFallFast ? FMath::Max(1.0f, FallGravityMultiplier) : 1.0f);
+	if (!FMath::IsNearlyEqual(Movement->GravityScale, DesiredGravity, 0.001f))
+	{
+		Movement->GravityScale = DesiredGravity;
+	}
+}
+
+void ARogueCharacter::StartJump()
+{
+	UWorld* World = GetWorld();
+	if (!IsAlive() || bDashActive || World == nullptr || World->IsPaused() || JumpMaxCount <= 0)
+	{
+		return;
+	}
+
+	if (CanJump())
+	{
+		JumpBufferRemaining = 0.0f;
+		CoyoteTimeRemaining = 0.0f;
+		bJumpedSinceGrounded = true;
+		Jump();
+		return;
+	}
+
+	// 土狼跳：已经离地但在宽限时间内，且本次离地后还没跳过。
+	UCharacterMovementComponent* Movement = GetCharacterMovement();
+	if (Movement != nullptr && Movement->IsFalling() && !bJumpedSinceGrounded
+		&& CoyoteTimeRemaining > 0.0f && JumpCurrentCount == 0)
+	{
+		CoyoteTimeRemaining = 0.0f;
+		bJumpedSinceGrounded = true;
+		JumpCurrentCount = 1;
+		LaunchCharacter(FVector(0.0f, 0.0f, JumpZVelocity), false, true);
+		return;
+	}
+
+	// 空中按跳：记一个短缓冲，落地后自动起跳。
+	JumpBufferRemaining = JumpBufferSeconds;
 }
 
 void ARogueCharacter::StopJump()
 {
+	// 可变跳跃高度：上升中提前松键就砍掉一部分垂直速度。
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		if (Movement->IsFalling() && Movement->Velocity.Z > 0.0f)
+		{
+			Movement->Velocity.Z *= FMath::Clamp(JumpCutMultiplier, 0.0f, 1.0f);
+		}
+	}
+
 	StopJumping();
 }
 

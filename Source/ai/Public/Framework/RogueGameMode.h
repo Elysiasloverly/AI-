@@ -25,13 +25,15 @@ class URogueUpgradeRuleAsset;
 struct FRogueCombatPoolPrewarmClasses;
 
 /** 服务端局内调度：刷怪、奖励、玩家商店/选卡协调、团灭与重开；共享显示数据交给 GameState。 */
-UCLASS()
+UCLASS(Config = Game)
 class AI_API ARogueGameMode : public AGameModeBase
 {
 	GENERATED_BODY()
 
 public:
 	ARogueGameMode();
+
+	virtual void InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage) override;
 
 	virtual void Tick(float DeltaSeconds) override;
 
@@ -65,6 +67,9 @@ public:
 	/** 统一团灭判定；致死处理已排队的玩家也不算存活。 */
 	bool EvaluateTeamWipe();
 	bool IsGameOver() const { return RunState.bGameOver; }
+
+	/** 只读查询：某类型是否配置了专属敌人蓝图（测试/调试用）。 */
+	bool HasEnemyClassForType(ERogueEnemyType Type) const;
 
 	/** 登录完成后检查 Pawn 归属；已结束的局中加入者保持出局。 */
 	virtual void PostLogin(APlayerController* NewPlayer) override;
@@ -147,8 +152,8 @@ private:
 	/** 将敌人放到目标附近，给接触攻击创造可重复的触发条件；用于开发自检。 */
 	void ProbeContactAttack(ARogueCharacter* Target);
 
-	/** 在目标附近生成震荡柱，减少随机刷怪对地面波攻击覆盖的影响。 */
-	void ProbeGroundWaveAttack(ARogueCharacter* Target);
+	/** 在目标附近生成震荡柱，减少随机刷怪对震荡柱弹幕覆盖的影响。 */
+	void ProbeShockPillarBarrage(ARogueCharacter* Target);
 
 	/** 三个攻击路径探针是否已经跑过（自检完成时只跑一次）。 */
 	bool bSelfTestProbesDone = false;
@@ -183,6 +188,10 @@ private:
 	void HandleBossKilledReward();
 	void QueueUpgradeSelections(int32 Count, ARogueCharacter* Character);
 
+	/** 玩家 Pawn 蓝图；默认从 DefaultGame.ini 读取，C++ 不再写死资产路径。 */
+	UPROPERTY(EditDefaultsOnly, Config, Category = "Config")
+	TSoftClassPtr<ARogueCharacter> PlayerPawnClass;
+
 	/** 默认敌人类（未配置子类映射时的回退类） */
 	UPROPERTY(EditDefaultsOnly, Category = "Spawning")
 	TSubclassOf<ARogueEnemy> DefaultEnemyClass;
@@ -191,7 +200,9 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "Spawning")
 	TMap<ERogueEnemyType, TSubclassOf<ARogueEnemy>> EnemyClassMap;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Spawning")
+	/** 经验球蓝图类。外观全部在 BP 里配置，C++ 原生类只有碰撞与拾取逻辑。
+	 *  路径从 DefaultGame.ini 读取，留空时回退原生类（此时画面上看不到经验球）。 */
+	UPROPERTY(EditDefaultsOnly, Config, Category = "Spawning")
 	TSubclassOf<ARogueExperiencePickup> ExperiencePickupClass;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Config")

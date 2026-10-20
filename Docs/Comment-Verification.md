@@ -46,7 +46,7 @@
 | 使用 TInlineAllocator\<4\> 就限定四人且永不分配堆内存 | 4 是内联容量，超过后容器可以使用后备分配器扩容 | UE `ContainerAllocationPolicies.h`，`TSizedInlineAllocator` |
 | `TFunctionRef` 只允许传左值，或可长期保存任意回调 | 它是不拥有可调用对象的引用包装；可接受的参数形式应看模板约束，重点是引用的对象在使用期间必须有效 | UE `Templates/Function.h`，`TFunctionRefBase`；`RogueGameModeRules.h` |
 | const 函数就是数学意义上的纯函数 | const 约束的是对象接口；方法仍可能消耗随机数、写输出参数或访问外部状态 | `RogueUpgradeSystem` |
-| 标准移动复制包含 Actor 缩放 | `FRepMovement` 不包含 Scale；附着复制、组件复制是另外的路径。经验球只打开移动复制不能证明经验值驱动的大小变化也已同步 | UE `Engine/ReplicatedState.h`；`RogueExperiencePickup.cpp` |
+| 标准移动复制包含 Actor 缩放 | `FRepMovement` 不包含 Scale；附着复制、组件复制是另外的路径。经验球现在单独复制 `ExperienceValue` 再各自换算缩放，不是因为开了移动复制才同步 | UE `Engine/ReplicatedState.h`；`RogueExperiencePickup.cpp` |
 | 对象池、MID 重建、空间哈希的性能收益可以靠代码数量直接保证 | 实现能够说明分配、复用、索引与降级策略，不能替代目标场景的内存和 CPU/GPU 测量；重复创建 MID 也不等于已证明泄漏 | `RogueCombatPools`、`RogueEnemyTracker`、`RogueEnemy`、`RogueSceneSubsystem` |
 | 原生 Arena 仍在生成地板、墙和灯光 | 基线中这些代码已被注释禁用。本次移除停用代码注释，保留当前范围载体职责；关卡和蓝图外观要在资产侧检查 | `RogueArena.h/.cpp` |
 | GetPlayerCharacter(0) 是整个 PIE 进程唯一玩家 | 查询以传入的 World 上下文为基础；多 World PIE 不能当作同一个全局玩家列表 | `RoguePlayerQuery`、`RogueEnemy` 相关查询 |
@@ -58,9 +58,9 @@
 1. **持续预测的确认范围有限**：武器循环复用激活预测键，Dash 直接移动 Actor；应通过真实连接、延迟与丢包场景评估预测、纠正和冷却表现。
 2. **敌人冷却 GE 尚未阻止激活**：未接入 `CooldownGameplayEffectClass`/`CheckCooldown`，也没有效果句柄守卫；实际尝试节流依赖 AI 计时器。
 3. **非 Pawn 伤害来源的归属需复核**：伤害入口从目标 ASC 创建 Context，只有 Pawn 来源路径额外写入 Instigator；不能保证任意 AActor 来源都具有正确的 EffectCauser 和击杀归属。
-4. **地面波重复激活已于 2026-10-16 修正**：`DecideGroundWaveAttack` 每次决策只尝试一次。震荡柱现改用远程 GAS 槽的 `RadialRing` 整圈弹幕，旧地面波分支仅保留兼容。
+4. **旧地面波已移除**：`URogueEnemyGroundWaveAttackAbility`、`FRogueEnemyGroundWaveArchetype` 及震荡柱的地面波状态/视觉组件已删除；震荡柱只使用远程 GAS 槽的 `RadialRing` 整圈弹幕。
 5. **武器加成存在两条复制路径**：AttributeSet 和 Character 快照独立更新；项目尚需区分网络数值到达与 GAS 属性通知是否完整。
-6. **经验球大小未由 FRepMovement 承载**：活跃位、移动位姿与经验值/缩放要分开检查，后者没有因开启移动复制自动获得保证。
+6. **经验球尺寸改由复制的经验值驱动**：`ExperienceValue` 已单独复制，客户端在 `OnRep_ExperienceValue` 里按同一公式重算 Actor 缩放，因此不再依赖 `FRepMovement`（它本来就不带 Scale）。仍是**跳变**、无插值；BP 若再缩放子组件，会与 Actor 缩放叠加。
 7. **归属修复的时间变量是函数 static**：它跨相同进程中的调用实例保留；多个 World/重开场景不宜当成每个 World 独立的计时状态。
 
 8. **濒死环存在晚到显示限制**：`ARogueGameplayCue_Downed` 仅在 `OnActive` 中显示，未在 `WhileActive` 补显。晚加入或新相关的接收者可能只收到 `WhileActive`；静态路径已核对，本轮未新增运行复现。

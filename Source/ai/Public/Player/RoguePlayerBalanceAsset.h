@@ -52,20 +52,36 @@ struct AI_API FRoguePlayerBaseStatConfig
 	float DashSpeed = 4200.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "跳跃", meta = (DisplayName = "跳跃初速度"))
-	float JumpZVelocity = 720.0f;
+	float JumpZVelocity = 680.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "跳跃", meta = (DisplayName = "空中控制力"))
-	float AirControl = 0.35f;
+	float AirControl = 0.55f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "跳跃", meta = (DisplayName = "重力倍率"))
-	float GravityScale = 1.0f;
+	float GravityScale = 1.8f;
+
+	/** 下落阶段额外乘的重力倍率；>1 让落地更干脆。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "跳跃", meta = (DisplayName = "下落重力倍率", ClampMin = "1.0", UIMin = "1.0"))
+	float FallGravityMultiplier = 1.45f;
+
+	/** 提前松开跳跃键时，上升速度保留的比例；0.45 表示砍掉 55%。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "跳跃", meta = (DisplayName = "松键跳跃衰减", ClampMin = "0.0", ClampMax = "1.0"))
+	float JumpCutMultiplier = 0.45f;
+
+	/** 落地前这段时间内按跳，会在落地瞬间自动起跳。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "跳跃", meta = (DisplayName = "跳跃输入缓冲(秒)", ClampMin = "0.0", Units = "s"))
+	float JumpBufferSeconds = 0.12f;
+
+	/** 刚离开地面后的宽限时间，仍允许起跳一次。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "跳跃", meta = (DisplayName = "土狼时间(秒)", ClampMin = "0.0", Units = "s"))
+	float CoyoteTimeSeconds = 0.10f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "跳跃", meta = (DisplayName = "最大跳跃次数", ClampMin = "0", UIMin = "0"))
 	int32 JumpMaxCount = 1;
 };
 
 /**
- * 13 个**武器加成属性**的上限。
+ * 14 个**武器加成属性**的上限。
  *
  * ## 语义
  *
@@ -77,7 +93,7 @@ struct AI_API FRoguePlayerBaseStatConfig
  *
  * ## 为什么要限制
  *
- * `PreAttributeChange` 里这 13 个属性原本**只有下限 0、没有上限**，
+ * `PreAttributeChange` 里这 14 个属性原本**只有下限 0、没有上限**，
  * 也就是升级卡买多少次就叠多少。想给某种加成封顶就在这里填。
  *
  * 数量类（ProjectileCount、ScytheCount、RocketCount、LaserCount、HellTowerCount、
@@ -128,6 +144,9 @@ struct AI_API FRogueWeaponBonusCaps
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "武器加成上限", meta = (DisplayName = "镰刀尺寸加成上限(-1=不限)", ToolTip = "限制额外尺寸比例；例如 1 表示最多增加基础尺寸的 100%，最终为基础尺寸的 2 倍。负值不限制。"))
 	float ScytheSize = -1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "武器加成上限", meta = (DisplayName = "镰刀吸血上限(-1=不限)", ToolTip = "限制镰刀吸血比例；0.5 表示最多 50%。无论怎么配，最终都会钳制在 100%。"))
+	float ScytheLifesteal = -1.0f;
 };
 
 /** 开局写入 GAS 的角色武器加成，仍受下方武器加成上限及武器表最终上限限制。 */

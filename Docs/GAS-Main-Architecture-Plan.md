@@ -4,6 +4,8 @@
 
 > 历史记录：本文 Phase 4 的「GE 到期驱动复活 / 三个复活驱动」已被 `LifeState` 原子复制、固定 10 秒与单服务端定时器方案取代；当前规则以 [Player-LifeCycle.md](Player-LifeCycle.md) 为准。
 
+> 历史记录：旧地面波能力（`URogueEnemyGroundWaveAttackAbility`）、`FRogueEnemyGroundWaveArchetype` 与震荡柱地面波视觉已在当前实现中删除；本文相关段落只说明当时的迁移过程。
+
 > 目标：把项目从"GAS 只做数值层"改造成 **GAS 作为 Gameplay 框架**（能力驱动），
 > 同时**完整保留现有数据资产**（`DT_WeaponConfig` / `DT_EnemyArchetypes` /
 > `DT_UpgradeDefinitions` / `DA_*`）作为唯一数据来源。

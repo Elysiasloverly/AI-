@@ -11,7 +11,6 @@
 #include "Combat/Visuals/RogueCombatFeedback.h"
 #include "Enemies/Data/RogueEnemyArchetypes.h"
 #include "Combat/Projectiles/RogueEnemyProjectile.h"
-#include "Enemies/Data/RogueEnemyVisualResources.h"
 #include "Framework/RogueGameMode.h"
 #include "Framework/RogueGameState.h"
 #include "Player/RoguePlayerQuery.h"
@@ -20,62 +19,16 @@
 #include "Combat/Visuals/RogueImpactEffect.h"
 #include "World/RogueEnemySpawnRegion.h"
 #include "Components/CapsuleComponent.h"
-#include "Components/InstancedStaticMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/MeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
-#include "Kismet/GameplayStatics.h"
 #include "Net/UnrealNetwork.h"
 #include "Materials/MaterialInterface.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "AIController.h"
 #include "UObject/ConstructorHelpers.h"
-
-namespace
-{
-	constexpr float GroundWaveVisualHeight = 46.0f;
-	constexpr float GroundWaveRingThickness = 46.0f;
-	constexpr float GroundWaveRingHeight = 10.0f;
-	constexpr float GroundWaveArenaPadding = 300.0f;
-	constexpr float GroundWaveFallbackFullMapRadius = 9000.0f;
-	constexpr float GroundWaveMinimumExpansionSpeed = 100.0f;
-	constexpr int32 GroundWaveMinRingSegments = 32;
-	constexpr int32 GroundWaveMaxRingSegments = 176;
-	constexpr float GroundWaveTargetSegmentLength = 180.0f;
-	constexpr float UnrealBasicShapeSize = 100.0f;
-
-	float GetGroundWaveVisualBaseOffset(const ARogueEnemy& Enemy)
-	{
-		return -Enemy.GetCapsuleComponent()->GetScaledCapsuleHalfHeight() + GroundWaveVisualHeight;
-	}
-
-    float CalculateFullMapGroundWaveRadius(const ARogueEnemy& Enemy, float ConfiguredRadius)
-    {
-        float EffectiveRadius = FMath::Max(ConfiguredRadius, GroundWaveFallbackFullMapRadius);
-        UWorld* World = Enemy.GetWorld();
-        if (World == nullptr) { return EffectiveRadius; }
-        const ARogueEnemySpawnRegion* Region = Cast<ARogueEnemySpawnRegion>(UGameplayStatics::GetActorOfClass(World, ARogueEnemySpawnRegion::StaticClass()));
-        if (Region != nullptr)
-        {
-            TArray<FVector> Corners;
-            Region->GetWorldCorners(Corners);
-            for (const FVector& Corner : Corners)
-            {
-                EffectiveRadius = FMath::Max(EffectiveRadius, FVector::Dist2D(Enemy.GetActorLocation(), Corner) + GroundWaveArenaPadding);
-            }
-        }
-        return EffectiveRadius;
-    }
-
-	float CalculateReadableGroundWaveDuration(const FRogueEnemyGroundWaveArchetype& GroundWave, float EffectiveRadius)
-	{
-		const float ConfiguredSpeed = FMath::Max(GroundWave.ExpansionSpeed, GroundWaveMinimumExpansionSpeed);
-		const float SpeedDrivenDuration = EffectiveRadius / ConfiguredSpeed;
-		return FMath::Max(GroundWave.ExpansionDuration, SpeedDrivenDuration);
-	}
-}
 
 // ===========================================================
 //  构造 & 生命周期
@@ -142,30 +95,10 @@ ARogueEnemy::ARogueEnemy()
 	ShockPillarMesh->SetVisibility(false, true);
 	ShockPillarMesh->SetHiddenInGame(true);
 
-	GroundWaveMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("GroundWaveMesh"));
-	GroundWaveMesh->SetupAttachment(RootComponent);
-	GroundWaveMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	GroundWaveMesh->SetCastShadow(false);
-	GroundWaveMesh->SetVisibility(false, true);
-	GroundWaveMesh->SetHiddenInGame(true);
-
-	GroundWaveRingSegments = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("GroundWaveRingSegments"));
-	GroundWaveRingSegments->SetupAttachment(RootComponent);
-	GroundWaveRingSegments->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	GroundWaveRingSegments->SetCastShadow(false);
-	GroundWaveRingSegments->SetVisibility(false, true);
-	GroundWaveRingSegments->SetHiddenInGame(true);
-
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> PillarMeshAsset(TEXT("/Game/GameAssets/StarterContent/Shapes/Shape_Cylinder.Shape_Cylinder"));
 	if (PillarMeshAsset.Succeeded())
 	{
 		ShockPillarMesh->SetStaticMesh(PillarMeshAsset.Object);
-	}
-
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> WaveMeshAsset(TEXT("/Game/GameAssets/StarterContent/Shapes/Shape_Cube.Shape_Cube"));
-	if (WaveMeshAsset.Succeeded())
-	{
-		GroundWaveRingSegments->SetStaticMesh(WaveMeshAsset.Object);
 	}
 
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> PillarMaterialAsset(TEXT("/Game/GameAssets/Realistic_Starter_VFX_Pack_Vol2/Materials/M_Glow_D.M_Glow_D"));
@@ -174,11 +107,10 @@ ARogueEnemy::ARogueEnemy()
 		ShockPillarMaterial = PillarMaterialAsset.Object;
 	}
 
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> WaveMaterialAsset(TEXT("/Game/GameAssets/Realistic_Starter_VFX_Pack_Vol2/Materials/M_Glow_C_Inst.M_Glow_C_Inst"));
-	if (WaveMaterialAsset.Succeeded())
-	{
-		ShockWaveMaterial = WaveMaterialAsset.Object;
-	}
+	// 弹体类完全由蓝图/数据表决定，C++ 不写死任何默认资产路径：
+	//   · 敌人 BP 类默认值 → EnemyProjectileClass / BossProjectileClass
+	//   · 原型数据表 → DT_EnemyArchetypes 的「弹体蓝图类」列
+	// 两者都为空时 GetEnemyProjectileClass() 回退原生类（仅碰撞/伤害，不含外观）。
 
 	OrbitDirection = FMath::RandBool() ? 1.0f : -1.0f;
 }
@@ -270,13 +202,6 @@ void ARogueEnemy::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-	// 地面波表现态：客户端据此自己画那条扩散的波纹（AI 只在服务端跑，见 Tick）
-	DOREPLIFETIME_CONDITION(ARogueEnemy, bGroundWaveActive, COND_None);
-	DOREPLIFETIME_CONDITION(ARogueEnemy, GroundWaveCurrentRadius, COND_None);
-	DOREPLIFETIME_CONDITION(ARogueEnemy, GroundWaveAlpha, COND_None);
-	DOREPLIFETIME_CONDITION(ARogueEnemy, GroundWaveEffectiveMaxRadius, COND_None);
-	DOREPLIFETIME_CONDITION(ARogueEnemy, GroundWaveEffectiveDuration, COND_None);
-
 	// "这只怪现在在不在场"。池化状态本身不复制（见头文件里的说明），
 	// 但客户端必须知道它，否则怪在客户端永远是"死的、池里的"。
 	DOREPLIFETIME_CONDITION(ARogueEnemy, bReplicatedActive, COND_None);
@@ -342,7 +267,7 @@ void ARogueEnemy::ApplyReplicatedActiveState()
 	}
 }
 
-void ARogueEnemy::Multicast_SpawnCosmeticProjectile_Implementation(FVector_NetQuantize SpawnLocation, FVector_NetQuantizeNormal Direction, float Speed, bool bLargeVisual)
+void ARogueEnemy::Multicast_SpawnCosmeticProjectile_Implementation(FVector_NetQuantize SpawnLocation, FVector_NetQuantizeNormal Direction, float Speed, bool bLargeVisual, TSubclassOf<ARogueEnemyProjectile> ProjectileClass)
 {
 	// 服务端调用的多播会在服务端及收到此 RPC 的客户端执行；不保证全员收到。
 	// 此实现跳过权威端，避免再生成一份已由 FireRangedShot 创建的弹体。
@@ -360,7 +285,7 @@ void ARogueEnemy::Multicast_SpawnCosmeticProjectile_Implementation(FVector_NetQu
 
 	const FRotator SpawnRotation = Direction.Rotation();
 	ARogueEnemyProjectile* Projectile = Pools->AcquireEnemyProjectile(
-		ARogueEnemyProjectile::StaticClass(), this, this, SpawnLocation, SpawnRotation);
+		ProjectileClass, this, this, SpawnLocation, SpawnRotation);
 	if (Projectile == nullptr)
 	{
 		return;
@@ -370,20 +295,21 @@ void ARogueEnemy::Multicast_SpawnCosmeticProjectile_Implementation(FVector_NetQu
 	Projectile->ActivatePooledProjectile(this, this, SpawnLocation, SpawnRotation, Direction, Speed, /*ProjectileDamage=*/0.0f, bLargeVisual);
 }
 
-void ARogueEnemy::Multicast_SpawnCosmeticBulletRing_Implementation(FVector_NetQuantize Center, float StartYaw, float SpawnRadius, const FRogueEnemyBulletRingSettings& Settings)
+void ARogueEnemy::Multicast_SpawnCosmeticBulletRing_Implementation(FVector_NetQuantize Center, float StartYaw, float SpawnRadius, const FRogueEnemyBulletRingSettings& Settings, TSubclassOf<ARogueEnemyProjectile> ProjectileClass)
 {
 	if (!HasAuthority())
 	{
-		SpawnBulletRing(Center, StartYaw, SpawnRadius, Settings, 0.0f);
+		SpawnBulletRing(Center, StartYaw, SpawnRadius, Settings, 0.0f, ProjectileClass);
 	}
 }
 
-void ARogueEnemy::SpawnBulletRing(const FVector& Center, float StartYaw, float SpawnRadius, const FRogueEnemyBulletRingSettings& Settings, float ProjectileDamage)
+void ARogueEnemy::SpawnBulletRing(const FVector& Center, float StartYaw, float SpawnRadius, const FRogueEnemyBulletRingSettings& Settings, float ProjectileDamage, TSubclassOf<ARogueEnemyProjectile> ProjectileClass)
 {
 	UWorld* World = GetWorld();
 	if (World == nullptr) { return; }
 	URogueCombatPoolSubsystem* Pools = World->GetSubsystem<URogueCombatPoolSubsystem>();
 	const FRogueEnemyBulletRingSettings Ring = Settings.Sanitized();
+	const TSubclassOf<ARogueEnemyProjectile> ClassToSpawn = ProjectileClass != nullptr ? ProjectileClass : GetEnemyProjectileClass();
 	for (int32 Index = 0; Index < Ring.ProjectileCount; ++Index)
 	{
 		// 不包含 360 度终点，避免第一发与最后一发重合；每个方向只发一颗。
@@ -396,8 +322,8 @@ void ARogueEnemy::SpawnBulletRing(const FVector& Center, float StartYaw, float S
 		Params.Instigator = this;
 		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 		ARogueEnemyProjectile* Projectile = Pools != nullptr
-			? Pools->AcquireEnemyProjectile(ARogueEnemyProjectile::StaticClass(), this, this, Location, Rotation)
-			: World->SpawnActor<ARogueEnemyProjectile>(ARogueEnemyProjectile::StaticClass(), Location, Rotation, Params);
+			? Pools->AcquireEnemyProjectile(ClassToSpawn, this, this, Location, Rotation)
+			: World->SpawnActor<ARogueEnemyProjectile>(ClassToSpawn, Location, Rotation, Params);
 		if (Projectile != nullptr)
 		{
 			Projectile->ActivatePooledProjectile(this, this, Location, Rotation, Direction,
@@ -569,16 +495,13 @@ void ARogueEnemy::Tick(float DeltaSeconds)
 	}
 
 	// ── 客户端分支：只做表现，不跑任何 AI ──
-	// 客户端上的敌人是**复制代理**：位置、朝向、血量、地面波扩散状态都由服务端同步过来。
+	// 客户端上的敌人是**复制代理**：位置、朝向、血量由服务端同步过来。
 	// 在这里再跑一遍 AI 有三个害处：
 	//   1) 本地算出来的位移会和复制数据打架，表现为抖动/回弹；
 	//   2) 白白消耗客户端 CPU —— 200+ 敌人的情况非常明显；
 	//   3) 攻击/伤害类逻辑在客户端跑没有意义（伤害只在服务端结算）。
-	// 所以客户端只根据同步过来的地面波状态刷新环形视觉。
 	if (!HasAuthority())
 	{
-		UpdateGroundWaveVisualFromReplication();
-
 		// 客户端从已复制的 Health 更新镜像，并以差值生成飘字。
 		// 标准 GAS RepNotify 可经 GAMEPLAYATTRIBUTE_REPNOTIFY 通知变化，
 		// 不能泛称属性复制不会触发回调；此轮询只是当前实现的补偿路径。
@@ -615,25 +538,6 @@ void ARogueEnemy::Tick(float DeltaSeconds)
 	HandleDefaultBehavior(DeltaSeconds);
 }
 
-void ARogueEnemy::UpdateGroundWaveVisualFromReplication()
-{
-	// 客户端没有 AI 推进，全靠这几个复制值驱动环形视觉。
-	// 用 bGroundWaveActive 判断"在不在放"，半径直接取同步值。
-	if (!bGroundWaveActive)
-	{
-		if (bClientGroundWaveVisible)
-		{
-			bClientGroundWaveVisible = false;
-			HideGroundWave();
-		}
-		return;
-	}
-
-	bClientGroundWaveVisible = true;
-	UpdateGroundWaveRingVisual(GroundWaveCurrentRadius);
-	OnGroundWaveUpdated(GroundWaveCurrentRadius, GroundWaveAlpha);
-}
-
 void ARogueEnemy::HandleDefaultBehavior(float DeltaSeconds)
 {
 	// 目标已由 Tick 里的 RefreshTargetPlayer() 选好（活着的玩家里最近的那个）。
@@ -650,8 +554,7 @@ void ARogueEnemy::HandleDefaultBehavior(float DeltaSeconds)
 	// 逻辑频率决定"多久想一次"，复制频率决定"多久告诉客户端一次"）。
 	UpdateReplicationBudget(DistanceToPlayer);
 
-	const bool bUsesGroundWave = CurrentArchetype.GroundWave.bUsesGroundWave;
-	const float DesiredTickInterval = (bIsBoss || bUsesGroundWave || bGroundWaveActive)
+	const float DesiredTickInterval = bIsBoss
 		? 0.0f
 		: (DistanceToPlayer > 1700.0f ? 0.08f : (DistanceToPlayer > 950.0f ? 0.04f : 0.0f));
 	if (!FMath::IsNearlyEqual(PrimaryActorTick.TickInterval, DesiredTickInterval, KINDA_SMALL_NUMBER))
@@ -670,18 +573,12 @@ void ARogueEnemy::HandleDefaultBehavior(float DeltaSeconds)
 		GetCharacterMovement()->bForceNextFloorCheck = true;
 	}
 
-	if (bUsesGroundWave)
-	{
-		DecideGroundWaveAttack(PlayerCharacter, DistanceToPlayer, DeltaSeconds);
-		return;
-	}
-
-	// 接触与远程攻击都走"AI 决策 → 能力执行"（见各自函数的说明）。
-	if (EnemyType != ERogueEnemyType::ShockPillar)
+	// 远程原型不再贴身攻击：接触槽只在没有远程攻击时启用。
+	if (!CurrentArchetype.Ranged.bUsesRangedAttack)
 	{
 		DecideContactAttack(DeltaSeconds);
 	}
-	DecideRangedAttack(PlayerCharacter, DistanceToPlayer, DeltaSeconds);
+	DecideRangedAttack(PlayerCharacter, DeltaSeconds);
 }
 
 // ===========================================================
@@ -699,7 +596,6 @@ void ARogueEnemy::GrantAttackAbilities()
 	// 先清空句柄：换原型/换池周期后旧句柄不该再被使用。
 	ContactAttackAbilityHandle = FGameplayAbilitySpecHandle();
 	RangedAttackAbilityHandle = FGameplayAbilitySpecHandle();
-	GroundWaveAttackAbilityHandle = FGameplayAbilitySpecHandle();
 
 	// 压测对照开关（见 RogueSelfTest.h）：关掉授予就能量出"GAS 这部分到底贵多少"。
 	if (RogueSelfTest::AreEnemyAttackAbilitiesDisabled())
@@ -720,7 +616,7 @@ void ARogueEnemy::GrantAttackAbilities()
 		// 按**能力类**把句柄分配到三个槽位，而不是按条目下标 ——
 		// 下标约定太容易被"改资产时调了下顺序"破坏，而那种破坏是静默的（攻击悄悄换了种类）。
 		//
-		// 三个槽位是 AI 侧固有的：`Tick` 里的决策分成"接触 / 远程 / 地面波"三条，
+		// 三个槽位是 AI 侧固有的：`Tick` 里的决策只有"接触 / 远程"两条，
 		// 所以能力集里**多出来的**能力不会有 AI 去驱动（它仍可被别处激活）。
 		// 也就是说这条边界是：**能力集决定"这种敌人有哪些攻击"，AI 决定"什么时候打"。**
 		for (const FGameplayAbilitySpecHandle& Handle : Handles)
@@ -732,7 +628,8 @@ void ARogueEnemy::GrantAttackAbilities()
 				continue;
 			}
 
-			if (AbilityClass->IsChildOf(URogueEnemyContactAttackAbility::StaticClass()))
+			if (AbilityClass->IsChildOf(URogueEnemyContactAttackAbility::StaticClass())
+				&& !CurrentArchetype.Ranged.bUsesRangedAttack)
 			{
 				ContactAttackAbilityHandle = Handle;
 			}
@@ -740,24 +637,19 @@ void ARogueEnemy::GrantAttackAbilities()
 			{
 				RangedAttackAbilityHandle = Handle;
 			}
-			else if (AbilityClass->IsChildOf(URogueEnemyGroundWaveAttackAbility::StaticClass()))
-			{
-				GroundWaveAttackAbilityHandle = Handle;
-			}
 		}
 
-		UE_LOG(LogTemp, Verbose, TEXT("[Rogue] 敌人攻击能力来自数据驱动能力集 %s（%d 条）：接触=%d 远程=%d 地面波=%d"),
+		UE_LOG(LogTemp, Verbose, TEXT("[Rogue] 敌人攻击能力来自数据驱动能力集 %s（%d 条）：接触=%d 远程=%d"),
 			*AbilitySet->GetName(), Handles.Num(),
 			ContactAttackAbilityHandle.IsValid() ? 1 : 0,
-			RangedAttackAbilityHandle.IsValid() ? 1 : 0,
-			GroundWaveAttackAbilityHandle.IsValid() ? 1 : 0);
+			RangedAttackAbilityHandle.IsValid() ? 1 : 0);
 		return;
 	}
 
 	// ---- ② 回退：按原型标志推导（改造前的硬编码逻辑，老数据表走这条）----
 
-	// 震荡柱只发射弹幕；保留旧地面波原型不贴身攻击的行为。
-	if (EnemyType != ERogueEnemyType::ShockPillar && !CurrentArchetype.GroundWave.bUsesGroundWave)
+	// 有远程攻击的原型不再授予接触能力；所有攻击都走远程 GAS 槽。
+	if (!CurrentArchetype.Ranged.bUsesRangedAttack)
 	{
 		ContactAttackAbilityHandle = AbilitySystemComponent->GiveAbility(
 			FGameplayAbilitySpec(URogueEnemyContactAttackAbility::StaticClass(), /*Level=*/1, /*InputID=*/INDEX_NONE, /*SourceObject=*/this));
@@ -767,12 +659,6 @@ void ARogueEnemy::GrantAttackAbilities()
 	{
 		RangedAttackAbilityHandle = AbilitySystemComponent->GiveAbility(
 			FGameplayAbilitySpec(URogueEnemyRangedAttackAbility::StaticClass(), 1, INDEX_NONE, this));
-	}
-
-	if (CurrentArchetype.GroundWave.bUsesGroundWave)
-	{
-		GroundWaveAttackAbilityHandle = AbilitySystemComponent->GiveAbility(
-			FGameplayAbilitySpec(URogueEnemyGroundWaveAttackAbility::StaticClass(), 1, INDEX_NONE, this));
 	}
 }
 
@@ -794,6 +680,29 @@ void ARogueEnemy::BackOffMissingAttack(float& Timer, const FGameplayAbilitySpecH
 	{
 		Timer = FMath::Max(Timer, 0.5f);
 	}
+}
+
+TSubclassOf<ARogueEnemyProjectile> ARogueEnemy::GetEnemyProjectileClass() const
+{
+	if (bIsBoss && BossProjectileClass != nullptr)
+	{
+		return BossProjectileClass;
+	}
+
+	// 原型数据表可以按敌人类型单独指定弹体；没有配置时再回退敌人 BP 的默认值。
+	if (CurrentArchetype.ProjectileClass != nullptr)
+	{
+		return CurrentArchetype.ProjectileClass;
+	}
+
+	return EnemyProjectileClass != nullptr
+		? EnemyProjectileClass
+		: TSubclassOf<ARogueEnemyProjectile>(ARogueEnemyProjectile::StaticClass());
+}
+
+TSubclassOf<ARogueEnemyProjectile> ARogueEnemy::GetBossProjectileClass() const
+{
+	return BossProjectileClass != nullptr ? BossProjectileClass : GetEnemyProjectileClass();
 }
 
 bool ARogueEnemy::HasTouchingPlayer() const
@@ -849,7 +758,7 @@ void ARogueEnemy::DecideContactAttack(float DeltaSeconds)
 	}
 }
 
-void ARogueEnemy::DecideRangedAttack(ARogueCharacter* PlayerCharacter, float DistanceToPlayer, float DeltaSeconds)
+void ARogueEnemy::DecideRangedAttack(ARogueCharacter* PlayerCharacter, float DeltaSeconds)
 {
 	if (!IsValid(PlayerCharacter))
 	{
@@ -868,14 +777,9 @@ void ARogueEnemy::DecideRangedAttack(ARogueCharacter* PlayerCharacter, float Dis
 		return;
 	}
 
-	const bool bInAttackRange =
-		DistanceToPlayer >= RangedArchetype.MinimumRange * RangedArchetype.AttackRangeMinFactor &&
-		DistanceToPlayer <= RangedArchetype.MaximumRange;
-	if (!bInAttackRange)
-	{
-		return;
-	}
-
+	// 当前设计不再限制攻击距离：只要目标存活、冷却结束就尝试开火。
+	// 原型数据里的 MinimumRange / MaximumRange / AttackRangeMinFactor 已删除，
+	// 不再有数据字段可以恢复距离门控。
 	RogueEnemyAttackStats::CountRangedAttempt();
 	if (TryActivateAttackAbility(RangedAttackAbilityHandle))
 	{
@@ -884,40 +788,6 @@ void ARogueEnemy::DecideRangedAttack(ARogueCharacter* PlayerCharacter, float Dis
 	else
 	{
 		BackOffMissingAttack(RangedAttackTimer, RangedAttackAbilityHandle);
-	}
-}
-
-void ARogueEnemy::DecideGroundWaveAttack(ARogueCharacter* PlayerCharacter, float DistanceToPlayer, float DeltaSeconds)
-{
-	if (!CurrentArchetype.GroundWave.bUsesGroundWave || !IsValid(PlayerCharacter))
-	{
-		return;
-	}
-
-	// 波在扩散期间由能力逐帧推进，AI 完全不参与 —— 只有"没在放波"时才考虑起新的一波。
-	if (bGroundWaveActive)
-	{
-		return;
-	}
-
-	GroundWaveAttackTimer = FMath::Max(0.0f, GroundWaveAttackTimer - DeltaSeconds);
-	if (GroundWaveAttackTimer > 0.0f)
-	{
-		return;
-	}
-
-	const float EffectiveMaxRadius = CalculateFullMapGroundWaveRadius(*this, CurrentArchetype.GroundWave.MaxRadius);
-	if (DistanceToPlayer > EffectiveMaxRadius + 220.0f)
-	{
-		return;
-	}
-
-	// 冷却在"波结束"时由能力给（改造前是 UpdateGroundWave 结束分支里设 GroundWaveAttackTimer），
-	// 所以这里激活成功后不动计时器 —— 动了就会变成"起波即冷却"。
-	RogueEnemyAttackStats::CountGroundWaveAttempt();
-	if (!TryActivateAttackAbility(GroundWaveAttackAbilityHandle))
-	{
-		BackOffMissingAttack(GroundWaveAttackTimer, GroundWaveAttackAbilityHandle);
 	}
 }
 
@@ -968,16 +838,6 @@ bool ARogueEnemy::ExecuteRangedAttack()
 	return true;
 }
 
-void ARogueEnemy::ExecuteStartGroundWave()
-{
-	StartGroundWave();
-}
-
-void ARogueEnemy::ExecuteAdvanceGroundWave(float DeltaSeconds)
-{
-	UpdateGroundWave(DeltaSeconds);
-}
-
 // ===========================================================
 //  生命周期：初始化 / 激活 / 回收
 // ===========================================================
@@ -1008,16 +868,6 @@ void ARogueEnemy::InitializeEnemy(const FRogueEnemyProfile& InProfile)
 	RangedAttackTimer = CurrentArchetype.Ranged.bUsesRangedAttack
 		? FMath::FRandRange(CurrentArchetype.Ranged.InitialCooldownMin, CurrentArchetype.Ranged.InitialCooldownMax)
 		: 0.0f;
-	GroundWaveAttackTimer = CurrentArchetype.GroundWave.bUsesGroundWave
-		? FMath::FRandRange(CurrentArchetype.GroundWave.InitialCooldownMin, CurrentArchetype.GroundWave.InitialCooldownMax)
-		: 0.0f;
-	GroundWaveElapsed = 0.0f;
-	GroundWaveCurrentRadius = 0.0f;
-	GroundWaveAlpha = 0.0f;
-	GroundWaveEffectiveMaxRadius = 0.0f;
-	GroundWaveEffectiveDuration = 0.0f;
-	bGroundWaveActive = false;
-	GroundWaveHitPlayers.Reset();
 	LastDamageNumberTime = -100.0f;
 	PendingDamageNumber = 0.0f;
 	bDead = false;
@@ -1127,25 +977,15 @@ void ARogueEnemy::DeactivateToPool()
 	}
 	ContactTimer = 0.0f;
 	RangedAttackTimer = 0.0f;
-	GroundWaveAttackTimer = 0.0f;
 	// 当前池周期结束，立即作废句柄；技能列表由下次激活的 ResetForPool 清理。
 	ContactAttackAbilityHandle = FGameplayAbilitySpecHandle();
 	RangedAttackAbilityHandle = FGameplayAbilitySpecHandle();
-	GroundWaveAttackAbilityHandle = FGameplayAbilitySpecHandle();
-	GroundWaveElapsed = 0.0f;
-	GroundWaveCurrentRadius = 0.0f;
-	GroundWaveAlpha = 0.0f;
-	GroundWaveEffectiveMaxRadius = 0.0f;
-	GroundWaveEffectiveDuration = 0.0f;
-	bGroundWaveActive = false;
-	GroundWaveHitPlayers.Reset();
 	BurstCooldown = 0.0f;
 	BurstTimeRemaining = 0.0f;
 	LastDamageNumberTime = -100.0f;
 	PendingDamageNumber = 0.0f;
 	CachedPlayerCharacter.Reset();
 	TargetRefreshCooldown = 0.0f;
-	HideGroundWave();
 	SetActorHiddenInGame(true);
 	SetActorTickEnabled(false);
 	SetActorEnableCollision(false);
@@ -1256,13 +1096,9 @@ bool ARogueEnemy::IsPlayerInRange(float Range) const
 
 bool ARogueEnemy::IsInRangedAttackRange() const
 {
-	if (!CurrentArchetype.Ranged.bUsesRangedAttack)
-	{
-		return false;
-	}
-	const float Distance = GetDistanceToPlayer();
-	return Distance >= CurrentArchetype.Ranged.MinimumRange * CurrentArchetype.Ranged.AttackRangeMinFactor
-		&& Distance <= CurrentArchetype.Ranged.MaximumRange;
+	// 攻击距离限制已取消：有远程攻击的原型在任何距离都视为“在射程内”。
+	// 保留该函数是为了兼容蓝图/调试调用，不再返回距离判定结果。
+	return CurrentArchetype.Ranged.bUsesRangedAttack;
 }
 
 void ARogueEnemy::MoveInDirection(const FVector& Direction, float SpeedMultiplier, float DeltaSeconds)
@@ -1383,21 +1219,6 @@ void ARogueEnemy::OnApplyVisualStyle_Implementation()
 	// 默认空实现，蓝图子类可重写以自定义外观
 }
 
-void ARogueEnemy::OnGroundWaveStarted_Implementation(float MaxRadius, float ExpansionDuration)
-{
-	// 默认空实现，震荡柱蓝图可重写
-}
-
-void ARogueEnemy::OnGroundWaveUpdated_Implementation(float Radius, float Alpha)
-{
-	// 默认空实现，震荡柱蓝图可重写
-}
-
-void ARogueEnemy::OnGroundWaveFinished_Implementation()
-{
-	// 默认空实现，震荡柱蓝图可重写
-}
-
 void ARogueEnemy::FireRangedShot(ARogueCharacter* PlayerCharacter)
 {
 	if (!IsValid(PlayerCharacter) || GetWorld() == nullptr)
@@ -1417,6 +1238,7 @@ void ARogueEnemy::FireRangedShot(ARogueCharacter* PlayerCharacter)
 	}
 
 	const FRogueEnemyRangedArchetype& RangedArchetype = CurrentArchetype.Ranged;
+	const TSubclassOf<ARogueEnemyProjectile> ProjectileClass = GetEnemyProjectileClass();
 	if (RangedArchetype.ShotPattern == ERogueEnemyShotPattern::RadialRing)
 	{
 		const FRogueEnemyBulletRingSettings Settings = RangedArchetype.BulletRing.Sanitized();
@@ -1425,8 +1247,8 @@ void ARogueEnemy::FireRangedShot(ARogueCharacter* PlayerCharacter)
 			-Capsule->GetScaledCapsuleHalfHeight() + Settings.HeightAboveGround);
 		const float SpawnRadius = Capsule->GetScaledCapsuleRadius() + 24.0f;
 		const float StartYaw = GetActorRotation().Yaw;
-		SpawnBulletRing(Center, StartYaw, SpawnRadius, Settings, ContactDamage * Settings.DamageMultiplier);
-		Multicast_SpawnCosmeticBulletRing(Center, StartYaw, SpawnRadius, Settings);
+		SpawnBulletRing(Center, StartYaw, SpawnRadius, Settings, ContactDamage * Settings.DamageMultiplier, ProjectileClass);
+		Multicast_SpawnCosmeticBulletRing(Center, StartYaw, SpawnRadius, Settings, ProjectileClass);
 		return;
 	}
 
@@ -1449,8 +1271,8 @@ void ARogueEnemy::FireRangedShot(ARogueCharacter* PlayerCharacter)
 		// 服务端生成"真实"弹体（带伤害与命中判定）
 		URogueCombatPoolSubsystem* Pools = GetWorld() ? GetWorld()->GetSubsystem<URogueCombatPoolSubsystem>() : nullptr;
 		ARogueEnemyProjectile* Projectile = Pools != nullptr
-			? Pools->AcquireEnemyProjectile(ARogueEnemyProjectile::StaticClass(), this, this, SpawnLocation, Direction.Rotation())
-			: GetWorld()->SpawnActor<ARogueEnemyProjectile>(ARogueEnemyProjectile::StaticClass(), SpawnLocation, Direction.Rotation(), SpawnParameters);
+			? Pools->AcquireEnemyProjectile(ProjectileClass, this, this, SpawnLocation, Direction.Rotation())
+			: GetWorld()->SpawnActor<ARogueEnemyProjectile>(ProjectileClass, SpawnLocation, Direction.Rotation(), SpawnParameters);
 		if (Projectile != nullptr)
 		{
 			Projectile->ActivatePooledProjectile(this, this, SpawnLocation, Direction.Rotation(), Direction, ProjectileSpeed, ProjectileDamage, bLargeVisual);
@@ -1459,7 +1281,7 @@ void ARogueEnemy::FireRangedShot(ARogueCharacter* PlayerCharacter)
 		// 同时广播给客户端，让它们在本地生成一发**纯表现**的同款弹体。
 		// 注意不要在服务端也走这条：Multicast 的实现里用 HasAuthority() 提前返回了，
 		// 所以这行调用在服务端只起到"发出去"的作用。
-		Multicast_SpawnCosmeticProjectile(SpawnLocation, Direction, ProjectileSpeed, bLargeVisual);
+		Multicast_SpawnCosmeticProjectile(SpawnLocation, Direction, ProjectileSpeed, bLargeVisual, ProjectileClass);
 	};
 
 	if (RangedArchetype.ShotPattern == ERogueEnemyShotPattern::Spread3)
@@ -1492,184 +1314,6 @@ void ARogueEnemy::FireRangedShot(ARogueCharacter* PlayerCharacter)
 	}
 }
 
-
-// ===========================================================
-//  地面波的起波与推进
-// ===========================================================
-//  ⚠️ 这两个函数现在**只被地面波攻击能力调用**（ExecuteStartGroundWave / ExecuteAdvanceGroundWave）。
-//  改造前是 AI 的 HandleGroundWaveAttack 每帧自己判断"该不该起波、要不要推进"，
-//  现在 AI 只决定"起不起一波"，推进由持续激活的能力逐帧驱动。
-
-void ARogueEnemy::StartGroundWave()
-{
-	bGroundWaveActive = true;
-	GroundWaveHitPlayers.Reset();
-	GroundWaveElapsed = 0.0f;
-	GroundWaveCurrentRadius = 24.0f;
-	GroundWaveAlpha = 0.0f;
-	GroundWaveEffectiveMaxRadius = CalculateFullMapGroundWaveRadius(*this, CurrentArchetype.GroundWave.MaxRadius);
-	GroundWaveEffectiveDuration = CalculateReadableGroundWaveDuration(CurrentArchetype.GroundWave, GroundWaveEffectiveMaxRadius);
-
-	if (bUseBuiltInShockPillarVisual && GroundWaveMesh != nullptr)
-	{
-		GroundWaveMesh->SetHiddenInGame(true);
-		GroundWaveMesh->SetVisibility(false, true);
-	}
-
-	UpdateGroundWaveRingVisual(GroundWaveCurrentRadius);
-
-	if (GetWorld() != nullptr)
-	{
-		// 地面波起始特效同样要走 cue（扩散过程本身靠复制的地面波状态驱动）。
-		// (0.95, 0.95, 0.32) 的含义是"同一个 Spark 素材贴地压扁"：
-		// PlayImpactEffect 会把 X 当统一缩放、Z/X 当压扁比例传给 cue。
-		ARogueGameState::PlayImpactEffect(
-			this,
-			GetActorLocation() + FVector(0.0f, 0.0f, 8.0f),
-			FRotator::ZeroRotator,
-			ERogueImpactVisualStyle::Spark,
-			FVector(0.95f, 0.95f, 0.32f));
-	}
-
-	OnGroundWaveStarted(GroundWaveEffectiveMaxRadius, GroundWaveEffectiveDuration);
-}
-
-void ARogueEnemy::UpdateGroundWave(float DeltaSeconds)
-{
-	const FRogueEnemyGroundWaveArchetype& GroundWave = CurrentArchetype.GroundWave;
-	const float Duration = FMath::Max(GroundWaveEffectiveDuration, KINDA_SMALL_NUMBER);
-	GroundWaveElapsed += DeltaSeconds;
-
-	const float Alpha = FMath::Clamp(GroundWaveElapsed / Duration, 0.0f, 1.0f);
-	const float Radius = FMath::Lerp(24.0f, FMath::Max(GroundWaveEffectiveMaxRadius, 24.0f), Alpha);
-	GroundWaveCurrentRadius = Radius;
-	GroundWaveAlpha = Alpha;
-
-	UpdateGroundWaveRingVisual(Radius);
-
-	// 逐个玩家判定：波面扫到谁就给谁结算一次。
-	// 单机时等价于原来的"整轮只打一次"；联机时必须逐人记录，
-	// 否则先被扫到的那个玩家会吃掉整轮伤害，队友站在同一圈上反而无伤。
-	TArray<ARogueCharacter*, TInlineAllocator<4>> Players;
-	GatherAlivePlayers(Players);
-
-	const FVector MyLocation = GetActorLocation();
-	for (ARogueCharacter* PlayerCharacter : Players)
-	{
-		const bool bAlreadyHit = GroundWaveHitPlayers.ContainsByPredicate(
-			[PlayerCharacter](const TWeakObjectPtr<ARogueCharacter>& Hit) { return Hit.Get() == PlayerCharacter; });
-		if (bAlreadyHit || !CanGroundWaveHitPlayer(PlayerCharacter))
-		{
-			continue;
-		}
-
-		const float DistanceToPlayer = FVector::Dist2D(MyLocation, PlayerCharacter->GetActorLocation());
-		const float PlayerRadius = PlayerCharacter->GetCapsuleComponent() != nullptr
-			? PlayerCharacter->GetCapsuleComponent()->GetScaledCapsuleRadius()
-			: 34.0f;
-		const float HitBandHalfWidth = GroundWave.HitThickness * 0.5f + PlayerRadius;
-		if (FMath::Abs(DistanceToPlayer - Radius) <= HitBandHalfWidth)
-		{
-			// 地面波是范围伤害，Tag 用 Damage.Source.Area
-			RogueAbilitySystem::ApplyDamageToTarget(this, PlayerCharacter, ContactDamage * GroundWave.DamageMultiplier, RogueGameplayTags::Damage_Source_Area);
-			GroundWaveHitPlayers.Add(PlayerCharacter);
-		}
-	}
-
-	OnGroundWaveUpdated(Radius, Alpha);
-
-	if (Alpha >= 1.0f)
-	{
-		bGroundWaveActive = false;
-		GroundWaveHitPlayers.Reset();
-		GroundWaveElapsed = 0.0f;
-		GroundWaveCurrentRadius = 0.0f;
-		GroundWaveAlpha = 0.0f;
-		GroundWaveEffectiveMaxRadius = 0.0f;
-		GroundWaveEffectiveDuration = 0.0f;
-		GroundWaveAttackTimer = GroundWave.AttackCooldown;
-		HideGroundWave();
-		OnGroundWaveFinished();
-	}
-}
-
-void ARogueEnemy::UpdateGroundWaveRingVisual(float Radius)
-{
-	if (!bUseBuiltInShockPillarVisual || GroundWaveRingSegments == nullptr)
-	{
-		return;
-	}
-
-	GroundWaveRingSegments->ClearInstances();
-	if (Radius <= KINDA_SMALL_NUMBER)
-	{
-		GroundWaveRingSegments->SetHiddenInGame(true);
-		GroundWaveRingSegments->SetVisibility(false, true);
-		return;
-	}
-
-	const float Circumference = 2.0f * UE_PI * Radius;
-	const int32 SegmentCount = FMath::Clamp(FMath::CeilToInt(Circumference / GroundWaveTargetSegmentLength), GroundWaveMinRingSegments, GroundWaveMaxRingSegments);
-	const float SegmentLength = FMath::Max(Circumference / static_cast<float>(SegmentCount) * 0.94f, 12.0f);
-	const FVector SegmentScale(
-		SegmentLength / UnrealBasicShapeSize,
-		GroundWaveRingThickness / UnrealBasicShapeSize,
-		GroundWaveRingHeight / UnrealBasicShapeSize);
-	const float BaseOffset = GetGroundWaveVisualBaseOffset(*this);
-
-	for (int32 SegmentIndex = 0; SegmentIndex < SegmentCount; ++SegmentIndex)
-	{
-		const float AngleRadians = 2.0f * UE_PI * static_cast<float>(SegmentIndex) / static_cast<float>(SegmentCount);
-		const float AngleDegrees = FMath::RadiansToDegrees(AngleRadians);
-		const FVector SegmentLocation(FMath::Cos(AngleRadians) * Radius, FMath::Sin(AngleRadians) * Radius, BaseOffset);
-		const FRotator SegmentRotation(0.0f, AngleDegrees + 90.0f, 0.0f);
-		GroundWaveRingSegments->AddInstance(FTransform(SegmentRotation, SegmentLocation, SegmentScale));
-	}
-
-	GroundWaveRingSegments->SetHiddenInGame(false);
-	GroundWaveRingSegments->SetVisibility(true, true);
-}
-
-void ARogueEnemy::HideGroundWave()
-{
-	if (GroundWaveMesh != nullptr)
-	{
-		GroundWaveMesh->SetHiddenInGame(true);
-		GroundWaveMesh->SetVisibility(false, true);
-	}
-
-	if (GroundWaveRingSegments != nullptr)
-	{
-		GroundWaveRingSegments->ClearInstances();
-		GroundWaveRingSegments->SetHiddenInGame(true);
-		GroundWaveRingSegments->SetVisibility(false, true);
-	}
-}
-
-bool ARogueEnemy::CanGroundWaveHitPlayer(const ARogueCharacter* PlayerCharacter) const
-{
-	if (!IsValid(PlayerCharacter) || !PlayerCharacter->IsAlive())
-	{
-		return false;
-	}
-
-	if (!CurrentArchetype.GroundWave.bJumpCanDodge)
-	{
-		return true;
-	}
-
-	const UCharacterMovementComponent* PlayerMovement = PlayerCharacter->GetCharacterMovement();
-	if (PlayerMovement != nullptr && PlayerMovement->IsFalling())
-	{
-		return false;
-	}
-
-	const UCapsuleComponent* PlayerCapsule = PlayerCharacter->GetCapsuleComponent();
-	const float PlayerHalfHeight = PlayerCapsule != nullptr ? PlayerCapsule->GetScaledCapsuleHalfHeight() : 88.0f;
-	const float PlayerFeetZ = PlayerCharacter->GetActorLocation().Z - PlayerHalfHeight;
-	const float WaveZ = GetActorLocation().Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
-	return PlayerFeetZ <= WaveZ + 30.0f;
-}
 
 // ===========================================================
 //  内部逻辑：死亡
@@ -1728,38 +1372,6 @@ void ARogueEnemy::ApplyEnemyStyle()
 				ShockPillarMesh->SetMaterial(0, EffectivePillarMaterial);
 			}
 		}
-	}
-
-	if (GroundWaveMesh != nullptr)
-	{
-		if (bUseBuiltInShockPillarVisual && ShockWaveMaterial != nullptr)
-		{
-			// 同 ShockPillarMesh：MID 只建一次并缓存
-			if (CachedShockWaveMID == nullptr)
-			{
-				CachedShockWaveMID = UMaterialInstanceDynamic::Create(ShockWaveMaterial, this);
-				if (CachedShockWaveMID != nullptr)
-				{
-					const FLinearColor WaveColor(1.0f, 0.62f, 0.08f, 1.0f);
-					CachedShockWaveMID->SetVectorParameterValue(TEXT("Color"), WaveColor);
-					CachedShockWaveMID->SetVectorParameterValue(TEXT("BaseColor"), WaveColor);
-					CachedShockWaveMID->SetVectorParameterValue(TEXT("EmissiveColor"), WaveColor * 3.0f);
-				}
-			}
-
-			UMaterialInterface* EffectiveWaveMaterial = ShockWaveMaterial;
-			if (CachedShockWaveMID != nullptr)
-			{
-				EffectiveWaveMaterial = CachedShockWaveMID.Get();
-			}
-
-			GroundWaveMesh->SetMaterial(0, EffectiveWaveMaterial);
-			if (GroundWaveRingSegments != nullptr)
-			{
-				GroundWaveRingSegments->SetMaterial(0, EffectiveWaveMaterial);
-			}
-		}
-		HideGroundWave();
 	}
 
 	GetCapsuleComponent()->SetCapsuleSize(CurrentArchetype.Visual.CapsuleRadius, CurrentArchetype.Visual.CapsuleHalfHeight);

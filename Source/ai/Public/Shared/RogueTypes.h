@@ -26,21 +26,26 @@ enum class ERogueUpgradeType : uint8
 	LaserRefraction   UMETA(DisplayName = "激光折射"),
 	MortarCount       UMETA(DisplayName = "迫击炮数量"),
 	MortarBlastRadius UMETA(DisplayName = "迫击炮爆炸范围"),
-	ScytheSize        UMETA(DisplayName = "镰刀变大")
+	ScytheSize        UMETA(DisplayName = "镰刀变大"),
+	ScytheLifesteal   UMETA(DisplayName = "吸血收割")
 };
 
 UENUM(BlueprintType)
 enum class ERogueEnemyType : uint8
 {
-	Hunter      UMETA(DisplayName = "猎手"),
-	Charger     UMETA(DisplayName = "冲锋者"),
-	Tank        UMETA(DisplayName = "坦克"),
-	Orbiter     UMETA(DisplayName = "环绕者"),
-	Shooter     UMETA(DisplayName = "射手"),
-	Skirmisher  UMETA(DisplayName = "游击者"),
-	Artillery   UMETA(DisplayName = "炮兵"),
-	Spitter     UMETA(DisplayName = "喷射者"),
-	ShockPillar UMETA(DisplayName = "震荡柱")
+	Rifleman    UMETA(DisplayName = "步枪手"),
+	Assault     UMETA(DisplayName = "突击手"),
+	Juggernaut  UMETA(DisplayName = "重装兵"),
+	Orbiter     UMETA(DisplayName = "环绕射手"),
+	Marksman    UMETA(DisplayName = "精准射手"),
+	Skirmisher  UMETA(DisplayName = "游击射手"),
+	Cannoneer   UMETA(DisplayName = "重炮手"),
+	Scatterer   UMETA(DisplayName = "散射者"),
+	ShockPillar UMETA(DisplayName = "震荡柱"),
+	Sniper      UMETA(DisplayName = "狙击手"),
+	Shotgunner  UMETA(DisplayName = "霰弹手"),
+	Repeater    UMETA(DisplayName = "速射手"),
+	Ringcaster  UMETA(DisplayName = "环击者")
 };
 
 struct FRogueSpawnCadence
@@ -56,7 +61,7 @@ struct FRogueEnemyProfile
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "敌人档案", meta = (DisplayName = "敌人类型"))
-	ERogueEnemyType EnemyType = ERogueEnemyType::Hunter;
+	ERogueEnemyType EnemyType = ERogueEnemyType::Rifleman;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "敌人档案", meta = (DisplayName = "生命值"))
 	float Health = 0.0f;
@@ -133,6 +138,14 @@ struct FRogueUpgradeOption
 
 	UPROPERTY()
 	float Magnitude = 0.0f;
+
+	/** 首次获得的目标值；-1 = 使用代码默认（目前仅吸血收割使用）。 */
+	UPROPERTY()
+	float FirstMagnitude = -1.0f;
+
+	/** 该升级允许的最大值；-1 = 使用代码默认。 */
+	UPROPERTY()
+	float MaxMagnitude = -1.0f;
 };
 
 /** 一次开火的表现载荷，不传伤害值。

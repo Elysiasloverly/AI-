@@ -62,7 +62,7 @@ URogueUpgradeEffect_ArmorCapacity::URogueUpgradeEffect_ArmorCapacity()
 URogueUpgradeEffect_ExperienceGain::URogueUpgradeEffect_ExperienceGain()
 { ConfigureUpgrade(URogueAttributeSet::GetExperienceMultiplierAttribute()); }
 
-// ---- 武器加成（13 项）----
+// ---- 武器加成（14 项）----
 URogueUpgradeEffect_AttackPower::URogueUpgradeEffect_AttackPower()
 { ConfigureUpgrade(URogueAttributeSet::GetAttackPowerBonusAttribute()); }
 
@@ -102,6 +102,9 @@ URogueUpgradeEffect_MortarBlastRadius::URogueUpgradeEffect_MortarBlastRadius()
 URogueUpgradeEffect_ScytheSize::URogueUpgradeEffect_ScytheSize()
 { ConfigureUpgrade(URogueAttributeSet::GetScytheSizeBonusAttribute()); }
 
+URogueUpgradeEffect_ScytheLifesteal::URogueUpgradeEffect_ScytheLifesteal()
+{ ConfigureUpgrade(URogueAttributeSet::GetScytheLifestealBonusAttribute()); }
+
 // ===================================================================
 //  枚举 → GE 子类
 // ===================================================================
@@ -134,6 +137,7 @@ TSubclassOf<UGameplayEffect> RogueUpgradeEffectMap::GetEffectClass(ERogueUpgrade
 	case ERogueUpgradeType::MortarCount:         return URogueUpgradeEffect_MortarCount::StaticClass();
 	case ERogueUpgradeType::MortarBlastRadius:   return URogueUpgradeEffect_MortarBlastRadius::StaticClass();
 	case ERogueUpgradeType::ScytheSize:          return URogueUpgradeEffect_ScytheSize::StaticClass();
+	case ERogueUpgradeType::ScytheLifesteal:     return URogueUpgradeEffect_ScytheLifesteal::StaticClass();
 	}
 
 	// 走到这里说明枚举加了但映射忘了加。**不要静默 return nullptr 了事** ——

@@ -102,7 +102,7 @@ flowchart TD
     EnemyDT --> ArchetypeRow["FRogueEnemyArchetypeRow.ToArchetype"]
     ArchetypeRow --> DefaultArchetype["先套硬编码默认外观/碰撞"]
     DefaultArchetype --> DataOverride["再应用表格行为参数"]
-    DataOverride --> RuntimeEnemy["运行时敌人行为\n移动/远程/地面波/视觉"]
+    DataOverride --> RuntimeEnemy["运行时敌人行为\n移动/远程/视觉"]
 ```
 
 ## 当前职责边界

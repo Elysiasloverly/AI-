@@ -58,10 +58,10 @@ struct AI_API FRogueWeaponTableRow : public FTableRowBase
 	ERogueUpgradeType CountUpgradeType = ERogueUpgradeType::ProjectileCount;
 
 	// 最终值限制：通常在合并基础值与加成后应用；负值表示不限制，0 是有效限制。
-	// 部分武器重写换算函数并使用自己的固定下限，详见各 GetEffective* 实现。
+	// 派生武器也统一从本行读取公式系数，不再在 C++ 里写死冷却/范围下限。
 
-	/** 基类冷却下限（秒），默认 0.01；负值不设配置下限，但结果仍不小于 0。
-	 *  0 冷却可使开火循环每次更新都尝试开火；实际频率受更新节奏和目标等条件影响。 */
+	/** 冷却下限（秒），默认 0.01；负值不设配置下限，但结果仍不小于 0。
+	 *  Laser/Rocket/Mortar 等派生武器统一读取本字段；0 冷却可使开火循环每次更新都尝试开火。 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "上限", meta = (DisplayName = "冷却下限(秒，-1=不限)"))
 	float MinCooldown = 0.01f;
 
@@ -102,6 +102,44 @@ struct AI_API FRogueWeaponTableRow : public FTableRowBase
 	/** 弹速随机增幅比例（0~1），实际弹速 = 基础弹速 × (1 ± Ratio) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "弹道随机", meta = (DisplayName = "弹速随机比例", EditCondition = "bEnableSpeedRandomization", ClampMin = "0.0", ClampMax = "1.0"))
 	float SpeedRandomizationRatio = 0.15f;
+
+	// ---- 派生武器公式系数（全部从 DataTable 读取） ----
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "公式", meta = (DisplayName = "攻速转冷却倍率"))
+	float CooldownReductionScale = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "公式", meta = (DisplayName = "折射范围加成倍率"))
+	float RefractionRangeBonusScale = 0.45f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "公式", meta = (DisplayName = "折射伤害倍率"))
+	float RefractionDamageScale = 0.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "公式", meta = (DisplayName = "火箭索敌额外范围"))
+	float RocketSeekRangeBonus = 700.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "公式", meta = (DisplayName = "火箭爆炸半径范围加成倍率"))
+	float RocketExplosionRadiusRangeBonusScale = 0.25f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "公式", meta = (DisplayName = "迫击炮爆炸半径范围加成倍率"))
+	float MortarExplosionRadiusRangeBonusScale = 0.35f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "公式", meta = (DisplayName = "地狱塔范围加成倍率"))
+	float HellTowerRangeBonusScale = 0.70f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "公式", meta = (DisplayName = "地狱塔光束寿命补偿"))
+	float BeamLifetimePadding = 0.03f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "公式", meta = (DisplayName = "多重射击角度步长"))
+	float SpreadStepDegrees = 9.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "公式", meta = (DisplayName = "地狱塔基础伤害加成倍率"))
+	float BaseDamageBonusScale = 0.125f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "公式", meta = (DisplayName = "地狱塔每跳伤害加成倍率"))
+	float DamageRampBonusScale = 0.0625f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "公式", meta = (DisplayName = "地狱塔伤害间隔缩减倍率"))
+	float DamageTickIntervalReductionScale = 0.08f;
 
 	// ---- 弹体武器专属 ----
 

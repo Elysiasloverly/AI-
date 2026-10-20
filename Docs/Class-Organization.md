@@ -1,6 +1,6 @@
 # 类文件组织与查找指南
 
-本次整理把 C++ 类文件按玩法职责归位，并拆开 `ARogueCharacter`、`ARogueGameMode` 的函数实现和集中声明的 UMG 基类。工程仍是 `ai` 单模块；数值、能力、网络权威和资产配置方式延续原有实现。
+本次整理把 C++ 类文件按玩法职责归位，并拆开 `ARogueCharacter`、`ARogueGameMode` 的函数实现和集中声明的 UMG 基类。运行时仍是 `ai` 单模块；`aiEditor` 只在编辑器加载，用于生成 UMG 占位资产，不参与打包。数值、能力、网络权威和资产配置方式延续原有实现。
 
 运行时对象关系、伤害与升级数据流、复制分工和池化契约见 [Project-Structure.md](Project-Structure.md)。GAS 历史迁移记录保留原有技术取舍，但旧文件路径请以本文为准。
 
@@ -15,7 +15,7 @@ GameplayEffect 放 `AbilitySystem/GameplayEffects/`；战斗视觉表现放 `Com
 | `Framework/` | 整局调度与快照：`RogueGameMode`、`RogueGameState`；规则、配置和平衡：`RogueGameModeRules`、`RogueGameModeConfig`、`RogueGameBalanceAsset` |
 | `AbilitySystem/` | GAS 基础设施：`RogueAbilitySystemComponent`、`RogueAttributeSet`、`RogueAttributeMacros`、`RogueAbilitySet`、`RogueAbilitySystemLibrary`、`RogueGameplayTags` |
 | `AbilitySystem/Abilities/` | 冲刺、武器开火、敌人攻击 GameplayAbility |
-| `AbilitySystem/Tasks/` | 冲刺位移、武器开火心跳、地面波逐帧任务 |
+| `AbilitySystem/Tasks/` | 冲刺位移、武器开火心跳 |
 | `AbilitySystem/GameplayEffects/` | `RogueDamageEffect`、`RogueAttributeUpgradeEffect`、`RogueStateEffects`：伤害、升级、冷却、回复、倒地与无敌 GE |
 | `AbilitySystem/Cues/` | `RogueGameplayCue_Impact`、`RogueGameplayCue_Downed`：命中及状态表现 |
 | `Combat/Weapons/` | `RogueWeaponBase`、六个 `RogueWeapon_*`，配置表行及一发攻击的具体实现 |
@@ -32,9 +32,10 @@ GameplayEffect 放 `AbilitySystem/GameplayEffects/`；战斗视觉表现放 `Com
 | `Enemies/Spawning/` | `RogueSpawnSubsystem`：刷怪、出生位置、波次预算 |
 | `World/` | `RogueArena`、`RogueExperiencePickup`、`RogueShopTerminal`、`RogueSceneSubsystem` |
 | `UI/` | `RogueHUD`：界面调度与原生绘制 |
-| `UI/Widgets/` | 八个独立 UMG 基类、共享视图数据及聚合 include |
+| `UI/Widgets/` | 十个独立 UMG 基类：8 个菜单类 + 玩家状态条 + 敌人血条；共享视图数据及聚合 include |
 | `Shared/` | `RogueTypes.h`：跨玩法域的枚举、复制载荷与结构体 |
 | `Debug/` | `RogueSelfTest`、两个 `.SelfTest.cpp`：开关、链路诊断及攻击/压测探针 |
+| `Source/aiEditor/` | 仅编辑器的工具模块：`RogueWidgetBuilder`（UMG 占位资产生成），不参与游戏打包 |
 
 `Subsystem` 表示 UE 管理生命周期的机制。找对象池去 `Combat/Pooling/`，找刷怪去 `Enemies/Spawning/`，不再集中放进通用 `Subsystems/` 目录。`Core/` 原来混放的类也已归入上述业务目录。
 
@@ -54,7 +55,7 @@ GameplayEffect 放 `AbilitySystem/GameplayEffects/`；战斗视觉表现放 `Com
 | `Framework/RogueGameMode.cpp` | 开局配置、世界对象创建、子系统配置与预热、整局 Tick 与快照推送 |
 | `Framework/RogueGameMode.Progression.cpp` | 击杀归属、金币/经验/Boss 奖励、抽卡队列、商店请求与镜像推送 |
 | `Framework/RogueGameMode.Players.cpp` | 存活玩家查询、复活兜底、归属恢复、登录、暂停及重开 |
-| `Debug/RogueGameMode.SelfTest.cpp` | 升级链路阶段机、接触攻击、地面波、死亡复活和敌人压测探针 |
+| `Debug/RogueGameMode.SelfTest.cpp` | 升级链路阶段机、接触攻击、震荡柱弹幕、死亡复活和敌人压测探针 |
 
 读完整流程时，从主文件里的调度入口沿方法名跳转到对应实现。新增同类方法时，声明放回原类头，实现放到对应文件。改变类职责或引入新组件应作为单独的架构改动。
 
@@ -70,8 +71,10 @@ GameplayEffect 放 `AbilitySystem/GameplayEffects/`；战斗视觉表现放 `Com
 - `RogueSettingsMenuWidgetBase`：设置菜单。
 - `RogueDeathScreenWidgetBase`：本局结束面板。
 - `RogueReviveCountdownWidgetBase`：倒地复活倒计时。
+- `RogueVitalsWidgetBase`：本地玩家生命 / 护甲 / 经验与左上角波数/金币，常驻视口。
+- `RogueEnemyHealthBarWidgetBase`：单个敌人血条，由 HUD 池化复用。
 
-九个共享视图 USTRUCT 集中在 `RogueMenuViewData.h`。`RogueMenuWidgetBases.h` 保留为聚合头，统一包含视图数据和八个基类；使用者可以通过它取类型，也可以包含具体类头。实现共用的非反射辅助代码放在 `Private/UI/Widgets/RogueMenuWidgetHelpers.h`。
+九个菜单视图 USTRUCT 集中在 `RogueMenuViewData.h`；HUD 状态条的 `FRoguePlayerVitalsView` / `FRogueEnemyHealthBarView` 在 `RogueHUDViewData.h`。`RogueMenuWidgetBases.h` 保留为菜单聚合头，统一包含菜单视图数据和八个菜单基类；两个 HUD 状态条类单独 include，不参与菜单聚合。
 
 C++ 仍通过 `Update*View` 提供数据，蓝图通过原有 `On*Updated` 等事件更新外观。拆头文件不会新增界面状态转换或改变 HUD 的调度方式。
 

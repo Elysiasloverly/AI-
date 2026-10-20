@@ -28,7 +28,7 @@
 - **权威全在服务端**：AI、伤害、经验、刷怪、商店、复活时机都只在服务端算。
 - **客户端表现与预测**：画复制状态，本地预测自己的操作，按复制状态推导界面。
 - **数值只有一个真相源**：`URogueAttributeSet`。角色上的 `MaxHealth/MoveSpeed/...` 是只读镜像。
-- **升级使用 Infinite GE 叠层**：21 种升级各自对应一个 GE 子类，按目标叠层；单次数值来自 `Data.Magnitude`。最大生命 / 护甲上限的补量由属性变化委托实现。
+- **升级使用 Infinite GE 叠层**：22 种升级各自对应一个 GE 子类，按目标叠层；单次数值来自 `Data.Magnitude`。最大生命 / 护甲上限的补量由属性变化委托实现。
 - **能力授予支持 AbilitySet**：玩家默认技能与敌人攻击支持数据驱动，缺少配置保留回退路径。武器能力由各武器的 `GetFireAbilityClass()` 提供，在角色侧幂等授予。
 - **玩家生命周期只有一份真值**：`ARogueCharacter::LifeState` 同时复制 `Alive / Downed / Eliminated` 与服务器复活截止时刻；濒死等待默认 10 秒（`DA_PlayerBalance.Revival` 可配），仅由服务端定时器触发复活，团灭取消全部复活。
 - **场景与商店由关卡提供**：直接编辑地图物体、灯光和 PlayerStart；不再依赖 `BP_RogueArena`、自动生成商店或覆盖场景。地图放置唯一 `RogueEnemySpawnRegion` 框来限制普通怪和 Boss 的出生范围，放置 `BP_RogueShopTerminal` 来配置商店位置及组件外观。详见 [地图摆放说明](Map-Authoring.md)。
@@ -41,7 +41,6 @@
 | 武器自动开火 | `URogueWeaponAbility` 系列 | 持续心跳 | LocalPredicted | 能力与冷却 GE；镰刀持续轨道保留表现 Tick |
 | 敌人接触 / 远程攻击 | `URogueEnemyAttackAbility` 子类 | 一次性 | ServerOnly | AI 决策，能力执行 |
 | 震荡柱整圈弹幕 | `URogueEnemyRangedAttackAbility` | 一次性齐射 | ServerOnly | AI 冷却决策，单条多播同步客户端表现 |
-| 旧地面波（兼容） | `URogueEnemyGroundWaveAttackAbility` | 持续到波结束 | ServerOnly | 保留历史能力，震荡柱不再使用 |
 
 ---
 
@@ -64,7 +63,7 @@ Source/ai/
     │   ├── RogueAttributeSet.* / RogueAttributeMacros.h
     │   ├── RogueAbilitySet.* / RogueGameplayTags.*
     │   ├── Abilities/    RogueGameplayAbility_Dash / RogueWeaponAbility / RogueEnemyAttackAbility
-    │   ├── Tasks/        RogueAbilityTask_Dash / WeaponFireLoop / AttackTick
+    │   ├── Tasks/        RogueAbilityTask_Dash / WeaponFireLoop
     │   ├── GameplayEffects/ RogueDamageEffect / RogueAttributeUpgradeEffect / RogueStateEffects
     │   └── Cues/         RogueGameplayCue_Impact / RogueGameplayCue_Downed
     ├── Combat/
@@ -94,7 +93,7 @@ Source/ai/
     └── Debug/            RogueSelfTest.* / RogueCharacter.SelfTest.cpp / RogueGameMode.SelfTest.cpp
 ```
 
-`.GAS.cpp`、`.Players.cpp` 等仍实现原来的 `ARogueCharacter` / `ARogueGameMode`，没有新增运行时类或组件。UI 的八个基类与九个视图结构体按声明职责分文件；`RogueMenuWidgetBases.h` 保留为聚合 include，蓝图继承关系和事件签名保留。完整名称见 [类文件组织说明](Class-Organization.md)。
+`.GAS.cpp`、`.Players.cpp` 等仍实现原来的 `ARogueCharacter` / `ARogueGameMode`，没有新增运行时类或组件。另有 `Source/aiEditor/`：仅编辑器加载的工具模块，`URogueWidgetBuilder` 用于生成 UMG 占位资产，不参与打包。UI 的十个基类（8 个菜单 + 玩家状态条 + 敌人血条）按声明职责分文件；九个菜单视图结构体在 `RogueMenuViewData.h`，状态条的两个视图结构体在 `RogueHUDViewData.h`；`RogueMenuWidgetBases.h` 保留为菜单聚合 include，蓝图继承关系和事件签名保留。完整名称见 [类文件组织说明](Class-Organization.md)。
 
 ---
 
@@ -157,24 +156,29 @@ graph TD
 ```mermaid
 graph LR
     HUD["ARogueHUD（每台机器一个）"]
-    HUD -->|原生绘制| D1["敌人血条 / 伤害飘字 / 交互提示 / 调试面板"]
+    HUD -->|原生绘制| D1["伤害飘字 / 交互提示 / 调试面板"]
     HUD -->|UMG 调度| W1["WBP_PauseMenu"]
     HUD --> W2["WBP_SettingsMenu"]
     HUD --> W3["WBP_UpgradeSelection + WBP_UpgradeCard"]
     HUD --> W4["WBP_Shop + WBP_ShopOfferCard"]
     HUD --> W5["WBP_DeathScreen（本局结束）"]
     HUD --> W6["WBP_ResurrectionScreen（濒死等待）"]
-    B["UI/Widgets：8 个独立 UMG 基类<br/>RogueMenuViewData.h：共享视图数据"]
+    HUD --> W7["WBP_PlayerVitals（生命 / 护甲 / 经验 + 左上角波数/金币）"]
+    HUD --> W8["WBP_EnemyHealthBar（池化复用）"]
+    B["UI/Widgets：10 个独立 UMG 基类<br/>RogueMenuViewData.h / RogueHUDViewData.h：视图数据"]
     W1 -.-> B
     W2 -.-> B
     W3 -.-> B
     W4 -.-> B
     W5 -.-> B
     W6 -.-> B
+    W7 -.-> B
+    W8 -.-> B
 ```
 
 - 每个界面都是"**C++ 基类提供数据 + 蓝图实现外观**"：C++ 侧 `Update*View(ViewData)` 推数据，
   蓝图侧实现 `On*Updated` 画出来（例如 `URogueDeathScreenWidgetBase::UpdateDeathView`）。
+- 玩家生命 / 护甲 / 经验、波数与金币已改为 WBP（`RogueVitalsWidgetBase`）；敌人血条仍由 `RogueEnemyHealthBarWidgetBase` 池化复用。HUD 只负责选对象、算百分比与屏幕投影；玩家状态条不再走 Canvas 兜底，敌人血条 WBP 未配置时才回退到原生绘制。详见 [HUD 状态条说明](HUD-Vitals-And-Enemy-Bars.md)。
 - 输入模式由 **每个本地 HUD 自己推导**（暂停菜单 / 商店 / 选卡 / 濒死 → GameAndUI + 光标；团灭 → UIOnly + 光标），不需要 RPC。
 - 两个死亡相关 WBP 在原生 HUD 中具有默认类引用；濒死时显示复活界面，团灭时只显示结算。团灭判据为 `GameState.GameOver || 本机角色.IsEliminated()`，兼容跨 actor 复制顺序。无 Pawn 时仍可按 GameState 显示结算。
 - 濒死或团灭期间强制收起商店、升级、暂停和设置。复活/结算 Widget 在蓝图更新事件之后应用最终可见性，隐藏时停止动画；缓存属于各 HUD，并核对实际可见性。
@@ -195,7 +199,7 @@ graph LR
 | 濒死标签 / 全息环 | ASC 上的 Infinite `URogueDownedEffect` | GAS 复制标签/Cue；由生命周期显式授予/移除，不作为复活计时器 |
 | 敌人是否活跃 `bReplicatedActive` | `ARogueEnemy` / 经验球 | 复制（池化对象必须显式告诉客户端"我上线了"） |
 | 武器开火表现 | `ARogueCharacter::Multicast_WeaponCosmetics` | `NetMulticast, Unreliable`（每帧合批） |
-| 武器升级结果 | 玩家 ASC 上的 13 个加成属性 + `ARogueCharacter::WeaponBonusSnapshot` | 属性常规复制 + 快照 `COND_None`（**不再有** Multicast 重放） |
+| 武器升级结果 | 玩家 ASC 上的 14 个加成属性（13 项进入武器快照）+ `ARogueCharacter::WeaponBonusSnapshot` | 属性常规复制 + 快照 `COND_None`（**不再有** Multicast 重放） |
 | 敌方弹体表现 | `ARogueEnemy::Multicast_SpawnCosmeticProjectile` | `NetMulticast, Unreliable` |
 | 打击特效 | `RogueGameplayCues::EnsureNativeImpactCuesRegistered` + `URogueGameplayCue_Impact` | GAS cue 多播（原生类注册进 cue set） |
 | 选卡 / 商店操作 / 重开 | `ARoguePlayerState::Server_Request*` | `Server, Reliable`（带 Validate） |
@@ -320,7 +324,7 @@ sequenceDiagram
     HUD->>PS: Server_RequestUpgradeSelection(Index)
     PS->>GM: TrySelectUpgrade
     GM->>C: ApplyUpgrade()  ★ 一律走 GE（属性/武器加成都是 ASC 上的属性）
-    Note over GM,C: 武器升级不再有 Multicast 重放：<br/>改的是玩家 ASC 上的 13 个加成属性，<br/>武器读"数据表基础值 + 加成×本武器系数"
+    Note over GM,C: 武器升级不再有 Multicast 重放：<br/>改的是玩家 ASC 上的 14 个加成属性，<br/>武器读"数据表基础值 + 加成×本武器系数"
 ```
 
 ---
@@ -339,10 +343,11 @@ sequenceDiagram
 | `Data/Upgrades/DA_UpgradeDefinitions` / `Data/Upgrades/DA_UpgradeRules` | DataAsset | `URogueUpgradeDefinitionAsset` / `URogueUpgradeRuleAsset` |
 | `BP_RogueGameMode` | Blueprint | `ARogueGameMode`（**关卡默认 GameMode**） |
 | `BP_RogueCharacter` | Blueprint | `ARogueCharacter`（蓝图里只配资源/数值引用） |
-| `BP_RogueHUD` | Blueprint | `ARogueHUD`（挂 6 个 WBP 类） |
-| `BP_EnemyBase` + 8 个敌人 BP | Blueprint | `ARogueEnemy`（原型参数全部来自数据表） |
+| `BP_RogueHUD` | Blueprint | `ARogueHUD`（挂 8 个 WBP 类：6 个菜单 + 玩家状态条 + 敌人血条） |
+| `BP_EnemyBase` + 13 个敌人 BP | Blueprint | `ARogueEnemy`（原型参数全部来自数据表） |
 | `BP_Projectile/*` | Blueprint | 玩家弹体/火箭/迫击炮/光束/刀片（只配外观） |
-| `WBP_*`（8 个） | UMG | `UI/Widgets/` 下的 8 个基类（聚合头仍可统一包含） |
+| `BP/Enemy/Projectiles/BP_EnemyProjectile(_Boss/_Shooter/_Artillery/_Spitter/_ShockPillar/_Sniper/_Shotgunner/_Burst/_Ringer)` | Blueprint | `ARogueEnemyProjectile`（敌人弹体外观；原型表按类型指定，敌人 BP 可覆盖） |
+| `WBP_*`（10 个） | UMG | `UI/Widgets/` 下的 10 个基类；8 个菜单走聚合头，两个 HUD 状态条单独 include |
 
 ---
 
@@ -356,7 +361,7 @@ sequenceDiagram
 | 加一种敌人（攻击方式） | `DT_EnemyArchetypes` 加行 + `BP_EnemyBase` 子类 → 攻击走 `URogueEnemyAttackAbility`（AI 只决策、能力执行） |
 | 改属性 / 减伤公式 | `URogueAttributeSet`（`PreAttributeChange` / `PostGameplayEffectExecute`）——**唯一数值真相源** |
 | 加一个状态（如"眩晕"） | `RogueGameplayTags` 定义标签，参考 `RogueStateEffects.h` 的状态 GE；按实际规则配置阻塞/取消与持续时间，时长可走 `Data.Duration` |
-| 加一个持续型玩法（逐帧推进） | 拿 `URogueAbilityTask_WeaponFireLoop` / `URogueAbilityTask_AttackTick` 当模板：`bTickingTask = true` + 能力里一个 `TickXxxStep` |
+| 加一个持续型玩法（逐帧推进） | 拿 `URogueAbilityTask_WeaponFireLoop` 当模板：`bTickingTask = true` + 能力里一个 `TickXxxStep` |
 | 改"谁算活着" | `ARogueCharacter::IsAlive()` 与 `RoguePlayerQuery`；索敌、奖励和团灭共用这条判断 |
 | 加一个界面 | `UI/Widgets/` 加独立基类文件，共享数据放 `RogueMenuViewData.h` → `ARogueHUD` 创建/推数据 → 建 WBP |
 | 调波次/商店/刷怪参数 | `RogueGameModeRules.cpp` + `DT/AS_*` 资产 |
@@ -387,11 +392,11 @@ sequenceDiagram
 1. **升级链路**：5 项属性升级 + 6 类数量升级 → 每把武器的生效数值（数据表基础值 + 加成）
 2. **跨端一致性**：每 10 秒打印一次每个玩家的"属性集加成 / 角色快照 / 各武器生效值"，
    服务端与客户端按**玩家名**逐行对齐（还有敌人数量、帧时、倒地与复活剩余）
-3. **敌人攻击**（Phase 3）：三种攻击的"AI 决策尝试次数"与"能力执行次数"
+3. **敌人攻击**（Phase 3）：接触/远程两种攻击的"AI 决策尝试次数"与"能力执行次数"
 4. **濒死/复活**：`LifeState` 的阶段、服务器复活截止时刻与剩余秒数，复活后的 `State.Invulnerable`；独立回归用例见 [Player-LifeCycle.md](Player-LifeCycle.md)
 
 外加四个探针（前三个在自检全部完成之后才跑，避免干扰数值对比；压测可单进程运行，但仍需开启 WeaponUpgradeChain 入口）：
-`ProbeContactAttack`（把敌人改硬并瞬移到玩家身上）、`ProbeGroundWaveAttack`（直接刷一只震荡柱）、
+`ProbeContactAttack`（把敌人改硬并瞬移到玩家身上）、`ProbeShockPillarBarrage`（直接刷一只震荡柱验证整圈弹幕）、
 `ProbeDeathAndRevive`（对玩家施加致命伤害）、`ProbeEnemyStress`（一次刷 N 只压测敌人）。
 **为什么必须用探针**：无头自检里武器太强，敌人贴不上来、玩家也不会倒地 ——
 "没实现"与"没机会触发"在计数上完全一样（这两条路径各踩过一次）。
@@ -411,14 +416,14 @@ Rogue.SelfTest.DisableEnemyAttackAbilities 1   # 对照：不授予敌人攻击�
 ## 12. 已知的待清理项（结构无关，但影响观感）
 
 - 旧扫描曾把外层 `StarterContent/` 与 `GameAssets/StarterContent/` 记为完全重复；这一结论已过期，不能作为删除依据。本次美术目录整理保留两份资产：原有游戏引用版本仍在 `GameAssets/StarterContent/`，原外层包的美术资产收进 `GameAssets/Library/StarterContent/`，示例地图及构建数据仍留在原 `StarterContent/Maps/`。其它同名包也按此原则保留，结构与范围见 [Content-Organization.md](Content-Organization.md)。
-- `Content/BP/` 下仍有三个疑似废弃资产：`BP_AIController`、`BP_EnemyHunter`（重定向器）、`NewBlueprint`（2026-10 核对，`BP_Enemy1` 已不存在）。
+- `Content/BP/` 下仍有疑似废弃资产：`BP_AIController`、`NewBlueprint`（2026-10 核对）；旧的 `BP_EnemyHunter` 重定向器已在怪物重命名时删除。
 - 数据表里曾经的 `MuzzleEffectLifetime` 字段已随武器配置整理移除（枪口特效回收时长一直使用 cue 里的常数）。
 - `ARogueEnemy::PerformContactDamage` / `FireProjectileAtPlayer` 是**行为树/蓝图的兼容入口**，
   语义是"立刻结算、不走能力"（基类默认行为走能力）。当前没有蓝图重写 `OnBehaviorTick`，所以这条入口没被用到；
   保留是为了不让"重写了行为 Tick 的敌人蓝图"失效。
 - `Tools/audit_dead_code.py` 报出的 16 个"无源码引用"符号里，除了上面提到的那两个入口，
   其余都是有意保留的 `BlueprintPure/BlueprintCallable` 取值器（给蓝图用，蓝图引用不在源码里）。
-- `BP_EnemyHunter` 之类的敌人在 BP 上**没有** `EnemyArchetypeDataTable` 时，原型会回退到硬编码
+- 敌人 BP（如 `BP_EnemyRifleman`）没有配置 `EnemyArchetypeDataTable` 时，原型会回退到硬编码
   （`RogueEnemyArchetypes::BuildEnemyArchetype`）；数据表仍是首选来源，改动只在 `DT_*`。
 - 代码侧已清理：旧的三个"授予标签" GE 文件、`URogueGameplayCueManager`、`FRogueUpgradeEffectApplier`、
   旧 PlayerState 的独立 `ReviveServerTime`（现合并到角色 `LifeState`）、`TickReviveInvulnerability`、`GetServerTimeSeconds`、

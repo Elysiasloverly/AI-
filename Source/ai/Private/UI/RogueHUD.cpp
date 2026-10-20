@@ -6,6 +6,9 @@
 #include "Framework/RogueGameState.h"
 #include "Player/RoguePlayerState.h"
 #include "UI/Widgets/RogueMenuWidgetBases.h"
+#include "UI/Widgets/RogueHUDViewData.h"
+#include "UI/Widgets/RogueVitalsWidgetBase.h"
+#include "UI/Widgets/RogueEnemyHealthBarWidgetBase.h"
 #include "Combat/Targeting/RogueEnemyTrackerSubsystem.h"
 #include "AudioDevice.h"
 #include "Engine/Canvas.h"
@@ -16,15 +19,20 @@
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Misc/ConfigCacheIni.h"
-#include "Misc/App.h"
-#include "UObject/ConstructorHelpers.h"
 
 namespace
 {
 	const TCHAR* RogueSettingsSection = TEXT("/Script/ai.RogueRuntimeSettings");
 	const TCHAR* MasterVolumeKey = TEXT("MasterVolume");
-	const TCHAR* DefaultDeathScreenPath = TEXT("/Game/UMG/Menus/WBP_DeathScreen.WBP_DeathScreen_C");
-	const TCHAR* DefaultReviveCountdownPath = TEXT("/Game/UMG/Menus/WBP_ResurrectionScreen.WBP_ResurrectionScreen_C");
+
+	template <typename TWidget>
+	void ResolveWidgetClass(const TSoftClassPtr<TWidget>& Path, TSubclassOf<TWidget>& InOutClass)
+	{
+		if (InOutClass == nullptr && !Path.IsNull())
+		{
+			InOutClass = Path.LoadSynchronous();
+		}
+	}
 	constexpr int32 MaxDamageNumbersNormal = 42;
 	constexpr int32 MaxDamageNumbersHeavy = 24;
 	constexpr int32 MaxRegularHealthBarsNormal = 22;
@@ -82,13 +90,6 @@ ARogueHUD::ARogueHUD()
 {
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.bStartWithTickEnabled = true;
-	// 原生 GameMode 也能直接显示指定 WBP，并保留硬引用供打包收集资产。
-	static ConstructorHelpers::FClassFinder<URogueDeathScreenWidgetBase> DeathScreenClass(
-		TEXT("/Game/UMG/Menus/WBP_DeathScreen"));
-	static ConstructorHelpers::FClassFinder<URogueReviveCountdownWidgetBase> ReviveCountdownClass(
-		TEXT("/Game/UMG/Menus/WBP_ResurrectionScreen"));
-	DeathScreenWidgetClass = DeathScreenClass.Class;
-	ReviveCountdownWidgetClass = ReviveCountdownClass.Class;
 }
 
 void ARogueHUD::BeginPlay()
@@ -146,7 +147,7 @@ void ARogueHUD::RefreshMenuWidgets()
 	// GetWorld()->GetAuthGameMode() 在客户端恒为 nullptr（GameMode 是服务端独占对象），
 	// 一旦把它当成"初始化没完成"的判据，客户端就会每帧从这里 return ——
 	// 表现是客户端玩家**整个 HUD 都是死的**：商店、升级选卡、暂停菜单、设置、
-	// 死亡结算、连血条/FPS 都不画。而它偏偏在单机与主机上完全正常，所以极难发现。
+	// 死亡结算、连状态条都不更新。而它偏偏在单机与主机上完全正常，所以极难发现。
 	// HUD 需要的一切都从 GameState / 本地 PlayerState / 本地角色上读（它们客户端都有）。
 
 	// 菜单/界面更新与 Canvas 无关：先把状态推给 widget。
@@ -173,6 +174,10 @@ void ARogueHUD::RefreshMenuWidgets()
 	UpdateReviveCountdownWidget(PlayerCharacter);
 	UpdateDeathWidget();
 
+	// 常驻状态条与敌人血条：与 Canvas 无关，无画布测试也能检查数据是否推到位。
+	UpdateVitalsWidget(PlayerCharacter);
+	UpdateEnemyHealthBarWidgets();
+
 	// 输入模式（光标/UI 捕获）：按本地可见状态推导，见函数注释
 	UpdateInteractionInputMode(PlayerCharacter);
 
@@ -180,128 +185,27 @@ void ARogueHUD::RefreshMenuWidgets()
 
 void ARogueHUD::DrawHUD()
 {
-	// AHUD::DrawHUD 会无条件读取 Canvas，UMG 刷新必须与它分开。
 	if (Canvas != nullptr)
 	{
 		Super::DrawHUD();
 	}
-	RefreshMenuWidgets();
-	ARogueCharacter* PlayerCharacter = GetLocalPlayerCharacter(this);
-	if (!IsValid(PlayerCharacter))
-	{
-		PlayerCharacter = nullptr;
-	}
-	const ARogueGameState* RogueGameState = GetRogueGameState();
 
-	// 以下是纯画布绘制（血条、伤害数字、FPS 文本…）。
-	// 没有 Canvas（无头运行、专用服务器）就没有可画的地方，直接结束。
-	if (Canvas == nullptr || PlayerCharacter == nullptr)
+	// 菜单/状态条更新与 Canvas 无关；WBP 在 RefreshMenuWidgets 里刷新。
+	RefreshMenuWidgets();
+
+	if (Canvas == nullptr)
 	{
 		return;
 	}
 
 	UFont* Font = GEngine != nullptr ? GEngine->GetSmallFont() : nullptr;
-	UFont* AccentFont = GEngine != nullptr ? GEngine->GetMediumFont() : Font;
-	const float InstantFramesPerSecond = FApp::GetDeltaTime() > KINDA_SMALL_NUMBER ? 1.0f / FApp::GetDeltaTime() : 0.0f;
-	if (InstantFramesPerSecond > 0.0f)
+
+	// 玩家状态/波数/金币全部在 WBP_PlayerVitals 里；Canvas 只保留战斗反馈。
+	if (EnemyHealthBarWidgetClass == nullptr)
 	{
-		SmoothedFramesPerSecond = SmoothedFramesPerSecond <= KINDA_SMALL_NUMBER
-			? InstantFramesPerSecond
-			: FMath::Lerp(SmoothedFramesPerSecond, InstantFramesPerSecond, 0.14f);
+		DrawEnemyHealthBars(Font);
 	}
-
-	const FLinearColor FramesPerSecondColor =
-		SmoothedFramesPerSecond >= 110.0f ? FLinearColor(0.60f, 1.0f, 0.72f) :
-		(SmoothedFramesPerSecond >= 60.0f ? FLinearColor(0.96f, 0.92f, 0.58f) : FLinearColor(1.0f, 0.48f, 0.40f));
-	DrawText(FString::Printf(TEXT("FPS %.0f"), SmoothedFramesPerSecond), FramesPerSecondColor, Canvas->SizeX - 150.0f, 26.0f, Font, 1.05f, false);
-
-	const float Left = 40.0f;
-	float Top = 30.0f;
-
-	DrawEnemyHealthBars(Font);
 	DrawDamageNumbers(Font);
-
-	// 整局状态从 **GameState** 读，而不是 GameMode。
-	// GameMode 是服务端独占对象：客户端调 GetAuthGameMode() 得到 nullptr，
-	// 于是客户端 HUD 画不出波次/击败数。GameState 会复制到所有客户端。
-	const int32 DisplayWave = RogueGameState != nullptr ? RogueGameState->GetCurrentWave() : 0;
-	const int32 DisplayKills = RogueGameState != nullptr ? RogueGameState->GetEnemiesDefeated() : 0;
-
-	DrawText(FString::Printf(TEXT("第 %d 波"), DisplayWave), FLinearColor::White, Left, Top, Font, 1.4f, false);
-	Top += 24.0f;
-	DrawText(FString::Printf(TEXT("击败 %d"), DisplayKills), FLinearColor::White, Left, Top, Font, 1.1f, false);
-	Top += 24.0f;
-	DrawText(FString::Printf(TEXT("等级 %d"), PlayerCharacter->GetPlayerLevel()), FLinearColor::White, Left, Top, Font, 1.1f, false);
-	Top += 24.0f;
-	DrawText(FString::Printf(TEXT("金币 %d"), PlayerCharacter->GetMoney()), FLinearColor(1.0f, 0.86f, 0.36f), Left, Top, Font, 1.1f, false);
-	Top += 24.0f;
-	DrawText(FString::Printf(TEXT("生命 %.0f / %.0f"), PlayerCharacter->GetCurrentHealth(), PlayerCharacter->GetMaxHealth()), FLinearColor::Green, Left, Top, Font, 1.1f, false);
-	if (PlayerCharacter->HasArmor())
-	{
-		Top += 24.0f;
-		DrawText(FString::Printf(TEXT("护甲 %.0f / %.0f"), PlayerCharacter->GetCurrentArmor(), PlayerCharacter->GetMaxArmor()), FLinearColor(0.78f, 0.80f, 0.84f), Left, Top, Font, 1.05f, false);
-	}
-	Top += 24.0f;
-	DrawText(FString::Printf(TEXT("经验 %d / %d"), PlayerCharacter->GetCurrentExperience(), PlayerCharacter->GetExperienceToNextLevel()), FLinearColor(0.4f, 0.8f, 1.0f), Left, Top, Font, 1.1f, false);
-	Top += 24.0f;
-	DrawText(FString::Printf(TEXT("伤害 %.0f  攻速 %.2f 秒"), PlayerCharacter->GetAttackDamage(), PlayerCharacter->GetAttackInterval()), FLinearColor::White, Left, Top, Font, 1.0f, false);
-	Top += 22.0f;
-	DrawText(FString::Printf(TEXT("弹体 %d  |  镰刀 %d"), PlayerCharacter->GetEffectiveProjectileCount(), PlayerCharacter->GetEffectiveScytheCount()), FLinearColor::White, Left, Top, Font, 0.95f, false);
-	Top += 20.0f;
-	DrawText(FString::Printf(TEXT("火箭 %d  |  激光 %d"), PlayerCharacter->GetEffectiveRocketLauncherCount(), PlayerCharacter->GetEffectiveLaserCannonCount()), FLinearColor::White, Left, Top, Font, 0.95f, false);
-	Top += 20.0f;
-	DrawText(FString::Printf(TEXT("迫击炮 %d  |  地狱塔 %d"), PlayerCharacter->GetEffectiveMortarCount(), PlayerCharacter->GetEffectiveHellTowerCount()), FLinearColor::White, Left, Top, Font, 0.95f, false);
-	Top += 20.0f;
-	DrawText(FString::Printf(TEXT("激光折射 %d"), PlayerCharacter->GetLaserRefractionCount()), FLinearColor(1.0f, 0.48f, 0.38f), Left, Top, Font, 0.95f, false);
-	Top += 20.0f;
-	const FString DashStatusText = PlayerCharacter->IsDashReady() ? TEXT("冲刺 就绪") : FString::Printf(TEXT("冲刺 %.1f 秒"), PlayerCharacter->GetDashCooldownRemaining());
-	DrawText(DashStatusText, PlayerCharacter->IsDashReady() ? FLinearColor(0.60f, 1.0f, 0.75f) : FLinearColor(1.0f, 0.78f, 0.40f), Left, Top, Font, 0.95f, false);
-	Top += 20.0f;
-	DrawText(TEXT("移动 WASD  |  冲刺 Shift  |  旋转 鼠标  |  缩放 滚轮"), FLinearColor(0.8f, 0.85f, 0.9f), Left, Top, Font, 0.9f, false);
-
-	// "是否正在选升级"改读本地玩家的 PlayerState（每玩家一份）。
-	// 原来读 GameMode：客户端拿不到 GameMode，而且联机下这个状态本来就是每玩家独立的。
-	const ARoguePlayerState* LocalPlayerState = GetLocalRoguePlayerState();
-	const bool bAwaitingUpgrade = LocalPlayerState != nullptr && LocalPlayerState->IsAwaitingUpgradeChoice();
-
-	// 商店是否打开读本地 PlayerState（客户端可读；GameMode 在客户端拿不到）
-	const bool bShopOpen = LocalPlayerState != nullptr && LocalPlayerState->IsShopOpen();
-
-	if (!PlayerCharacter->IsDead() && !bAwaitingUpgrade && !bShopOpen && PauseMenuPage == ERoguePauseMenuPage::None)
-	{
-		FVector PromptWorldLocation = FVector::ZeroVector;
-		// 靠近商店的交互提示：直接问角色（基于商店终端的重叠检测，终端已复制到客户端）。
-		// 原来走 GameMode，客户端拿不到 → 提示永远不显示。
-		if (PlayerCharacter->GetShopPromptWorldLocation(PromptWorldLocation))
-		{
-			FVector2D PromptScreenPosition = FVector2D(Canvas->SizeX * 0.43f, Canvas->SizeY * 0.84f);
-			if (APlayerController* PlayerController = GetOwningPlayerController();
-				PlayerController != nullptr && PlayerController->ProjectWorldLocationToScreen(PromptWorldLocation, PromptScreenPosition, true))
-			{
-				PromptScreenPosition.X -= 92.0f;
-				PromptScreenPosition.Y -= 44.0f;
-			}
-
-			DrawText(TEXT("SHOP"), FLinearColor(1.0f, 0.88f, 0.30f, 0.98f), PromptScreenPosition.X - 8.0f, PromptScreenPosition.Y - 6.0f, AccentFont, 1.7f, false);
-			if (PlayerCharacter->CanInteractWithShop())
-			{
-				DrawText(TEXT("按 E 打开商店"), FLinearColor(1.0f, 0.95f, 0.72f), PromptScreenPosition.X, PromptScreenPosition.Y + 28.0f, Font, 1.1f, false);
-			}
-		}
-	}
-
-	float BarTop = Canvas->SizeY - 90.0f;
-	if (PlayerCharacter->HasArmor())
-	{
-		DrawRect(FLinearColor(0.0f, 0.0f, 0.0f, 0.55f), Left, BarTop - 32.0f, 320.0f, 20.0f);
-		DrawRect(FLinearColor(0.58f, 0.60f, 0.64f, 0.96f), Left + 2.0f, BarTop - 30.0f, 316.0f * PlayerCharacter->GetArmorPercent(), 16.0f);
-	}
-
-	DrawRect(FLinearColor(0.0f, 0.0f, 0.0f, 0.55f), Left, BarTop, 320.0f, 20.0f);
-	DrawRect(FLinearColor(0.85f, 0.15f, 0.15f, 0.95f), Left + 2.0f, BarTop + 2.0f, 316.0f * PlayerCharacter->GetHealthPercent(), 16.0f);
-
-	DrawRect(FLinearColor(0.0f, 0.0f, 0.0f, 0.55f), Left, BarTop + 32.0f, 320.0f, 20.0f);
-	DrawRect(FLinearColor(0.2f, 0.6f, 1.0f, 0.95f), Left + 2.0f, BarTop + 34.0f, 316.0f * PlayerCharacter->GetExperiencePercent(), 16.0f);
 }
 
 void ARogueHUD::AddDamageNumber(const FVector& WorldLocation, float Damage, bool bIsBossDamage)
@@ -516,8 +420,6 @@ void ARogueHUD::DrawEnemyHealthBars(UFont* Font)
 		const float BarX = ScreenPosition.X - BarWidth * 0.5f;
 		const float BarY = ScreenPosition.Y;
 		const FLinearColor FillColor = CachedBar.bBoss ? FLinearColor(0.95f, 0.30f, 0.20f, 0.95f) : FLinearColor(0.95f, 0.15f, 0.20f, 0.90f);
-		// 显式排除非有限比例，再钳到 [0,1]，防止异常比例传给填充宽度。
-		// 这只保护本处比例计算，不证明属性来源或其他绘制参数正确。
 		const float RawHealthPercent = Enemy->GetHealthPercent();
 		const float HealthPercent = FMath::IsFinite(RawHealthPercent)
 			? FMath::Clamp(RawHealthPercent, 0.0f, 1.0f)
@@ -529,7 +431,156 @@ void ARogueHUD::DrawEnemyHealthBars(UFont* Font)
 
 		if (CachedBar.bBoss)
 		{
-			DrawText(TEXT("首领"), FLinearColor(1.0f, 0.8f, 0.45f, 0.95f), BarX + 44.0f, BarY - 18.0f, Font, 0.9f, false);
+			DrawText(TEXT("BOSS"), FLinearColor(1.0f, 0.8f, 0.45f, 0.95f), BarX + 44.0f, BarY - 18.0f, Font, 0.9f, false);
+		}
+	}
+}
+
+void ARogueHUD::UpdateVitalsWidget(const ARogueCharacter* PlayerCharacter)
+{
+	if (VitalsWidget == nullptr)
+	{
+		return;
+	}
+
+	auto SafePercent = [](float Value)
+	{
+		return FMath::IsFinite(Value) ? FMath::Clamp(Value, 0.0f, 1.0f) : 0.0f;
+	};
+
+	FRoguePlayerVitalsView View;
+	if (PlayerCharacter != nullptr)
+	{
+		View.bVisible = true;
+		View.bHasArmor = PlayerCharacter->HasArmor();
+		View.bDowned = PlayerCharacter->IsDowned();
+		View.HealthPercent = SafePercent(PlayerCharacter->GetHealthPercent());
+		View.ArmorPercent = SafePercent(PlayerCharacter->GetArmorPercent());
+		View.ExperiencePercent = SafePercent(PlayerCharacter->GetExperiencePercent());
+		View.CurrentHealth = PlayerCharacter->GetCurrentHealth();
+		View.MaxHealth = PlayerCharacter->GetMaxHealth();
+		View.CurrentArmor = PlayerCharacter->GetCurrentArmor();
+		View.MaxArmor = PlayerCharacter->GetMaxArmor();
+		View.Level = PlayerCharacter->GetPlayerLevel();
+		View.Experience = PlayerCharacter->GetCurrentExperience();
+		View.ExperienceToNextLevel = PlayerCharacter->GetExperienceToNextLevel();
+		View.Money = PlayerCharacter->GetMoney();
+		if (const ARogueGameState* RogueGameState = GetRogueGameState())
+		{
+			View.CurrentWave = RogueGameState->GetCurrentWave();
+		}
+	}
+
+	VitalsWidget->UpdateVitals(View);
+}
+
+void ARogueHUD::UpdateEnemyHealthBarWidgets()
+{
+	APlayerController* PlayerController = GetOwningPlayerController();
+	UWorld* World = GetWorld();
+	URogueEnemyTrackerSubsystem* Tracker = World != nullptr ? World->GetSubsystem<URogueEnemyTrackerSubsystem>() : nullptr;
+	if (PlayerController == nullptr || World == nullptr || Tracker == nullptr || EnemyHealthBarWidgetClass == nullptr)
+	{
+		HideAllEnemyHealthBarWidgets();
+		return;
+	}
+
+	int32 ViewportSizeX = 0;
+	int32 ViewportSizeY = 0;
+	PlayerController->GetViewportSize(ViewportSizeX, ViewportSizeY);
+	if (ViewportSizeX <= 0 || ViewportSizeY <= 0)
+	{
+		HideAllEnemyHealthBarWidgets();
+		return;
+	}
+
+	const float CurrentTime = World->GetTimeSeconds();
+	const bool bHeavyCombat = Tracker->ShouldCullCombatEffects();
+	const float RefreshInterval = bHeavyCombat ? EnemyHealthBarRefreshIntervalHeavy : EnemyHealthBarRefreshIntervalNormal;
+	if (CurrentTime >= NextHealthBarCacheRefreshTime)
+	{
+		RefreshEnemyHealthBarCache(Tracker);
+		NextHealthBarCacheRefreshTime = CurrentTime + RefreshInterval;
+	}
+
+	int32 UsedWidgets = 0;
+	for (const FRogueCachedEnemyHealthBar& CachedBar : CachedEnemyHealthBars)
+	{
+		ARogueEnemy* Enemy = CachedBar.Enemy.Get();
+		if (!IsValid(Enemy) || Enemy->IsDead())
+		{
+			continue;
+		}
+
+		FVector2D ScreenPosition;
+		if (!PlayerController->ProjectWorldLocationToScreen(Enemy->GetHealthBarWorldLocation(), ScreenPosition, true))
+		{
+			continue;
+		}
+
+		if (ScreenPosition.X < -120.0f || ScreenPosition.X > ViewportSizeX + 120.0f
+			|| ScreenPosition.Y < -80.0f || ScreenPosition.Y > ViewportSizeY + 80.0f)
+		{
+			continue;
+		}
+
+		URogueEnemyHealthBarWidgetBase* Widget = AcquireEnemyHealthBarWidget(UsedWidgets);
+		if (Widget == nullptr)
+		{
+			break;
+		}
+
+		// 显式排除非有限比例，再钳到 [0,1]，防止异常比例传给 WBP 的进度条。
+		const float RawHealthPercent = Enemy->GetHealthPercent();
+
+		FRogueEnemyHealthBarView View;
+		View.bVisible = true;
+		View.bBoss = CachedBar.bBoss;
+		View.HealthPercent = FMath::IsFinite(RawHealthPercent)
+			? FMath::Clamp(RawHealthPercent, 0.0f, 1.0f)
+			: 0.0f;
+		View.ScreenPosition = ScreenPosition;
+		Widget->UpdateBar(View);
+
+		++UsedWidgets;
+	}
+
+	for (int32 Index = UsedWidgets; Index < EnemyHealthBarWidgets.Num(); ++Index)
+	{
+		if (EnemyHealthBarWidgets[Index] != nullptr)
+		{
+			EnemyHealthBarWidgets[Index]->UpdateBar(FRogueEnemyHealthBarView());
+		}
+	}
+}
+
+URogueEnemyHealthBarWidgetBase* ARogueHUD::AcquireEnemyHealthBarWidget(int32 Index)
+{
+	while (EnemyHealthBarWidgets.Num() <= Index)
+	{
+		URogueEnemyHealthBarWidgetBase* Widget = CreateRogueMenuWidget(
+			GetOwningPlayerController(), EnemyHealthBarWidgetClass, this, 6);
+		if (Widget == nullptr)
+		{
+			return nullptr;
+		}
+
+		// 血条是屏幕空间的小控件：先按 WBP 的 BarSize 固定尺寸，再以顶部中心对齐。
+		Widget->SetDesiredSizeInViewport(Widget->GetBarSize());
+		Widget->SetAlignmentInViewport(FVector2D(0.5f, 0.0f));
+		EnemyHealthBarWidgets.Add(Widget);
+	}
+
+	return EnemyHealthBarWidgets[Index];
+}
+
+void ARogueHUD::HideAllEnemyHealthBarWidgets()
+{
+	for (TObjectPtr<URogueEnemyHealthBarWidgetBase>& Widget : EnemyHealthBarWidgets)
+	{
+		if (Widget != nullptr)
+		{
+			Widget->UpdateBar(FRogueEnemyHealthBarView());
 		}
 	}
 }
@@ -590,7 +641,7 @@ void ARogueHUD::DrawDamageNumbers(UFont* Font)
 void ARogueHUD::RefreshEnemyHealthBarCache(const URogueEnemyTrackerSubsystem* Tracker)
 {
 	CachedEnemyHealthBars.Reset();
-	if (Canvas == nullptr || Tracker == nullptr)
+	if (Tracker == nullptr)
 	{
 		return;
 	}
@@ -690,15 +741,11 @@ void ARogueHUD::InitializeMenuWidgets()
 {
 	if (APlayerController* PlayerController = GetOwningPlayerController())
 	{
-		// 兼容旧 HUD 蓝图将默认属性保存为 None 的情况。
-		if (DeathScreenWidgetClass == nullptr)
-		{
-			DeathScreenWidgetClass = LoadClass<URogueDeathScreenWidgetBase>(nullptr, DefaultDeathScreenPath);
-		}
-		if (ReviveCountdownWidgetClass == nullptr)
-		{
-			ReviveCountdownWidgetClass = LoadClass<URogueReviveCountdownWidgetBase>(nullptr, DefaultReviveCountdownPath);
-		}
+		// 兼容旧 HUD 蓝图将默认属性保存为 None 的情况；默认路径来自 DefaultGame.ini。
+		ResolveWidgetClass(DeathScreenWidgetClassPath, DeathScreenWidgetClass);
+		ResolveWidgetClass(ReviveCountdownWidgetClassPath, ReviveCountdownWidgetClass);
+		ResolveWidgetClass(VitalsWidgetClassPath, VitalsWidgetClass);
+		ResolveWidgetClass(EnemyHealthBarWidgetClassPath, EnemyHealthBarWidgetClass);
 		UpgradeSelectionWidget = CreateRogueMenuWidget(PlayerController, UpgradeSelectionWidgetClass, this, 63);
 		ShopWidget = CreateRogueMenuWidget(PlayerController, ShopWidgetClass, this, 64);
 		PauseMenuWidget = CreateRogueMenuWidget(PlayerController, PauseMenuWidgetClass, this, 65);
@@ -706,6 +753,17 @@ void ARogueHUD::InitializeMenuWidgets()
 		DeathScreenWidget = CreateRogueMenuWidget(PlayerController, DeathScreenWidgetClass, this, 70);
 
 		ReviveCountdownWidget = CreateRogueMenuWidget(PlayerController, ReviveCountdownWidgetClass, this, 69);
+
+		// 常驻状态条：ZOrder 5，位于所有菜单之下；敌人血条 6，由池按需创建。
+		VitalsWidget = CreateRogueMenuWidget(PlayerController, VitalsWidgetClass, this, 5);
+		if (VitalsWidgetClass != nullptr && VitalsWidget == nullptr)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[Rogue] 玩家状态条创建失败：Vitals=%s"), *GetNameSafe(VitalsWidgetClass.Get()));
+		}
+		if (EnemyHealthBarWidgetClass == nullptr)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[Rogue] 未配置敌人血条 WBP：EnemyHealthBarWidgetClass 为空，敌人血条将不显示。"));
+		}
 		if (DeathScreenWidget == nullptr || ReviveCountdownWidget == nullptr)
 		{
 			UE_LOG(LogTemp, Error, TEXT("[Rogue] 复活/团灭界面创建失败：Resurrection=%s Death=%s"),

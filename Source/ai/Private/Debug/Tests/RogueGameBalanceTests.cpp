@@ -20,9 +20,11 @@ namespace RogueGameBalanceTests
 	constexpr EAutomationTestFlags Flags = EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter;
 	const ERogueEnemyType EnemyTypes[] =
 	{
-		ERogueEnemyType::Hunter, ERogueEnemyType::Charger, ERogueEnemyType::Tank,
-		ERogueEnemyType::Orbiter, ERogueEnemyType::Shooter, ERogueEnemyType::Skirmisher,
-		ERogueEnemyType::Artillery, ERogueEnemyType::Spitter, ERogueEnemyType::ShockPillar
+		ERogueEnemyType::Rifleman, ERogueEnemyType::Assault, ERogueEnemyType::Juggernaut,
+		ERogueEnemyType::Orbiter, ERogueEnemyType::Marksman, ERogueEnemyType::Skirmisher,
+		ERogueEnemyType::Cannoneer, ERogueEnemyType::Scatterer, ERogueEnemyType::ShockPillar,
+		ERogueEnemyType::Sniper, ERogueEnemyType::Shotgunner, ERogueEnemyType::Repeater,
+		ERogueEnemyType::Ringcaster
 	};
 
 	struct FIntOverride { const TCHAR* Name; int32 Value; };
@@ -173,8 +175,8 @@ namespace RogueGameBalanceTests
 			Row.BossDamageMultiplier = 1.05f + 0.075f * Index;
 			Asset->EnemyBalanceRows.Add(Row);
 		}
-		Asset->EnemyWaveEntries.Add({ 8, ERogueEnemyType::Hunter, 5 });
-		Asset->EnemyWaveEntries.Add({ 2, ERogueEnemyType::Shooter, 4 });
+		Asset->EnemyWaveEntries.Add({ 8, ERogueEnemyType::Rifleman, 5 });
+		Asset->EnemyWaveEntries.Add({ 2, ERogueEnemyType::Marksman, 4 });
 		RouteLegacyPostLoad(Asset);
 		return Asset;
 	}
@@ -235,7 +237,7 @@ namespace RogueGameBalanceTests
 				auto CanSpawnType = [Mode](ERogueEnemyType Type)
 				{
 					if (Mode == 1) { return static_cast<int32>(Type) % 2 != 0; }
-					if (Mode == 2) { return Type != ERogueEnemyType::Hunter && Type != ERogueEnemyType::Tank; }
+					if (Mode == 2) { return Type != ERogueEnemyType::Rifleman && Type != ERogueEnemyType::Juggernaut; }
 					return Mode != 3;
 				};
 				for (int32 Sample = 0; Sample < 32; ++Sample)
@@ -315,19 +317,19 @@ bool FRogueGameBalanceSemanticsTest::RunTest(const FString& Parameters)
 		RogueGameModeRules::BuildSpawnCadence(100, 0, 60, false, 0.1f).NextSpawnDelay, 0.18f);
 
 	TestEqual(TEXT("Ordinary enemies start at their base health in wave one"),
-		RogueGameModeRules::BuildEnemyProfile(1, ERogueEnemyType::Hunter).Health, 35.0f);
+		RogueGameModeRules::BuildEnemyProfile(1, ERogueEnemyType::Rifleman).Health, 35.0f);
 	TestEqual(TEXT("The start wave includes the first health growth increment"),
-		RogueGameModeRules::BuildEnemyProfile(8, ERogueEnemyType::Hunter).Health, (35.0f + 7.0f * 10.0f) * 1.08f);
+		RogueGameModeRules::BuildEnemyProfile(8, ERogueEnemyType::Rifleman).Health, (35.0f + 7.0f * 10.0f) * 1.08f);
 	TestEqual(TEXT("The two health stages multiply rather than replace each other"),
-		RogueGameModeRules::BuildEnemyProfile(25, ERogueEnemyType::Hunter).Health, (35.0f + 24.0f * 10.0f) * 1.72f * 1.5f, 0.001f);
+		RogueGameModeRules::BuildEnemyProfile(25, ERogueEnemyType::Rifleman).Health, (35.0f + 24.0f * 10.0f) * 1.72f * 1.5f, 0.001f);
 	TestEqual(TEXT("Boss growth already adds one increment in wave one"),
-		RogueGameModeRules::BuildBossProfile(1, ERogueEnemyType::Hunter).Health, (420.0f + 140.0f) * 1.58f, 0.001f);
+		RogueGameModeRules::BuildBossProfile(1, ERogueEnemyType::Rifleman).Health, (420.0f + 140.0f) * 1.58f, 0.001f);
 	TestEqual(TEXT("The later boss phase replaces the earlier multiplier"),
-		RogueGameModeRules::BuildBossProfile(20, ERogueEnemyType::Hunter).Health, (420.0f + 20.0f * 140.0f) * 1.72f, 0.001f);
+		RogueGameModeRules::BuildBossProfile(20, ERogueEnemyType::Rifleman).Health, (420.0f + 20.0f * 140.0f) * 1.72f, 0.001f);
 	TestEqual(TEXT("Type experience bonus is added after the ordinary reward cap"),
-		RogueGameModeRules::BuildEnemyProfile(20, ERogueEnemyType::Tank).ExperienceReward, 7);
+		RogueGameModeRules::BuildEnemyProfile(20, ERogueEnemyType::Juggernaut).ExperienceReward, 7);
 	TestEqual(TEXT("Boss rewards do not receive the ordinary type experience bonus"),
-		RogueGameModeRules::BuildBossProfile(1, ERogueEnemyType::Tank).ExperienceReward, 30);
+		RogueGameModeRules::BuildBossProfile(1, ERogueEnemyType::Juggernaut).ExperienceReward, 30);
 	TestEqual(TEXT("Ordinary currency steps up at the divisor wave"), RogueGameModeRules::BuildCurrencyReward(6, false), 2);
 	TestEqual(TEXT("Boss currency includes its base plus the current wave"), RogueGameModeRules::BuildCurrencyReward(1, true), 15);
 
@@ -340,7 +342,7 @@ bool FRogueGameBalanceSemanticsTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("A boss floor can raise an otherwise smaller hard limit"),
 		RogueGameModeRules::BuildSpawnCadence(1, 0, 45, true, 1.0f, ZeroCaps.Get()).EffectiveMaxAliveEnemies, 19);
 	TestEqual(TEXT("Zero ordinary health cap means zero profile health"),
-		RogueGameModeRules::BuildEnemyProfile(10, ERogueEnemyType::Tank, ZeroCaps.Get()).Health, 0.0f);
+		RogueGameModeRules::BuildEnemyProfile(10, ERogueEnemyType::Juggernaut, ZeroCaps.Get()).Health, 0.0f);
 	TestEqual(TEXT("Shop counts are clamped to at least one"), RogueGameModeRules::GetShopOfferCount(Uncapped.Get()), 1);
 	TestEqual(TEXT("Shop offer price is clamped to at least one"), RogueGameModeRules::GetShopOfferCost(Uncapped.Get()), 1);
 	TestEqual(TEXT("Shop refresh cost is clamped to nonnegative"), RogueGameModeRules::GetShopRefreshCost(Uncapped.Get()), 0);
@@ -394,8 +396,12 @@ bool FRogueGroupedGameBalanceLayoutTest::RunTest(const FString& Parameters)
 		{ TEXT("Spawn"), TEXT("02.刷怪数量与速度") },
 		{ TEXT("EnemyStats"), TEXT("03.普通敌人属性") },
 		{ TEXT("BossStats"), TEXT("04.首领属性") },
+		{ TEXT("BossSpawn"), TEXT("04.首领属性") },
 		{ TEXT("Rewards"), TEXT("05.击杀奖励") },
-		{ TEXT("Shop"), TEXT("06.商店") }
+		{ TEXT("Shop"), TEXT("06.商店") },
+		{ TEXT("Pools"), TEXT("07.运行时") },
+		{ TEXT("Performance"), TEXT("07.运行时") },
+		{ TEXT("Scene"), TEXT("07.运行时") }
 	};
 	TSet<FString> Categories;
 	for (const FExpectedCategory& Expected : ExpectedCategories)
@@ -418,7 +424,7 @@ bool FRogueGroupedGameBalanceLayoutTest::RunTest(const FString& Parameters)
 			}
 		}
 	}
-	TestEqual(TEXT("Seven top-level configuration fields occupy six Chinese categories"), Categories.Num(), 6);
+	TestEqual(TEXT("Eleven top-level configuration fields occupy seven Chinese categories"), Categories.Num(), 7);
 
 	int32 EditableFieldCount = 0;
 	int32 DeprecatedFieldCount = 0;
@@ -431,7 +437,7 @@ bool FRogueGroupedGameBalanceLayoutTest::RunTest(const FString& Parameters)
 			TestFalse(It->GetName() + TEXT(" is hidden from editing and blueprint field access"), It->HasAnyPropertyFlags(CPF_Edit | CPF_BlueprintVisible));
 		}
 	}
-	TestEqual(TEXT("Only the seven grouped top-level fields remain editable"), EditableFieldCount, 7);
+	TestEqual(TEXT("Only the eleven grouped top-level fields remain editable"), EditableFieldCount, 11);
 	TestEqual(TEXT("All 55 legacy scalar fields retain real deprecated property flags"), DeprecatedFieldCount, 55);
 	TSet<const UStruct*> Visited;
 	RogueGameBalanceTests::CheckEditableMetadata(*this, AssetClass, Visited);
@@ -446,17 +452,17 @@ bool FRogueGroupedGameBalanceLayoutTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("The last matching batch rule wins even when its count is smaller"),
 		RogueGameModeRules::BuildSpawnCadence(50, 0, 50, false, 1.0f, Asset.Get()).SpawnBatchSize, 2);
 
-	FRogueEnemyBalanceRow Hunter;
-	Hunter.EnemyType = ERogueEnemyType::Hunter;
-	Asset->EnemyBalanceRows = { Hunter };
+	FRogueEnemyBalanceRow Rifleman;
+	Rifleman.EnemyType = ERogueEnemyType::Rifleman;
+	Asset->EnemyBalanceRows = { Rifleman };
 	Asset->EnemyStats.Health = {100.0f, 10.0f};
 	Asset->EnemyStats.MaxHealth = -1.0f;
 	Asset->EnemyStats.HealthGrowthStages.Reset();
 	TestEqual(TEXT("An empty health stage list retains only base and linear wave growth"),
-		RogueGameModeRules::BuildEnemyProfile(4, ERogueEnemyType::Hunter, Asset.Get()).Health, 130.0f);
+		RogueGameModeRules::BuildEnemyProfile(4, ERogueEnemyType::Rifleman, Asset.Get()).Health, 130.0f);
 	Asset->EnemyStats.HealthGrowthStages = { {1, 0.1f, 0.0f}, {3, 0.15f, 0.0f} };
 	TestEqual(TEXT("Both started health stages multiply the running health in list order"),
-		RogueGameModeRules::BuildEnemyProfile(4, ERogueEnemyType::Hunter, Asset.Get()).Health,
+		RogueGameModeRules::BuildEnemyProfile(4, ERogueEnemyType::Rifleman, Asset.Get()).Health,
 		(130.0f * 1.4f) * 1.3f, 0.001f);
 	return true;
 }

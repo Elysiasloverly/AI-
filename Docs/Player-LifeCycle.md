@@ -58,7 +58,7 @@ HUD 每帧独立更新 UMG 状态，画布绘制不作为界面刷新的前提�
 | `Rogue.UI.LifeCycle.ReplicationOrderAndNoPawn` | 真实两个 WBP 在倒计时为零、GAS 标签迟到、GameOver/Eliminated 两种到达顺序、缺失 Pawn 和可见性漂移时仍显示正确界面 |
 | `Rogue.UI.ReviveCountdown.MultipleHUDsAndVisibilityDrift` | 同进程两个 HUD 的刷新顺序不会互相影响；复活后隐藏并纠正残留可见性 |
 
-实际双进程验收已确认客户端濒死、自动复活、同帧团灭与全队 ServerTravel 重开；错开死亡及到期竞争由自动化用例覆盖。每个窗口应只显示自己的等待界面；怪物持续追击存活队友；自动复活后等待界面消失。团灭后所有窗口只显示结算，等待超过 10 秒仍不复活，重开进入新局。
+实际双进程验收已确认客户端濒死、自动复活、同帧团灭与全队重开；错开死亡及到期竞争由自动化用例覆盖。每个窗口应只显示自己的等待界面；怪物持续追击存活队友；自动复活后等待界面消失。团灭后所有窗口只显示结算，等待超过 10 秒仍不复活，重开进入新局。打包联机由服务端 `ServerTravel` 带全队重开；PIE（包括“作为监听服务器运行”）改为 `OpenLevel`，避免 `ServerTravel?listen` 先拆掉 PIE 后编辑器没有自动重开。
 
 ## 主要落点
 

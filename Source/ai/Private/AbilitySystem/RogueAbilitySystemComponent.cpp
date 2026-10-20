@@ -28,7 +28,7 @@ void URogueAbilitySystemComponent::ConfigureAsEnemy()
 
 void URogueAbilitySystemComponent::ResetForPool()
 {
-	// 回收前撤销敌人攻击能力，包括仍在运行的地面波能力及其任务。
+	// 回收前撤销敌人攻击能力，包括仍在运行的攻击能力及其任务。
 	ClearAllAbilities();
 
 	// 先取得所有活动 GE 的句柄，再逐个移除，避免直接遍历内部容器时删除元素。

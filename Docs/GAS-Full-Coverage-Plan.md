@@ -39,7 +39,7 @@
 | Duration GE（6 种状态） | `RogueStateEffects.h` |
 | **ExecutionCalculation** | `RogueUpgradeExecution` — 一份 GE 承载 20 种升级 |
 | **GameplayCueNotify_Static** | `RogueGameplayCue_Impact` |
-| **AbilityTask（含 `bTickingTask` 自定义心跳）** | 3 个：Dash / WeaponFireLoop / AttackTick |
+| **AbilityTask（含 `bTickingTask` 自定义心跳）** | 2 个：Dash / WeaponFireLoop |
 | SetByCaller（`Data.Damage` / `Data.Cooldown` / `Data.Duration`） | 各 GE |
 | **原生 Cooldown GE** | ⚠️ **只有冲刺 1 个**：`RogueGameplayAbility_Dash.cpp:42` |
 | 预测键（显式传 `GetActivationPredictionKey()`） | `RogueWeaponAbility.cpp:216-248` |

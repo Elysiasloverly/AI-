@@ -7,8 +7,16 @@
 | 一个类在哪里，新增类应该放哪 | [Class-Organization.md](Class-Organization.md)：目录职责、实现拆分、独立 Widget 基类与蓝图兼容约定 |
 | 编辑器里的美术资产放在哪里 | [Content-Organization.md](Content-Organization.md)：美术主目录、素材包保留方式及玩法资产位置 |
 | 玩法配置资产放在哪、怎么改 | [Data-Configuration.md](Data-Configuration.md)：`/Game/Data/` 的 7 个资产、读取入口与 DataTable 归类 |
+| 哪些配置已经进数据资产、哪些还在代码里 | [Data-Asset-Audit.md](Data-Asset-Audit.md)：`/Game/Data` 覆盖审计与待迁清单 |
 | 数值怎么调 | [Game-Balance-Configuration.md](Game-Balance-Configuration.md)、[Player-Balance-Configuration.md](Player-Balance-Configuration.md)：平衡与玩家数值分组 |
 | 地图、刷怪框与商店怎么摆 | [Map-Authoring.md](Map-Authoring.md)：关卡物体、刷怪区域与商店终端 |
+| 血条 / 护甲条 / 经验条 / 波数金币怎么做的 | [HUD-Vitals-And-Enemy-Bars.md](HUD-Vitals-And-Enemy-Bars.md)：玩家状态 WBP、CJK 字体、数据流 |
+| 敌人子弹用哪个蓝图、怎么换外观 | [Enemy-Projectile-Blueprints.md](Enemy-Projectile-Blueprints.md)：`BP_EnemyProjectile`、每敌人覆盖与池化 |
+| 经验球怎么换外观 | [Experience-Pickup-Blueprint.md](Experience-Pickup-Blueprint.md)：`BP_ExperiencePickup` 组件结构、BP 钩子与尺寸规则 |
+| 弹体碰撞是否关闭 | [Combat-Collision.md](Combat-Collision.md)：所有弹体的命中球 / 视觉组件 / 物理设置审计 |
+| 敌人原型表怎么读 | [Enemy-Archetype-Table.md](Enemy-Archetype-Table.md)：10 个顶层列、`SpecialParams` 分组与旧列迁移 |
+| 新增的四种远程敌人 | [Enemy-Ranged-Variants.md](Enemy-Ranged-Variants.md)：狙击手 / 霰弹手 / 连射手 / 鸣铃者的数据、波次与验证 |
+| 镰刀吸血卡怎么配 | [Scythe-Lifesteal-Upgrade.md](Scythe-Lifesteal-Upgrade.md)：前置、首次 20%、每级 +5%、数据资产与伤害回血链 |
 | 当前对象如何协作，伤害和升级如何流动 | [Project-Structure.md](Project-Structure.md)：运行时关系、网络划分、池化契约、核心数据流与自检入口 |
 | 源码注释哪些说法经过核验 | [Comment-Verification.md](Comment-Verification.md)：事实纠正、源码依据、当前实现边界与检查结果 |
 | 早期系统为什么这样拆分 | [System-Architecture-Overview.md](System-Architecture-Overview.md)：历史概览，正文旧行为不能当作当前实现 |
@@ -23,7 +31,7 @@
 
 除明确标注为“历史”的文档外，当前结构、路径与接口以仓库源码为准（2026-10 核对）；历史文档只用于解释当时的取舍。
 
-当前升级效果使用 21 种 Infinite GE 子类按目标叠层，能力授予支持 AbilitySet；旧计划中的单一升级 ExecutionCalculation 和硬编码授予描述属于迁移历史。文档保留历史上下文，不表示这些旧实现仍存在。
+当前升级效果使用 22 种 Infinite GE 子类按目标叠层，能力授予支持 AbilitySet；旧计划中的单一升级 ExecutionCalculation 和硬编码授予描述属于迁移历史。文档保留历史上下文，不表示这些旧实现仍存在。
 
 ## 死亡与复活
 

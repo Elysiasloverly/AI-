@@ -61,12 +61,12 @@ private:
 	TMap<ERogueUpgradeType, int32> OfferTypePurchaseCounts;
 
 	
-	int32 OfferCount = 6;
-	int32 BaseOfferCost = 22;
-	int32 BaseRefreshCost = 14;
-	int32 CurrentRefreshCost = 14;
-	float AutoRefreshInterval = 60.0f;
-	float TimeUntilAutoRefresh = 60.0f;
+	int32 OfferCount = 0;
+	int32 BaseOfferCost = 0;
+	int32 BaseRefreshCost = 0;
+	int32 CurrentRefreshCost = 0;
+	float AutoRefreshInterval = 0.0f;
+	float TimeUntilAutoRefresh = 0.0f;
 	bool bOpen = false;
 	bool bAutoRefreshPending = false;
 };

@@ -183,7 +183,7 @@ bool FRogueAssetUpgradePrerequisiteTest::RunTest(const FString& Parameters)
 	RogueUpgradePrerequisiteTests::FUpgradeFixture Fixture;
 	if (!Fixture.Initialize(*this)) { return false; }
 	URogueUpgradeRuleAsset* Rules = NewObject<URogueUpgradeRuleAsset>(Fixture.World);
-	TestEqual(TEXT("The default asset has the five weapon quantity rules"), Rules->WeaponUpgradeRules.Num(), 5);
+	TestEqual(TEXT("The default asset has the six weapon rules"), Rules->WeaponUpgradeRules.Num(), 6);
 	return RogueUpgradePrerequisiteTests::CheckImmediateUnlocks(*this, Fixture, Rules);
 }
 
@@ -196,7 +196,7 @@ bool FRogueMortarFallbackUpgradePrerequisiteTest::RunTest(const FString& Paramet
 	RogueUpgradePrerequisiteTests::FUpgradeFixture Fixture;
 	if (!Fixture.Initialize(*this)) { return false; }
 	URogueUpgradeRuleAsset* Rules = RogueUpgradePrerequisiteTests::MakeRulesWithoutMortar(Fixture.World);
-	TestEqual(TEXT("The fixture leaves four non-mortar asset rules"), Rules->WeaponUpgradeRules.Num(), 4);
+	TestEqual(TEXT("The fixture leaves five non-mortar asset rules"), Rules->WeaponUpgradeRules.Num(), 5);
 	TestTrue(TEXT("The compatibility path still offers the mortar unlock"), Fixture.BuildPool(Rules).Contains(ERogueUpgradeType::MortarCount));
 	return RogueUpgradePrerequisiteTests::CheckImmediateUnlocks(*this, Fixture, Rules);
 }
@@ -296,6 +296,55 @@ bool FRogueScytheSizeDisabledWeaponTest::RunTest(const FString& Parameters)
 	Rules->BaseUpgradeTypes.AddUnique(ERogueUpgradeType::ScytheSize);
 	TestFalse(TEXT("Default rules do not offer an unusable scythe size card"), Fixture.BuildPool(nullptr).Contains(ERogueUpgradeType::ScytheSize));
 	TestFalse(TEXT("Asset rules cannot bypass the effective weapon count"), Fixture.BuildPool(Rules).Contains(ERogueUpgradeType::ScytheSize));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueScytheLifestealPrerequisiteTest,
+	"Rogue.Gameplay.UpgradePrerequisites.ScytheLifestealUnlocksAndStacks", RogueUpgradePrerequisiteTests::Flags)
+
+bool FRogueScytheLifestealPrerequisiteTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RogueUpgradePrerequisiteTests;
+	FUpgradeFixture Fixture;
+	if (!Fixture.Initialize(*this)) { return false; }
+	URogueUpgradeRuleAsset* Rules = NewObject<URogueUpgradeRuleAsset>(Fixture.World);
+	// 即使规则资产误把吸血卡放进通用池，没有实际镰刀也不能出现。
+	Rules->BaseUpgradeTypes.AddUnique(ERogueUpgradeType::ScytheLifesteal);
+	TestFalse(TEXT("A locked scythe has no lifesteal card under default rules"), Fixture.BuildPool(nullptr).Contains(ERogueUpgradeType::ScytheLifesteal));
+	TestFalse(TEXT("A locked scythe cannot bypass the prerequisite through a custom base pool"), Fixture.BuildPool(Rules).Contains(ERogueUpgradeType::ScytheLifesteal));
+	TArray<ERogueUpgradeType> NoCharacterPool;
+	RogueUpgradeSystemRules::BuildUpgradePool(NoCharacterPool, nullptr, Rules);
+	TestFalse(TEXT("A generic pool without a player cannot offer scythe lifesteal"), NoCharacterPool.Contains(ERogueUpgradeType::ScytheLifesteal));
+
+	Fixture.ApplyQuantityUpgrade(ERogueUpgradeType::ScytheCount);
+	TestTrue(TEXT("The lifesteal card becomes eligible immediately after unlocking the scythe"), Fixture.BuildPool(nullptr).Contains(ERogueUpgradeType::ScytheLifesteal));
+	TestTrue(TEXT("The lifesteal card also appears under custom asset rules"), Fixture.BuildPool(Rules).Contains(ERogueUpgradeType::ScytheLifesteal));
+
+	FRogueUpgradeSystem System;
+	TArray<FRogueUpgradeOption> AllOptions;
+	System.BuildRandomUpgradeOptions(Fixture.Player, 100, AllOptions);
+	const FRogueUpgradeOption* FoundCard = AllOptions.FindByPredicate([](const FRogueUpgradeOption& Option)
+	{
+		return Option.Type == ERogueUpgradeType::ScytheLifesteal;
+	});
+	if (!TestNotNull(TEXT("The actual option generator includes the unlocked lifesteal card"), FoundCard)) { return false; }
+	const FRogueUpgradeOption Card = *FoundCard;
+	TestEqual(TEXT("The fallback card has the real Chinese title"), Card.Title, FString(TEXT("吸血收割")));
+	TestEqual(TEXT("The per-level magnitude is five percent"), Card.Magnitude, 0.05f);
+
+	Fixture.Player->ApplyUpgrade(Card);
+	TestTrue(TEXT("The first card grants twenty percent lifesteal"), FMath::IsNearlyEqual(Fixture.Attributes->GetScytheLifestealBonus(), 0.20f));
+	TestTrue(TEXT("The character getter reports the first-card value"), FMath::IsNearlyEqual(Fixture.Player->GetScytheLifestealPercent(), 0.20f));
+
+	Fixture.Player->ApplyUpgrade(Card);
+	TestTrue(TEXT("The second card adds five percent"), FMath::IsNearlyEqual(Fixture.Attributes->GetScytheLifestealBonus(), 0.25f));
+
+	FRogueWeaponBonusCaps Caps;
+	Caps.ScytheLifesteal = 0.3f;
+	Fixture.Attributes->SetWeaponBonusCaps(Caps);
+	Fixture.Player->ApplyUpgrade(Card);
+	TestEqual(TEXT("The optional lifesteal cap clamps the third card"), Fixture.Attributes->GetScytheLifestealBonus(), 0.3f);
 	return true;
 }
 

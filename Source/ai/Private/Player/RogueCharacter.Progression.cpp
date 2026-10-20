@@ -190,6 +190,43 @@ void ARogueCharacter::ApplyUpgrade(const FRogueUpgradeOption& Upgrade)
 		ApplyUpgradeEffectViaGAS(Upgrade.Type, Upgrade.Magnitude);
 		break;
 
+	case ERogueUpgradeType::ScytheLifesteal:
+	{
+		// 第一次获得直接到 20%，之后每级 +5%。
+		// 这张卡的幅度不是恒定的，不能走"同类 GE 叠层"（叠层只保留一份 SetByCaller 幅度），
+		// 因此直接写属性集基值，再由属性复制同步到客户端。
+		if (!IsAuthoritySide())
+		{
+			break;
+		}
+
+		URogueAttributeSet* Attributes = GetRogueAttributeSet();
+		if (Attributes == nullptr)
+		{
+			break;
+		}
+
+		const float CurrentLifesteal = Attributes->GetScytheLifestealBonus();
+		const float FirstTarget = Upgrade.FirstMagnitude >= 0.0f ? Upgrade.FirstMagnitude : 0.20f;
+		const float MaxTarget = Upgrade.MaxMagnitude >= 0.0f ? Upgrade.MaxMagnitude : 1.0f;
+		// Magnitude 来自数据表；缺失/为 0 时退回 5%，避免升级静默无效。
+		const float PerLevelMagnitude = Upgrade.Magnitude > KINDA_SMALL_NUMBER ? Upgrade.Magnitude : 0.05f;
+		const float Magnitude = CurrentLifesteal + KINDA_SMALL_NUMBER < FirstTarget
+			? FirstTarget - CurrentLifesteal
+			: PerLevelMagnitude;
+		float NewValue = CurrentLifesteal + Magnitude;
+
+		const float Cap = Attributes->GetWeaponBonusCapFor(URogueAttributeSet::GetScytheLifestealBonusAttribute());
+		if (Cap >= 0.0f)
+		{
+			NewValue = FMath::Min(NewValue, Cap);
+		}
+		NewValue = FMath::Min(NewValue, MaxTarget);
+		NewValue = FMath::Clamp(NewValue, 0.0f, 1.0f);
+		Attributes->SetScytheLifestealBonus(NewValue);
+		break;
+	}
+
 	default:
 		break;
 	}

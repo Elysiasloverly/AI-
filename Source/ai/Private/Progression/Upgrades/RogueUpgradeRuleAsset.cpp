@@ -36,6 +36,7 @@ void URogueUpgradeRuleAsset::ResetToDefaultRules()
 	WeaponUpgradeRules =
 	{
 		{ ERogueWeaponUpgradeSource::Scythe, ERogueUpgradeType::ScytheCount },
+		{ ERogueWeaponUpgradeSource::Scythe, ERogueUpgradeType::ScytheLifesteal },
 		{ ERogueWeaponUpgradeSource::Rocket, ERogueUpgradeType::RocketCount },
 		{ ERogueWeaponUpgradeSource::Laser, ERogueUpgradeType::LaserCount },
 		{ ERogueWeaponUpgradeSource::HellTower, ERogueUpgradeType::HellTowerCount },

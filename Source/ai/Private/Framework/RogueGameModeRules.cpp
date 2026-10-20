@@ -6,41 +6,49 @@ namespace
 {
 	static const FRogueEnemyWaveEntryRow DefaultEnemyWaveEntries[] =
 	{
-		{ 1, ERogueEnemyType::Hunter, 3 },
-		{ 2, ERogueEnemyType::Charger, 1 },
+		{ 1, ERogueEnemyType::Rifleman, 3 },
+		{ 2, ERogueEnemyType::Assault, 1 },
 		{ 2, ERogueEnemyType::Skirmisher, 1 },
 		{ 3, ERogueEnemyType::Orbiter, 1 },
-		{ 3, ERogueEnemyType::Shooter, 1 },
+		{ 3, ERogueEnemyType::Marksman, 1 },
 		{ 3, ERogueEnemyType::Skirmisher, 1 },
-		{ 4, ERogueEnemyType::Tank, 1 },
-		{ 4, ERogueEnemyType::Spitter, 1 },
-		{ 5, ERogueEnemyType::Artillery, 1 },
-		{ 5, ERogueEnemyType::Shooter, 1 },
-		{ 6, ERogueEnemyType::Shooter, 1 },
-		{ 6, ERogueEnemyType::Spitter, 1 },
+		{ 4, ERogueEnemyType::Juggernaut, 1 },
+		{ 4, ERogueEnemyType::Scatterer, 1 },
+		{ 5, ERogueEnemyType::Cannoneer, 1 },
+		{ 5, ERogueEnemyType::Marksman, 1 },
+		{ 5, ERogueEnemyType::Shotgunner, 1 },
+		{ 6, ERogueEnemyType::Marksman, 1 },
+		{ 6, ERogueEnemyType::Sniper, 1 },
+		{ 6, ERogueEnemyType::Scatterer, 1 },
 		{ 6, ERogueEnemyType::Orbiter, 1 },
 		// 震荡柱从第 7 波开始进入默认加权池；资产配置了波次表时以资产为准。
 		{ 7, ERogueEnemyType::ShockPillar, 1 },
-		{ 8, ERogueEnemyType::Tank, 1 },
-		{ 8, ERogueEnemyType::Artillery, 1 },
-		{ 8, ERogueEnemyType::Charger, 1 },
-		{ 10, ERogueEnemyType::Artillery, 1 },
-		{ 10, ERogueEnemyType::Spitter, 1 },
+		{ 7, ERogueEnemyType::Repeater, 1 },
+		{ 8, ERogueEnemyType::Juggernaut, 1 },
+		{ 8, ERogueEnemyType::Cannoneer, 1 },
+		{ 8, ERogueEnemyType::Assault, 1 },
+		{ 9, ERogueEnemyType::Ringcaster, 1 },
+		{ 10, ERogueEnemyType::Cannoneer, 1 },
+		{ 10, ERogueEnemyType::Scatterer, 1 },
 		{ 10, ERogueEnemyType::Skirmisher, 1 },
 		{ 13, ERogueEnemyType::ShockPillar, 1 }
 	};
 
 	static const FRogueEnemyBalanceRow DefaultEnemyBalanceRows[] =
 	{
-		{ ERogueEnemyType::Hunter, 1.00f, 1.00f, 1.00f, 0, 1.00f, 1.00f, 1.00f },
-		{ ERogueEnemyType::Charger, 0.95f, 1.28f, 1.25f, 1, 1.00f, 1.25f, 1.18f },
-		{ ERogueEnemyType::Tank, 2.10f, 0.72f, 1.55f, 2, 1.35f, 0.80f, 1.25f },
+		{ ERogueEnemyType::Rifleman, 1.00f, 1.00f, 1.00f, 0, 1.00f, 1.00f, 1.00f },
+		{ ERogueEnemyType::Assault, 0.95f, 1.28f, 1.25f, 1, 1.00f, 1.25f, 1.18f },
+		{ ERogueEnemyType::Juggernaut, 2.10f, 0.72f, 1.55f, 2, 1.35f, 0.80f, 1.25f },
 		{ ERogueEnemyType::Orbiter, 0.85f, 1.12f, 1.05f, 1, 0.92f, 1.15f, 1.12f },
-		{ ERogueEnemyType::Shooter, 0.88f, 0.98f, 1.18f, 1, 1.05f, 1.05f, 1.22f },
+		{ ERogueEnemyType::Marksman, 0.88f, 0.98f, 1.18f, 1, 1.05f, 1.05f, 1.22f },
 		{ ERogueEnemyType::Skirmisher, 0.76f, 1.42f, 1.14f, 1, 0.90f, 1.32f, 1.16f },
-		{ ERogueEnemyType::Artillery, 1.02f, 0.86f, 1.34f, 2, 1.14f, 0.92f, 1.35f },
-		{ ERogueEnemyType::Spitter, 0.82f, 1.08f, 1.10f, 1, 0.96f, 1.12f, 1.24f },
-		{ ERogueEnemyType::ShockPillar, 3.35f, 0.0f, 1.24f, 2, 1.55f, 0.0f, 1.30f }
+		{ ERogueEnemyType::Cannoneer, 1.02f, 0.86f, 1.34f, 2, 1.14f, 0.92f, 1.35f },
+		{ ERogueEnemyType::Scatterer, 0.82f, 1.08f, 1.10f, 1, 0.96f, 1.12f, 1.24f },
+		{ ERogueEnemyType::ShockPillar, 3.35f, 0.0f, 1.24f, 2, 1.55f, 0.0f, 1.30f },
+		{ ERogueEnemyType::Sniper, 1.05f, 0.90f, 1.35f, 1, 1.10f, 0.92f, 1.45f },
+		{ ERogueEnemyType::Shotgunner, 0.90f, 1.05f, 1.05f, 1, 0.98f, 1.08f, 1.18f },
+		{ ERogueEnemyType::Repeater, 0.78f, 1.18f, 0.90f, 1, 0.92f, 1.20f, 1.05f },
+		{ ERogueEnemyType::Ringcaster, 1.15f, 0.95f, 1.00f, 1, 1.08f, 0.98f, 1.12f }
 	};
 
 	const TArray<FRogueEnemyWaveEntryRow>* GetWaveEntries(const URogueGameBalanceAsset* BalanceAsset)
@@ -92,7 +100,7 @@ namespace
 
 		if (TotalWeight <= 0)
 		{
-			return ERogueEnemyType::Hunter;   // 兜底值；调用方需自行复核 CanSpawnType
+			return ERogueEnemyType::Rifleman;   // 兜底值；调用方需自行复核 CanSpawnType
 		}
 
 		int32 Pick = FMath::RandRange(1, TotalWeight);
@@ -110,7 +118,7 @@ namespace
 			}
 		}
 
-		return ERogueEnemyType::Hunter;
+		return ERogueEnemyType::Rifleman;
 	}
 
 	template <typename EntryType, uint32 N>
@@ -128,7 +136,7 @@ namespace
 
 		if (TotalWeight <= 0)
 		{
-			return ERogueEnemyType::Hunter;   // 兜底值；调用方需自行复核 CanSpawnType
+			return ERogueEnemyType::Rifleman;   // 兜底值；调用方需自行复核 CanSpawnType
 		}
 
 		int32 Pick = FMath::RandRange(1, TotalWeight);
@@ -146,7 +154,7 @@ namespace
 			}
 		}
 
-		return ERogueEnemyType::Hunter;
+		return ERogueEnemyType::Rifleman;
 	}
 }
 

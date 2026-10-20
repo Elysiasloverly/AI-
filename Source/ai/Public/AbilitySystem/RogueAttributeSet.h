@@ -4,7 +4,7 @@
 #include "AttributeSet.h"
 #include "AbilitySystem/RogueAttributeMacros.h"
 #include "AbilitySystemComponent.h"
-// 13 个武器加成属性的上限结构（-1 = 不设上限），由玩家数值资产配置。
+// 14 个武器加成属性的上限结构（-1 = 不设上限），由玩家数值资产配置。
 #include "Player/RoguePlayerBalanceAsset.h"
 #include "RogueAttributeSet.generated.h"
 
@@ -192,6 +192,11 @@ public:
 	UPROPERTY(BlueprintReadOnly, Replicated, Category = "Rogue|武器加成")
 	FGameplayAttributeData ScytheSizeBonus;
 	ATTRIBUTE_ACCESSORS(URogueAttributeSet, ScytheSizeBonus);
+
+	/** 镰刀吸血比例：[0,1]，0.2 表示造成伤害的 20% 回复生命。 */
+	UPROPERTY(BlueprintReadOnly, Replicated, Category = "Rogue|武器加成")
+	FGameplayAttributeData ScytheLifestealBonus;
+	ATTRIBUTE_ACCESSORS(URogueAttributeSet, ScytheLifestealBonus);
 
 private:
 	/** 血量归零时给自己施加死亡效果（授予 State.Dead）。幂等：已死则直接返回。 */

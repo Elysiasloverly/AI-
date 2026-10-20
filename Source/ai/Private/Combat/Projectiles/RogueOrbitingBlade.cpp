@@ -1,4 +1,5 @@
 #include "Combat/Projectiles/RogueOrbitingBlade.h"
+#include "Combat/RogueCombatCollision.h"
 
 #include "Combat/Visuals/RogueImpactEffect.h"
 #include "Enemies/RogueEnemy.h"
@@ -11,7 +12,6 @@
 #include "Materials/MaterialInterface.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Kismet/GameplayStatics.h"
-#include "UObject/ConstructorHelpers.h"
 #include "Player/RogueCharacter.h"
 
 ARogueOrbitingBlade::ARogueOrbitingBlade()
@@ -30,45 +30,30 @@ ARogueOrbitingBlade::ARogueOrbitingBlade()
 	Collision->SetGenerateOverlapEvents(true);   // Tick 里的贴身判定依赖重叠列表，必须产生重叠事件
 	RootComponent = Collision;
 
-	Mesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Mesh"));
-	Mesh->SetupAttachment(RootComponent);
-	Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	Mesh->SetRelativeRotation(VisualConfig.MeshRotation);
-	Mesh->SetRelativeScale3D(VisualConfig.MeshScale);
-	Mesh->SetCastShadow(false);
-
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> BladeMesh(TEXT("/Game/GameAssets/StarterContent/Shapes/Shape_Wedge_A.Shape_Wedge_A"));
-	if (BladeMesh.Succeeded())
-	{
-		Mesh->SetStaticMesh(BladeMesh.Object);
-	}
-
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> BladeMaterial(TEXT("/Game/GameAssets/StarterContent/Materials/M_Tech_Hex_Tile.M_Tech_Hex_Tile"));
-	if (BladeMaterial.Succeeded())
-	{
-		Mesh->SetMaterial(0, BladeMaterial.Object);
-	}
-
-	// Overlay 在现有网格上追加材质绘制；材质应采用适合的混合方式。
-	// 这省去独立 GlowMesh 组件，但不能据此断言减少 draw call。
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> GlowMaterial(TEXT("/Game/GameAssets/StarterContent/Materials/M_Tech_Hex_Tile_Pulse.M_Tech_Hex_Tile_Pulse"));
-	if (GlowMaterial.Succeeded())
-	{
-		VisualConfig.GlowMaterial = GlowMaterial.Object;
-	}
-
-	// OverlayMaterialMaxDrawDistance = 0 → 不额外裁剪，跟随本体的可见距离
-	Mesh->SetOverlayMaterial(VisualConfig.GlowMaterial);
-	Mesh->SetOverlayMaterialMaxDrawDistance(0.0f);
-
-	// 持续接触伤害读取重叠列表并使用 HitCooldown；BeginOverlap 只报告开始重叠，
-	// 不会为持续重叠自动周期触发。
+	// 视觉组件由 BP 的 SCS 提供，C++ 不再创建或加载占位网格。
 }
 
 void ARogueOrbitingBlade::BeginPlay()
 {
 	Super::BeginPlay();
-	BaseMeshScale = Mesh->GetRelativeScale3D();
+
+	// 只有命中球参与查询；刀片网格和蓝图追加的组件不参与物理碰撞。
+	RogueCombatCollision::DisableNonHitCollision(this, Collision);
+
+	TArray<UStaticMeshComponent*> MeshComponents;
+	GetComponents(MeshComponents);
+	for (UStaticMeshComponent* Candidate : MeshComponents)
+	{
+		if (Candidate != nullptr
+			&& (Candidate->ComponentHasTag(TEXT("RogueVisual.Mesh"))
+				|| Candidate->GetFName().ToString().StartsWith(TEXT("Mesh"))))
+		{
+			Mesh = Candidate;
+			break;
+		}
+	}
+
+	BaseMeshScale = Mesh != nullptr ? Mesh->GetRelativeScale3D() : VisualConfig.MeshScale;
 	BaseCollisionRadius = Collision->GetUnscaledSphereRadius();
 
 	// 在这里（而不是构造函数里）建 MID：BP 可能覆盖 VisualConfig.GlowMaterial，
@@ -263,7 +248,10 @@ void ARogueOrbitingBlade::ApplySizeMultiplier(float InSizeMultiplier)
 	const float NewMultiplier = FMath::IsFinite(InSizeMultiplier) ? FMath::Max(1.0f, InSizeMultiplier) : 1.0f;
 	if (FMath::IsNearlyEqual(SizeMultiplier, NewMultiplier)) { return; }
 	SizeMultiplier = NewMultiplier;
-	Mesh->SetRelativeScale3D(BaseMeshScale * SizeMultiplier);
+	if (Mesh != nullptr)
+	{
+		Mesh->SetRelativeScale3D(BaseMeshScale * SizeMultiplier);
+	}
 	// 显式扩大实际查询球；只放大网格不会改变持续接触伤害覆盖面。
 	// 尺寸改变时更新重叠列表，下一次伤害 Tick 即可读到新进入范围的敌人。
 	Collision->SetSphereRadius(BaseCollisionRadius * SizeMultiplier, !bPoolAvailable);
@@ -299,7 +287,18 @@ void ARogueOrbitingBlade::ApplyContactDamage()
 		HitCooldowns.Add(Enemy, VisualConfig.HitCooldown);
 		ARogueImpactEffect::SpawnImpactEffect(GetWorld(), Enemy->GetActorLocation() + FVector(0.0f, 0.0f, 45.0f), GetActorRotation(), ERogueImpactVisualStyle::Spark, VisualConfig.ImpactEffectScale, VisualConfig.ImpactEffectLifetime, this);
 		// 环绕刀片是近身伤害，Tag 用 Damage.Source.Melee
-		RogueAbilitySystem::ApplyDamageToTarget(OwnerActor.Get(), Enemy, Damage, RogueGameplayTags::Damage_Source_Melee);
+		float DamageDealt = 0.0f;
+		const bool bDamageApplied = RogueAbilitySystem::ApplyDamageToTarget(
+			OwnerActor.Get(), Enemy, Damage, RogueGameplayTags::Damage_Source_Melee, &DamageDealt);
+
+		// 吸血按实际扣除的护甲 + 生命计算；多把刀片各结算各的。
+		if (bDamageApplied && DamageDealt > 0.0f)
+		{
+			if (ARogueCharacter* OwnerCharacter = Cast<ARogueCharacter>(OwnerActor.Get()))
+			{
+				OwnerCharacter->ApplyScytheLifesteal(DamageDealt);
+			}
+		}
 	}
 }
 

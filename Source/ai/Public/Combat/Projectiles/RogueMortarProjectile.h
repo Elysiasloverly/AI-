@@ -33,11 +33,8 @@ protected:
 private:
 	void UpdateLandingIndicator(float DeltaSeconds);
 
-	UPROPERTY(VisibleAnywhere)
+	UPROPERTY(Transient)
 	TObjectPtr<UStaticMeshComponent> LandingIndicatorMesh;
-
-	UPROPERTY()
-	TObjectPtr<UMaterialInterface> LandingIndicatorMaterial;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Mortar")
 	float MortarArcParam = 0.74f;

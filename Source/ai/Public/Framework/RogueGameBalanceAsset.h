@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "Framework/RogueGameModeConfig.h"
 #include "Shared/RogueTypes.h"
 #include "RogueGameBalanceAsset.generated.h"
 
@@ -78,6 +79,53 @@ struct AI_API FRogueSpawnBalanceSettings
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "最短刷怪间隔（秒）", ToolTip = "最终间隔至少为此值，防止后期刷怪过密。未加载任何平衡资产时，旧有代码兜底仍为0.18秒。", Units = "s", ClampMin = "0"))
 	float MinimumInterval = 0.20f;
+
+	// ---- 基础刷怪位置/节奏（原 FRogueSpawnSettings 的 data asset 版本） ----
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "刷怪半径", ToolTip = "在刷怪框内围绕玩家选取生成点的半径。", Units = "cm", ClampMin = "0"))
+	float SpawnRadius = 2800.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "基础刷怪间隔（秒）", ToolTip = "未应用波次加速和开局放缓前的基础刷怪间隔。", Units = "s", ClampMin = "0"))
+	float SpawnInterval = 0.88f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "波次时长（秒）", ToolTip = "每个波次的持续时间，用于计算当前波次。", Units = "s", ClampMin = "1"))
+	float WaveDuration = 25.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "基础场上上限", ToolTip = "第 1 波的场上存活上限；后续按 MaxAlivePerWave 增长。", ClampMin = "0"))
+	int32 BaseMaxAliveEnemies = 40;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "与玩家最小生成距离", ToolTip = "生成点与玩家之间的最小水平距离。", Units = "cm", ClampMin = "0"))
+	float EnemySpawnMinimumDistance = 1100.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "地面射线向上起点距离", ToolTip = "从参照玩家高度向上偏移，再向下寻找地面。", Units = "cm", ClampMin = "0"))
+	float GroundTraceHeight = 2000.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "地面射线向下检测距离", ToolTip = "射线终点相对参照玩家的向下距离。", Units = "cm", ClampMin = "1"))
+	float GroundTraceDepth = 10000.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "出生胶囊离地间隙", ToolTip = "在地面高度与胶囊高度之上额外增加的间隙。", Units = "cm", ClampMin = "0"))
+	float GroundClearance = 2.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "地面射线检测通道", ToolTip = "地面必须阻挡该通道，且不能被 Pawn 胶囊选中。"))
+	TEnumAsByte<ECollisionChannel> GroundTraceChannel = ECC_Visibility;
+};
+
+USTRUCT(BlueprintType, meta = (DisplayName = "首领刷新节奏"))
+struct AI_API FRogueBossSpawnSettings
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "Boss 波次间隔", ToolTip = "每隔多少波生成一次 Boss；0 表示不生成。", ClampMin = "0"))
+	int32 BossWaveInterval = 10;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "Boss 额外选卡数", ToolTip = "击败 Boss 后额外获得的升级选卡数量。", ClampMin = "0"))
+	int32 BossBonusSelections = 3;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "Boss 生成距离", ToolTip = "Boss 生成点相对玩家的目标距离。", Units = "cm", ClampMin = "0"))
+	float BossSpawnDistance = 3600.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "Boss 最小生成距离", ToolTip = "Boss 生成点与玩家之间允许的最小距离。", Units = "cm", ClampMin = "0"))
+	float BossSpawnMinimumDistance = 1800.0f;
 };
 
 USTRUCT(BlueprintType, meta = (DisplayName = "额外生命成长阶段"))
@@ -245,7 +293,7 @@ struct AI_API FRogueEnemyWaveEntryRow
 	int32 MinWave = 1;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "敌人类型", ToolTip = "选择本条规则对应的敌人类型。"))
-	ERogueEnemyType EnemyType = ERogueEnemyType::Hunter;
+	ERogueEnemyType EnemyType = ERogueEnemyType::Rifleman;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "刷出倾向（权重）", ToolTip = "相对数值：权重3通常比权重1更容易抽中；仍受生成上限等条件过滤。"))
 	int32 Weight = 1;
@@ -257,7 +305,7 @@ struct AI_API FRogueEnemyBalanceRow
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "敌人类型", ToolTip = "选择本条规则对应的敌人类型。"))
-	ERogueEnemyType EnemyType = ERogueEnemyType::Hunter;
+	ERogueEnemyType EnemyType = ERogueEnemyType::Rifleman;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "生命倍率", ToolTip = "普通敌人完成基础成长和生命阶段强化后，生命再乘本值。"))
 	float HealthMultiplier = 1.0f;
@@ -306,11 +354,23 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "04.首领属性", meta = (DisplayName = "首领设置", ToolTip = "首领按当前波次计算成长，再应用前期或后期强化与类型修正。", ShowOnlyInnerProperties))
 	FRogueBossStatSettings BossStats;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "04.首领属性", meta = (DisplayName = "首领刷新节奏", ToolTip = "Boss 出现波次、生成距离与额外选卡数。", ShowOnlyInnerProperties))
+	FRogueBossSpawnSettings BossSpawn;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "05.击杀奖励", meta = (DisplayName = "奖励设置", ToolTip = "经验按出生波次确定；金币按击杀时的当前波次计算。", ShowOnlyInnerProperties))
 	FRogueKillRewardSettings Rewards;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "06.商店", meta = (DisplayName = "商店设置", ToolTip = "提供卡牌数量、购买价格和刷新设置。", ShowOnlyInnerProperties))
 	FRogueShopBalanceSettings Shop;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "07.运行时", meta = (DisplayName = "对象池设置", ToolTip = "战斗对象池预热容量。", ShowOnlyInnerProperties))
+	FRoguePoolSettings Pools;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "07.运行时", meta = (DisplayName = "性能设置", ToolTip = "敌人空间哈希、清理间隔与特效裁剪阈值。", ShowOnlyInnerProperties))
+	FRogueRuntimePerformanceSettings Performance;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "07.运行时", meta = (DisplayName = "场景优化", ToolTip = "关卡环境优化开关与灯光参数。", ShowOnlyInnerProperties))
+	FRogueSceneOptimizationSettings Scene;
 
 private:
 	// 仅用于读取旧版资产。PostLoad 按自定义版本迁移，保存时弃用字段不再写入；编辑界面仅展示上方结构。

@@ -202,6 +202,13 @@ public:
 	UFUNCTION(BlueprintPure)
 	float GetHealthPercent() const;
 
+	/** 当前镰刀吸血比例（0-1）；没有属性集时为 0。 */
+	UFUNCTION(BlueprintPure)
+	float GetScytheLifestealPercent() const;
+
+	/** 服务端：按镰刀实际造成的伤害回复生命。客户端调用无效。 */
+	void ApplyScytheLifesteal(float DamageDealt);
+
 	UFUNCTION(BlueprintPure)
 	float GetExperiencePercent() const;
 
@@ -542,16 +549,39 @@ private:
 	float DashSpeed = 4200.0f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "跳跃")
-	float JumpZVelocity = 720.0f;
+	float JumpZVelocity = 680.0f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "跳跃")
-	float AirControl = 0.35f;
+	float AirControl = 0.55f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "跳跃")
-	float GravityScale = 1.0f;
+	float GravityScale = 1.8f;
+
+	/** 下落阶段额外乘的重力倍率。 */
+	UPROPERTY(EditDefaultsOnly, Category = "跳跃")
+	float FallGravityMultiplier = 1.45f;
+
+	/** 提前松键时保留的上升速度比例。 */
+	UPROPERTY(EditDefaultsOnly, Category = "跳跃")
+	float JumpCutMultiplier = 0.45f;
+
+	/** 落地前按跳的输入缓冲窗口。 */
+	UPROPERTY(EditDefaultsOnly, Category = "跳跃")
+	float JumpBufferSeconds = 0.12f;
+
+	/** 离开地面后的起跳宽限时间。 */
+	UPROPERTY(EditDefaultsOnly, Category = "跳跃")
+	float CoyoteTimeSeconds = 0.10f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "跳跃")
 	int32 JumpMaxCountConfig = 1;
+
+	/** 每帧维护土狼时间、跳跃输入缓冲和下落重力。 */
+	void UpdateJumpFeel(float DeltaSeconds);
+
+	float JumpBufferRemaining = 0.0f;
+	float CoyoteTimeRemaining = 0.0f;
+	bool bJumpedSinceGrounded = false;
 
 	// ---- 输入（Enhanced Input）----
 	// 未指定引用时从 /Game/Input/IMC_Default 与 /Game/Input/IA/IA_* 加载。

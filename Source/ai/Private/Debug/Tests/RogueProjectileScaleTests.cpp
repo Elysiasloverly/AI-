@@ -69,7 +69,7 @@ namespace RogueProjectileScaleTests
 		{
 			UStaticMeshComponent* Mesh = Meshes[Index];
 			// The landing ring represents damage range, not the flying projectile model.
-			if (Mesh->GetFName() == TEXT("LandingIndicatorMesh")) { continue; }
+			if (Mesh->GetFName().ToString().StartsWith(TEXT("LandingIndicatorMesh"))) { continue; }
 			if (bUseNonuniformScale) { Mesh->SetRelativeScale3D(FVector(0.31f + Index * 0.1f, 0.57f, 0.83f)); }
 			Result.Add(Mesh, Mesh->GetRelativeScale3D());
 		}

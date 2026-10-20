@@ -75,7 +75,12 @@ namespace RogueScytheSizeTests
 				FRogueWeaponTableRow Config;
 				Config.WeaponClass = ARogueWeapon_Scythe::StaticClass();
 				Config.CountUpgradeType = ERogueUpgradeType::ScytheCount;
-				Config.BladeClass = ARogueOrbitingBlade::StaticClass();
+				Config.BladeClass = LoadClass<ARogueOrbitingBlade>(nullptr,
+		TEXT("/Game/BP/Projectile/BP_RogueOrbitingBlade.BP_RogueOrbitingBlade_C"));
+	if (Config.BladeClass == nullptr)
+	{
+		Config.BladeClass = ARogueOrbitingBlade::StaticClass();
+	}
 				Config.Count = 1;
 				Config.OrbitRadius = 200.0f;
 				Config.RotationSpeed = 0.0f;
@@ -242,6 +247,70 @@ bool FRogueScytheSizeExtendedContactTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueScytheLifestealContactTest,
+	"Rogue.Gameplay.ScytheLifesteal.ContactDamageHealsOwner", RogueScytheSizeTests::Flags)
+
+bool FRogueScytheLifestealContactTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace RogueScytheSizeTests;
+	FFixture Fixture;
+	if (!Fixture.Initialize(*this)) { return false; }
+	ARogueCharacter* Player = Fixture.Players[0];
+	URogueAttributeSet* PlayerAttributes = Player->GetRogueAttributeSet();
+	if (!TestNotNull(TEXT("The player owns real GAS attributes"), PlayerAttributes)) { return false; }
+
+	Player->SetCurrentHealth(50.0f);
+	FRogueUpgradeOption LifestealUpgrade;
+	LifestealUpgrade.Type = ERogueUpgradeType::ScytheLifesteal;
+	LifestealUpgrade.Magnitude = 0.05f;
+	Player->ApplyUpgrade(LifestealUpgrade);
+	TestTrue(TEXT("The first lifesteal card sets twenty percent"), FMath::IsNearlyEqual(PlayerAttributes->GetScytheLifestealBonus(), 0.20f));
+
+	Fixture.Scythes[0]->WeaponTick(0.0f);
+	const TArray<ARogueOrbitingBlade*> Blades = Fixture.ActiveBlades();
+	if (!TestEqual(TEXT("The lifesteal test has exactly one real blade"), Blades.Num(), 1)) { return false; }
+	ARogueOrbitingBlade* Blade = Blades[0];
+	USphereComponent* Sphere = Blade->FindComponentByClass<USphereComponent>();
+	if (!TestNotNull(TEXT("The blade collision exists"), Sphere)) { return false; }
+
+	FActorSpawnParameters Spawn;
+	Spawn.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ARogueEnemy* Enemy = Fixture.World->SpawnActor<ARogueEnemy>(ARogueEnemy::StaticClass(),
+		Blade->GetActorLocation(), FRotator::ZeroRotator, Spawn);
+	if (!TestNotNull(TEXT("The lifesteal target is a real enemy"), Enemy)) { return false; }
+	FRogueEnemyProfile Profile;
+	Profile.Health = 1000.0f;
+	Profile.Speed = 0.0f;
+	Profile.Damage = 0.0f;
+	Enemy->ActivatePooledEnemy(nullptr, Enemy->GetActorLocation(), FRotator::ZeroRotator);
+	Enemy->InitializeEnemy(Profile);
+	Enemy->SetActorTickEnabled(false);
+	Enemy->GetCharacterMovement()->SetComponentTickEnabled(false);
+	UCapsuleComponent* Capsule = Enemy->GetCapsuleComponent();
+	Capsule->SetCapsuleSize(5.0f, 5.0f);
+	Capsule->SetCollisionObjectType(ECC_Pawn);
+	Capsule->SetCollisionResponseToAllChannels(ECR_Ignore);
+	Capsule->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Overlap);
+	Capsule->SetGenerateOverlapEvents(true);
+	Capsule->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	Enemy->SetActorLocation(Blade->GetActorLocation(), false, nullptr, ETeleportType::TeleportPhysics);
+	Enemy->SetActorEnableCollision(true);
+	Capsule->UpdateOverlaps();
+	Sphere->UpdateOverlaps();
+	URogueAttributeSet* EnemyAttributes = Enemy->GetRogueAttributeSet();
+	if (!TestNotNull(TEXT("The enemy owns real GAS attributes"), EnemyAttributes)) { return false; }
+
+	const float BeforeEnemyHealth = EnemyAttributes->GetHealth();
+	const float BeforePlayerHealth = PlayerAttributes->GetHealth();
+	const float Damage = Fixture.Scythes[0]->GetEffectiveDamage();
+	Blade->Tick(0.0f);
+
+	TestTrue(TEXT("The blade deals its configured damage"), FMath::IsNearlyEqual(EnemyAttributes->GetHealth(), BeforeEnemyHealth - Damage, 0.01f));
+	TestTrue(TEXT("Twenty percent of the real damage heals the owner"), FMath::IsNearlyEqual(PlayerAttributes->GetHealth(), BeforePlayerHealth + Damage * 0.20f, 0.01f));
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueScytheSizeBlueprintPoolReuseTest,
 	"Rogue.Gameplay.ScytheSize.BlueprintBaselineAndDifferentOwnerReuse", RogueScytheSizeTests::Flags)
 
@@ -254,13 +323,15 @@ bool FRogueScytheSizeBlueprintPoolReuseTest::RunTest(const FString& Parameters)
 	UClass* BladeClass = LoadClass<ARogueOrbitingBlade>(nullptr,
 		TEXT("/Game/BP/Projectile/BP_RogueOrbitingBlade.BP_RogueOrbitingBlade_C"));
 	if (!TestNotNull(TEXT("The real project blade Blueprint loads"), BladeClass)) { return false; }
-	AActor* Defaults = BladeClass->GetDefaultObject<AActor>();
-	const UStaticMeshComponent* DefaultMesh = Cast<UStaticMeshComponent>(Defaults->GetDefaultSubobjectByName(TEXT("Mesh")));
-	const USphereComponent* DefaultSphere = Cast<USphereComponent>(Defaults->GetDefaultSubobjectByName(TEXT("Collision")));
-	if (!TestNotNull(TEXT("The Blueprint retains the native mesh component"), DefaultMesh)
+	AActor* Defaults = Fixture.World->SpawnActor<AActor>(BladeClass, FVector::ZeroVector, FRotator::ZeroRotator);
+	if (!TestNotNull(TEXT("The Blueprint blade defaults can be spawned"), Defaults)) { return false; }
+	const UStaticMeshComponent* DefaultMesh = Defaults->FindComponentByClass<UStaticMeshComponent>();
+	const USphereComponent* DefaultSphere = Defaults->FindComponentByClass<USphereComponent>();
+	if (!TestNotNull(TEXT("The Blueprint provides a mesh component"), DefaultMesh)
 		|| !TestNotNull(TEXT("The Blueprint retains the native collision component"), DefaultSphere)) { return false; }
 	const FVector BlueprintScale = DefaultMesh->GetRelativeScale3D();
 	const float BlueprintRadius = DefaultSphere->GetUnscaledSphereRadius();
+	Fixture.World->DestroyActor(Defaults);
 	URogueCombatPoolSubsystem* Pool = Fixture.World->GetSubsystem<URogueCombatPoolSubsystem>();
 	if (!TestNotNull(TEXT("The real combat pool exists"), Pool)) { return false; }
 	ARogueOrbitingBlade* Blade = Pool->AcquireOrbitingBlade(BladeClass, Fixture.Players[0],

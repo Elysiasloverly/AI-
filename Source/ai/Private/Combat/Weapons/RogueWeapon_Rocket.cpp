@@ -19,7 +19,7 @@ void ARogueWeapon_Rocket::CollectFireTargets(TArray<ARogueEnemy*>& OutTargets) c
 {
 	// 当前策略：射程额外放宽 700，取 `max(12, 数量×3)` 个候选，
 	// 然后按顺序分给每一发火箭（见 FireRocketVolley 的 `RocketIndex % Enemies.Num()`）。
-	CollectEnemiesInRange(GetEffectiveRange() + 700.0f, OutTargets, FMath::Max(12, GetEffectiveCount() * 3));
+	CollectEnemiesInRange(GetEffectiveRange() + GetConfig().RocketSeekRangeBonus, OutTargets, FMath::Max(12, GetEffectiveCount() * 3));
 }
 
 void ARogueWeapon_Rocket::FireAtTargets(const TArray<ARogueEnemy*>& Targets)
@@ -39,14 +39,17 @@ float ARogueWeapon_Rocket::GetEffectiveCooldown() const
 {
 	const FRogueWeaponBonusValues& Bonuses = GetWeaponBonusValues();
 	const float Bonus = Bonuses.AttackSpeed;
-	return FMath::Max(0.55f, GetConfig().Cooldown - Bonus * 2.5f);
+	const FRogueWeaponTableRow& WeaponConfig = GetConfig();
+	const float MinCooldown = WeaponConfig.MinCooldown >= 0.0f ? WeaponConfig.MinCooldown : 0.0f;
+	return FMath::Max(MinCooldown, WeaponConfig.Cooldown - Bonus * WeaponConfig.CooldownReductionScale);
 }
 
 float ARogueWeapon_Rocket::GetExplosionRadius() const
 {
 	const FRogueWeaponBonusValues& Bonuses = GetWeaponBonusValues();
 	const float RangeBonus = Bonuses.AttackRange;
-	return GetConfig().ExplosionRadius + RangeBonus * 0.25f;
+	const FRogueWeaponTableRow& WeaponConfig = GetConfig();
+	return WeaponConfig.ExplosionRadius + RangeBonus * WeaponConfig.RocketExplosionRadiusRangeBonusScale;
 }
 
 void ARogueWeapon_Rocket::FireRocketVolley(const TArray<ARogueEnemy*>& Enemies)

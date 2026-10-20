@@ -39,7 +39,7 @@ void ARogueWeapon_Projectile::FireAtTarget(AActor* TargetActor)
 		return;
 	}
 
-	const FVector AimOrigin = OwnerChar->GetActorLocation() + FVector(0.0f, 0.0f, 50.0f);
+	const FVector AimOrigin = OwnerChar->GetActorLocation() + FVector(0.0f, 0.0f, 25.0f);
 	FVector Direction = TargetActor->GetActorLocation() - AimOrigin;
 	Direction.Z = 0.0f;
 	if (!Direction.Normalize())
@@ -51,7 +51,7 @@ void ARogueWeapon_Projectile::FireAtTarget(AActor* TargetActor)
 		}
 	}
 
-	const float SpreadStepDegrees = 9.0f;
+	const float SpreadStepDegrees = Config.SpreadStepDegrees;
 	const int32 EffectiveCount = GetEffectiveProjectileCount();
 	const int32 HalfCount = EffectiveCount / 2;
 

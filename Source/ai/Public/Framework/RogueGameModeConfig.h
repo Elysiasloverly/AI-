@@ -9,16 +9,16 @@ struct AI_API FRogueSceneOptimizationSettings
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, Category = "Scene")
+	UPROPERTY(EditAnywhere, Category = "07.运行时", meta = (DisplayName = "启用场景优化", ToolTip = "关闭时保留关卡原有灯光与环境，不应用本组优化参数。"))
 	bool bOptimizeSceneForPerformance = true;
 
-	UPROPERTY(EditAnywhere, Category = "Scene")
+	UPROPERTY(EditAnywhere, Category = "07.运行时", meta = (DisplayName = "主方向光强度", ToolTip = "场景优化启用时应用到主方向光的强度。"))
 	float PrimaryDirectionalLightIntensity = 7.4f;
 
-	UPROPERTY(EditAnywhere, Category = "Scene")
+	UPROPERTY(EditAnywhere, Category = "07.运行时", meta = (DisplayName = "主天光强度", ToolTip = "场景优化启用时应用到主天光的强度。"))
 	float PrimarySkyLightIntensity = 1.05f;
 
-	UPROPERTY(EditAnywhere, Category = "Scene")
+	UPROPERTY(EditAnywhere, Category = "07.运行时", meta = (DisplayName = "优化太阳旋转", ToolTip = "场景优化启用时应用到主方向光的旋转。"))
 	FRotator OptimizedSunRotation = FRotator(-48.0f, -32.0f, 0.0f);
 };
 
@@ -27,19 +27,19 @@ struct AI_API FRogueRuntimePerformanceSettings
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, Category = "Performance")
+	UPROPERTY(EditAnywhere, Category = "07.运行时", meta = (DisplayName = "特效裁剪敌人数量", ToolTip = "存活敌人达到该数量后，战斗特效进入高负载裁剪。"))
 	int32 CombatEffectsCullEnemyCount = 52;
 
-	UPROPERTY(EditAnywhere, Category = "Performance")
+	UPROPERTY(EditAnywhere, Category = "07.运行时", meta = (DisplayName = "敌人空间哈希单元尺寸", ToolTip = "敌人空间哈希的单元边长，影响范围查询与重建成本。"))
 	float EnemySpatialCellSize = 650.0f;
 
-	UPROPERTY(EditAnywhere, Category = "Performance")
+	UPROPERTY(EditAnywhere, Category = "07.运行时", meta = (DisplayName = "敌人空间哈希刷新间隔", ToolTip = "空间哈希增量刷新的时间间隔。"))
 	float EnemySpatialHashRefreshInterval = 0.15f;
 
-	UPROPERTY(EditAnywhere, Category = "Performance")
+	UPROPERTY(EditAnywhere, Category = "07.运行时", meta = (DisplayName = "敌人注册表清理间隔", ToolTip = "清理失效敌人引用的时间间隔。"))
 	float EnemyRegistryCleanupInterval = 1.0f;
 
-	UPROPERTY(EditAnywhere, Category = "Performance")
+	UPROPERTY(EditAnywhere, Category = "07.运行时", meta = (DisplayName = "拾取物注册表清理间隔", ToolTip = "清理失效拾取物引用的时间间隔。"))
 	float PickupRegistryCleanupInterval = 1.5f;
 };
 
@@ -48,31 +48,31 @@ struct AI_API FRoguePoolSettings
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, Category = "Pools")
+	UPROPERTY(EditAnywhere, Category = "07.运行时", meta = (DisplayName = "玩家弹体池预热", ToolTip = "玩家普通弹体的初始池容量。"))
 	int32 InitialPlayerProjectilePoolSize = 96;
 
-	UPROPERTY(EditAnywhere, Category = "Pools")
+	UPROPERTY(EditAnywhere, Category = "07.运行时", meta = (DisplayName = "敌人弹体池预热", ToolTip = "敌人弹体的初始池容量。"))
 	int32 InitialEnemyProjectilePoolSize = 96;
 
 	/** 敌人池预热量；默认 160 对应默认无 Boss 时第 16 波的存活上限（40 + 8×15）。
 	 *  运行资产、Boss 调整与硬顶可改变实际需求。池耗尽时可扩容，具体启动成本和内存应实测。
 	 *  用 FRogueCombatPools::LogPoolDiagnostics 查看池容量与运行时分配计数。 */
-	UPROPERTY(EditAnywhere, Category = "Pools")
+	UPROPERTY(EditAnywhere, Category = "07.运行时", meta = (DisplayName = "敌人池预热", ToolTip = "敌人的初始池容量；池耗尽时会扩容，启动成本需实测。"))
 	int32 InitialEnemyPoolSize = 160;
 
-	UPROPERTY(EditAnywhere, Category = "Pools")
+	UPROPERTY(EditAnywhere, Category = "07.运行时", meta = (DisplayName = "火箭池预热", ToolTip = "火箭弹的初始池容量。"))
 	int32 InitialRocketProjectilePoolSize = 40;
 
-	UPROPERTY(EditAnywhere, Category = "Pools")
+	UPROPERTY(EditAnywhere, Category = "07.运行时", meta = (DisplayName = "经验球池预热", ToolTip = "经验球的初始池容量。"))
 	int32 InitialExperiencePickupPoolSize = 64;
 
-	UPROPERTY(EditAnywhere, Category = "Pools")
+	UPROPERTY(EditAnywhere, Category = "07.运行时", meta = (DisplayName = "命中特效池预热", ToolTip = "命中特效的初始池容量。"))
 	int32 InitialImpactEffectPoolSize = 48;
 
-	UPROPERTY(EditAnywhere, Category = "Pools")
+	UPROPERTY(EditAnywhere, Category = "07.运行时", meta = (DisplayName = "激光池预热", ToolTip = "激光束的初始池容量。"))
 	int32 InitialLaserBeamPoolSize = 72;
 
-	UPROPERTY(EditAnywhere, Category = "Pools")
+	UPROPERTY(EditAnywhere, Category = "07.运行时", meta = (DisplayName = "环绕刀片池预热", ToolTip = "环绕刀片的初始池容量。"))
 	int32 InitialOrbitingBladePoolSize = 24;
 };
 

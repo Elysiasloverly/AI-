@@ -7,11 +7,13 @@
 #include "Enemies/Data/RogueEnemyArchetypes.h"
 #include "RogueEnemyDataTable.generated.h"
 
+class ARogueEnemyProjectile;
+
 // ===================================================================
 //  每种敌人的专属属性结构体
 // ===================================================================
 
-/** 冲锋者（Charger）专属属性 - 爆发冲刺参数 */
+/** 突击位移（Charger 参数块）专属属性 - 爆发冲刺参数 */
 USTRUCT(BlueprintType)
 struct AI_API FRogueChargerSpecialParams
 {
@@ -28,16 +30,6 @@ struct AI_API FRogueChargerSpecialParams
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (DisplayName = "爆发空闲速度倍率"))
 	float BurstIdleMultiplier = 1.0f;
-};
-
-/** 坦克（Tank）专属属性 - 自身移动倍率 */
-USTRUCT(BlueprintType)
-struct AI_API FRogueTankSpecialParams
-{
-	GENERATED_BODY()
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (DisplayName = "基础移动速度倍率"))
-	float BaseMoveMultiplier = 0.72f;
 };
 
 /** 环绕者（Orbiter）专属属性 - 环绕运动参数 */
@@ -71,7 +63,7 @@ struct AI_API FRogueOrbiterSpecialParams
 	float MidTangentWeight = 0.85f;
 };
 
-/** 射手（Shooter）专属属性 - 远程风筝 + 射击参数 */
+/** 单发远程（Shooter 参数块）专属属性 - 远程风筝 + 射击参数 */
 USTRUCT(BlueprintType)
 struct AI_API FRogueShooterSpecialParams
 {
@@ -117,15 +109,6 @@ struct AI_API FRogueShooterSpecialParams
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ranged", meta = (DisplayName = "初始冷却最大值"))
 	float InitialCooldownMax = 0.85f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ranged", meta = (DisplayName = "最小攻击距离"))
-	float MinimumRange = 420.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ranged", meta = (DisplayName = "最大攻击距离"))
-	float MaximumRange = 1300.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ranged", meta = (DisplayName = "攻击距离最小系数"))
-	float AttackRangeMinFactor = 0.55f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ranged", meta = (DisplayName = "射击冷却时间"))
 	float NextShotCooldown = 1.18f;
@@ -174,7 +157,7 @@ struct AI_API FRogueSkirmisherSpecialParams
 	float ZigZagTangentWeight = 0.82f;
 };
 
-/** 炮兵（Artillery）专属属性 - 远程风筝 + 重型射击参数 */
+/** 重型单发（Artillery 参数块）专属属性 - 远程风筝 + 重型射击参数 */
 USTRUCT(BlueprintType)
 struct AI_API FRogueArtillerySpecialParams
 {
@@ -218,15 +201,6 @@ struct AI_API FRogueArtillerySpecialParams
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ranged", meta = (DisplayName = "初始冷却最大值"))
 	float InitialCooldownMax = 1.30f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ranged", meta = (DisplayName = "最小攻击距离"))
-	float MinimumRange = 620.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ranged", meta = (DisplayName = "最大攻击距离"))
-	float MaximumRange = 1720.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ranged", meta = (DisplayName = "攻击距离最小系数"))
-	float AttackRangeMinFactor = 0.82f;
-
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ranged", meta = (DisplayName = "射击冷却时间"))
 	float NextShotCooldown = 1.85f;
 
@@ -249,7 +223,7 @@ struct AI_API FRogueArtillerySpecialParams
 	float MuzzleEffectLifetime = 0.18f;
 };
 
-/** 喷射者（Spitter）专属属性 - 散射弹幕参数 */
+/** 散射远程（Spitter 参数块）专属属性 - 散射弹幕参数 */
 USTRUCT(BlueprintType)
 struct AI_API FRogueSpitterSpecialParams
 {
@@ -292,15 +266,6 @@ struct AI_API FRogueSpitterSpecialParams
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ranged", meta = (DisplayName = "初始冷却最大值"))
 	float InitialCooldownMax = 0.48f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ranged", meta = (DisplayName = "最小攻击距离"))
-	float MinimumRange = 260.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ranged", meta = (DisplayName = "最大攻击距离"))
-	float MaximumRange = 940.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ranged", meta = (DisplayName = "攻击距离最小系数"))
-	float AttackRangeMinFactor = 0.40f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ranged", meta = (DisplayName = "射击冷却时间"))
 	float NextShotCooldown = 0.70f;
@@ -350,25 +315,34 @@ struct AI_API FRogueShockPillarSpecialParams
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "环形弹幕", meta = (DisplayName = "子弹参数"))
 	FRogueEnemyBulletRingSettings BulletRing;
+};
 
-	// 旧地面波字段仅为读取历史资产保留，震荡柱不再使用这些参数。
-	UPROPERTY()
-	float MaxRadius = 980.0f;
+/** 所有敌人类型的专属参数集合；表里只需要填 EnemyType 对应的子结构，其余保持默认。 */
+USTRUCT(BlueprintType)
+struct AI_API FRogueEnemySpecialParams
+{
+	GENERATED_BODY()
 
-	UPROPERTY()
-	float ExpansionDuration = 1.05f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "专属参数|冲锋者", meta = (DisplayName = "冲锋者"))
+	FRogueChargerSpecialParams Charger;
 
-	UPROPERTY()
-	float ExpansionSpeed = 2600.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "专属参数|环绕者", meta = (DisplayName = "环绕者"))
+	FRogueOrbiterSpecialParams Orbiter;
 
-	UPROPERTY()
-	float HitThickness = 92.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "专属参数|射手", meta = (DisplayName = "射手"))
+	FRogueShooterSpecialParams Shooter;
 
-	UPROPERTY()
-	float DamageMultiplier = 1.2f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "专属参数|游击者", meta = (DisplayName = "游击者"))
+	FRogueSkirmisherSpecialParams Skirmisher;
 
-	UPROPERTY()
-	bool bJumpCanDodge = true;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "专属参数|炮兵", meta = (DisplayName = "炮兵"))
+	FRogueArtillerySpecialParams Artillery;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "专属参数|喷射者", meta = (DisplayName = "喷射者"))
+	FRogueSpitterSpecialParams Spitter;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "专属参数|震荡柱", meta = (DisplayName = "震荡柱"))
+	FRogueShockPillarSpecialParams ShockPillar;
 };
 
 // ===================================================================
@@ -390,9 +364,6 @@ struct AI_API FRogueEnemyBossOverride
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RangedBossOverride", meta = (DisplayName = "Boss近距离"))
 	float BossCloseDistance = 0.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RangedBossOverride", meta = (DisplayName = "Boss最大攻击距离"))
-	float BossMaximumRange = 0.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RangedBossOverride", meta = (DisplayName = "Boss射击冷却时间"))
 	float BossNextShotCooldown = 0.0f;
@@ -425,15 +396,12 @@ struct AI_API FRogueEnemyArchetypeRow : public FTableRowBase
 
 	// ===== 基础信息 =====
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Base", meta = (DisplayName = "敌人类型"))
-	ERogueEnemyType EnemyType = ERogueEnemyType::Hunter;
+	ERogueEnemyType EnemyType = ERogueEnemyType::Rifleman;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Base", meta = (DisplayName = "移动模型"))
-	ERogueEnemyMovementModel MovementModel = ERogueEnemyMovementModel::Direct;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Base", meta = (DisplayName = "基础移动倍率"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Base", meta = (DisplayName = "基础移动倍率", ClampMin = "0"))
 	float BaseMoveMultiplier = 1.0f;
 
-	/** 可选攻击能力集；加载失败或未配置时按原型标志授予默认接触/远程/地面波能力。
+	/** 可选攻击能力集；加载失败或未配置时按原型标志授予默认接触/远程能力。
 	 *  默认 AI 只识别这三类能力槽；新增独立攻击决策仍需扩展 C++ 或蓝图调用路径。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Base", meta = (DisplayName = "攻击能力集(留空=按标志推导)"))
 	TSoftObjectPtr<URogueAbilitySet> AttackAbilitySet;
@@ -456,30 +424,23 @@ struct AI_API FRogueEnemyArchetypeRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Base", meta = (DisplayName = "每波刷新上限(0=不限)", ClampMin = "0"))
 	int32 MaxSpawnPerWave = 0;
 
-	// ===== 各敌人专属属性（仅对应类型生效） =====
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpecialParams|Charger", meta = (DisplayName = "冲锋者专属参数"))
-	FRogueChargerSpecialParams ChargerParams;
+	/** 这一种敌人使用的弹体蓝图；留空时回退敌人 BP 的 EnemyProjectileClass / 原生类。
+	 *  同一类型可以在这里单独换弹体，不需要改敌人 BP。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Base", meta = (DisplayName = "弹体蓝图类"))
+	TSubclassOf<ARogueEnemyProjectile> ProjectileClass;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpecialParams|Tank", meta = (DisplayName = "坦克专属参数"))
-	FRogueTankSpecialParams TankParams;
+	// ===== 视觉 =====
+	/** 普通形态视觉；表格现在直接保存，缺省时才回退 BuildEnemyArchetype 的基线。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Visual", meta = (DisplayName = "普通视觉"))
+	FRogueEnemyVisualArchetype Visual;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpecialParams|Orbiter", meta = (DisplayName = "环绕者专属参数"))
-	FRogueOrbiterSpecialParams OrbiterParams;
+	/** Boss 形态视觉；表格直接保存缩放/胶囊，避免 Boss 尺寸只写在 C++。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Visual", meta = (DisplayName = "Boss视觉"))
+	FRogueEnemyVisualArchetype BossVisual;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpecialParams|Shooter", meta = (DisplayName = "射手专属参数"))
-	FRogueShooterSpecialParams ShooterParams;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpecialParams|Skirmisher", meta = (DisplayName = "游击者专属参数"))
-	FRogueSkirmisherSpecialParams SkirmisherParams;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpecialParams|Artillery", meta = (DisplayName = "炮兵专属参数"))
-	FRogueArtillerySpecialParams ArtilleryParams;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpecialParams|Spitter", meta = (DisplayName = "喷射者专属参数"))
-	FRogueSpitterSpecialParams SpitterParams;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "专属参数|震荡柱", meta = (DisplayName = "震荡柱专属参数"))
-	FRogueShockPillarSpecialParams ShockPillarParams;
+	// ===== 各敌人专属属性（只填 EnemyType 对应的子结构） =====
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Base", meta = (DisplayName = "专属参数（只填当前类型）", ToolTip = "只展开 EnemyType 对应的子结构；其它子结构保持默认即可。"))
+	FRogueEnemySpecialParams SpecialParams;
 
 	// ===== Boss 覆盖 =====
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BossOverride", meta = (DisplayName = "Boss覆盖参数"))

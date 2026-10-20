@@ -5,9 +5,7 @@
 #include "RogueProjectile.generated.h"
 
 class USphereComponent;
-class UStaticMeshComponent;
 class UProjectileMovementComponent;
-class UPointLightComponent;
 class APawn;
 
 USTRUCT(BlueprintType)
@@ -134,22 +132,7 @@ private:
 	TObjectPtr<USphereComponent> Collision;
 
 	UPROPERTY(VisibleAnywhere)
-	TObjectPtr<UStaticMeshComponent> Mesh;
-
-	UPROPERTY(VisibleAnywhere)
-	TObjectPtr<UStaticMeshComponent> GlowMesh;
-
-	UPROPERTY(VisibleAnywhere)
-	TObjectPtr<UStaticMeshComponent> RingMesh;
-
-	UPROPERTY(VisibleAnywhere)
-	TObjectPtr<UStaticMeshComponent> TrailMesh;
-
-	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<UProjectileMovementComponent> ProjectileMovement;
-
-	UPROPERTY(VisibleAnywhere)
-	TObjectPtr<UPointLightComponent> GlowLight;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Visual")
 	FRogueProjectileVisualConfig VisualConfig;

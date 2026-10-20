@@ -132,12 +132,12 @@ void ARogueCharacter::TickWeaponFireReport(float DeltaSeconds)
 
 	if (IsAuthoritySide())
 	{
-		// 三种攻击的尝试/执行计数用于缩小调查范围，计数按本进程累计。
+		// 两种攻击的尝试/执行计数用于缩小调查范围，计数按本进程累计。
 		// 尝试为零可能是未进入距离、目标无效或路径被跳过；尝试有值而执行为零
 		// 也可能由冷却、标签或其他合法激活条件拒绝，不能直接认定 GAS 故障。
-		UE_LOG(LogTemp, Log, TEXT("[SelfTest]   敌人攻击(能力执行)：接触=%d 远程=%d 地面波=%d | 尝试：接触=%d 远程=%d 地面波=%d | 最近 10 秒平均帧时=%.2f ms（%d 帧）"),
-			AttackCounters.Contact, AttackCounters.Ranged, AttackCounters.GroundWave,
-			AttackCounters.ContactAttempts, AttackCounters.RangedAttempts, AttackCounters.GroundWaveAttempts,
+		UE_LOG(LogTemp, Log, TEXT("[SelfTest]   敌人攻击(能力执行)：接触=%d 远程=%d | 尝试：接触=%d 远程=%d | 最近 10 秒平均帧时=%.2f ms（%d 帧）"),
+			AttackCounters.Contact, AttackCounters.Ranged,
+			AttackCounters.ContactAttempts, AttackCounters.RangedAttempts,
 			AverageFrameMs, SampledFrames);
 	}
 

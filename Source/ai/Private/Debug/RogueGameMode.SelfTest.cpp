@@ -339,8 +339,8 @@ void ARogueGameMode::RunWeaponUpgradeSelfTest()
 			// 它们会故意改变场上状态（瞬移敌人、临时刷一只很硬的震荡柱），
 			// 混在前面会干扰"加成数值逐行对比"那部分自检。
 			//
-			// 为什么非要有探针：这三条攻击路径的触发条件（贴脸 / 进射程 / 起波时机）
-			// 在无头测试里几乎撞不上 —— 武器会在敌人靠近前把它打死。
+			// 为什么非要有探针：接触/远程两条攻击路径的触发条件（贴脸 / 进射程）
+			// 在无头测试里几乎撞不上 —— 武器会在敌人靠近前把它打死；震荡柱弹幕也需要单独验证。
 			// 只统计次数的话，"没实现"和"没机会触发"看起来完全一样（实测两者都是 0）。
 			TArray<ARogueCharacter*, TInlineAllocator<4>> ProbeTargets;
 			CollectAlivePlayers(ProbeTargets);
@@ -348,7 +348,7 @@ void ARogueGameMode::RunWeaponUpgradeSelfTest()
 			{
 				bSelfTestProbesDone = true;
 				ProbeContactAttack(ProbeTargets[0]);
-				ProbeGroundWaveAttack(ProbeTargets[0]);
+				ProbeShockPillarBarrage(ProbeTargets[0]);
 				ProbeDeathAndRevive(ProbeTargets[0]);
 			}
 		}
@@ -388,9 +388,9 @@ void ARogueGameMode::RunWeaponUpgradeSelfTest()
 	UE_LOG(LogTemp, Log, TEXT("[SelfTest] ==== 第一阶段完成（等客户端连上后会自动进入第二阶段）===="));
 }
 
-/** 探针专用血量：高到足以活过"下一次决策 + 地面波初始冷却"。
- *  为什么必须调高：两条攻击路径的触发都需要敌人活到那个时候，而武器一轮齐射就能秒掉普通怪 ——
- *  这个坑实测踩过两次（接触 / 地面波计数都是 0，看起来像"能力没实现"）。 */
+/** 探针专用血量：高到足以活过"下一次决策 + 首次攻击冷却"。
+ *  为什么必须调高：攻击路径的触发都需要敌人活到那个时候，而武器一轮齐射就能秒掉普通怪 ——
+ *  这个坑实测踩过两次（接触/远程计数都是 0，看起来像"能力没实现"）。 */
 static constexpr float ProbeEnemyHealth = 20000.0f;
 
 void ARogueGameMode::ProbeDeathAndRevive(ARogueCharacter* Target)
@@ -481,7 +481,7 @@ void ARogueGameMode::ProbeContactAttack(ARogueCharacter* Target)
 		bBlueprintOverridesBehavior ? 1 : 0);
 }
 
-void ARogueGameMode::ProbeGroundWaveAttack(ARogueCharacter* Target)
+void ARogueGameMode::ProbeShockPillarBarrage(ARogueCharacter* Target)
 {
 	if (Target == nullptr || GetWorld() == nullptr)
 	{
@@ -495,19 +495,18 @@ void ARogueGameMode::ProbeGroundWaveAttack(ARogueCharacter* Target)
 	}
 
 	// 直接用池生成一只震荡柱放在玩家附近。
-	// 为什么不用常规刷怪流程：刷怪按波次/权重选类型，短时间内不一定会出震荡柱，
-	// 于是"地面波攻击能力"这条路径可能整场都没被验证过（实测跑了 2 分钟一次都没出）。
+	// 为什么不用常规刷怪流程：刷怪按波次/权重选类型，短时间内不一定会出震荡柱。
 	const FVector SpawnLocation = Target->GetActorLocation() + FVector(600.0f, 0.0f, 0.0f);
 	ARogueEnemy* Enemy = Pools->AcquireEnemy(ARogueEnemy::StaticClass(), nullptr, SpawnLocation, FRotator::ZeroRotator);
 	if (Enemy == nullptr)
 	{
-		UE_LOG(LogTemp, Log, TEXT("[SelfTest] 地面波验证：池里取不到敌人，跳过"));
+		UE_LOG(LogTemp, Log, TEXT("[SelfTest] 震荡柱弹幕验证：池里取不到敌人，跳过"));
 		return;
 	}
 
 	FRogueEnemyProfile Profile;
 	Profile.EnemyType = ERogueEnemyType::ShockPillar;
-	// 使用探针专用高生命，增加敌人存活到初始随机冷却结束的机会；
+	// 使用探针专用高生命，增加敌人存活到首次弹幕的机会；
 	// 实际存活时长仍取决于当前武器伤害，需检查后续攻击计数。
 	Profile.Health = ProbeEnemyHealth;
 	Profile.Speed = 0.0f;
@@ -523,11 +522,10 @@ void ARogueGameMode::ProbeGroundWaveAttack(ARogueCharacter* Target)
 		Tracker->RegisterEnemy(Enemy);
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("[SelfTest] 地面波验证：已在玩家 %s 附近生成一只震荡柱（%s），等它发射整圈弹幕"),
+	UE_LOG(LogTemp, Log, TEXT("[SelfTest] 震荡柱弹幕验证：已在玩家 %s 附近生成一只震荡柱（%s），等它发射整圈弹幕"),
 		Target->GetPlayerState() != nullptr ? *Target->GetPlayerState()->GetPlayerName() : *Target->GetName(),
 		*Enemy->GetName());
 
-	// 保留旧自测入口名；震荡柱现在使用远程攻击槽。
 	const FRogueEnemyRangedArchetype& Ranged = Enemy->GetRangedArchetype();
 	UE_LOG(LogTemp, Log,
 		TEXT("[SelfTest]   震荡柱诊断：弹幕开关=%d 攻击能力=%s 初始冷却=%.2f 距离=%.1f 每圈=%d 速度=%.1f"),
@@ -556,7 +554,7 @@ void ARogueGameMode::ProbeEnemyStress(ARogueCharacter* Target, int32 Count)
 	// 初始位置位于当前 950 距离降频阈值内；玩家移动、击杀和池获取失败仍会改变实际负载。
 	// 不以生成请求数量代替活跃敌人数，也不把该场景视作所有配置下的最坏情况。
 	FRogueEnemyProfile Profile;
-	Profile.EnemyType = ERogueEnemyType::Hunter;
+	Profile.EnemyType = ERogueEnemyType::Rifleman;
 	Profile.Health = 100000.0f;
 	Profile.Speed = 120.0f;
 	Profile.Damage = 0.0f;

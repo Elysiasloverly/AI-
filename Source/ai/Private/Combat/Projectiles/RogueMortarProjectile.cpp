@@ -1,40 +1,32 @@
 #include "Combat/Projectiles/RogueMortarProjectile.h"
 
 #include "Components/StaticMeshComponent.h"
-#include "Engine/StaticMesh.h"
 #include "GameFramework/ProjectileMovementComponent.h"
-#include "Materials/MaterialInterface.h"
-#include "UObject/ConstructorHelpers.h"
 
 ARogueMortarProjectile::ARogueMortarProjectile()
 {
-	LandingIndicatorMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("LandingIndicatorMesh"));
-	LandingIndicatorMesh->SetupAttachment(RootComponent);
-	LandingIndicatorMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	LandingIndicatorMesh->SetCastShadow(false);
-	LandingIndicatorMesh->SetUsingAbsoluteLocation(true);
-	LandingIndicatorMesh->SetUsingAbsoluteRotation(true);
-	LandingIndicatorMesh->SetUsingAbsoluteScale(true);
-	LandingIndicatorMesh->SetHiddenInGame(true);
-	LandingIndicatorMesh->SetRelativeRotation(FRotator(0.0f, 0.0f, 0.0f));
-
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> IndicatorMesh(TEXT("/Game/GameAssets/StarterContent/Shapes/Shape_Torus.Shape_Torus"));
-	if (IndicatorMesh.Succeeded())
-	{
-		LandingIndicatorMesh->SetStaticMesh(IndicatorMesh.Object);
-	}
-
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> IndicatorMaterial(TEXT("/Game/GameAssets/HologramShader/Materials/HologramShader/MI/MI_Hologram_8.MI_Hologram_8"));
-	if (IndicatorMaterial.Succeeded())
-	{
-		LandingIndicatorMaterial = IndicatorMaterial.Object;
-		LandingIndicatorMesh->SetMaterial(0, LandingIndicatorMaterial);
-	}
+	// 落点指示圈由 BP 的 SCS 提供；C++ 不再创建或加载占位网格。
 }
 
 void ARogueMortarProjectile::BeginPlay()
 {
 	Super::BeginPlay();
+
+	TArray<UStaticMeshComponent*> MeshComponents;
+	GetComponents(MeshComponents);
+	for (UStaticMeshComponent* Candidate : MeshComponents)
+	{
+		if (Candidate != nullptr
+			&& (Candidate->ComponentHasTag(TEXT("RogueVisual.LandingIndicator"))
+				|| Candidate->GetFName().ToString().StartsWith(TEXT("LandingIndicatorMesh"))))
+		{
+			LandingIndicatorMesh = Candidate;
+			LandingIndicatorMesh->SetUsingAbsoluteLocation(true);
+			LandingIndicatorMesh->SetUsingAbsoluteRotation(true);
+			LandingIndicatorMesh->SetUsingAbsoluteScale(true);
+			break;
+		}
+	}
 
 	if (LandingIndicatorMesh != nullptr)
 	{

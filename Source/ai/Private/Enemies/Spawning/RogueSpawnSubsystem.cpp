@@ -41,7 +41,7 @@ namespace
 	 * 为什么包成仿函数而不是就地写 lambda：
 	 *  1) 加权抽取会对"每一行波次配置"各问一次，同一类型的上限/存活数会被反复查询，
 	 *     所以在一次抽取内缓存结果；
-	 *  2) 抽完之后调用方还要用同一套判据复核结果（所有类型都刷满时抽签会兜底成 Hunter），
+	 *  2) 抽完之后调用方还要用同一套判据复核结果（所有类型都刷满时抽签会兜底成 Rifleman），
 	 *     复用同一个对象才能保证"过滤"和"复核"是同一份快照。
 	 */
 	struct FEnemySpawnGate
@@ -231,7 +231,7 @@ bool URogueSpawnSubsystem::SpawnEnemy(FRogueRunState& RunState, ARogueCharacter*
 
 	const ERogueEnemyType EnemyType = RogueGameModeRules::PickWeightedEnemyTypeForWave(RunState.CurrentWave, BalanceAsset, SpawnGate);
 
-	// 复核：所有类型都被拦下时，抽签函数只能兜底返回 Hunter，这里必须把它拦下来，
+	// 复核：所有类型都被拦下时，抽签函数只能兜底返回 Rifleman，这里必须把它拦下来，
 	// 否则两道限制都会被兜底路径绕过。
 	if (!SpawnGate(EnemyType))
 	{

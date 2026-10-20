@@ -37,14 +37,17 @@ float ARogueWeapon_Laser::GetEffectiveCooldown() const
 {
 	const FRogueWeaponBonusValues& Bonuses = GetWeaponBonusValues();
 	const float Bonus = Bonuses.AttackSpeed;
-	return FMath::Max(0.35f, GetConfig().Cooldown - Bonus * 2.0f);
+	const FRogueWeaponTableRow& WeaponConfig = GetConfig();
+	const float MinCooldown = WeaponConfig.MinCooldown >= 0.0f ? WeaponConfig.MinCooldown : 0.0f;
+	return FMath::Max(MinCooldown, WeaponConfig.Cooldown - Bonus * WeaponConfig.CooldownReductionScale);
 }
 
 float ARogueWeapon_Laser::GetEffectiveRefractionRange() const
 {
 	const FRogueWeaponBonusValues& Bonuses = GetWeaponBonusValues();
 	const float Bonus = Bonuses.AttackRange;
-	return GetConfig().RefractionRange + Bonus * 0.45f;
+	const FRogueWeaponTableRow& WeaponConfig = GetConfig();
+	return WeaponConfig.RefractionRange + Bonus * WeaponConfig.RefractionRangeBonusScale;
 }
 
 void ARogueWeapon_Laser::FireLaserBurst(const TArray<ARogueEnemy*>& Enemies)
@@ -78,7 +81,7 @@ void ARogueWeapon_Laser::FireLaserBurst(const TArray<ARogueEnemy*>& Enemies)
 
 		if (GetEffectiveRefractionCount() > 0)
 		{
-			FireLaserRefractionChain(TargetEnemy, TargetLocation, GetEffectiveDamage() * 0.5f);
+			FireLaserRefractionChain(TargetEnemy, TargetLocation, GetEffectiveDamage() * GetConfig().RefractionDamageScale);
 		}
 	}
 }

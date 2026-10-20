@@ -2,7 +2,7 @@
 
 基于 **Unreal Engine 5.5** 开发的俯视角 Rogue-like 动作生存游戏，支持**联机合作**（濒死等待 / 自动复活 / 团灭结束）。
 
-> 单 C++ 模块 · 玩法动作与数值由 **GameplayAbilitySystem（GAS）** 驱动 · 服务端权威 · 源码按玩法职责组织
+> 运行时单 C++ 模块 `ai` + 编辑器工具模块 `aiEditor` · 玩法动作与数值由 **GameplayAbilitySystem（GAS）** 驱动 · 服务端权威 · 源码按玩法职责组织
 
 ---
 
@@ -56,7 +56,7 @@
 | **Player** | 角色、PlayerState（**ASC 挂载点**）、控制器、视觉组件、玩家查询 |
 | **Enemies** | 统一敌人运行时、Data 原型与数据表、Spawning 刷怪调度 |
 | **World** | 竞技场、商店终端、经验球与场景优化 |
-| **UI** | HUD、Widgets 下的 8 个 UMG 基类及共享视图数据 |
+| **UI** | HUD、Widgets 下的 10 个 UMG 基类（8 个菜单 + 玩家状态条 + 敌人血条）及共享视图数据 |
 | **Shared** | 多个玩法域共用的枚举、复制载荷与结构体 |
 | **Debug** | 自检开关、升级链路和敌人压测探针 |
 
@@ -165,6 +165,9 @@ UnrealEditor.exe ai.uproject <map> -game -nullrhi -log \
 | **GAS 是怎么迁过来的** | [GAS-Main-Architecture-Plan.md](Docs/GAS-Main-Architecture-Plan.md) — 分阶段改造过程、验证数据、踩坑记录 |
 | **各系统职责与协作** | [System-Architecture-Overview.md](Docs/System-Architecture-Overview.md) |
 | **要加武器/卡牌/敌人** | [Maintenance-Extension-Guide.md](Docs/Maintenance-Extension-Guide.md) |
+| **血条 / 护甲条 / 经验条怎么改** | [HUD-Vitals-And-Enemy-Bars.md](Docs/HUD-Vitals-And-Enemy-Bars.md) — WBP 基类、生成脚本与数据流 |
+| **敌人子弹怎么换外观** | [Enemy-Projectile-Blueprints.md](Docs/Enemy-Projectile-Blueprints.md) — `BP_EnemyProjectile`、每敌人覆盖与池化 |
+| **经验球怎么换外观** | [Experience-Pickup-Blueprint.md](Docs/Experience-Pickup-Blueprint.md) — `BP_ExperiencePickup`、BP 钩子与尺寸规则 |
 | **全部系统架构图** | [CurrentAllSystemsArchitecture.md](Docs/CurrentAllSystemsArchitecture.md) |
 | **历史：自研属性系统** | [Attribute-System-Migration.md](Docs/Attribute-System-Migration.md) — ⚠️ 描述的是已删除的系统，保留用于解释"为何转向 GAS" |
 

@@ -27,15 +27,19 @@ enum class ERogueEnemyShotPattern : uint8
 UENUM(BlueprintType)
 enum class ERogueEnemyVisualKey : uint8
 {
-	Hunter,
-	Charger,
-	Tank,
+	Rifleman,
+	Assault,
+	Juggernaut,
 	Orbiter,
-	Shooter,
+	Marksman,
 	Skirmisher,
-	Artillery,
-	Spitter,
-	ShockPillar
+	Cannoneer,
+	Scatterer,
+	ShockPillar,
+	Sniper,
+	Shotgunner,
+	Repeater,
+	Ringcaster
 };
 
 USTRUCT(BlueprintType)
@@ -156,17 +160,9 @@ struct AI_API FRogueEnemyRangedArchetype
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ranged|Cooldown")
 	float InitialCooldownMax = 0.0f;
 
+	/** 远距离移动的目标距离；攻击距离门控已删除。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ranged|Range")
 	float PreferredRange = 0.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ranged|Range")
-	float MinimumRange = 0.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ranged|Range")
-	float MaximumRange = 0.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ranged|Range")
-	float AttackRangeMinFactor = 0.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ranged|Cooldown")
 	float NextShotCooldown = 0.0f;
@@ -203,48 +199,12 @@ struct AI_API FRogueEnemyRangedArchetype
 };
 
 USTRUCT(BlueprintType)
-struct AI_API FRogueEnemyGroundWaveArchetype
-{
-	GENERATED_BODY()
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "地面波", meta = (DisplayName = "启用地面波攻击"))
-	bool bUsesGroundWave = false;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "地面波", meta = (DisplayName = "初始冷却最小值"))
-	float InitialCooldownMin = 1.6f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "地面波", meta = (DisplayName = "初始冷却最大值"))
-	float InitialCooldownMax = 3.2f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "地面波", meta = (DisplayName = "攻击冷却时间"))
-	float AttackCooldown = 4.8f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "地面波", meta = (DisplayName = "最大半径"))
-	float MaxRadius = 980.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "地面波", meta = (DisplayName = "最短扩散持续时间"))
-	float ExpansionDuration = 1.05f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "地面波", meta = (DisplayName = "扩散速度（单位/秒）"))
-	float ExpansionSpeed = 2600.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "地面波", meta = (DisplayName = "命中厚度"))
-	float HitThickness = 92.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "地面波", meta = (DisplayName = "伤害倍率"))
-	float DamageMultiplier = 1.2f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "地面波", meta = (DisplayName = "跳跃可躲避"))
-	bool bJumpCanDodge = true;
-};
-
-USTRUCT(BlueprintType)
 struct AI_API FRogueEnemyVisualArchetype
 {
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Visual")
-	ERogueEnemyVisualKey VisualKey = ERogueEnemyVisualKey::Hunter;
+	ERogueEnemyVisualKey VisualKey = ERogueEnemyVisualKey::Rifleman;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Visual")
 	FVector MeshScale = FVector(0.52f, 0.52f, 0.96f);
@@ -279,15 +239,16 @@ struct AI_API FRogueEnemyArchetype
 	FRogueEnemyRangedArchetype Ranged;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Archetype")
-	FRogueEnemyGroundWaveArchetype GroundWave;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Archetype")
 	FRogueEnemyVisualArchetype Visual;
 
-	/** 可选攻击能力集；加载失败或未配置时按原型标志授予默认接触/远程/地面波能力。
-	 *  默认 AI 只识别这三类能力槽；新增独立攻击决策仍需扩展 C++ 或蓝图调用路径。 */
+	/** 可选攻击能力集；加载失败或未配置时按原型标志授予默认接触/远程能力。
+	 *  默认 AI 只识别这两类能力槽；新增独立攻击决策仍需扩展 C++ 或蓝图调用路径。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Archetype|Abilities")
 	TSoftObjectPtr<URogueAbilitySet> AttackAbilitySet;
+
+	/** 这一种敌人的弹体蓝图；由原型数据表写入，空则回退敌人 BP / 原生类。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Archetype|Combat")
+	TSubclassOf<class ARogueEnemyProjectile> ProjectileClass;
 };
 
 class UDataTable;

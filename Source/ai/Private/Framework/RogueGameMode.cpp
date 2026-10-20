@@ -11,6 +11,7 @@
 #include "Player/RoguePlayerController.h"
 #include "EngineUtils.h"
 #include "Enemies/RogueEnemy.h"
+#include "Enemies/Data/RogueEnemyDataTable.h"
 #include "World/RogueExperiencePickup.h"
 #include "World/RogueShopTerminal.h"
 #include "UI/RogueHUD.h"
@@ -56,13 +57,16 @@ namespace
 	}
 }
 
+bool ARogueGameMode::HasEnemyClassForType(ERogueEnemyType Type) const
+{
+	const TSubclassOf<ARogueEnemy>* Found = EnemyClassMap.Find(Type);
+	return Found != nullptr && Found->Get() != nullptr;
+}
+
 ARogueGameMode::ARogueGameMode()
 {
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.bTickEvenWhenPaused = true;
-	// 默认生成玩家蓝图，使用其组件、模型、材质和变换配置。
-	static ConstructorHelpers::FClassFinder<ARogueCharacter> PlayerBlueprint(TEXT("/Game/BP/BP_RogueCharacter"));
-	DefaultPawnClass = PlayerBlueprint.Class;
 
 	// 整局运行状态走 GameState（会复制到所有客户端）。
 	// GameMode 是服务端独占对象，客户端拿不到 —— 所以 HUD 要显示的东西不能只放在这里。
@@ -78,6 +82,23 @@ ARogueGameMode::ARogueGameMode()
 	PlayerControllerClass = ARoguePlayerController::StaticClass();
 
 	HUDClass = ARogueHUD::StaticClass();
+}
+
+void ARogueGameMode::InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage)
+{
+	Super::InitGame(MapName, Options, ErrorMessage);
+
+	// 玩家 Pawn 类从配置/BP 读取；缺失时回退原生 Character，避免空 DefaultPawnClass。
+	DefaultPawnClass = nullptr;
+	if (!PlayerPawnClass.IsNull())
+	{
+		DefaultPawnClass = PlayerPawnClass.LoadSynchronous();
+	}
+	if (DefaultPawnClass == nullptr)
+	{
+		DefaultPawnClass = ARogueCharacter::StaticClass();
+		UE_LOG(LogTemp, Warning, TEXT("[Rogue] PlayerPawnClass 未配置或加载失败，回退原生 ARogueCharacter（无 BP 外观）。"));
+	}
 }
 
 void ARogueGameMode::BeginPlay()
@@ -114,6 +135,30 @@ void ARogueGameMode::ConfigureRuntimeAssets()
 	UpgradeSystem.SetDefinitionAsset(LoadConfiguredOrDefaultAsset(UpgradeDefinitionAsset, DefaultUpgradeDefinitionAssetPath));
 	UpgradeSystem.SetRuleAsset(LoadConfiguredOrDefaultAsset(UpgradeRuleAsset, DefaultUpgradeRuleAssetPath));
 
+	// 刷怪/Boss 节奏统一以 DA_GameBalance 为准；GameMode 上的结构体只保留代码兜底。
+	if (LoadedGameBalanceAsset != nullptr)
+	{
+		const FRogueSpawnBalanceSettings& BalanceSpawn = LoadedGameBalanceAsset->Spawn;
+		SpawnSettings.SpawnRadius = BalanceSpawn.SpawnRadius;
+		SpawnSettings.SpawnInterval = BalanceSpawn.SpawnInterval;
+		SpawnSettings.WaveDuration = BalanceSpawn.WaveDuration;
+		SpawnSettings.MaxAliveEnemies = BalanceSpawn.BaseMaxAliveEnemies;
+		SpawnSettings.EnemySpawnMinimumDistance = BalanceSpawn.EnemySpawnMinimumDistance;
+		SpawnSettings.GroundTraceHeight = BalanceSpawn.GroundTraceHeight;
+		SpawnSettings.GroundTraceDepth = BalanceSpawn.GroundTraceDepth;
+		SpawnSettings.GroundClearance = BalanceSpawn.GroundClearance;
+		SpawnSettings.GroundTraceChannel = BalanceSpawn.GroundTraceChannel;
+
+		const FRogueBossSpawnSettings& BalanceBoss = LoadedGameBalanceAsset->BossSpawn;
+		BossSettings.BossWaveInterval = BalanceBoss.BossWaveInterval;
+		BossSettings.BossBonusSelections = BalanceBoss.BossBonusSelections;
+		BossSettings.BossSpawnDistance = BalanceBoss.BossSpawnDistance;
+		BossSettings.BossSpawnMinimumDistance = BalanceBoss.BossSpawnMinimumDistance;
+
+		PoolSettings = LoadedGameBalanceAsset->Pools;
+		RuntimePerformanceSettings = LoadedGameBalanceAsset->Performance;
+	}
+
 	// 注：商店配置不在这里做。商店是**每玩家一份**（挂在各自的 PlayerState 上），
 	// 每个玩家第一次打开商店时用同一份平衡资产配置自己那份（见 TryOpenShop）。
 }
@@ -135,6 +180,14 @@ void ARogueGameMode::ConfigureRuntimeSubsystems()
 
 void ARogueGameMode::PrewarmCombatPools()
 {
+	// 经验球的原生类只剩碰撞与拾取逻辑，没有任何网格和灯光：
+	// 没配 BP 时球在画面上是隐形的，这里显式告警，避免"捡到经验但看不到球"这种哑故障。
+	if (ExperiencePickupClass == nullptr)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Rogue] ExperiencePickupClass 未配置，经验球将使用原生类（无外观）。"
+			"请在 DefaultGame.ini 的 [/Script/ai.RogueGameMode] 段配置 /Game/BP/World/BP_ExperiencePickup。"));
+	}
+
 	// 预热对象池 —— 委托给 CombatPoolSubsystem
 	if (URogueCombatPoolSubsystem* PoolSubsystem = GetWorld()->GetSubsystem<URogueCombatPoolSubsystem>())
 	{
@@ -152,7 +205,59 @@ void ARogueGameMode::BuildCombatPoolPrewarmClasses(FRogueCombatPoolPrewarmClasse
 		OutClasses.EnemyClasses.Add(EnemyClassPair.Value);
 	}
 
-	OutClasses.EnemyProjectileClasses.Add(ARogueEnemyProjectile::StaticClass());
+	// 敌人弹体：敌人 BP 可在类默认值里指定自己的弹体蓝图；只预热实际会用到的类，
+	// 避免蓝图接管后仍白占一份原生弹体池。没有任何敌人配置时才回退原生类。
+	TSet<UClass*> EnemyProjectileClassSet;
+
+	auto CollectEnemyProjectileClass = [&EnemyProjectileClassSet](const TSubclassOf<ARogueEnemy>& EnemyClass)
+	{
+		const ARogueEnemy* EnemyCDO = EnemyClass != nullptr ? EnemyClass->GetDefaultObject<ARogueEnemy>() : nullptr;
+		if (EnemyCDO != nullptr)
+		{
+			// 只收集 BP 显式配置的类；没有配置的类型交给原型表或原生回退，
+			// 避免在蓝图接管后还预热一份用不到的原生弹体池。
+			if (EnemyCDO->EnemyProjectileClass != nullptr)
+			{
+				EnemyProjectileClassSet.Add(EnemyCDO->EnemyProjectileClass.Get());
+			}
+			if (EnemyCDO->BossProjectileClass != nullptr)
+			{
+				EnemyProjectileClassSet.Add(EnemyCDO->BossProjectileClass.Get());
+			}
+		}
+	};
+	CollectEnemyProjectileClass(DefaultEnemyClass);
+	for (const TPair<ERogueEnemyType, TSubclassOf<ARogueEnemy>>& EnemyClassPair : EnemyClassMap)
+	{
+		CollectEnemyProjectileClass(EnemyClassPair.Value);
+	}
+
+	// 原型数据表可以按敌人类型单独指定弹体（优先于敌人 BP 默认值），一并预热。
+	if (LoadedEnemyArchetypeTable != nullptr)
+	{
+		for (const FName& RowName : LoadedEnemyArchetypeTable->GetRowNames())
+		{
+			const FRogueEnemyArchetypeRow* Row = LoadedEnemyArchetypeTable->FindRow<FRogueEnemyArchetypeRow>(
+				RowName, TEXT("EnemyProjectilePrewarm"));
+			if (Row != nullptr && Row->ProjectileClass != nullptr)
+			{
+				EnemyProjectileClassSet.Add(Row->ProjectileClass.Get());
+			}
+		}
+	}
+
+	if (EnemyProjectileClassSet.Num() == 0)
+	{
+		EnemyProjectileClassSet.Add(ARogueEnemyProjectile::StaticClass());
+	}
+	for (UClass* ProjectileClass : EnemyProjectileClassSet)
+	{
+		if (ProjectileClass != nullptr)
+		{
+			OutClasses.EnemyProjectileClasses.AddUnique(TSubclassOf<ARogueEnemyProjectile>(ProjectileClass));
+		}
+	}
+
 	OutClasses.RocketProjectileClasses.Add(ARogueMortarProjectile::StaticClass());
 
 	const ARogueCharacter* Character = CachedCharacter.Get();

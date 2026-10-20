@@ -2,7 +2,6 @@
 
 #include "CoreMinimal.h"
 #include "Enemies/Data/RogueEnemyArchetypes.h"
-#include "Enemies/Data/RogueEnemyVisualResources.h"
 #include "GameFramework/Character.h"
 #include "AbilitySystemInterface.h"
 #include "GameplayTagContainer.h"
@@ -12,13 +11,13 @@
 #include "RogueEnemy.generated.h"
 
 class UStaticMeshComponent;
-class UInstancedStaticMeshComponent;
 class UMaterialInterface;
 class ARogueCharacter;
 class AAIController;
 class UDataTable;
 class URogueAbilitySystemComponent;
 class URogueAttributeSet;
+class ARogueEnemyProjectile;
 
 /**
  * 敌人基类 —— 使用 C++ Tick 中的原型驱动逻辑控制移动和攻击
@@ -48,11 +47,11 @@ public:
 	 *  权威弹体单独在服务器模拟，客户端不复制每发弹体 Actor；丢失表现消息可造成少画一发。
 	 *  可靠性、相关性与 Actor 通道共同决定接收范围，不保证所有客户端收到。 */
 	UFUNCTION(NetMulticast, Unreliable)
-	void Multicast_SpawnCosmeticProjectile(FVector_NetQuantize SpawnLocation, FVector_NetQuantizeNormal Direction, float Speed, bool bLargeVisual);
+	void Multicast_SpawnCosmeticProjectile(FVector_NetQuantize SpawnLocation, FVector_NetQuantizeNormal Direction, float Speed, bool bLargeVisual, TSubclassOf<ARogueEnemyProjectile> ProjectileClass);
 
 	/** 整圈只发送一条可靠消息；客户端在本地对象池中重建零伤害弹幕。 */
 	UFUNCTION(NetMulticast, Reliable)
-	void Multicast_SpawnCosmeticBulletRing(FVector_NetQuantize Center, float StartYaw, float SpawnRadius, const FRogueEnemyBulletRingSettings& Settings);
+	void Multicast_SpawnCosmeticBulletRing(FVector_NetQuantize Center, float StartYaw, float SpawnRadius, const FRogueEnemyBulletRingSettings& Settings, TSubclassOf<ARogueEnemyProjectile> ProjectileClass);
 
 	URogueAttributeSet* GetRogueAttributeSet() const { return AttributeSet; }
 
@@ -131,22 +130,6 @@ public:
 	/** 获取远程攻击冷却剩余时间 */
 	UFUNCTION(BlueprintPure, Category = "Enemy|State")
 	float GetRangedAttackCooldownRemaining() const { return RangedAttackTimer; }
-
-	/** 获取地面波攻击冷却剩余时间 */
-	UFUNCTION(BlueprintPure, Category = "Enemy|State")
-	float GetGroundWaveAttackCooldownRemaining() const { return GroundWaveAttackTimer; }
-
-	/** 地面波是否正在扩散 */
-	UFUNCTION(BlueprintPure, Category = "Enemy|State")
-	bool IsGroundWaveActive() const { return bGroundWaveActive; }
-
-	/** 当前地面波半径，给震荡柱蓝图视觉使用 */
-	UFUNCTION(BlueprintPure, Category = "Enemy|State")
-	float GetGroundWaveCurrentRadius() const { return GroundWaveCurrentRadius; }
-
-	/** 当前地面波进度，0-1 */
-	UFUNCTION(BlueprintPure, Category = "Enemy|State")
-	float GetGroundWaveAlpha() const { return GroundWaveAlpha; }
 
 	/** 获取爆发冲刺冷却剩余时间 */
 	UFUNCTION(BlueprintPure, Category = "Enemy|State")
@@ -233,7 +216,6 @@ public:
 	/** 本敌人能用的攻击能力句柄（服务端授予后填写；无效句柄 = 这种攻击不适用）。 */
 	FGameplayAbilitySpecHandle ContactAttackAbilityHandle;
 	FGameplayAbilitySpecHandle RangedAttackAbilityHandle;
-	FGameplayAbilitySpecHandle GroundWaveAttackAbilityHandle;
 
 	/** 按当前原型授予攻击能力。**只在服务端**调用，且必须在 ASC->ResetForPool() 之后
 	 *  （出池时会清空技能列表，见 ActivatePooledEnemy）。 */
@@ -244,6 +226,22 @@ public:
 
 	/** 句柄无效（这只怪根本没有这种攻击能力）时给计时器一个退避，避免 AI 每帧重试注定失败的激活。 */
 	static void BackOffMissingAttack(float& Timer, const FGameplayAbilitySpecHandle& Handle);
+
+	/** 这只敌人使用的弹体蓝图类；为空时回退到原生 ARogueEnemyProjectile。
+	 *  放在敌人 BP 的类默认值里即可让普通弹、Boss 弹和整圈弹幕共用同一套外观；
+	 *  服务端生成真实弹体，客户端按同一个类生成零伤害表现弹体。 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Combat", meta = (DisplayName = "敌人弹体蓝图类"))
+	TSubclassOf<ARogueEnemyProjectile> EnemyProjectileClass;
+
+	/** Boss 专用弹体蓝图类；bIsBoss 为真且配置了它时优先使用。 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Combat", meta = (DisplayName = "Boss 弹体蓝图类"))
+	TSubclassOf<ARogueEnemyProjectile> BossProjectileClass;
+
+	/** 取实际使用的弹体类：Boss 优先 BossProjectileClass，其余按 EnemyProjectileClass，最后回退原生类。 */
+	TSubclassOf<ARogueEnemyProjectile> GetEnemyProjectileClass() const;
+
+	/** 取 Boss 弹体类（供对象池预热；不依赖当前 bIsBoss）。 */
+	TSubclassOf<ARogueEnemyProjectile> GetBossProjectileClass() const;
 
 	/** 是否有玩家处在接触伤害距离内（AI 的决策判据，只算距离、不结算伤害）。 */
 	bool HasTouchingPlayer() const;
@@ -256,10 +254,6 @@ public:
 
 	/** 远程攻击：按原型发射单弹、扇形或整圈弹幕。返回是否执行了发射。 */
 	bool ExecuteRangedAttack();
-
-	/** 地面波：起一波 / 推进一帧（推进由持续型能力逐帧调用）。 */
-	void ExecuteStartGroundWave();
-	void ExecuteAdvanceGroundWave(float DeltaSeconds);
 
 	// ===========================================================
 	//  蓝图可重写的事件/钩子（BlueprintNativeEvent）
@@ -288,18 +282,6 @@ public:
 	/** 应用外观样式时调用（蓝图中可重写以自定义外观） */
 	UFUNCTION(BlueprintNativeEvent, Category = "Enemy|Event")
 	void OnApplyVisualStyle();
-
-	/** 地面波开始扩散时调用，震荡柱蓝图可用来播放起手特效 */
-	UFUNCTION(BlueprintNativeEvent, Category = "Enemy|GroundWave")
-	void OnGroundWaveStarted(float MaxRadius, float ExpansionDuration);
-
-	/** 地面波扩散中每帧调用，震荡柱蓝图可用 Radius/Alpha 驱动材质或缩放 */
-	UFUNCTION(BlueprintNativeEvent, Category = "Enemy|GroundWave")
-	void OnGroundWaveUpdated(float Radius, float Alpha);
-
-	/** 地面波结束时调用，震荡柱蓝图可用来隐藏自定义波纹 */
-	UFUNCTION(BlueprintNativeEvent, Category = "Enemy|GroundWave")
-	void OnGroundWaveFinished();
 
 protected:
 	virtual void PostInitializeComponents() override;
@@ -366,12 +348,6 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "敌人|组件", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UStaticMeshComponent> ShockPillarMesh;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "敌人|组件", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<UStaticMeshComponent> GroundWaveMesh;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "敌人|组件", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<UInstancedStaticMeshComponent> GroundWaveRingSegments;
-
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "敌人|震荡柱|视觉", meta = (DisplayName = "使用内置震荡柱视觉"))
 	bool bUseBuiltInShockPillarVisual = true;
 
@@ -384,9 +360,6 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "敌人|震荡柱|视觉", meta = (DisplayName = "震荡柱材质"))
 	TObjectPtr<UMaterialInterface> ShockPillarMaterial;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "敌人|震荡柱|视觉", meta = (DisplayName = "地面波材质"))
-	TObjectPtr<UMaterialInterface> ShockWaveMaterial;
 
 	// InitializeEnemy 按 Profile 重写血量、移速、接触伤害、类型与奖励；ContactInterval 保留配置值。
 	// 实际血量以 AttributeSet 为准，CurrentHealth 为镜像，直接改镜像不等于修改 GAS 血量。
@@ -407,7 +380,7 @@ protected:
 	float ContactInterval = 1.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Stats")
-	ERogueEnemyType EnemyType = ERogueEnemyType::Hunter;
+	ERogueEnemyType EnemyType = ERogueEnemyType::Rifleman;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Stats")
 	int32 ExperienceReward = 1;
@@ -443,30 +416,6 @@ protected:
 	UPROPERTY(BlueprintReadWrite, Category = "Enemy|Runtime")
 	float RangedAttackTimer = 0.0f;
 
-	UPROPERTY(BlueprintReadOnly, Category = "Enemy|Runtime")
-	float GroundWaveAttackTimer = 0.0f;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Enemy|Runtime")
-	float GroundWaveElapsed = 0.0f;
-
-	// 服务端复制地面波状态，客户端据已收到的半径/进度刷新视觉。
-	// GroundWaveAlpha 是扩散进度；复制不是逐帧保证，延迟/丢包仍可能造成跳变。
-
-	UPROPERTY(BlueprintReadOnly, Replicated, Category = "Enemy|Runtime")
-	bool bGroundWaveActive = false;
-
-	UPROPERTY(BlueprintReadOnly, Replicated, Category = "Enemy|Runtime")
-	float GroundWaveCurrentRadius = 0.0f;
-
-	UPROPERTY(BlueprintReadOnly, Replicated, Category = "Enemy|Runtime")
-	float GroundWaveAlpha = 0.0f;
-
-	UPROPERTY(BlueprintReadOnly, Replicated, Category = "Enemy|Runtime")
-	float GroundWaveEffectiveMaxRadius = 0.0f;
-
-	UPROPERTY(BlueprintReadOnly, Replicated, Category = "Enemy|Runtime")
-	float GroundWaveEffectiveDuration = 0.0f;
-
 	float LastDamageNumberTime = -100.0f;
 
 	/** 节流窗口累积伤害，在下一次符合间隔的伤害事件到来时合并显示；回池前未刷出的尾项会清零 */
@@ -482,27 +431,19 @@ protected:
 
 	float TargetRefreshCooldown = 0.0f;
 
-	FRogueEnemyVisualResourceLibrary VisualResourceLibrary;
-
 private:
 	/** 基类默认行为 */
 	void HandleDefaultBehavior(float DeltaSeconds);
 
 	// ---- 攻击决策（AI 侧：只判断"要不要打"，打出去由能力做）----
 	//
-	// 接触/远程成功激活后重置各自计时器，地面波在结束时设置冷却。
+	// 接触/远程成功激活后重置各自计时器。
 	// 句柄缺失退避 0.5s，其他失败可在后续 Tick 重试。
 	void DecideContactAttack(float DeltaSeconds);
-	void DecideRangedAttack(ARogueCharacter* PlayerCharacter, float DistanceToPlayer, float DeltaSeconds);
-	void DecideGroundWaveAttack(ARogueCharacter* PlayerCharacter, float DistanceToPlayer, float DeltaSeconds);
+	void DecideRangedAttack(ARogueCharacter* PlayerCharacter, float DeltaSeconds);
 
-	void StartGroundWave();
-	void UpdateGroundWave(float DeltaSeconds);
-	void UpdateGroundWaveRingVisual(float Radius);
-	void HideGroundWave();
-	bool CanGroundWaveHitPlayer(const ARogueCharacter* PlayerCharacter) const;
 	void FireRangedShot(ARogueCharacter* PlayerCharacter);
-	void SpawnBulletRing(const FVector& Center, float StartYaw, float SpawnRadius, const FRogueEnemyBulletRingSettings& Settings, float ProjectileDamage);
+	void SpawnBulletRing(const FVector& Center, float StartYaw, float SpawnRadius, const FRogueEnemyBulletRingSettings& Settings, float ProjectileDamage, TSubclassOf<ARogueEnemyProjectile> ProjectileClass);
 	void Die(AActor* Killer);
 	void ApplyEnemyStyle();
 	FVector GetMovementDirection(const FVector& ToPlayer, float DistanceToPlayer, float DeltaSeconds);
@@ -519,19 +460,11 @@ private:
 
 	/**
 	 * 收集当前所有活着的玩家。
-	 * 接触伤害、地面波这类"范围判定"必须遍历全部玩家，
+	 * 接触伤害这类"范围判定"必须遍历全部玩家，
 	 * 不能只看当前锁定的那一个目标（否则队友站在同一圈里反而无伤）。
 	 * TInlineAllocator<4> 为前 4 项提供内联存储，超过后仍可分配；它不限制联机人数。
 	 */
 	void GatherAlivePlayers(TArray<ARogueCharacter*, TInlineAllocator<4>>& OutPlayers) const;
-
-	/**
-	 * 本轮地面波已经命中过的玩家。
-	 * 单机时它等价于原来的 bool bGroundWaveDamagedPlayer；
-	 * 联机时必须逐人记录 —— 否则先被波扫到的玩家会"吃掉"整轮伤害。
-	 * 用弱引用是为了玩家中途退出/销毁后不会留下野指针。
-	 */
-	TArray<TWeakObjectPtr<ARogueCharacter>, TInlineAllocator<4>> GroundWaveHitPlayers;
 
 	// 复制在场标记，由客户端映射为 Tick、碰撞和本地池/死亡标记。
 	// bHidden 也独立复制；不能仅靠显隐推断其他本地活动状态。
@@ -552,14 +485,4 @@ private:
 	// 常量颜色/自发光参数的 MID 按敌人实例缓存，减少池复用时的重复 UObject 创建。
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> CachedShockPillarMID;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UMaterialInstanceDynamic> CachedShockWaveMID;
-
-	/** 客户端是否正在显示地面波视觉（用于"从有到无"时收尾调用 HideGroundWave）。
-	 *  只在客户端分支使用，不复制。 */
-	bool bClientGroundWaveVisible = false;
-
-	/** 客户端：根据复制过来的地面波状态刷新环形视觉（AI 不在客户端跑） */
-	void UpdateGroundWaveVisualFromReplication();
 };

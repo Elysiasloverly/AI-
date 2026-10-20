@@ -45,7 +45,7 @@ GAS 基础设施、能力、效果与表现：
 - `RogueAbilitySet.*` / `RogueGameplayTags.*`
 - `Abilities/`：冲刺、武器开火、敌人攻击
 - `Tasks/`：冲刺位移、开火心跳、攻击心跳
-- `GameplayEffects/`：伤害、21 个升级 GE、状态 GE（死亡 / 刚受伤 / 冷却 / 无敌 / 濒死）
+- `GameplayEffects/`：伤害、22 个升级 GE、状态 GE（死亡 / 刚受伤 / 冷却 / 无敌 / 濒死）
 - `Cues/`：命中与濒死表现
 
 ### `Combat/`
@@ -165,7 +165,7 @@ GAS 基础设施、能力、效果与表现：
 这些值决定“武器怎么玩”，应该放在：
 
 - `DT_WeaponConfig`（每把武器一行，行结构 `FRogueWeaponTableRow`）
-- `URoguePlayerBalanceAsset`（**只放玩家自身属性**：生命/护甲/移速/冲刺/跳跃，以及 13 项开局武器加成与其上限；不含武器基础参数）
+- `URoguePlayerBalanceAsset`（**只放玩家自身属性**：生命/护甲/移速/冲刺/跳跃，以及 13 项开局武器加成与 14 项上限；不含武器基础参数）
 - 必要时再配合升级 GE 与 `URogueAttributeSet`
 
 典型例子：
@@ -357,8 +357,9 @@ GAS 基础设施、能力、效果与表现：
 - `FRogueProjectileVisualConfig`
 - `FRogueRocketVisualConfig`
 - `FRogueLaserBeamVisualStyle`
-- `FRogueEnemyProjectileVisualState`
 - `FRogueOrbitingBladeVisualConfig`
+
+敌人弹体是例外：`ARogueEnemyProjectile` 只保留碰撞/移动/伤害，外观全部由弹体 BP 的组件决定，没有 C++ VisualState。
 
 ---
 
@@ -366,7 +367,7 @@ GAS 基础设施、能力、效果与表现：
 
 - 武器的基础伤害、间隔、范围、数量、弹体等**玩法参数**只放在 `DT_WeaponConfig`，武器类直接读 `Config`。
 - 玩家自身的生命、护甲、移速、冲刺、复活与 13 项开局武器加成放在 `DA_PlayerBalance`。
-- 升级产生的加成写进玩家 ASC 的 13 个加成属性，武器读"表基础值 + 加成 × 本武器系数"。不要把升级结果再写回武器配置或 `Character` 的缓存字段。
+- 升级产生的加成写进玩家 ASC 的 14 个加成属性（其中 13 项进入武器快照，吸血比例单独读取属性集），武器读"表基础值 + 加成 × 本武器系数"。不要把升级结果再写回武器配置或 `Character` 的缓存字段。
 
 原则：
 

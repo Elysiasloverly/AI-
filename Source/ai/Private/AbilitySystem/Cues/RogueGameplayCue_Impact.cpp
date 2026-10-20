@@ -127,7 +127,7 @@ ERogueImpactVisualStyle URogueGameplayCue_Impact::ResolveStyle(const FGameplayCu
 		return ERogueImpactVisualStyle::Explosion;
 	}
 
-	// Spark 是默认风格（枪口火光、弹体命中、地面波起手都用它）。
+	// Spark 是默认风格（枪口火光、弹体命中都用它）。
 	// "贴地压扁"不进 Tag：它由 NormalizedMagnitude 参数承载，见 OnExecute 里的说明。
 	return ERogueImpactVisualStyle::Spark;
 }

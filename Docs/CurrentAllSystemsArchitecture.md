@@ -152,7 +152,6 @@ flowchart TD
 
     Enemy --> Movement["移动行为\n直追 / 冲锋 / 环绕 / 远程风筝 / Z字 / 固定"]
     Enemy --> Ranged["远程攻击\n单发 / 散射 / 震荡柱整圈弹幕"]
-    Enemy --> GroundWave["旧地面波攻击\n历史兼容，震荡柱不再启用"]
     Enemy --> Contact["接触伤害"]
     Enemy --> Death["死亡回收"]
 

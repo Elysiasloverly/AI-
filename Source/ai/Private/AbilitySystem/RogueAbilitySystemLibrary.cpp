@@ -5,12 +5,18 @@
 #include "AbilitySystemGlobals.h"
 #include "AbilitySystem/GameplayEffects/RogueDamageEffect.h"
 #include "AbilitySystem/RogueGameplayTags.h"
+#include "AbilitySystem/RogueAttributeSet.h"
 #include "GameFramework/Pawn.h"
 #include "GameplayEffect.h"
 #include "Player/RogueCharacter.h"
 
-bool RogueAbilitySystem::ApplyDamageToTarget(AActor* SourceActor, AActor* TargetActor, float DamageAmount, FGameplayTag SourceTag)
+bool RogueAbilitySystem::ApplyDamageToTarget(AActor* SourceActor, AActor* TargetActor, float DamageAmount, FGameplayTag SourceTag, float* OutDamageDealt)
 {
+	if (OutDamageDealt != nullptr)
+	{
+		*OutDamageDealt = 0.0f;
+	}
+
 	if (DamageAmount <= 0.0f || !IsValid(TargetActor))
 	{
 		return false;
@@ -72,5 +78,18 @@ bool RogueAbilitySystem::ApplyDamageToTarget(AActor* SourceActor, AActor* Target
 		SpecHandle.Data->AddDynamicAssetTag(SourceTag);
 	}
 
-	return TargetASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get()).WasSuccessfullyApplied();
+	const URogueAttributeSet* TargetAttributes = TargetASC->GetSet<URogueAttributeSet>();
+	const float BeforeTotal = TargetAttributes != nullptr
+		? TargetAttributes->GetHealth() + TargetAttributes->GetArmor()
+		: 0.0f;
+
+	const bool bApplied = TargetASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get()).WasSuccessfullyApplied();
+
+	if (OutDamageDealt != nullptr && TargetAttributes != nullptr)
+	{
+		const float AfterTotal = TargetAttributes->GetHealth() + TargetAttributes->GetArmor();
+		*OutDamageDealt = bApplied ? FMath::Max(0.0f, BeforeTotal - AfterTotal) : 0.0f;
+	}
+
+	return bApplied;
 }
