@@ -1,0 +1,37 @@
+{
+  "tool": "built-in image_gen",
+  "selected_background": {
+    "key": "touhou_background_minimal",
+    "file": "exec-7277b588-5ec8-4aa2-be1c-e2e231dcc99d.png",
+    "prompt": "Use case: stylized-concept. Asset type: actual production background texture for a minimalist Japanese fantasy game menu in Unreal, landscape 16:9. A very pale warm ivory washi paper sheet with extremely subtle fine paper fibers. On the far right lower quarter only, a small faint soft-gray sumi-e outline of a simple Japanese torii gate, a hint of mist and one distant branch, drawn with very delicate restrained ink strokes. The whole left 70 percent is essentially blank clean warm off-white paper for dark UI text, with NO dark vignette. Minimal Japanese doujin game / Touhou Project-inspired mood without characters. Palette almost monochrome: ivory, pale warm gray, a very tiny subdued vermilion accent on the torii's crossbar. Flat understated editorial illustration, calm, airy and elegant, not a detailed landscape painting. No moon, no star field, no mountains, no lanterns, no gold, no decorative border, no elaborate shrine, no lettering, no logos, no UI controls, no watermark. The paper must stay light and uniform across the canvas; artwork is faint, small and peripheral.",
+    "mode": "built-in image_gen",
+    "selected_by_user": "浅色和纸底＋淡墨鸟居轮廓"
+  },
+  "initial_assets": [
+    {
+      "key": "touhou_menu_background",
+      "file": "exec-316b5789-5034-43ef-84f5-2dfe60a70f95.png",
+      "prompt": "Use case: stylized-concept. Asset type: production full-screen Unreal Engine game menu background, landscape 16:9 composition, no UI mockup, no lettering. Create an elegant Touhou Project inspired Japanese fantasy night shrine illustration: a vermilion torii and old shrine on the far right, enormous pale full moon in upper right behind wispy indigo clouds, a few red maple leaves, delicate floating talisman papers, subtle tiny danmaku-like luminous blue motes near the horizon. Rich midnight navy, muted plum, vermilion, aged-gold accents, cool moonlight. Painterly Japanese doujin fantasy aesthetic, polished and atmospheric, restrained detail. The left 55 percent must be very dark calm negative space suitable for real readable menu controls added in Unreal. Avoid characters, text, logos, watermarks, baked buttons, frames, busy bullet patterns. Finished standalone background art, not a screenshot.",
+      "mode": "built-in image_gen"
+    },
+    {
+      "key": "touhou_panel_paper",
+      "file": "exec-eacf6315-562f-40d8-afe0-22b7faf02a28.png",
+      "prompt": "Use case: stylized-concept. Asset type: single reusable nine-slice UI panel background texture for an Unreal UMG fantasy game, square image. Front facing perfectly rectangular panel filling almost the whole image. Aged ivory washi paper center, very subtle fibers, refined thin burgundy double rule around the perimeter, a little antique gold filigree only at the four corners, faint red shrine charm flourishes at the outer corners. Touhou Project inspired Japanese occult fantasy stationery aesthetic. Central 78 percent is completely clean pale paper with no ornament so dark Chinese text is legible. Flat orthographic 2D game UI texture, crisp edges, balanced symmetrical border, no perspective or cast shadow, no UI mockup, no text, no logos, no symbols resembling writing. No cutout outside the paper; full opaque square texture. Border must stay within outer 10 percent for nine slicing.",
+      "mode": "built-in image_gen"
+    },
+    {
+      "key": "touhou_panel_indigo",
+      "file": "exec-7cee45cd-6ea6-4bb9-9580-d02c356b6e5a.png",
+      "prompt": "Use case: stylized-concept. Asset type: single reusable nine-slice UI panel texture for Unreal UMG, square image. Flat front-facing midnight indigo lacquered shrine-panel rectangle filling the entire square. Fine antique-gold and subdued vermilion double borders around the outer edge, very restrained moon-and-cloud decorative corners, elegant Japanese fantasy Touhou Project inspired atmosphere. Entire central 80 percent is plain very dark indigo with barely visible silk grain, providing excellent contrast for white and pale-ice-blue text. Symmetric, crisp, orthographic, no perspective, no drop shadow, no glow in the center. No text, no logos, no characters, no UI controls, no mockup. Opaque full square texture. All trim confined to outer 8 percent for a stretchable nine-slice frame.",
+      "mode": "built-in image_gen"
+    },
+    {
+      "key": "touhou_button",
+      "file": "exec-3d6e49ed-ee73-4830-b1f1-d1891212c55c.png",
+      "prompt": "Use case: stylized-concept. Asset type: one production Unreal UMG button face texture, horizontal 3:1 rectangle, fully opaque. Create a front-facing flat Japanese fantasy Touhou Project inspired lacquered talisman plaque. Very dark navy-indigo silk center, thin refined vermilion inner line and antique gold outer border, delicate tiny symmetric shrine-knot ornaments only in the four corners. Large perfectly clean central 80 percent for real button labels to be overlaid in Unreal. No letters, characters, kanji, numbers, logos, UI mockup or drop shadow. No perspective. All decoration strictly confined to the outer 8 percent to support nine-slice scaling. The full rectangle fills the canvas; crisp premium 2D game UI asset, restrained moonlit palette, avoid bright central patterns.",
+      "mode": "built-in image_gen"
+    }
+  ],
+  "usage": "最终菜单背景使用 touhou_background_minimal；面板只采样纸纹中央区域；按钮使用 WBP 的细描边样式。原始月夜背景和装饰按钮没有接入最终 WBP。"
+}

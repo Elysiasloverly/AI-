@@ -26,26 +26,41 @@ namespace
 		Option.Type = Type;
 		switch (Type)
 		{
+		case ERogueUpgradeType::ProjectileBurst:
+			Option.Title = TEXT("灵符连诵");
+			Option.Description = TEXT("御札每轮攻击额外连射 1 次；每次连射都发出完整弹幕。");
+			Option.Magnitude = 1.0f;
+			break;
+		case ERogueUpgradeType::RocketBlastRadius:
+			Option.Title = TEXT("炉心扩散");
+			Option.Description = TEXT("八卦炉爆炸半径 +90 厘米，扩大爆裂弹的伤害覆盖范围。");
+			Option.Magnitude = 90.0f;
+			break;
+		case ERogueUpgradeType::HellTowerDamageRamp:
+			Option.Title = TEXT("神威增幅");
+			Option.Description = TEXT("御柱每跳伤害递增值 +0.1；持续锁定同一目标时，伤害增长更快。");
+			Option.Magnitude = 0.1f;
+			break;
 		case ERogueUpgradeType::ScytheSize:
 			Option.Title = TEXT("银刃巨化");
-			Option.Description = TEXT("银刃尺寸与伤害碰撞范围增加基础值的 20%，不改变环绕距离。");
+			Option.Description = TEXT("银刃外观与伤害范围均增加基础尺寸的 20%；环绕距离不变。");
 			Option.Magnitude = 0.2f;
 			break;
 		case ERogueUpgradeType::ScytheLifesteal:
 			Option.Title = TEXT("红雾吸血");
-			Option.Description = TEXT("银刃造成伤害的 20% 回复生命；首次获得 20%，之后每级 +5%。");
+			Option.Description = TEXT("银刃造成伤害时回复生命。首次吸血率 20%，再次选择 +5 个百分点。");
 			Option.Magnitude = 0.05f;
 			Option.FirstMagnitude = 0.20f;
 			Option.MaxMagnitude = 1.0f;
 			break;
 		case ERogueUpgradeType::MortarCount:
 			Option.Title = TEXT("阴阳玉连投");
-			Option.Description = TEXT("解锁阴阳玉，或额外增加 1 枚阴阳玉。");
+			Option.Description = TEXT("获得阴阳玉；已持有时，每轮额外投出 1 枚阴阳玉。");
 			Option.Magnitude = 1.0f;
 			break;
 		case ERogueUpgradeType::MortarBlastRadius:
 			Option.Title = TEXT("阴阳玉·扩散");
-			Option.Description = TEXT("阴阳玉爆炸范围扩大，覆盖更大的区域。");
+			Option.Description = TEXT("阴阳玉爆炸半径 +90 厘米，扩大落点周围的伤害区域。");
 			Option.Magnitude = 90.0f;
 			break;
 		default:

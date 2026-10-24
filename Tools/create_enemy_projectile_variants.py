@@ -1,7 +1,7 @@
 """为不同敌人类型创建弹体蓝图变体。
 
 用法（项目根目录）：
-    UnrealEditor-Cmd.exe F:\AI_WorkSpeace\ai\ai.uproject ^
+    UnrealEditor-Cmd.exe F:\AI_WorkSpeace\baka\Baka.uproject ^
         -run=pythonscript -script="Tools/create_enemy_projectile_variants.py" ^
         -unattended -nopause -nullrhi -nosplash
 

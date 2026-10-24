@@ -20,6 +20,12 @@ public:
 	virtual void CollectFireTargets(TArray<ARogueEnemy*>& OutTargets) const override;
 	virtual void FireAtTargets(const TArray<ARogueEnemy*>& Targets) override;
 
+	virtual bool CanFireNow() const override;
+	virtual float GetAbilityCooldown() const override;
+	virtual void OnOwnerDied() override;
+	UFUNCTION(BlueprintPure, Category="御札连发") int32 GetEffectiveBurstCount() const;
+	UFUNCTION(BlueprintPure, Category="御札连发") float GetBurstShotInterval() const;
+
 	virtual ERogueUpgradeType GetCountUpgradeType() const override { return ERogueUpgradeType::ProjectileCount; }
 	/** 收到表现广播后在客户端补画弹体，不结算权威伤害。 */
 	virtual void PlayCosmeticFire(const FRogueWeaponCosmeticFire& Fire) override;
@@ -32,6 +38,14 @@ public:
 	float GetProjectileSpeed() const { return GetEffectiveProjectileSpeed(GetConfig().ProjectileSpeed); }
 	float GetInterval() const { return GetEffectiveCooldown(); }
 
+protected:
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 private:
 	void FireAtTarget(AActor* TargetActor);
+	void FireNextBurstShot();
+	void CancelBurst();
+	FTimerHandle BurstTimer;
+	int32 RemainingBurstShots = 0;
+	TWeakObjectPtr<ARogueEnemy> BurstTarget;
+	FGuid BurstTargetSpawnId;
 };

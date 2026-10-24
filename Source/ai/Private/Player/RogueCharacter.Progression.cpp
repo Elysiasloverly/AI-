@@ -186,6 +186,9 @@ void ARogueCharacter::ApplyUpgrade(const FRogueUpgradeOption& Upgrade)
 	case ERogueUpgradeType::LaserRefraction:
 	case ERogueUpgradeType::MortarCount:
 	case ERogueUpgradeType::MortarBlastRadius:
+	case ERogueUpgradeType::ProjectileBurst:
+	case ERogueUpgradeType::RocketBlastRadius:
+	case ERogueUpgradeType::HellTowerDamageRamp:
 	case ERogueUpgradeType::ScytheSize:
 		ApplyUpgradeEffectViaGAS(Upgrade.Type, Upgrade.Magnitude);
 		break;

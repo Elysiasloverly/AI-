@@ -224,7 +224,6 @@ bool FRogueGroundSpawnBossRetryTest::RunTest(const FString& Parameters)
 	FFixture F; if (!F.Initialize(*this)) { return false; }
 	F.Settings.SpawnInterval = 1.0f; F.Configure();
 	F.State.CurrentWave = 10;
-	F.State.RunTimeSeconds = F.Settings.WaveDuration * 9.0f;
 	F.State.SpawnTimer = 1000.0f; // Isolate Boss scheduling from ordinary enemies.
 	F.Spawner->TickSpawning(0.01f, F.State, F.Player, F.Region);
 	TestFalse(TEXT("The first Boss attempt fails without a floor"), F.State.bBossAlive);

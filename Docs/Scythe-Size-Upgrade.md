@@ -10,9 +10,9 @@
 | 开局自带的大小加成 | `/Game/Data/Player/DA_PlayerBalance` → 05 初始武器加成 → 银刃大小加成；默认 0 |
 | 大小加成上限 | 同资产 → 06 武器加成上限 → 银刃大小加成上限；-1 表示不限，例如 1 表示最终尺寸最多为基础的 2 倍 |
 | 初始银刃数量与环绕距离 | `/Game/Data/Weapons/DT_WeaponConfig` → `Scythe` 行 |
-| 基础外观与碰撞球 | `/Game/BP/Projectile/BP_RogueOrbitingBlade` 的网格与碰撞组件 |
+| 基础外观与碰撞球 | `/Game/BP/Projectiles/BP_RogueOrbitingBlade` 的网格与碰撞组件 |
 
-当前项目武器表把初始银刃数量设为 **10**，因此当前配置开局已经满足前置。若希望先抽到「回旋银刃」才能抽「银刃巨化」，把 Scythe 行的 Count 设为 0，并保证角色初始银刃数量加成为 0。此次添加卡片保留了原有武器表配置。
+当前项目武器表把初始银刃数量设为 **20**，因此当前配置开局已经满足前置。若希望先抽到「回旋银刃」才能抽「银刃巨化」，把 Scythe 行的 Count 设为 0，并保证角色初始银刃数量加成为 0。此次添加卡片保留了原有武器表配置。
 
 数据链：`ScytheSize` 升级类型 → `URogueUpgradeEffect_ScytheSize` → PlayerState 的 ASC / `ScytheSizeBonus` → Character 的复制武器加成快照 `ScytheSize` → `ARogueWeapon_Scythe::GetEffectiveSizeMultiplier` → `ConfigureBlade` 同步外观与碰撞。服务器判定伤害，各端根据快照维护本地轨道表现。
 

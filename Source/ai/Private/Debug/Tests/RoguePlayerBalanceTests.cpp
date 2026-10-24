@@ -63,6 +63,14 @@ namespace RoguePlayerBalanceTests
 			{
 				Controllers[Index] = World->SpawnActor<ARoguePlayerController>();
 				if (!Test.TestNotNull(TEXT("A real player controller exists"), Controllers[Index])) { return false; }
+				// This fixture verifies authored armor amounts, so explicitly purchase its permanent gate.
+				// Leave stat ranks empty to keep the configured health, armor and progression expectations exact.
+				ARoguePlayerState* PlayerState = Controllers[Index]->GetPlayerState<ARoguePlayerState>();
+				if (!Test.TestNotNull(TEXT("The controller owns a PlayerState before possession"), PlayerState)) { return false; }
+				FRogueProgressionSnapshot PermanentAccess;
+				PermanentAccess.NodeRanks.Add(FName(TEXT("Armor.Unlock")), 1);
+				if (!Test.TestTrue(TEXT("Armor access is injected before the configured run"),
+					PlayerState->SetProgressionSnapshotForRun(PermanentAccess))) { return false; }
 				const FTransform Transform(FVector(Index * 500.0f, 0.0f, 120.0f));
 				Pawns[Index] = World->SpawnActorDeferred<ARogueCharacter>(ARogueCharacter::StaticClass(),
 					Transform, nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
@@ -136,14 +144,16 @@ bool FRoguePlayerConfiguredInitializationTest::RunTest(const FString& Parameters
 		Attributes->GetLaserRefractionBonus(), Attributes->GetMortarCountBonus(), Attributes->GetMortarBlastRadiusBonus(),
 		Attributes->GetScytheSizeBonus()
 	};
-	const float Expected[] = {0.2f, 0.3f, 0.2f, 0.1f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f, 90.0f, 0.35f};
+	// Generic starting bonuses still honor the DA and caps. Quantity and dedicated-card
+	// bonuses now start at zero, preventing legacy DA values from bypassing the upgrade tree.
+	const float Expected[] = {0.2f, 0.3f, 0.2f, 0.1f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
 	for (int32 Index = 0; Index < UE_ARRAY_COUNT(Expected); ++Index)
 	{
 		TestEqual(FString::Printf(TEXT("Initial bonus %d reaches GAS and respects its cap"), Index), Actual[Index], Expected[Index]);
 	}
-	TestEqual(TEXT("Weapon snapshots are populated in the initialization frame"), Pawn->GetWeaponBonusSnapshot().LaserCount, 5.0f);
+	TestEqual(TEXT("The initial snapshot cannot grant a locked laser through a legacy DA bonus"), Pawn->GetWeaponBonusSnapshot().LaserCount, 0.0f);
 	TestEqual(TEXT("The snapshot contains the clamped initial damage bonus"), Pawn->GetWeaponBonusSnapshot().AttackPower, 0.2f);
-	TestEqual(TEXT("The snapshot contains the continuous clamped scythe size bonus"), Pawn->GetWeaponBonusSnapshot().ScytheSize, 0.35f);
+	TestEqual(TEXT("The initial snapshot cannot grant a dedicated scythe size bonus"), Pawn->GetWeaponBonusSnapshot().ScytheSize, 0.0f);
 	return true;
 }
 

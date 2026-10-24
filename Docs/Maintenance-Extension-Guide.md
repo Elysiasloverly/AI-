@@ -73,7 +73,7 @@ GAS 基础设施、能力、效果与表现：
 ### `Enemies/`
 
 - `RogueEnemy.*`
-- `Data/`：`RogueEnemyArchetypes`、`RogueEnemyDataTable`、`RogueEnemyVisualResources`
+- `Data/`：`RogueEnemyArchetypes`、`RogueEnemyDataTable`
 - `Spawning/`：`RogueSpawnSubsystem`
 
 ### `World/`
@@ -721,17 +721,13 @@ GAS 基础设施、能力、效果与表现：
 
 那只需要补参数，不需要动 `ARogueEnemy` 主逻辑。
 
-#### 第三步：增加视觉映射
+#### 第三步：配置视觉
 
-文件：
+在 `/Game/Data/Enemies/DT_EnemyArchetypes` 的行里填 `Visual` / `BossVisual`
+（`VisualKey`、`MeshScale`、`MeshLocation`、`MeshRotation`、`CapsuleRadius`、`CapsuleHalfHeight`、`bUseBossMaterialOverride`）。
 
-- `Source/ai/Public/Enemies/Data/RogueEnemyVisualResources.h`
-- `Source/ai/Private/Enemies/Data/RogueEnemyVisualResources.cpp`
-
-这里负责把 `VisualKey` 映射到：
-
-- Mesh
-- Material
+C++ 侧由 `ARogueEnemy::ApplyEnemyStyle()` 应用，并通过 `OnApplyVisualStyle()`（BlueprintNativeEvent）
+交给敌人 BP 换网格/材质；`VisualKey` 在 C++ 里只写不读，真正的 Mesh/Material 映射在蓝图里。
 
 #### 第四步：增加数值和平衡
 
@@ -933,8 +929,6 @@ GAS 基础设施、能力、效果与表现：
 - `Source/ai/Public/Shared/RogueTypes.h`
 - `Source/ai/Public/Enemies/Data/RogueEnemyArchetypes.h`
 - `Source/ai/Private/Enemies/Data/RogueEnemyArchetypes.cpp`
-- `Source/ai/Public/Enemies/Data/RogueEnemyVisualResources.h`
-- `Source/ai/Private/Enemies/Data/RogueEnemyVisualResources.cpp`
 - `Source/ai/Public/Framework/RogueGameBalanceAsset.h`
 - `Source/ai/Private/Framework/RogueGameModeRules.cpp`
 - `Content/Data/Enemies/DT_EnemyArchetypes`

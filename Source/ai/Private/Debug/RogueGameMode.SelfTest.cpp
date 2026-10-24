@@ -158,6 +158,10 @@ void ARogueGameMode::RunWeaponUpgradeSelfTest()
 			Values.LaserRefraction = Set->GetLaserRefractionBonus();
 			Values.MortarBlastRadius = Set->GetMortarBlastRadiusBonus();
 			Values.ScytheSize = Set->GetScytheSizeBonus();
+	Values.ProjectileBurst = Set->GetProjectileBurstBonus();
+	Values.RocketBlastRadius = Set->GetRocketBlastRadiusBonus();
+	Values.HellTowerDamageRamp = Set->GetHellTowerDamageRampBonus();
+
 			Player->ApplyWeaponBonusSnapshot(Values);
 		}
 	};

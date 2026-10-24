@@ -1,6 +1,7 @@
 #include "Player/RogueCharacter.h"
 #include "Player/RogueFloatingComponent.h"
 #include "Player/RogueTurnSmoothingComponent.h"
+#include "Player/RogueShieldOrbitComponent.h"
 #include "AbilitySystem/RogueAttributeSet.h"
 #include "Debug/RogueSelfTest.h"
 
@@ -79,6 +80,7 @@ ARogueCharacter::ARogueCharacter()
     FloatingMotion->SetTargetComponent(Visuals);
     TurnSmoothing=CreateDefaultSubobject<URogueTurnSmoothingComponent>(TEXT("TurnSmoothing"));
     TurnSmoothing->SetTargetComponent(Visuals);
+	ShieldOrbit = CreateDefaultSubobject<URogueShieldOrbitComponent>(TEXT("ShieldOrbit"));
 
 	GetCharacterMovement()->bOrientRotationToMovement = true;
 	GetCharacterMovement()->RotationRate = FRotator(0.0f, 720.0f, 0.0f);
@@ -101,7 +103,7 @@ void ARogueCharacter::BeginPlay()
 	
 	ApplyBalanceAsset();
 
-	// 正式生命/护甲初始化在 PossessedBy → InitializeGASAttributes。
+	// 正式生命/护甲初始化等待本玩家永久成长档案就绪，再经 InitializeGASAttributes 写入。
 	// 尚无属性集时这里只初始化显示镜像，不会创建 ASC 或写入 GAS 生命值。
 	if (GetRogueAttributeSet() == nullptr)
 	{
@@ -134,9 +136,8 @@ void ARogueCharacter::PossessedBy(AController* NewController)
 	if (ARoguePlayerState* RoguePS = GetPlayerState<ARoguePlayerState>())
 	{
 		RoguePS->RefreshAbilityActorInfo(this);//先把ASC的owner/avatar绑定好
-		InitializeGASAttributes();//输入基础数值
-		BindAbilitySystemEvents();//绑定事件
-		ApplyLifeStateEffects();//应用当前生命阶段的效果
+		// 远端档案可能晚于接管到达；PlayerState 在接收成功后会再次通知本 Pawn。
+		NotifyProgressionReady();
 	}
 	if (ARogueGameMode* Mode = GetWorld()->GetAuthGameMode<ARogueGameMode>())
 	{
@@ -171,6 +172,9 @@ void ARogueCharacter::Tick(float DeltaSeconds)
 	// 属性镜像在 IsAlive() 早退前同步：
 	// 死亡后 HUD 仍要能读到最终血量（归零），所以这里不能因为死亡就跳过。
 	SyncAttributeMirrors();
+
+	// 节流窗口到期时补弹累计的回血量（否则窗口内最后一跳会一直压着不显示）。
+	TryFlushHealingNumber();
 
 	// 跳跃手感：土狼时间、输入缓冲、下落重力。放在移动组件 Tick 之前生效。
 	UpdateJumpFeel(DeltaSeconds);

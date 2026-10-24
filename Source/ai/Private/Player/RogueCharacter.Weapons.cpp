@@ -1,4 +1,5 @@
 #include "Player/RogueCharacter.h"
+#include "HAL/IConsoleManager.h"
 #include "AbilitySystem/RogueAttributeSet.h"
 #include "Debug/RogueSelfTest.h"
 
@@ -81,6 +82,11 @@ namespace
 
 void ARogueCharacter::InitializeWeapons()
 {
+	// 通知、接管和 BeginPlay 的先后不固定，但一个 Pawn 只创建一组武器 Actor。
+	if (Weapons.Num() > 0)
+	{
+		return;
+	}
 	if (WeaponDataTable == nullptr)
 	{
 		return;
@@ -101,6 +107,10 @@ void ARogueCharacter::InitializeWeapons()
 		if (Weapon != nullptr)
 		{
 			Weapon->InitializeWeapon(this, Config);
+			// 蓝图/数据表继续决定模型、弹道和伤害；初始装备统一为一张御札。
+			// 其它武器保留数量 0 的实例，抽到获取卡后由 GAS 数量加成启用。
+			// 读取子类的实际数量类型，避免旧数据表中错配的数量枚举把其它武器当作御札。
+			Weapon->GetConfig().Count = Weapon->GetCountUpgradeType() == ERogueUpgradeType::ProjectileCount ? 1 : 0;
 			Weapons.Add(Weapon);
 		}
 		return Weapon;
@@ -228,6 +238,16 @@ void ARogueCharacter::EnsureWeaponAbilities()
 	if (bWeaponAbilitiesSettled || Weapons.Num() == 0)
 	{
 		return;
+	}
+
+	// 档案握手前不在服务端授予/激活开火能力，避免按空属性打一轮后再补永久基值。
+	if (IsAuthoritySide())
+	{
+		const ARoguePlayerState* State = GetPlayerState<ARoguePlayerState>();
+		if (State == nullptr || !State->IsProgressionReady() || !State->IsBaseAttributesInitialized())
+		{
+			return;
+		}
 	}
 
 	URogueAbilitySystemComponent* ASC = GetRogueAbilitySystemComponent();
@@ -383,17 +403,18 @@ void ARogueCharacter::FlushWeaponCosmetics()
 
 void ARogueCharacter::Multicast_WeaponCosmetics_Implementation(const TArray<FRogueWeaponCosmeticBatchEntry>& Fires)
 {
+#if !UE_BUILD_SHIPPING
+	if (const auto* Debug = IConsoleManager::Get().FindConsoleVariable(TEXT("Rogue.Audio.Debug")); Debug && Debug->GetInt())
+		UE_LOG(LogTemp, Display, TEXT("[AttackAudio] WeaponRPC Player=%s Alive=%d AuthoritySide=%d Local=%d Entries=%d"), *GetName(), IsAlive(), IsAuthoritySide(), IsLocallyControlled(), Fires.Num());
+#endif
 	if (!IsAlive())
 	{
 		return;
 	}
 
-	// 两类机器跳过（它们各自已经有"真实/预测"的那一份了）：
-	//   · 服务端：权威那一发就是它自己生成的；
-	//   · 本人：自己那一发是本地预测。
-	// 这里用 IsAuthoritySide() 而不是 HasAuthority()：语义是"我是不是权威端"，
-	// 与广播侧保持同一执行环境判据；所属客户端还会通过 IsLocallyControlled 跳过回放。
-	if (IsAuthoritySide() || IsLocallyControlled())
+	// 服务端已在真实发射时播过音效。客户端先接收确认音效，只有远端角色重放弹体；
+	// 所属客户端保留自己的预测弹体，也能在服务端接管开火时听到确认音效。
+	if (IsAuthoritySide())
 	{
 		return;
 	}
@@ -407,7 +428,9 @@ void ARogueCharacter::Multicast_WeaponCosmetics_Implementation(const TArray<FRog
 
 		if (ARogueWeaponBase* Weapon = Weapons[Entry.WeaponIndex])
 		{
-			Weapon->PlayCosmeticFire(Entry.Fire);
+			// 音效统一回放服务器确认的这一轮，包含所属客户端；本地预测不另播一份。
+			if (Entry.Fire.bPlayAttackSound) { Weapon->PlayAttackAudio(Entry.Fire.Start); }
+			if (!IsLocallyControlled()) { Weapon->PlayCosmeticFire(Entry.Fire); }
 		}
 	}
 }
@@ -536,6 +559,10 @@ void ARogueCharacter::RefreshWeaponBonusSnapshotFromAttributes()
 	Values.LaserRefraction = AttributeSet->GetLaserRefractionBonus();
 	Values.MortarBlastRadius = AttributeSet->GetMortarBlastRadiusBonus();
 	Values.ScytheSize = AttributeSet->GetScytheSizeBonus();
+	Values.ProjectileBurst = AttributeSet->GetProjectileBurstBonus();
+	Values.RocketBlastRadius = AttributeSet->GetRocketBlastRadiusBonus();
+	Values.HellTowerDamageRamp = AttributeSet->GetHellTowerDamageRampBonus();
+
 	ApplyWeaponBonusSnapshot(Values);
 }
 
@@ -547,7 +574,7 @@ void ARogueCharacter::ApplyWeaponBonusSnapshot(const FRogueWeaponBonusValues& In
 		return;
 	}
 
-	// 脏检查：13 个值都没变就直接返回（调用方 GameMode 每帧都会推一次）
+	// 脏检查：16 个值都没变就直接返回（调用方 GameMode 每帧都会推一次）
 	if (WeaponBonusSnapshot.Equals(InValues))
 	{
 		return;

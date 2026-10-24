@@ -50,7 +50,7 @@
 |---|---|
 | 对象池初始容量 | `DA_GameBalance.Pools` |
 | 运行时性能阈值 | `DA_GameBalance.Performance` |
-| 基础刷怪设置 | `DA_GameBalance.Spawn` 的 `SpawnRadius` / `SpawnInterval` / `WaveDuration` / `BaseMaxAliveEnemies` / `EnemySpawnMinimumDistance` / `GroundTrace*` |
+| 基础刷怪设置 | `DA_GameBalance.Spawn` 的 `BaseEnemiesPerWave` / `EnemiesPerWaveIncrement` / `EnemiesPerWaveLimit` / `SpawnRadius` / `SpawnInterval` / `BaseMaxAliveEnemies` / `EnemySpawnMinimumDistance` / `GroundTrace*` |
 | Boss 节奏 | `DA_GameBalance.BossSpawn` 的 `BossWaveInterval` / `BossBonusSelections` / `BossSpawnDistance` / `BossSpawnMinimumDistance` |
 | 场景优化 | `DA_GameBalance.Scene` |
 
@@ -83,7 +83,7 @@
 - `Visual`：`VisualKey` / `MeshScale` / `MeshLocation` / `MeshRotation` / `CapsuleRadius` / `CapsuleHalfHeight`
 - `BossVisual`：Boss 形态的同一组字段
 
-`ToArchetype()` 在行数据存在时直接使用表格视觉，不再只能依赖 `MakeXxxArchetype()` 的 C++ 基线；表格已填 9 行普通/Boss 视觉。
+`ToArchetype()` 在行数据存在时直接使用表格视觉，不再只能依赖 `MakeXxxArchetype()` 的 C++ 基线；表格已填 13 行普通/Boss 视觉。
 
 ### 2.4 投射物/表现类的默认值
 
@@ -102,7 +102,7 @@
 - 玩家状态、波数与金币已移入 `WBP_PlayerVitals`（命名绑定），Canvas 不再绘制这些文字/状态条；敌人血条兜底与伤害数字仍在 `RogueHUD.cpp`。
 - 相机臂长度 `900`、相机延迟 `5`、胶囊 `42/96`、旋转速率 `720` 仍在 `RogueCharacter.cpp`。
 - 输入资产目录与 `IMC_Default` / `IA_*` 名称仍是代码兜底；每个动作有 `TSoftObjectPtr` 可覆盖。
-- HUD 的 4 个 WBP 路径已在 P0 改为 `DefaultGame.ini` 的 `TSoftClassPtr` 配置。
+- HUD 的 8 个 WBP 路径（含主菜单、教程、设置）已在 P0 改为 `DefaultGame.ini` 的 `TSoftClassPtr` 配置。
 
 ### 2.6 P1 视觉资产（分批迁移中）
 

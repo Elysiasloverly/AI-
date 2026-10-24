@@ -16,6 +16,7 @@
 #include "Combat/Projectiles/RogueProjectile.h"
 #include "Combat/Projectiles/RogueRocketProjectile.h"
 #include "Camera/CameraComponent.h"
+#include "Audio/RogueCombatAudioSubsystem.h"
 
 ARogueWeaponBase::ARogueWeaponBase()
 {
@@ -37,11 +38,12 @@ void ARogueWeaponBase::InitializeWeapon(ARogueCharacter* InOwnerCharacter, const
 {
 	OwnerCharacter = InOwnerCharacter;
 	Config = InConfig;
+	AttackAudioState.Reset();
 }
 
 void ARogueWeaponBase::OnOwnerDied()
 {
-	// 基类默认不做任何事，子类可重写
+	AttackAudioState.Reset();
 }
 
 void ARogueWeaponBase::CollectFireTargets(TArray<ARogueEnemy*>& OutTargets) const
@@ -227,7 +229,7 @@ bool ARogueWeaponBase::IsHeavyCombat() const
 	return Tracker != nullptr && Tracker->ShouldCullCombatEffects();
 }
 
-void ARogueWeaponBase::SpawnLaserBeam(const FVector& Start, const FVector& End, bool bInfernoStyle, bool bImpactEffect, float Lifetime)
+void ARogueWeaponBase::SpawnLaserBeam(const FVector& Start, const FVector& End, bool bInfernoStyle, bool bImpactEffect, float Lifetime, bool bPlayAttackSound)
 {
 	URogueCombatPoolSubsystem* Pools = GetWorld() ? GetWorld()->GetSubsystem<URogueCombatPoolSubsystem>() : nullptr;
 	if (Pools == nullptr || OwnerCharacter == nullptr)
@@ -250,6 +252,7 @@ void ARogueWeaponBase::SpawnLaserBeam(const FVector& Start, const FVector& End, 
 	Fire.End = End;
 	Fire.Param = Lifetime;
 	Fire.bAlternateStyle = bInfernoStyle;
+	Fire.bPlayAttackSound = bPlayAttackSound && Beam != nullptr;
 	BroadcastCosmeticFire(Fire);
 }
 
@@ -264,6 +267,17 @@ void ARogueWeaponBase::BroadcastCosmeticFire(const FRogueWeaponCosmeticFire& Fir
 	}
 
 	OwnerCharacter->BroadcastWeaponCosmetic(this, Fire);
+	if (Fire.bPlayAttackSound) { const_cast<ARogueWeaponBase*>(this)->PlayAttackAudio(Fire.Start); }
+}
+
+void ARogueWeaponBase::PlayAttackAudio(const FVector& Location)
+{
+	UWorld* World = GetWorld();
+	if (World && OwnerCharacter && OwnerCharacter->IsAlive())
+	{
+		if (auto* Audio = World->GetSubsystem<URogueCombatAudioSubsystem>())
+			Audio->PlayWeaponAttack(this, Location, AttackAudioState);
+	}
 }
 
 void ARogueWeaponBase::PlayCosmeticFire(const FRogueWeaponCosmeticFire& Fire)

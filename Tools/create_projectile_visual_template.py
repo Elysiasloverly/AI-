@@ -1,7 +1,7 @@
 """给敌人弹体基础蓝图添加一套可删除的占位视觉组件。
 
 用法（项目根目录）：
-    UnrealEditor-Cmd.exe F:\AI_WorkSpeace\ai\ai.uproject ^
+    UnrealEditor-Cmd.exe F:\AI_WorkSpeace\baka\Baka.uproject ^
         -run=pythonscript -script="Tools/create_projectile_visual_template.py" ^
         -unattended -nopause -nullrhi -nosplash
 

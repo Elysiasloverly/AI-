@@ -1,6 +1,6 @@
 # 御柱独立光束蓝图
 
-御柱使用 `/Game/BP/Projectile/BP_RogueHellTowerBeam`，极限火花使用 `/Game/BP/Projectile/BP_RogueLaserBeam`。两者分别继承原生 `ARogueLaserBeam`，各自保存组件和外观配置。
+御柱使用 `/Game/BP/Projectiles/BP_RogueHellTowerBeam`，极限火花使用 `/Game/BP/Projectiles/BP_RogueLaserBeam`。两者分别继承原生 `ARogueLaserBeam`，各自保存组件和外观配置。
 
 ## 修改御柱材质
 

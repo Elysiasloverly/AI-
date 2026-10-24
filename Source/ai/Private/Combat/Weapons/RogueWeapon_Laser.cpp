@@ -64,6 +64,7 @@ void ARogueWeapon_Laser::FireLaserBurst(const TArray<ARogueEnemy*>& Enemies)
 	const int32 HalfCount = EffectiveCount / 2;
 	const float BeamSpacing = 34.0f;
 
+	bool bAudioTagged = false;
 	for (int32 LaserIndex = 0; LaserIndex < EffectiveCount; ++LaserIndex)
 	{
 		if (!Enemies.IsValidIndex(LaserIndex % Enemies.Num()) || !IsValid(Enemies[LaserIndex % Enemies.Num()]))
@@ -77,7 +78,8 @@ void ARogueWeapon_Laser::FireLaserBurst(const TArray<ARogueEnemy*>& Enemies)
 		const FVector BeamOrigin = BeamOriginBase + LateralDirection * LateralOffset;
 		const FVector TargetLocation = TargetEnemy->GetActorLocation() + FVector(0.0f, 0.0f, 40.0f);
 		RogueAbilitySystem::ApplyDamageToTarget(OwnerChar, TargetEnemy, GetEffectiveDamage(), RogueGameplayTags::Damage_Source_Beam);
-		SpawnLaserBeam(BeamOrigin, TargetLocation);
+		SpawnLaserBeam(BeamOrigin, TargetLocation, false, true, .10f, !bAudioTagged);
+		bAudioTagged = true;
 
 		if (GetEffectiveRefractionCount() > 0)
 		{

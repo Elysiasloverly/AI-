@@ -2,6 +2,8 @@
 
 #include "Progression/Upgrades/RogueUpgradeRuleAsset.h"
 #include "Player/RogueCharacter.h"
+#include "Player/RoguePlayerState.h"
+#include "Progression/Meta/RogueUpgradeTreeDefinition.h"
 
 namespace
 {
@@ -29,6 +31,8 @@ namespace
 		// 解锁奖励保存在 GAS 加成中；前置条件与实际开火共用合并并应用上限后的数量。
 		switch (Source)
 		{
+		case ERogueWeaponUpgradeSource::Projectile:
+			return Character.GetEffectiveProjectileCount();
 		case ERogueWeaponUpgradeSource::Scythe:
 			return Character.GetEffectiveScytheCount();
 		case ERogueWeaponUpgradeSource::Rocket:
@@ -101,6 +105,10 @@ namespace
 	{
 		static const FRogueWeaponUpgradeRuleRow DefaultWeaponRules[] =
 		{
+		{ ERogueWeaponUpgradeSource::Projectile, ERogueUpgradeType::ProjectileBurst },
+		{ ERogueWeaponUpgradeSource::Rocket, ERogueUpgradeType::RocketBlastRadius },
+		{ ERogueWeaponUpgradeSource::HellTower, ERogueUpgradeType::HellTowerDamageRamp },
+
 			{ ERogueWeaponUpgradeSource::Scythe, ERogueUpgradeType::ScytheCount },
 			{ ERogueWeaponUpgradeSource::Scythe, ERogueUpgradeType::ScytheLifesteal },
 			{ ERogueWeaponUpgradeSource::Rocket, ERogueUpgradeType::RocketCount },
@@ -167,6 +175,73 @@ namespace
 			AppendDefaultWeaponRules(OutTypes, Character);
 		}
 	}
+
+	int32 GetOwnedCountForUpgrade(const ARogueCharacter* Character, ERogueUpgradeType Type)
+	{
+		if (Character == nullptr)
+		{
+			return 0;
+		}
+		switch (Type)
+		{
+		case ERogueUpgradeType::ProjectileBurst:
+		case ERogueUpgradeType::ProjectileCount: return Character->GetEffectiveProjectileCount();
+		case ERogueUpgradeType::ScytheCount:
+		case ERogueUpgradeType::ScytheSize:
+		case ERogueUpgradeType::ScytheLifesteal: return Character->GetEffectiveScytheCount();
+		case ERogueUpgradeType::RocketBlastRadius:
+		case ERogueUpgradeType::RocketCount: return Character->GetEffectiveRocketLauncherCount();
+		case ERogueUpgradeType::LaserCount:
+		case ERogueUpgradeType::LaserRefraction: return Character->GetEffectiveLaserCannonCount();
+		case ERogueUpgradeType::HellTowerDamageRamp:
+		case ERogueUpgradeType::HellTowerCount: return Character->GetEffectiveHellTowerCount();
+		case ERogueUpgradeType::MortarCount:
+		case ERogueUpgradeType::MortarBlastRadius: return Character->GetEffectiveMortarCount();
+		default: return 0;
+		}
+	}
+
+	bool IsProgressionAndPrerequisitesAllowed(ERogueUpgradeType Type, const ARogueCharacter* Character)
+	{
+		// 卡池来自这个角色自己的 PlayerState；缺少档案时使用新存档权限，绝不借用房主档案。
+		const ARoguePlayerState* State = Character != nullptr ? Character->GetPlayerState<ARoguePlayerState>() : nullptr;
+		const FRogueProgressionSnapshot FreshProfile;
+		const FRogueProgressionSnapshot& Profile = State != nullptr && State->IsProgressionReady()
+			? State->GetProgressionSnapshot() : FreshProfile;
+		const URogueUpgradeTreeDefinition* Tree = URogueUpgradeTreeDefinition::GetDefaultDefinition();
+		const bool bOwned = GetOwnedCountForUpgrade(Character, Type) > 0;
+		if (!Tree->IsUpgradeAvailable(Profile, Type, bOwned))
+		{
+			return false;
+		}
+		// 永久许可与本局前置分别验证；自定义基础池也不能提前塞进这些专属升级。
+		switch (Type)
+		{
+		case ERogueUpgradeType::ProjectileBurst:
+		case ERogueUpgradeType::RocketBlastRadius:
+		case ERogueUpgradeType::HellTowerDamageRamp:
+		case ERogueUpgradeType::ScytheSize:
+		case ERogueUpgradeType::ScytheLifesteal:
+		case ERogueUpgradeType::LaserRefraction:
+		case ERogueUpgradeType::MortarBlastRadius:
+			return bOwned;
+		default:
+			return true;
+		}
+	}
+
+	void FilterProgressionAndPrerequisites(TArray<ERogueUpgradeType>& OutTypes, const ARogueCharacter* Character)
+	{
+		OutTypes.RemoveAll([Character](ERogueUpgradeType Type)
+		{
+			return !IsProgressionAndPrerequisitesAllowed(Type, Character);
+		});
+	}
+}
+
+bool RogueUpgradeSystemRules::IsUpgradeAllowedForProgression(ERogueUpgradeType Type, const ARogueCharacter* Character)
+{
+	return IsProgressionAndPrerequisitesAllowed(Type, Character);
 }
 
 void RogueUpgradeSystemRules::BuildUpgradePool(TArray<ERogueUpgradeType>& OutTypes, const ARogueCharacter* Character, const URogueUpgradeRuleAsset* RuleAsset)
@@ -180,6 +255,7 @@ void RogueUpgradeSystemRules::BuildUpgradePool(TArray<ERogueUpgradeType>& OutTyp
 		// 镰刀专属升级需要实际武器，不能由无角色的通用池提供。
 		OutTypes.Remove(ERogueUpgradeType::ScytheSize);
 		OutTypes.Remove(ERogueUpgradeType::ScytheLifesteal);
+		FilterProgressionAndPrerequisites(OutTypes, nullptr);
 		return;
 	}
 
@@ -195,6 +271,7 @@ void RogueUpgradeSystemRules::BuildUpgradePool(TArray<ERogueUpgradeType>& OutTyp
 		OutTypes.Remove(ERogueUpgradeType::ScytheSize);
 		OutTypes.Remove(ERogueUpgradeType::ScytheLifesteal);
 	}
+
+	// 升级选择与商店共用本入口，最终统一过滤永久解锁和本局武器前置。
+	FilterProgressionAndPrerequisites(OutTypes, Character);
 }
-
-

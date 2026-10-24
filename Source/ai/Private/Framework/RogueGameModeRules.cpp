@@ -92,7 +92,7 @@ namespace
 		int32 TotalWeight = 0;
 		for (const EntryType& Entry : Entries)
 		{
-			if (Wave >= Entry.MinWave && CanSpawnType(Entry.EnemyType))
+			if (Entry.Weight > 0 && Wave >= Entry.MinWave && CanSpawnType(Entry.EnemyType))
 			{
 				TotalWeight += Entry.Weight;
 			}
@@ -106,7 +106,7 @@ namespace
 		int32 Pick = FMath::RandRange(1, TotalWeight);
 		for (const EntryType& Entry : Entries)
 		{
-			if (Wave < Entry.MinWave || !CanSpawnType(Entry.EnemyType))
+			if (Entry.Weight <= 0 || Wave < Entry.MinWave || !CanSpawnType(Entry.EnemyType))
 			{
 				continue;
 			}
@@ -128,7 +128,7 @@ namespace
 		int32 TotalWeight = 0;
 		for (const EntryType& Entry : Entries)
 		{
-			if (Wave >= Entry.MinWave && CanSpawnType(Entry.EnemyType))
+			if (Entry.Weight > 0 && Wave >= Entry.MinWave && CanSpawnType(Entry.EnemyType))
 			{
 				TotalWeight += Entry.Weight;
 			}
@@ -142,7 +142,7 @@ namespace
 		int32 Pick = FMath::RandRange(1, TotalWeight);
 		for (const EntryType& Entry : Entries)
 		{
-			if (Wave < Entry.MinWave || !CanSpawnType(Entry.EnemyType))
+			if (Entry.Weight <= 0 || Wave < Entry.MinWave || !CanSpawnType(Entry.EnemyType))
 			{
 				continue;
 			}
@@ -156,6 +156,29 @@ namespace
 
 		return ERogueEnemyType::Rifleman;
 	}
+}
+
+int32 RogueGameModeRules::BuildWaveEnemyCount(int32 Wave, const URogueGameBalanceAsset* BalanceAsset)
+{
+    const FRogueSpawnBalanceSettings& Settings = BalanceAsset ? BalanceAsset->Spawn : GetDefault<URogueGameBalanceAsset>()->Spawn;
+    int64 Count = static_cast<int64>(FMath::Max(1, Settings.BaseEnemiesPerWave))
+        + static_cast<int64>(FMath::Max(0, Settings.EnemiesPerWaveIncrement)) * FMath::Max<int64>(0, static_cast<int64>(Wave) - 1);
+    if (Settings.EnemiesPerWaveLimit > 0) Count = FMath::Min(Count, static_cast<int64>(Settings.EnemiesPerWaveLimit));
+    return static_cast<int32>(FMath::Clamp<int64>(Count, 1, MAX_int32));
+}
+
+bool RogueGameModeRules::HasEligibleEnemyTypeForWave(int32 Wave, const URogueGameBalanceAsset* BalanceAsset,
+    TFunctionRef<bool(ERogueEnemyType)> CanSpawnType)
+{
+    auto Eligible = [Wave, &CanSpawnType](const FRogueEnemyWaveEntryRow& Entry)
+    {
+        return Entry.Weight > 0 && Wave >= Entry.MinWave && CanSpawnType(Entry.EnemyType);
+    };
+    if (const TArray<FRogueEnemyWaveEntryRow>* Entries = GetWaveEntries(BalanceAsset))
+        return Entries->ContainsByPredicate(Eligible);
+    for (const FRogueEnemyWaveEntryRow& Entry : DefaultEnemyWaveEntries)
+        if (Eligible(Entry)) return true;
+    return false;
 }
 
 ERogueEnemyType RogueGameModeRules::PickWeightedEnemyTypeForWave(int32 Wave, const URogueGameBalanceAsset* BalanceAsset)
@@ -195,7 +218,7 @@ FRogueSpawnCadence RogueGameModeRules::BuildSpawnCadence(int32 Wave, int32 Alive
 
 	// 存活上限随波次逐级增长： 基础上限 + 每波增长 × (波次 - 1)
 	// HardLimit > 0 时才封顶；默认 0 = 不设上限（持续增长）。
-	int32 WaveScaledMaxAlive = MaxAliveEnemies + MaxAliveEnemiesPerWave * FMath::Max(0, Wave - 1);
+	int32 WaveScaledMaxAlive = MaxAliveEnemies + MaxAliveEnemiesPerWave * FMath::Max<int64>(0, static_cast<int64>(Wave) - 1);
 	if (MaxAliveEnemiesHardLimit > 0)
 	{
 		WaveScaledMaxAlive = FMath::Min(WaveScaledMaxAlive, MaxAliveEnemiesHardLimit);

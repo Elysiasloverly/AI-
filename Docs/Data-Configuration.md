@@ -12,6 +12,8 @@ Content/Data/
 │   └── DT_EnemyArchetypes
 ├── Weapons/
 │   └── DT_WeaponConfig
+├── Progression/
+│   └── DA_UpgradeTree
 └── Upgrades/
     ├── DA_UpgradeDefinitions
     ├── DA_UpgradeRules
@@ -63,3 +65,7 @@ GameMode 蓝图或关卡指定的配置优先；未指定时，代码从上述�
 地藏的整圈弹幕参数见 [地藏攻击说明](Shock-Pillar-Attack.md)。玩家出生状态、成长、武器加成与复活参数见 [玩家配置说明](Player-Balance-Configuration.md)。
 
 御柱与极限火花现在使用各自的光束蓝图；材质与粗细入口见 [御柱光束配置](Hell-Tower-Beam.md)。
+
+## 永久成长配置
+
+`/Game/Data/Progression/DA_UpgradeTree` 定义永久节点、前置、费用、属性等级和编辑器调试操作；它决定是否允许进入个人卡池，局内卡牌的具体数值仍由 Upgrades 配置决定。存档余额属于 LocalPlayer 的本地档案，不是 DataAsset 的运行时共享余额。详见 [UpgradeTreeGuide.md](UpgradeTreeGuide.md)。

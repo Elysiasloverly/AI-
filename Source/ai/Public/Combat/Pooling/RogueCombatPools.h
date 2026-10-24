@@ -27,11 +27,21 @@ struct AI_API FRogueCombatPoolPrewarmClasses
 	TArray<TSubclassOf<ARogueOrbitingBlade>> OrbitingBladeClasses;
 };
 
+/** A weak class bucket never owns actors; the reflected master arrays retain them. */
+struct FRoguePoolClassRuntime
+{
+	TArray<TWeakObjectPtr<AActor>> Actors;
+	int32 Cursor = 0;
+	uint64 Hits = 0;
+	uint64 Misses = 0;
+	uint64 Scanned = 0;
+};
+
 /** 单个池的运行时诊断数据（不参与反射，纯 C++ 统计） */
 struct FRoguePoolRuntime
 {
-	/** 环形扫描起点：上次命中位置 +1；最坏仍需遍历整个池 */
-	int32 Cursor = 0;
+	/** Exact-class buckets avoid scanning actors of unrelated classes. */
+	TMap<TWeakObjectPtr<UClass>, FRoguePoolClassRuntime> Classes;
 
 	/** 池内未命中后尝试运行时 SpawnActor 的累计次数（含生成失败）。需结合类匹配、占用率与内存预算判断是否增加预热 */
 	int32 RuntimeSpawnCount = 0;
@@ -67,6 +77,7 @@ public:
 	void LogPoolDiagnostics();
 
 private:
+	friend struct FRogueReliabilityTestAccess;
 	UPROPERTY()
 	TArray<TObjectPtr<ARogueEnemy>> EnemyPool;
 

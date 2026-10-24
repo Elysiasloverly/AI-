@@ -17,9 +17,9 @@ import unreal
 
 WEAPON_TABLE = "/Game/Data/Weapons/DT_WeaponConfig"
 UPGRADE_TABLE = "/Game/Data/Upgrades/DT_UpgradeDefinitions"
-WEAPON_DISK = r"F:/AI_WorkSpeace/ai/Content/Data/Weapons/DT_WeaponConfig.uasset"
-UPGRADE_DISK = r"F:/AI_WorkSpeace/ai/Content/Data/Upgrades/DT_UpgradeDefinitions.uasset"
-REPORT_PATH = r"F:/AI_WorkSpeace/ai/Saved/DataDump/rename_report2.txt"
+WEAPON_DISK = r"F:/AI_WorkSpeace/baka/Content/Data/Weapons/DT_WeaponConfig.uasset"
+UPGRADE_DISK = r"F:/AI_WorkSpeace/baka/Content/Data/Upgrades/DT_UpgradeDefinitions.uasset"
+REPORT_PATH = r"F:/AI_WorkSpeace/baka/Saved/DataDump/rename_report2.txt"
 
 WEAPON_NAMES = {
     "Projectile": "御札",

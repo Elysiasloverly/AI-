@@ -209,6 +209,30 @@ public:
 	URogueUpgradeEffect_ScytheLifesteal();
 };
 
+UCLASS()
+class AI_API URogueUpgradeEffect_ProjectileBurst : public URogueAttributeUpgradeEffect
+{
+	GENERATED_BODY()
+public:
+	URogueUpgradeEffect_ProjectileBurst();
+};
+
+UCLASS()
+class AI_API URogueUpgradeEffect_RocketBlastRadius : public URogueAttributeUpgradeEffect
+{
+	GENERATED_BODY()
+public:
+	URogueUpgradeEffect_RocketBlastRadius();
+};
+
+UCLASS()
+class AI_API URogueUpgradeEffect_HellTowerDamageRamp : public URogueAttributeUpgradeEffect
+{
+	GENERATED_BODY()
+public:
+	URogueUpgradeEffect_HellTowerDamageRamp();
+};
+
 /** 升级枚举到效果类的映射；目标属性由对应子类配置。
  * 未映射的枚举返回 nullptr，调用方须报告并处理配置缺失。 */
 namespace RogueUpgradeEffectMap

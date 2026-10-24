@@ -433,9 +433,9 @@ bool FRogueLifeCycleWidgetOrderingTest::RunTest(const FString& Parameters)
 	FTwoPlayerFixture Fixture;
 	if (!Fixture.Initialize(*this)) { return false; }
 	const TSubclassOf<URogueReviveCountdownWidgetBase> ResurrectionClass = LoadClass<URogueReviveCountdownWidgetBase>(nullptr,
-		TEXT("/Game/UMG/Menus/WBP_ResurrectionScreen.WBP_ResurrectionScreen_C"));
+		TEXT("/Game/UMG/Menus/InGame/WBP_ResurrectionScreen.WBP_ResurrectionScreen_C"));
 	const TSubclassOf<URogueDeathScreenWidgetBase> DeathClass = LoadClass<URogueDeathScreenWidgetBase>(nullptr,
-		TEXT("/Game/UMG/Menus/WBP_DeathScreen.WBP_DeathScreen_C"));
+		TEXT("/Game/UMG/Menus/InGame/WBP_DeathScreen.WBP_DeathScreen_C"));
 	if (!TestNotNull(TEXT("The actual resurrection Blueprint loads"), ResurrectionClass.Get())
 		|| !TestNotNull(TEXT("The actual death Blueprint loads"), DeathClass.Get())) { return false; }
 
@@ -538,10 +538,10 @@ bool FRogueLifeCycleWidgetOrderingTest::RunTest(const FString& Parameters)
 	Fixture.Controllers[0]->UnPossess();
 	Resurrection[0]->SetVisibility(ESlateVisibility::Visible);
 	Death[0]->SetVisibility(ESlateVisibility::Collapsed);
-	HUDs[0]->DrawHUD();
+	HUDs[0]->Tick(0.0f);
 	CheckViews(0, false, true, TEXT("GameOver UI survives missing Pawn and repairs drift"));
 	Fixture.GameState->SetRunStateSnapshot(1, 0, 5.0f, false, false);
-	HUDs[0]->DrawHUD();
+	HUDs[0]->Tick(0.0f);
 	CheckViews(0, false, false, TEXT("Missing Pawn does not retain old screens in an active run"));
 	FRoguePlayerLifeCycleTestAccess::ReceiveLifeState(Fixture.Pawns[0], ERoguePlayerLifePhase::Downed, Deadline);
 	TestFalse(TEXT("Downed without a resolved controller still disables Pawn input"), Fixture.Pawns[0]->InputEnabled());

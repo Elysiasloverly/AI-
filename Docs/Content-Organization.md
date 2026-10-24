@@ -9,12 +9,12 @@
 ```text
 Content/
 ├── GameAssets/                  美术资产主目录
-│   ├── StarterContent/          现有主资源与游戏地图
+│   ├── StarterContent/          现有主资源与游戏地图（含 Maps/）
 │   ├── Grid_Materials/          现有游戏引用的材质
 │   ├── HologramShader/          现有游戏引用的全息材质
 │   ├── Realistic_Starter_VFX_Pack_Vol2/
 │   ├── Vefects/
-│   ├── CharacterAssetse/        角色套装（10 套：网格、贴图与材质）
+│   ├── CharacterAssetse/        角色套装（10 套角色 + 2 个道具目录：网格、贴图与材质）
 │   ├── Environment/             夜景天空等环境资源
 │   ├── Map/                     场景网格与地形材质（1=森林，2=神社）
 │   ├── WEapon/                  武器与弹体外观（冰锥、弹幕、冰刃、光束）
@@ -30,7 +30,15 @@ Content/
 ├── BPEnum/                      玩法枚举
 ├── Input/                       输入动作与映射
 ├── UMG/                         界面蓝图
-├── StarterContent/Maps/         保留原样例地图及构建数据
+│   ├── HUD/                     常驻 HUD（玩家状态条 / 敌人血条 / 受伤泛红）
+│   ├── Fonts/                   项目统一字体 F_DroidMono_CJK
+│   └── Menus/                   菜单 WBP
+│       ├── Common/              设置（主菜单与游戏内共用）
+│       ├── InGame/              暂停 / 死亡结算 / 濒死等待
+│       ├── Shop/                商店与报价卡
+│       ├── Upgrade/             升级选择与升级卡
+│       └── MainMenu/            开始菜单与教程
+├── Map/                         主菜单 MainMenu 与战斗地图 Battle_Night、Battle_Day
 └── Data/                        玩法配置资产
     ├── Core/                    DA_GameBalance
     ├── Player/                  DA_PlayerBalance
@@ -38,6 +46,9 @@ Content/
     ├── Weapons/                 DT_WeaponConfig
     └── Upgrades/                DA_UpgradeDefinitions、DA_UpgradeRules、DT_UpgradeDefinitions
 ```
+
+另有 `Collections/`、`Developers/`、`GameAssets/Music/`、`GameAssets/UI/up/`、`GameAssets/新建文件夹/` 等
+编辑器集合、个人沙盒与临时目录，未在上图展开。
 
 ## 配置资产从 DataTable 归类到 Data
 
@@ -59,7 +70,7 @@ C++ 类名、数据表行结构（`FRogueEnemyArchetypeRow`、`FRogueWeaponTable
 
 ## 引用与保留范围
 
-主地图路径保留 `/Game/GameAssets/StarterContent/Maps/Minimal_Default`；已有 C++ 美术加载路径、默认地图配置以及 BP、BPEnum、Input、UMG 的目录保持原位置。玩法数值与配置资产现统一位于 `Data/`，详见 [配置资产说明](Data-Configuration.md)。三张原样例地图及其构建数据保留在 `StarterContent/Maps/`，不纳入美术资产移动范围。
+默认战斗地图为 `/Game/Map/Battle_Night`，白天副本为 `/Game/Map/Battle_Day`；已有 C++ 美术加载路径、默认地图配置以及 BP、BPEnum、Input、UMG 的目录保持原位置。玩法数值与配置资产现统一位于 `Data/`，详见 [配置资产说明](Data-Configuration.md)。地图已统一到 `Content/Map/`；旧战斗地图、两张示例地图及无引用构建数据已清理。
 
 同名资产不代表内容相同。现有 `GameAssets` 资源和原外层包作为两个版本保留，不通过这次目录整理合并或删除。玩法蓝图即使包含网格、材质或特效配置，也留在 `BP/`；界面蓝图留在 `UMG/`。
 
@@ -73,8 +84,8 @@ C++ 类名、数据表行结构（`FRogueEnemyArchetypeRow`、`FRogueWeaponTable
 
 ## 验证结果
 
-- 352 个资产全部移动成功，保存引用后清理所有无引用重定向器和 46 个空目录。
-- 762 个非重定向资产均保留；逐类型数量一致。
-- 352 个移动资产和 29 个玩法/界面蓝图，共 381 个对象成功加载。美术类型资产全部位于 GameAssets，下层保留原素材包结构。
+- 352 个资产全部移动成功，保存引用后清理所有无引用重定向器和 46 个空目录（当前仍有 4 个空目录）。
+- 762 个非重定向资产（当时统计）均保留；逐类型数量一致；当前 Content 共 1000 个资产。
+- 352 个移动资产和 29 个玩法/界面蓝图（当时统计），共 381 个对象成功加载；当前 BP 39 + UMG 11 + BPEnum/Input 12 = 51 个资产。美术类型资产全部位于 GameAssets，下层保留原素材包结构。
 - 无新增缺失的包引用；源代码和默认地图配置未修改。
-- 示例地图及构建数据未移动，主地图仍为 /Game/GameAssets/StarterContent/Maps/Minimal_Default。
+- 当前地图为 `/Game/Map/MainMenu`、`/Game/Map/Battle_Night` 与 `/Game/Map/Battle_Day`，场景以用户 Map 文件夹版本为准。

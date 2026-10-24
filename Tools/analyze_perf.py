@@ -3,7 +3,7 @@
 
 用法（在项目根目录执行）：
     python Tools/analyze_perf.py
-    python Tools/analyze_perf.py --csv-dir "F:/AI_WorkSpeace/ai/Saved/Profiling/CSV" --logs "F:/AI_WorkSpeace/ai/Saved/Logs/perf_server.log" "F:/AI_WorkSpeace/ai/Saved/Logs/perf_client.log"
+    python Tools/analyze_perf.py --csv-dir "F:/AI_WorkSpeace/baka/Saved/Profiling/CSV" --logs "F:/AI_WorkSpeace/baka/Saved/Logs/perf_server.log" "F:/AI_WorkSpeace/baka/Saved/Logs/perf_client.log"
 
 它会输出：
   1. CSV 里有哪些列（第一次跑时用来确认采集到了什么）
@@ -21,10 +21,10 @@ import statistics
 import sys
 from collections import Counter, defaultdict
 
-DEFAULT_CSV_DIR = r"F:\AI_WorkSpeace\ai\Saved\Profiling\CSV"
+DEFAULT_CSV_DIR = r"F:\AI_WorkSpeace\baka\Saved\Profiling\CSV"
 DEFAULT_LOGS = [
-    r"F:\AI_WorkSpeace\ai\Saved\Logs\perf_server.log",
-    r"F:\AI_WorkSpeace\ai\Saved\Logs\perf_client.log",
+    r"F:\AI_WorkSpeace\baka\Saved\Logs\perf_server.log",
+    r"F:\AI_WorkSpeace\baka\Saved\Logs\perf_client.log",
 ]
 
 # 帧时间列名在不同引擎版本里叫法略有差异，按优先级找

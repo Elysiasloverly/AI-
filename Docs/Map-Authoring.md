@@ -1,8 +1,10 @@
 # 地图场景、刷怪区域与商店摆放
 
+白天与夜晚战斗地图现位于 `/Game/Map/Battle_Day` 和 `/Game/Map/Battle_Night`，默认入口沿用夜景。两张地图场景与玩法配置相同，白天副本仅调整环境灯光。详见 [昼夜地图](Battle-Day-Night.md)。
+
 ## 当前入口
 
-默认地图：`/Game/GameAssets/StarterContent/Maps/Minimal_Default`。
+默认地图：`/Game/Map/Battle_Night`。
 
 场景以地图中的物体、灯光和 PlayerStart 为准。GameMode 不再要求 BP_RogueArena，不自动创建商店，不把玩家传送到原点，也不调用自动场景优化覆盖灯光、雾和后处理。
 
@@ -34,7 +36,7 @@
 
 ## 摆放并编辑商店
 
-蓝图路径：`/Game/BP/BP_RogueShopTerminal`。拖入地图，移动和旋转到需要的位置即可；运行时不会另生成一个商店。
+蓝图路径：`/Game/BP/World/BP_RogueShopTerminal`。拖入地图，移动和旋转到需要的位置即可；运行时不会另生成一个商店。
 
 | 组件 | 编辑用途 |
 |---|---|

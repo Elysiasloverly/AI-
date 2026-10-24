@@ -19,7 +19,7 @@ ARogueEnemy::InitializeEnemy()
 | 列 | 作用 |
 |---|---|
 | `EnemyType` | 敌人类型；同一类型只应有一行 |
-| `BaseMoveMultiplier` | 基础移动倍率（0 表示不动） |
+| `BaseMoveMultiplier` | 基础移动倍率（0 表示速度为 0；仅 `Direct` 模型直接消费，其它模型填 0 仍会按各自逻辑移动） |
 | `AttackAbilitySet` | 可选攻击能力集；留空时按原型标志推导授予默认接触/远程能力 |
 | `MaxAlive` | 同时存活上限，0 = 不限（动态闸门，死了腾出名额） |
 | `MaxSpawnPerWave` | 每波累计刷新上限，0 = 不限（静态预算，死了不补） |
@@ -60,8 +60,9 @@ ARogueEnemy::InitializeEnemy()
   用于新增的射击段与全新块（妖精/鬼/亡灵的移动段），老资产不填即保持原行为。
   带负数的权重类字段用"非零"判断，可以填负值（近距离排斥）。
 
-射击模式（单发/散射/整圈）、移动模型**不在专属块里**：由 `EnemyType` 的 C++ 基线决定，
-避免"漏填就把远程怪改成直冲"。需要换模型时用 `MovementModelOverride` 列（见下）。
+移动模型**不在专属块里**：由 `EnemyType` 的 C++ 基线决定，需要换模型时用 `MovementModelOverride` 列（见下）。
+射击模式同样由类型基线给出，但 Marksman / Cannoneer / Scatterer / Sniper / Shotgunner / Repeater
+六个专属块各自也带 `ShotPattern` 字段，`ToArchetype()` 会用它覆盖基线；其余类型以基线为准。
 
 ### 距离类字段 ≠ 攻击范围
 
@@ -76,7 +77,7 @@ ARogueEnemy::InitializeEnemy()
 - 运行时结构里的 `FRogueEnemyRangedArchetype::PreferredRange`（只写不读的历史镜像）已删除，
   距离数值只保留 `Movement` 一份，避免两处概念混淆。
 
-震荡柱/亡灵的 `BulletRing`（`FRogueEnemyBulletRingSettings`）导入时会经 `Sanitized()`
+地藏/亡灵的 `BulletRing`（`FRogueEnemyBulletRingSettings`）导入时会经 `Sanitized()`
 钳制到安全范围（弹数 8–128、弹速 100–3000 等），蓝图/配置导入越界值不会直接进运行时。
 
 ## 移动模型覆盖
@@ -90,20 +91,21 @@ ARogueEnemy::InitializeEnemy()
 
 ## BossOverride
 
-对**除地藏/亡灵以外的所有远程类型**生效（环形弹幕两族不读 Boss 覆盖，
-弹幕参数在各专属块里单独调）。`bEnableBossOverride` 打开后：
+只对 **Marksman / Cannoneer / Scatterer / Sniper / Shotgunner / Repeater** 六型生效：
+Rifleman / Assault / Juggernaut / Orbiter / Skirmisher 以及地藏、亡灵的 `BossOverride` 不会被读取
+（后两者弹幕参数在各专属块里单独调）。`bEnableBossOverride` 打开后：
 
 - **float 字段**：`> 0` 才覆盖，否则保留基础值（0 即"未设置"的哨兵）；
 - **bool 字段**（`bBossLargeVisual` / `bBossSpawnMuzzleEffect`）：bool 没有"未设置"哨兵，
   取**叠加语义**——Boss 覆盖只能把表现**打开**，不能关掉基础配置里已打开的表现；
-- `BossSpreadAngleStep` 只对散射类（夜雀/妖狐/唐伞/毒茸）有意义。
+- `BossSpreadAngleStep` 只在唐伞（Scatterer）/毒茸（Shotgunner）分支生效；夜雀/妖狐不经过 `ApplyBossOverride`。
 
 ## 视觉
 
 `Visual` / `BossVisual` 直接在表里配置：`VisualKey`、`MeshScale`、`MeshLocation`、
 `MeshRotation`、`CapsuleRadius`、`CapsuleHalfHeight`、`bUseBossMaterialOverride`。
 
-- C++ 侧 `ARogueEnemy` 初始化末尾调用 `OnApplyVisualStyle()`（BlueprintNativeEvent，
+- C++ 侧 `ARogueEnemy::ApplyEnemyStyle()` 内调用 `OnApplyVisualStyle()`（BlueprintNativeEvent，
   原生默认空实现），外观由各敌人 BP 重写该事件、读取行内视觉字段来应用。
 - `VisualKey` 在 C++ 里只写不读（基线赋值 + 测试断言），真正的消费方是蓝图。
 - **行存在时视觉整块以表为准**：行里 `Visual` 保持结构默认值也会盖掉基线视觉。
@@ -124,7 +126,7 @@ ARogueEnemy::InitializeEnemy()
 | `Spitter`（喷射者） | `Scatterer`（唐伞），并复制到 `Shotgunner` |
 | `Orbiter`（环绕者） | `Orbiter`（人魂，原名不变） |
 | `Skirmisher`（游击者） | `Skirmisher`（妖狐，原名不变） |
-| `ShockPillar`（震荡柱） | `ShockPillar`（地藏），冷却/弹幕复制到 `Ringcaster` |
+| `ShockPillar`（地藏） | `ShockPillar`（地藏），冷却/弹幕复制到 `Ringcaster` |
 
 - 旧结构名通过 `Config/DefaultEngine.ini` 的 `[CoreRedirects]` 重定向，旧资产可正常加载；
 - 表数据由 `Tools/migrate_enemy_per_type_params.py` 重分布（迁移库 `enemy_params_migration_lib.py`），

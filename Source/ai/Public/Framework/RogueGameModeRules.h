@@ -8,6 +8,11 @@ class URogueGameBalanceAsset;
 
 namespace RogueGameModeRules
 {
+    /** 本波普通怪累计名额；不包含额外的 Boss。 */
+    AI_API int32 BuildWaveEnemyCount(int32 Wave, const URogueGameBalanceAsset* BalanceAsset = nullptr);
+    /** 是否还有正权重、已到解锁波次且通过给定条件的类型。 */
+    AI_API bool HasEligibleEnemyTypeForWave(int32 Wave, const URogueGameBalanceAsset* BalanceAsset,
+        TFunctionRef<bool(ERogueEnemyType)> CanSpawnType);
 	/** 按波次权重抽一个敌人类型（不过滤任何上限）。
 	 *  注意：这是"无约束"版本，Boss 生成走它；普通刷怪请用下面带 CanSpawnType 的重载。 */
 	AI_API ERogueEnemyType PickWeightedEnemyTypeForWave(int32 Wave, const URogueGameBalanceAsset* BalanceAsset = nullptr);

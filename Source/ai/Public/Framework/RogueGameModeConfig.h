@@ -87,7 +87,8 @@ struct AI_API FRogueSpawnSettings
 	UPROPERTY(EditAnywhere, Category = "Spawning")
 	float SpawnInterval = 0.88f;
 
-	UPROPERTY(EditAnywhere, Category = "Spawning")
+    /** 仅兼容旧资产；不再参与波次推进。 */
+	UPROPERTY()
 	float WaveDuration = 25.0f;
 
 	/** 第 1 波的基础存活上限；按波次增长后还会应用硬顶与 Boss 在场时的减量/下限。

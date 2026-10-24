@@ -5,6 +5,7 @@
 #include "GameFramework/Actor.h"
 #include "Engine/DataTable.h"
 #include "Shared/RogueTypes.h"
+#include "Audio/RogueAttackAudioSettings.h"
 #include "RogueWeaponBase.generated.h"
 
 class ARogueCharacter;
@@ -53,6 +54,10 @@ struct AI_API FRogueWeaponTableRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "通用", meta = (DisplayName = "索敌范围"))
 	float Range = 1600.0f;
 
+	// 仅用于一次性迁移旧数据；运行时统一读取 DA_AudioConfig，不再显示于武器配置。
+	UPROPERTY(meta=(DeprecatedProperty, DeprecationMessage="请在 DA_AudioConfig 配置武器音效"))
+	FRogueAttackAudioSettings AttackAudio;
+
 	/** 对应的"数量升级"枚举类型 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "升级", meta = (DisplayName = "数量升级类型"))
 	ERogueUpgradeType CountUpgradeType = ERogueUpgradeType::ProjectileCount;
@@ -84,6 +89,12 @@ struct AI_API FRogueWeaponTableRow : public FTableRowBase
 	/** 激光折射次数上限（**-1 = 不限制**，默认）。 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "上限", meta = (DisplayName = "折射上限(-1=不限)"))
 	int32 MaxRefractionCount = -1;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "御札连发", meta = (DisplayName = "连发间隔(秒)", ClampMin = "0.02"))
+	float ProjectileBurstInterval = 0.12f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "御札连发", meta = (DisplayName = "连发次数上限(含首发，-1=不限)"))
+	int32 MaxProjectileBurstCount = -1;
 
 	// ---- 弹道随机化（弹体 & 火箭通用） ----
 
@@ -288,6 +299,9 @@ public:
 	 */
 	void BroadcastCosmeticFire(const FRogueWeaponCosmeticFire& Fire) const;
 
+	/** 仅本地播放。事件型武器由服务器确认的开火批次触发；环绕刀片按本地转圈触发。 */
+	void PlayAttackAudio(const FVector& Location);
+
 	/**
 	 * 客户端：把这一发**纯表现**地画出来，不结算任何伤害。
 	 * 只有"既不是服务端、也不是本人"的客户端会走到这里。
@@ -382,7 +396,7 @@ protected:
 	bool IsHeavyCombat() const;
 
 	/** 生成激光 Beam（通用辅助） */
-	void SpawnLaserBeam(const FVector& Start, const FVector& End, bool bInfernoStyle = false, bool bImpactEffect = true, float Lifetime = 0.10f);
+	void SpawnLaserBeam(const FVector& Start, const FVector& End, bool bInfernoStyle = false, bool bImpactEffect = true, float Lifetime = 0.10f, bool bPlayAttackSound = false);
 
 	/** 光束类武器（Laser / HellTower）共用的表现回放实现，子类 PlayCosmeticFire 直接转调它 */
 	void PlayCosmeticBeam(const FRogueWeaponCosmeticFire& Fire);
@@ -395,6 +409,7 @@ protected:
 	TSubclassOf<URogueWeaponAbility> FireAbilityClass;
 
 private:
+	FRogueAttackAudioState AttackAudioState;
 	UPROPERTY()
 	TObjectPtr<ARogueCharacter> OwnerCharacter;
 };

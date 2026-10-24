@@ -1,4 +1,6 @@
 #include "Framework/RogueGameState.h"
+#include "Enemies/RogueEnemy.h"
+#include "Combat/Targeting/RogueEnemyTrackerSubsystem.h"
 
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemGlobals.h"
@@ -20,6 +22,8 @@ void ARogueGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	// COND_None：整局状态所有客户端都要看，不是某个玩家私有
+	DOREPLIFETIME(ARogueGameState, BossHealthView);
+	DOREPLIFETIME(ARogueGameState, BattleStage);
 	DOREPLIFETIME_CONDITION(ARogueGameState, CurrentWave, COND_None);
 	DOREPLIFETIME_CONDITION(ARogueGameState, EnemiesDefeated, COND_None);
 	DOREPLIFETIME_CONDITION(ARogueGameState, RunTimeSeconds, COND_None);
@@ -110,4 +114,40 @@ void ARogueGameState::PlayImpactEffect(AActor* SourceActor, const FVector& Locat
 		Scale,
 		0.18f,
 		SourceActor);
+}
+
+void ARogueGameState::SetBattleStage(const FRogueBattleStageView& View)
+{
+    if (HasAuthority()) { BattleStage = View; }
+}
+
+
+void ARogueGameState::RefreshBossHealthView()
+{
+    if (!HasAuthority()) { return; }
+    FRogueBossHealthView Next;
+    const URogueEnemyTrackerSubsystem* Tracker = GetWorld() ? GetWorld()->GetSubsystem<URogueEnemyTrackerSubsystem>() : nullptr;
+    ARogueEnemy* Selected = nullptr;
+    if (!bGameOver && Tracker)
+    {
+        for (const TWeakObjectPtr<ARogueEnemy>& Ref : Tracker->GetActiveEnemies())
+        {
+            ARogueEnemy* Enemy = Ref.Get();
+            if (!IsValid(Enemy) || Enemy->IsAvailableInPool() || Enemy->IsDead() || !Enemy->IsBoss()
+                || Enemy->GetCurrentHealth() <= 0 || Enemy->GetMaxHealth() <= 0) { continue; }
+            if (!Selected) { Selected = Enemy; }
+            // 多 Boss 时持续显示当前目标，直至死亡再换下一位，避免每帧跳条。
+            if (Enemy->GetSpawnCycleId() == BossHealthView.SpawnId) { Selected = Enemy; break; }
+        }
+    }
+    if (Selected)
+    {
+        Next.bVisible = true;
+        Next.SpawnId = Selected->GetSpawnCycleId();
+        Next.MaxHealth = Selected->GetMaxHealth();
+        Next.CurrentHealth = FMath::Clamp(Selected->GetCurrentHealth(), 0.f, Next.MaxHealth);
+    }
+    const bool bVisibilityChanged = Next.bVisible != BossHealthView.bVisible || Next.SpawnId != BossHealthView.SpawnId;
+    BossHealthView = Next;
+    if (bVisibilityChanged) { ForceNetUpdate(); }
 }

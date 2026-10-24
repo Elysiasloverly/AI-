@@ -4,6 +4,7 @@
 #include "Engine/DataAsset.h"
 #include "Framework/RogueGameModeConfig.h"
 #include "Shared/RogueTypes.h"
+#include "Framework/RogueBattleStage.h"
 #include "RogueGameBalanceAsset.generated.h"
 
 USTRUCT(BlueprintType, meta = (DisplayName = "基础值与每波成长"))
@@ -53,6 +54,15 @@ struct AI_API FRogueSpawnBalanceSettings
 {
 	GENERATED_BODY()
 
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(DisplayName="第1波普通怪总数", ToolTip="本波总量按此值加上每波增量计算，分批生成；白天名额用完并清场后切波，黑夜按独立时长切波。Boss另计。", ClampMin="1"))
+    int32 BaseEnemiesPerWave = 24;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(DisplayName="每波增加的普通怪总数", ToolTip="第N波总量 = 第1波总数 + 本值 × (N-1)。这是累计总量，不是同时存活上限。", ClampMin="0"))
+    int32 EnemiesPerWaveIncrement = 2;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(DisplayName="每波普通怪总数封顶（0=不限）", ToolTip="限制每波累计总量；每类敌人的每波名额仍单独生效。所有可用类型的名额用完时提前停刷；白天等清场，黑夜等切波时间。", ClampMin="0"))
+    int32 EnemiesPerWaveLimit = 0;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "每波增加的场上名额", ToolTip = "场上数量上限 = 生成系统的基础上限 + 本值 × (波次 - 1)。0表示不随波次增加。", ClampMin = "0"))
 	int32 MaxAlivePerWave = 8;
 
@@ -88,7 +98,8 @@ struct AI_API FRogueSpawnBalanceSettings
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "基础刷怪间隔（秒）", ToolTip = "未应用波次加速和开局放缓前的基础刷怪间隔。", Units = "s", ClampMin = "0"))
 	float SpawnInterval = 0.88f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "波次时长（秒）", ToolTip = "每个波次的持续时间，用于计算当前波次。", Units = "s", ClampMin = "1"))
+    // 仅保留旧包字段兼容；白天清场切波，黑夜读取 BattleStage.NightWaveDuration。
+	UPROPERTY()
 	float WaveDuration = 25.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "基础场上上限", ToolTip = "第 1 波的场上存活上限；后续按 MaxAlivePerWave 增长。", ClampMin = "0"))
@@ -371,6 +382,9 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "07.运行时", meta = (DisplayName = "场景优化", ToolTip = "关卡环境优化开关与灯光参数。", ShowOnlyInnerProperties))
 	FRogueSceneOptimizationSettings Scene;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="08.昼夜阶段", meta=(DisplayName="昼夜切换", ShowOnlyInnerProperties))
+	FRogueBattleStageSettings BattleStage;
 
 private:
 	// 仅用于读取旧版资产。PostLoad 按自定义版本迁移，保存时弃用字段不再写入；编辑界面仅展示上方结构。

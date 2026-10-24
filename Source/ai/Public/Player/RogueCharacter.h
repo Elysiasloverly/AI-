@@ -1,3 +1,4 @@
+
 #pragma once
 
 #include "CoreMinimal.h"
@@ -29,6 +30,7 @@ class UDataTable;
 class URogueCharacterVisualComponent;
 class URogueFloatingComponent;
 class URogueTurnSmoothingComponent;
+class URogueShieldOrbitComponent;
 class URoguePlayerBalanceAsset;
 class URogueAbilitySystemComponent;
 class URogueAttributeSet;
@@ -47,6 +49,10 @@ UCLASS()
 class AI_API ARogueCharacter : public ACharacter, public IAbilitySystemInterface
 {
 	GENERATED_BODY()
+	friend class ARoguePlayerState;
+    friend struct FRogueBattleStageTestAccess;
+	void CaptureStageGrowth(struct FRogueStagePlayerSnapshot& Out) const;
+	void RestoreStageGrowth(const struct FRogueStagePlayerSnapshot& Snapshot);
 
 public:
 	ARogueCharacter();
@@ -60,10 +66,13 @@ public:
 
 	// ---- GAS 接入 ----
 	// ASC 由 PlayerState 持有，Pawn 是技能作用的 Avatar。
-	// 服务端 PossessedBy 刷新 ActorInfo 并初始化基础属性；客户端 OnRep_PlayerState
+	// 服务端 PossessedBy 刷新 ActorInfo，档案就绪后初始化基础属性；客户端 OnRep_PlayerState
 	// 刷新 ActorInfo 与事件绑定，属性值等待服务端复制。具体调用顺序见对应实现。
 	virtual void PossessedBy(AController* NewController) override;
 	virtual void OnRep_PlayerState() override;
+
+	/** 服务端收到本玩家的本地成长档案后继续初始化；重复调用不重写基值或叠加永久成长。 */
+	void NotifyProgressionReady();
 
 	/** 取玩家 ASC（可能为空：在 PlayerState 复制到客户端之前）。 */
 	URogueAbilitySystemComponent* GetRogueAbilitySystemComponent() const;
@@ -107,6 +116,10 @@ public:
 	 *  运行时字段（MaxHealth / MoveSpeed / ...）现在是**属性集的缓存**，
 	 *  ASC 就绪后按帧读取属性集；初始化、升级与生命结算修改属性集后再刷新这些缓存。 */
 	void SyncAttributeMirrors();
+
+	/** 玩家回血飘字入口（绿色 +N）。按 0.35s 窗口累计，避免持续回血每 tick 刷屏。
+	 *  由 SyncAttributeMirrors 侦测生命上涨时调用；首次同步与"0→满血"的出生/复活补血不弹。 */
+	void ShowHealingNumber(float AppliedHealing);
 
 	void AddExperience(int32 ExperienceAmount);
 	void AddMoney(int32 Amount);
@@ -182,7 +195,7 @@ public:
 	// 属性升级与武器加成都施加到玩家 ASC；武器用数据表基础值和角色加成快照计算生效值。
 	// 各端不通过重放升级加法修改武器配置，避免维护两份数值来源。
 
-	/** 服务端按帧广播武器表现；服务端本机和所属客户端跳过回放。
+	/** 服务端按帧广播武器表现；服务端跳过回放，所属客户端只回放确认音效，保留预测弹体。
 	 *  Unreliable 丢失只影响表现，伤害由服务端独立结算。
 	 *  每条仅带 WeaponIndex，各端必须用相同配置与顺序初始化 Weapons；
 	 *  接收端只检查下标范围，不校验武器类，配置差异仍可能导致表现错配。 */
@@ -368,7 +381,7 @@ private:
 	 *  当前在基础属性初始化完成后调用；同 Pawn 复活保留原有 ASC 和回复效果。 */
 	void EnsureRegenEffects();
 
-	/** 服务端为当前 PlayerState 初始化一次 GAS 基值；未加载平衡资产时使用结构体默认值。
+	/** 服务端在本玩家成长档案就绪后，为当前 PlayerState 初始化一次 GAS 基值；配置缺失时使用默认值。
 	 *  属性复制需依赖 ASC/AttributeSet 的复制注册；重复调用会由 PlayerState 标志拦截。 */
 	void InitializeGASAttributes();
 
@@ -457,6 +470,10 @@ private:
     UPROPERTY(VisibleAnywhere,Category="外观",meta=(DisplayName="转向平滑组件"))
     TObjectPtr<URogueTurnSmoothingComponent> TurnSmoothing;
 
+	/** 纯表现的三个护盾模型；网格、半径和速度在此组件的细节面板配置。 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "外观", meta = (DisplayName = "护盾环绕组件", AllowPrivateAccess = "true"))
+	TObjectPtr<URogueShieldOrbitComponent> ShieldOrbit;
+
 
 	UPROPERTY(EditDefaultsOnly, Category = "Config")
 	TSoftObjectPtr<URoguePlayerBalanceAsset> PlayerBalanceAsset;
@@ -516,7 +533,7 @@ private:
 
 	// ---- 属性镜像（**不可编辑**）----
 	// 这些字段是 GAS 属性集的只读缓存，每帧由 SyncAttributeMirrors() 写入。
-	// ⚠️ 不要在这里调数值：真相源是 URoguePlayerBalanceAsset::BaseStats（开局灌入属性集）
+	// ⚠️ 不要在这里调数值：真相源是平衡资产和本玩家的永久成长快照（开局灌入属性集）
 	// 与升级 GE；在这里改只会被下一帧覆盖。所以刻意不标 EditDefaultsOnly ——
 	// 之前标着它，在蓝图里改这些值毫无效果，是排查起来很费时间的坑。
 	// 需要 Inspector 里看当前值时用 VisibleInstanceOnly（运行时实例上可见）。
@@ -525,7 +542,7 @@ private:
 	float MaxHealth = 100.0f;
 
 	UPROPERTY(VisibleInstanceOnly, Category = "Stats")
-	float MaxArmor = 25.0f;
+	float MaxArmor = 0.0f;
 
 	UPROPERTY(VisibleInstanceOnly, Category = "Stats")
 	float MoveSpeed = 650.0f;
@@ -607,6 +624,16 @@ private:
 
 	UPROPERTY(VisibleInstanceOnly, Category = "Stats")
 	float CurrentArmor = 0.0f;
+
+	// ---- 回血飘字节流（本地显示用，不复制）----
+	/** 上一次真正弹出回血数字的世界时间。 */
+	float LastHealingNumberTime = -100.0f;
+	/** 节流窗口内累计、尚未弹出的回复量。 */
+	float PendingHealingNumber = 0.0f;
+	/** 首次同步属性镜像前为 false：出生/进场时的 0→满血不算"治疗"。 */
+	bool bHealthFeedbackInitialized = false;
+	/** 窗口到期且有累计量时弹出；Tick 与 ShowHealingNumber 都会尝试。 */
+	void TryFlushHealingNumber();
 
 	// ---- 成长数据（复制给**拥有者**）----
 	// 这几个是"只该由服务端改、但拥有者客户端必须看到"的数据：

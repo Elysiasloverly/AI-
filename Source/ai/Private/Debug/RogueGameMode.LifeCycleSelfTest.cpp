@@ -282,7 +282,8 @@ bool ARogueGameMode::RunPlayerLifeCycleSelfTest()
 		if (First->IsAlive())
 		{
 			bool bRestored = First->GetActorEnableCollision() == bLifeCycleSelfTestActorCollision
-				&& First->GetCharacterMovement()->MovementMode == MOVE_Walking;
+				&& (First->GetCharacterMovement()->MovementMode == MOVE_Walking
+					|| First->GetCharacterMovement()->MovementMode == MOVE_Falling); // Spawn may be above the map floor.
 			for (const TPair<TWeakObjectPtr<UPrimitiveComponent>, uint8>& Snapshot : LifeCycleSelfTestCollisionSnapshot)
 			{
 				bRestored = bRestored && Snapshot.Key.IsValid()
@@ -291,6 +292,15 @@ bool ARogueGameMode::RunPlayerLifeCycleSelfTest()
 			if (Elapsed < 9.99 || Elapsed > 12.0 || !bRestored || First->IsRevivePending()
 				|| !FMath::IsNearlyZero(First->GetReviveSecondsRemaining()))
 			{
+				UE_LOG(LogTemp, Error, TEXT("[LifeCycleSelfTest] Revival diagnostics: elapsed=%.6f restored=%d movement=%d pending=%d remaining=%.6f"),
+					Elapsed, bRestored, int32(First->GetCharacterMovement()->MovementMode), First->IsRevivePending(), First->GetReviveSecondsRemaining());
+				for (const auto& Snapshot : LifeCycleSelfTestCollisionSnapshot)
+				{
+					if (Snapshot.Key.IsValid() && uint8(Snapshot.Key->GetCollisionEnabled()) != Snapshot.Value)
+					{
+						UE_LOG(LogTemp, Error, TEXT("[LifeCycleSelfTest] Collision mismatch %s expected=%d actual=%d"), *Snapshot.Key->GetName(), Snapshot.Value, int32(Snapshot.Key->GetCollisionEnabled()));
+					}
+				}
 				Fail(TEXT("Revival missed the ten-second deadline or failed to restore collision/movement/countdown"));
 				return true;
 			}

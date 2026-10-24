@@ -95,6 +95,6 @@ TSubclassOf<URogueUpgradeCardWidgetBase> URogueUpgradeSelectionWidgetBase::Resol
 	// 类引用存入 UPROPERTY 供 GC 追踪；函数静态的普通 TSubclassOf 不构成 GC 强引用，
 	// 对应类若随关卡卸载并被回收，就存在缓存失效风险。
 	ManagedUpgradeCardWidgetClass = LoadClass<URogueUpgradeCardWidgetBase>(
-		nullptr, TEXT("/Game/UMG/Menus/WBP_UpgradeCard.WBP_UpgradeCard_C"));
+		nullptr, TEXT("/Game/UMG/Menus/Upgrade/WBP_UpgradeCard.WBP_UpgradeCard_C"));
 	return ManagedUpgradeCardWidgetClass;
 }

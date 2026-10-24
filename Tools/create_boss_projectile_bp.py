@@ -1,7 +1,7 @@
 """创建 Boss 专用弹体蓝图。
 
 用法（项目根目录）：
-    UnrealEditor-Cmd.exe F:\AI_WorkSpeace\ai\ai.uproject ^
+    UnrealEditor-Cmd.exe F:\AI_WorkSpeace\baka\Baka.uproject ^
         -run=pythonscript -script="Tools/create_boss_projectile_bp.py" ^
         -unattended -nopause -nullrhi -nosplash
 

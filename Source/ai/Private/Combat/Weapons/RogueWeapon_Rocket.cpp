@@ -49,7 +49,7 @@ float ARogueWeapon_Rocket::GetExplosionRadius() const
 	const FRogueWeaponBonusValues& Bonuses = GetWeaponBonusValues();
 	const float RangeBonus = Bonuses.AttackRange;
 	const FRogueWeaponTableRow& WeaponConfig = GetConfig();
-	return WeaponConfig.ExplosionRadius + RangeBonus * WeaponConfig.RocketExplosionRadiusRangeBonusScale;
+	return FMath::Max(0.0f, WeaponConfig.ExplosionRadius + RangeBonus * WeaponConfig.RocketExplosionRadiusRangeBonusScale + Bonuses.RocketBlastRadius);
 }
 
 void ARogueWeapon_Rocket::FireRocketVolley(const TArray<ARogueEnemy*>& Enemies)
@@ -64,6 +64,7 @@ void ARogueWeapon_Rocket::FireRocketVolley(const TArray<ARogueEnemy*>& Enemies)
 	const int32 EffectiveCount = GetEffectiveCount();
 	URogueCombatPoolSubsystem* Pools = GetWorld() ? GetWorld()->GetSubsystem<URogueCombatPoolSubsystem>() : nullptr;
 
+	bool bAudioTagged = false;
 	for (int32 RocketIndex = 0; RocketIndex < EffectiveCount; ++RocketIndex)
 	{
 		if (!Enemies.IsValidIndex(RocketIndex % Enemies.Num()) || !IsValid(Enemies[RocketIndex % Enemies.Num()]))
@@ -104,6 +105,8 @@ void ARogueWeapon_Rocket::FireRocketVolley(const TArray<ARogueEnemy*>& Enemies)
 			// Param 传爆炸半径 —— 队友那台机器上爆炸特效的大小是按半径算的
 			// （见 ARogueRocketProjectile::Explode），不传的话队友看到的爆炸会偏小。
 			FRogueWeaponCosmeticFire Fire;
+			Fire.bPlayAttackSound = !bAudioTagged;
+			bAudioTagged = true;
 			Fire.Start = SpawnLocation;
 			Fire.Direction = Direction;
 			Fire.Speed = FinalRocketSpeed;

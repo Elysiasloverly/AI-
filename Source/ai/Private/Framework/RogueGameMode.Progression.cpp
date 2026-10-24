@@ -59,6 +59,7 @@ void ARogueGameMode::AdvanceShopAutoRefresh(float DeltaSeconds, bool bWorldPause
 
 void ARogueGameMode::HandleEnemyKilled(ARogueEnemy* Enemy, AActor* Killer)
 {
+	if (IsValid(Enemy) && Enemy->IsBoss() && RewardedBossSpawnIds.Contains(Enemy->GetSpawnCycleId())) { return; }
 	++RunState.EnemiesDefeated;
 
 	URogueEnemyTrackerSubsystem* Tracker = GetWorld()->GetSubsystem<URogueEnemyTrackerSubsystem>();
@@ -76,7 +77,7 @@ void ARogueGameMode::HandleEnemyKilled(ARogueEnemy* Enemy, AActor* Killer)
 
 		if (Enemy->IsBoss())
 		{
-			HandleBossKilledReward();
+			HandleBossKilledReward(Enemy->GetSpawnCycleId());
 		}
 	}
 }
@@ -144,14 +145,26 @@ void ARogueGameMode::SpawnExperienceReward(ARogueEnemy* Enemy, URogueEnemyTracke
 	}
 }
 
-void ARogueGameMode::HandleBossKilledReward()
+void ARogueGameMode::HandleBossKilledReward(const FGuid& RewardId)
 {
+	if (!RewardId.IsValid() || RewardedBossSpawnIds.Contains(RewardId))
+	{
+		return;
+	}
+	RewardedBossSpawnIds.Add(RewardId);
 	RunState.bBossAlive = false;
 
-	// Boss 奖励是**每个玩家都有份**的。
-	// 旧实现只发给 GetCachedCharacter()（联机下就等于主机），
-	// 结果是打完 Boss 只有主机能选升级，其他玩家什么都没弹。
-	// 阵亡玩家不弹选择：他已经出局，弹一个点不了的框只会让人以为是 bug。
+	// 冰砖发给本局每个参与者，包括正在濒死等待复活的玩家。
+	// 各自客户端写自己的本地存档；旁观者和已经断开的控制器不参与。
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+	{
+		APlayerController* Controller = It->Get();
+		if (!IsValid(Controller) || Controller->IsActorBeingDestroyed()) { continue; }
+		ARoguePlayerState* State = Controller->GetPlayerState<ARoguePlayerState>();
+		if (State != nullptr && !State->IsOnlyASpectator()) { State->GrantBossIceBrick(RewardId); }
+	}
+
+	// 本局即时选卡仍只给存活玩家，避免濒死界面被无法操作的卡牌遮挡。
 	TArray<ARogueCharacter*, TInlineAllocator<4>> AlivePlayers;
 	CollectAlivePlayers(AlivePlayers);
 	for (ARogueCharacter* Character : AlivePlayers)

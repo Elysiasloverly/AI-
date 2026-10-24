@@ -1,5 +1,6 @@
 #include "UI/Widgets/RogueDeathScreenWidgetBase.h"
 #include "Engine/World.h"
+#include "Components/Button.h"
 #include "Kismet/GameplayStatics.h"
 #include "UI/RogueHUD.h"
 
@@ -45,5 +46,25 @@ void URogueDeathScreenWidgetBase::RequestQuitGame()
 	if (ARogueHUD* RogueHUD = OwningRogueHUD.Get())
 	{
 		RogueHUD->RequestQuitAfterDeath();
+	}
+}
+
+void URogueDeathScreenWidgetBase::NativeConstruct()
+{
+	Super::NativeConstruct();
+	if (MainMenuButton != nullptr)
+	{
+		MainMenuButton->OnClicked.AddUniqueDynamic(this, &URogueDeathScreenWidgetBase::RequestReturnToMainMenu);
+	}
+}
+
+void URogueDeathScreenWidgetBase::RequestReturnToMainMenu()
+{
+	if (bReturnToMenuRequested) return;
+	if (ARogueHUD* HUD = OwningRogueHUD.Get())
+	{
+		bReturnToMenuRequested = true;
+		if (MainMenuButton != nullptr) MainMenuButton->SetIsEnabled(false);
+		HUD->RequestReturnToMainMenuAfterDeath();
 	}
 }

@@ -112,9 +112,9 @@ bool FRoguePlayerProjectileScaleTest::RunTest(const FString& Parameters)
 	(void)Parameters;
 	using namespace RogueProjectileScaleTests;
 	FFixture Fixture; if (!Fixture.Initialize(*this)) { return false; }
-	for (const TCHAR* Path : { TEXT("/Game/BP/Projectile/BP_RogueProjectile.BP_RogueProjectile_C"),
-		TEXT("/Game/BP/Projectile/BP_RogueRocketProjectile.BP_RogueRocketProjectile_C"),
-		TEXT("/Game/BP/Projectile/BP_RogueMortarProjectile.BP_RogueMortarProjectile_C") })
+	for (const TCHAR* Path : { TEXT("/Game/BP/Projectiles/BP_RogueProjectile.BP_RogueProjectile_C"),
+		TEXT("/Game/BP/Projectiles/BP_RogueRocketProjectile.BP_RogueRocketProjectile_C"),
+		TEXT("/Game/BP/Projectiles/BP_RogueMortarProjectile.BP_RogueMortarProjectile_C") })
 	{
 		UClass* Class = LoadClass<AActor>(nullptr, Path);
 		if (!TestNotNull(TEXT("The actual projectile Blueprint loads"), Class)) { return false; }
@@ -176,7 +176,7 @@ bool FRogueBladeBlueprintScaleTest::RunTest(const FString& Parameters)
 	(void)Parameters;
 	using namespace RogueProjectileScaleTests;
 	FFixture Fixture; if (!Fixture.Initialize(*this)) { return false; }
-	UClass* Class = LoadClass<ARogueOrbitingBlade>(nullptr, TEXT("/Game/BP/Projectile/BP_RogueOrbitingBlade.BP_RogueOrbitingBlade_C"));
+	UClass* Class = LoadClass<ARogueOrbitingBlade>(nullptr, TEXT("/Game/BP/Projectiles/BP_RogueOrbitingBlade.BP_RogueOrbitingBlade_C"));
 	if (!TestNotNull(TEXT("The actual scythe Blueprint loads"), Class)) { return false; }
 	ARogueOrbitingBlade* Actor = Fixture.World->SpawnActor<ARogueOrbitingBlade>(Class);
 	if (!TestNotNull(TEXT("The scythe Blueprint instance exists"), Actor)) { return false; }

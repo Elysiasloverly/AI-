@@ -12,7 +12,7 @@ namespace RogueEnemyVariantsTests
 {
 	constexpr EAutomationTestFlags Flags = EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter;
 	const TCHAR* TablePath = TEXT("/Game/Data/Enemies/DT_EnemyArchetypes.DT_EnemyArchetypes");
-	const TCHAR* GameModePath = TEXT("/Game/BP/BP_RogueGameMode.BP_RogueGameMode_C");
+	const TCHAR* GameModePath = TEXT("/Game/BP/Framework/BP_RogueGameMode.BP_RogueGameMode_C");
 
 	struct FEnemyVariant
 	{
@@ -28,6 +28,10 @@ namespace RogueEnemyVariantsTests
 		{ ERogueEnemyType::Shotgunner, ERogueEnemyVisualKey::Shotgunner, TEXT("Shotgunner"), TEXT("Shotgunner") },
 		{ ERogueEnemyType::Repeater, ERogueEnemyVisualKey::Repeater, TEXT("Repeater"), TEXT("Repeater") },
 		{ ERogueEnemyType::Ringcaster, ERogueEnemyVisualKey::Ringcaster, TEXT("Ringcaster"), TEXT("Ringcaster") },
+		{ ERogueEnemyType::Marksman, ERogueEnemyVisualKey::Marksman, TEXT("Marksman"), TEXT("Marksman") },
+		{ ERogueEnemyType::Cannoneer, ERogueEnemyVisualKey::Cannoneer, TEXT("Cannoneer"), TEXT("Cannoneer") },
+		{ ERogueEnemyType::Scatterer, ERogueEnemyVisualKey::Scatterer, TEXT("Scatterer"), TEXT("Scatterer") },
+		{ ERogueEnemyType::ShockPillar, ERogueEnemyVisualKey::ShockPillar, TEXT("ShockPillar"), TEXT("ShockPillar") },
 		// 原近战类型现在也必须有远程原型、弹体和 BP 映射。
 		{ ERogueEnemyType::Rifleman, ERogueEnemyVisualKey::Rifleman, TEXT("Rifleman"), TEXT("Repeater") },
 		{ ERogueEnemyType::Assault, ERogueEnemyVisualKey::Assault, TEXT("Assault"), TEXT("Shotgunner") },
@@ -69,6 +73,11 @@ bool FRogueNewRangedArchetypesTest::RunTest(const FString& Parameters)
 		const FString BlueprintPath = FString::Printf(TEXT("/Game/BP/Enemy/BP_Enemy%s.BP_Enemy%s_C"), Variant.BlueprintName, Variant.BlueprintName);
 		UClass* EnemyClass = LoadClass<ARogueEnemy>(nullptr, *BlueprintPath);
 		TestNotNull(*FString::Printf(TEXT("%s Blueprint loads"), Variant.BlueprintName), EnemyClass);
+
+		if (EnemyClass != nullptr)
+		{
+			TestEqual(TEXT("Blueprint default enemy type agrees with its variant"), EnemyClass->GetDefaultObject<ARogueEnemy>()->GetEnemyType(), Variant.Type);
+		}
 
 		TestTrue(*FString::Printf(TEXT("%s is mapped in BP_RogueGameMode"), Variant.BlueprintName),
 			GameModeCDO->HasEnemyClassForType(Variant.Type));

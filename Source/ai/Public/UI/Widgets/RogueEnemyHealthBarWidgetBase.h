@@ -2,59 +2,61 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "UI/Widgets/RogueBarAnimation.h"
 #include "UI/Widgets/RogueHUDViewData.h"
 #include "RogueEnemyHealthBarWidgetBase.generated.h"
 
 class ARogueHUD;
 class UProgressBar;
 
-/**
- * 单个敌人血条基类。
- *
- * HUD 维护一个对象池（最多几十个），每帧把可见敌人的血条视图推给池中的 widget：
- *   · 位置来自屏幕投影，widget 以顶部中心对齐到该点；
- *   · 显示/隐藏由 bVisible 控制；
- *   · 尺寸由 WBP 的 BarSize 决定（默认 70×12），不要按敌人数量扩容。
- *
- * 用法：新建 WBP，父类选本类，设计血条外观并实现 OnBarUpdated；
- * 配到 BP_RogueHUD 的 EnemyHealthBarWidgetClass，或放到
- * /Game/UMG/HUD/WBP_EnemyHealthBar 让 HUD 默认加载。
- */
+/** 头顶血条仅做表现插值。池中 widget 转交对象、敌人重新出池时清理全部残影。 */
 UCLASS(Abstract, Blueprintable)
 class AI_API URogueEnemyHealthBarWidgetBase : public UUserWidget
 {
 	GENERATED_BODY()
-
 public:
-	/** 由 HUD 每帧调用；负责可见性、位置和蓝图刷新。 */
+	/** 每帧接收真实比例和投影位置；过渡由 NativeTick 持续驱动。 */
 	void UpdateBar(const FRogueEnemyHealthBarView& InView);
-
-	/** 复用菜单 widget 的创建流程。 */
 	void SetOwningRogueHUD(ARogueHUD* InOwningHUD);
-
-	/** 血条在屏幕上的尺寸（像素），HUD 创建时用它设置 viewport 大小。 */
 	UFUNCTION(BlueprintPure, Category = "Rogue|EnemyBar")
 	FVector2D GetBarSize() const { return BarSize; }
-
 	const FRogueEnemyHealthBarView& GetCachedBar() const { return CachedView; }
-
 protected:
-	/** 蓝图实现：按 HealthPercent / bBoss 刷新进度条与配色。 */
+	virtual void NativeTick(const FGeometry& Geometry, float DeltaSeconds) override;
+	virtual void NativeDestruct() override;
+	/** 数据事件仍提供真实比例；C++ 在事件后应用平滑进度。 */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Rogue|EnemyBar")
 	void OnBarUpdated(const FRogueEnemyHealthBarView& View);
-
-	/** 可选命名绑定：WBP 里放名为 FillBar 的 ProgressBar，C++ 会直接设百分比。 */
-	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UProgressBar> FillBar;
-
-	/** 在 WBP 类默认值里改；这是 viewport 布局尺寸，不是进度条本身的大小。 */
+	/** 设计器中的填充颜色作为正常颜色保留。 */
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UProgressBar> FillBar;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UProgressBar> DamageBar;
 	UPROPERTY(EditDefaultsOnly, Category = "Rogue|EnemyBar", meta = (DisplayName = "血条屏幕尺寸"))
-	FVector2D BarSize = FVector2D(70.0f, 12.0f);
-
+	FVector2D BarSize = FVector2D(96.0f, 10.0f);
+	UPROPERTY(EditDefaultsOnly, Category = "Rogue|EnemyBar", meta = (DisplayName = "Boss 头顶血条宽度倍率", ClampMin = "1", ClampMax = "2"))
+	float BossWidthMultiplier = 1.25f;
+	UPROPERTY(EditDefaultsOnly, Category = "Rogue|EnemyBar|变化效果", meta = (DisplayName = "启用平滑变化"))
+	bool bSmoothBars = true;
+	UPROPERTY(EditDefaultsOnly, Category = "Rogue|EnemyBar|变化效果", meta = (DisplayName = "主血条变化速度", ClampMin = "0"))
+	float InterpolationSpeed = 18.0f;
+	UPROPERTY(EditDefaultsOnly, Category = "Rogue|EnemyBar|变化效果", meta = (DisplayName = "伤害残影停留秒数", ClampMin = "0", ClampMax = "1"))
+	float DamageTrailDelay = 0.14f;
+	UPROPERTY(EditDefaultsOnly, Category = "Rogue|EnemyBar|变化效果", meta = (DisplayName = "伤害残影追赶速度", ClampMin = "0"))
+	float DamageTrailSpeed = 7.0f;
+	UPROPERTY(EditDefaultsOnly, Category = "Rogue|EnemyBar|变化效果", meta = (DisplayName = "受击提亮时长", ClampMin = "0", ClampMax = "1"))
+	float HitHighlightDuration = 0.14f;
+	UPROPERTY(EditDefaultsOnly, Category = "Rogue|EnemyBar|变化效果", meta = (DisplayName = "受击提亮强度", ClampMin = "0", ClampMax = "1"))
+	float HitHighlightStrength = 0.48f;
+	UPROPERTY(EditDefaultsOnly, Category = "Rogue|EnemyBar|变化效果", meta = (DisplayName = "受击提亮颜色"))
+	FLinearColor HitHighlightColor = FLinearColor(1.0f, 0.78f, 0.66f, 1.0f);
 private:
-	UPROPERTY(Transient)
-	TWeakObjectPtr<ARogueHUD> OwningHUD;
-
-	UPROPERTY(Transient)
-	FRogueEnemyHealthBarView CachedView;
+	friend struct FRogueEnemyBarTestAccess;
+	UPROPERTY(Transient) TWeakObjectPtr<ARogueHUD> OwningHUD;
+	UPROPERTY(Transient) FRogueEnemyHealthBarView CachedView;
+	FRogueBarAnimation Animation;
+	FLinearColor DesignerFillColor = FLinearColor::White;
+	float HitHighlightRemaining = 0.0f;
+	bool bCapturedDesignerColor = false;
+	void CaptureDesignerColor();
+	void ResetPresentation();
+	void ApplyBars();
 };

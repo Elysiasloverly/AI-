@@ -11,6 +11,7 @@
 
 void ARogueWeapon_Scythe::WeaponTick(float /*DeltaSeconds*/)
 {
+	const float PreviousAngle = SharedOrbitAngle;
 	// 使用服务器世界时间的估计增量推进，避免直接用新转速乘绝对时间而跳相位。
 	// 客户端时间偏移估计、首次 Tick、升级到达时机与增量钳制均可能造成相位差；
 	// SharedOrbitAngle 不复制，因此这里不保证各端严格同步或晚加入时相位一致。
@@ -35,10 +36,16 @@ void ARogueWeapon_Scythe::WeaponTick(float /*DeltaSeconds*/)
 	LastOrbitServerTimeSeconds = NowSeconds;
 
 	SyncOrbitingBlades();
+	const bool bHasBlades = GetEffectiveCount() > 0 && !OrbitingBlades.IsEmpty();
+	const bool bCompletedTurn = GetEffectiveRotationSpeed() >= 0 ? SharedOrbitAngle < PreviousAngle : SharedOrbitAngle > PreviousAngle;
+	if (bHasBlades && (!bAudioOrbitActive || bCompletedTurn)) { PlayAttackAudio(GetOwnerLocation()); }
+	bAudioOrbitActive = bHasBlades;
 }
 
 void ARogueWeapon_Scythe::OnOwnerDied()
 {
+	Super::OnOwnerDied();
+	bAudioOrbitActive = false;
 	for (ARogueOrbitingBlade* Blade : OrbitingBlades)
 	{
 		if (IsValid(Blade))

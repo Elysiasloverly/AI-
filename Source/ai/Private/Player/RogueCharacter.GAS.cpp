@@ -16,6 +16,7 @@
 #include "Framework/RogueGameState.h"
 #include "Player/RoguePlayerBalanceAsset.h"
 #include "Player/RoguePlayerState.h"
+#include "Progression/Meta/RogueUpgradeTreeDefinition.h"
 #include "GameFramework/GameStateBase.h"
 #include "AbilitySystem/RogueAbilitySystemComponent.h"
 #include "AbilitySystem/RogueAbilitySystemLibrary.h"
@@ -28,6 +29,8 @@
 #include "World/RogueShopTerminal.h"
 #include "UI/RogueHUD.h"
 #include "Combat/Visuals/RogueImpactEffect.h"
+#include "Combat/Visuals/RogueCombatFeedback.h"
+#include "Components/CapsuleComponent.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/InputComponent.h"
@@ -135,6 +138,7 @@ void ARogueCharacter::SyncAttributeMirrors()
 	// 为 HUD、移动与现有查询接口维护属性镜像；属性集就绪后按帧刷新。
 	// BeginPlay 等初始化路径仍会写默认缓存，所以这里不是所有生命周期阶段的唯一写入点。
 	// 运行时数值变更应先作用于属性集，需要即时观察时显式调用本函数。
+	const float PreviousHealth = CurrentHealth;
 	MaxHealth = AttrSet->GetMaxHealth();
 	MaxArmor = AttrSet->GetMaxArmor();
 	CurrentHealth = AttrSet->GetHealth();
@@ -147,10 +151,68 @@ void ARogueCharacter::SyncAttributeMirrors()
 	DashDuration = AttrSet->GetDashDuration();
 	DashSpeed = AttrSet->GetDashSpeed();
 
+	// 回血飘字：生命上涨时弹绿色数字。两类"不是治疗"的情况要排除：
+	//   1. 首次同步（出生/进场，缓存还是默认值）；
+	//   2. 0 → 满血的整段补满（复活/重连初始化，弹 +100 会像血条出错）。
+	// 持续回复与吸血走同一条路径，由 ShowHealingNumber 的窗口合并成一条。
+	if (bHealthFeedbackInitialized)
+	{
+		const bool bLooksLikeInitialFill =
+			PreviousHealth <= KINDA_SMALL_NUMBER && CurrentHealth >= MaxHealth - KINDA_SMALL_NUMBER;
+		if (!bLooksLikeInitialFill && CurrentHealth > PreviousHealth + KINDA_SMALL_NUMBER)
+		{
+			ShowHealingNumber(CurrentHealth - PreviousHealth);
+		}
+	}
+	bHealthFeedbackInitialized = true;
+
 	if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
 	{
 		MoveComp->MaxWalkSpeed = MoveSpeed;
 	}
+}
+
+void ARogueCharacter::ShowHealingNumber(float AppliedHealing)
+{
+	if (AppliedHealing <= 0.0f || GetWorld() == nullptr)
+	{
+		return;
+	}
+
+	// 持续回复（0.25s 一跳）与吸血会频繁触发，先累计再按窗口弹出，避免刷屏。
+	PendingHealingNumber += AppliedHealing;
+	TryFlushHealingNumber();
+}
+
+void ARogueCharacter::TryFlushHealingNumber()
+{
+	if (PendingHealingNumber <= KINDA_SMALL_NUMBER || GetWorld() == nullptr)
+	{
+		return;
+	}
+
+	constexpr float HealingNumberInterval = 0.35f;
+	const float CurrentTime = GetWorld()->GetTimeSeconds();
+	if (CurrentTime - LastHealingNumberTime < HealingNumberInterval)
+	{
+		return;
+	}
+
+	LastHealingNumberTime = CurrentTime;
+	const float ShownHealing = PendingHealingNumber;
+	PendingHealingNumber = 0.0f;
+
+	// 头顶偏上弹出，和敌人血条飘字区分开；水平加一点随机避免连跳重叠成一条。
+	FVector HealingLocation = GetActorLocation();
+	if (const UCapsuleComponent* Capsule = GetCapsuleComponent())
+	{
+		HealingLocation.Z += Capsule->GetScaledCapsuleHalfHeight();
+	}
+	HealingLocation.Z += 34.0f;
+	HealingLocation.X += FMath::FRandRange(-16.0f, 16.0f);
+	HealingLocation.Y += FMath::FRandRange(-16.0f, 16.0f);
+
+	RogueCombatFeedback::AddHealingNumber(this, HealingLocation, ShownHealing);
 }
 
 void ARogueCharacter::SetCurrentHealth(float NewHealth)
@@ -273,6 +335,29 @@ URogueAttributeSet* ARogueCharacter::GetRogueAttributeSet() const
 	return RoguePS != nullptr ? RoguePS->GetAttributeSet() : nullptr;
 }
 
+void ARogueCharacter::NotifyProgressionReady()
+{
+	if (!IsAuthoritySide())
+	{
+		return;
+	}
+	ARoguePlayerState* State = GetPlayerState<ARoguePlayerState>();
+	if (State == nullptr || !State->IsProgressionReady())
+	{
+		return;
+	}
+
+	// 快照只在本局开始时接收一次。属性初始化也由 PlayerState 守卫，复活和接管不会再加一份。
+	State->RefreshAbilityActorInfo(this);
+	InitializeGASAttributes();
+	State->RestoreStageTravelGrowth(this);
+	BindAbilitySystemEvents();
+	ApplyLifeStateEffects();
+	ApplyDownedState();
+	SyncAttributeMirrors();
+	EnsureWeaponAbilities();
+}
+
 void ARogueCharacter::InitializeGASAttributes()
 {
 	// 此初始化仅允许在非客户端世界运行；IsAuthoritySide 明确检查 NetMode。
@@ -286,7 +371,7 @@ void ARogueCharacter::InitializeGASAttributes()
 	// 当前升级是 Infinite 修饰器，保留在 ASC 上；重写 BaseValue 并不等于删除全部升级。
 	// 当前复活复用 Pawn/ASC，这个标志也不提供跨 PlayerState 重建或断线重连的数据持久化。
 	ARoguePlayerState* RoguePS = GetPlayerState<ARoguePlayerState>();
-	if (RoguePS == nullptr || RoguePS->IsBaseAttributesInitialized())
+	if (RoguePS == nullptr || !RoguePS->IsProgressionReady() || RoguePS->IsBaseAttributesInitialized())
 	{
 		return;
 	}
@@ -309,6 +394,15 @@ void ARogueCharacter::InitializeGASAttributes()
 	const FRoguePlayerBaseStatConfig& BaseStats =
 		LoadedPlayerBalanceAsset ? LoadedPlayerBalanceAsset->BaseStats : DefaultBaseStats;
 
+	const URogueUpgradeTreeDefinition* Tree = URogueUpgradeTreeDefinition::GetDefaultDefinition();
+	const FRogueProgressionSnapshot& Profile = RoguePS->GetProgressionSnapshot();
+	auto PermanentBonus = [Tree, &Profile](ERogueMetaStat Stat)
+	{
+		return Tree->GetStatBonus(Profile, Stat);
+	};
+	const bool bArmorUnlocked = Tree->IsArmorUnlocked(Profile);
+
+	// 永久成长只加进本局 GAS 基值，不施加局内叠层 GE。后续同步或复活不重放加法。
 	// 武器加成属性的上限（**-1 = 不设上限**，资产里默认全 -1 → 行为与"没有上限"完全一致）。
 	//
 	// 先提供加成上限，再初始化属性；ASC 对属性当前值的更新会进入 PreAttributeChange。
@@ -320,15 +414,15 @@ void ARogueCharacter::InitializeGASAttributes()
 	// 先写上限，再写当前值。
 	// 原因：PreAttributeChange 里 Health 的上界取的是 GetMaxHealth()，
 	// 顺序反了会被旧上限钳住（例如 MaxHealth 从 100 提到 200 时 Health 只能到 100）。
-	AttributeSet->SetMaxHealth(BaseStats.MaxHealth);
-	AttributeSet->SetMaxArmor(BaseStats.MaxArmor);
-	AttributeSet->SetHealthRegenPerSecond(BaseStats.HealthRegenPerSecond);
+	AttributeSet->SetMaxHealth(BaseStats.MaxHealth + PermanentBonus(ERogueMetaStat::MaxHealth));
+	AttributeSet->SetMaxArmor(bArmorUnlocked ? BaseStats.MaxArmor + PermanentBonus(ERogueMetaStat::ArmorCapacity) : 0.0f);
+	AttributeSet->SetHealthRegenPerSecond(BaseStats.HealthRegenPerSecond + PermanentBonus(ERogueMetaStat::HealthRegen));
 	AttributeSet->SetArmorRechargeDelay(BaseStats.ArmorRechargeDelay);
 	AttributeSet->SetArmorRechargeRate(BaseStats.ArmorRechargeRate);
 	AttributeSet->SetDamageReductionPercent(BaseStats.DamageReductionPercent);
-	AttributeSet->SetMoveSpeed(BaseStats.MoveSpeed);
-	AttributeSet->SetPickupRadius(BaseStats.PickupRadius);
-	AttributeSet->SetExperienceMultiplier(BaseStats.ExperienceMultiplier);
+	AttributeSet->SetMoveSpeed(BaseStats.MoveSpeed + PermanentBonus(ERogueMetaStat::MoveSpeed));
+	AttributeSet->SetPickupRadius(BaseStats.PickupRadius + PermanentBonus(ERogueMetaStat::PickupRadius));
+	AttributeSet->SetExperienceMultiplier(BaseStats.ExperienceMultiplier + PermanentBonus(ERogueMetaStat::ExperienceGain));
 	AttributeSet->SetMinDashCooldown(BaseStats.DashMinCooldown);
 	AttributeSet->SetDashCooldownDuration(BaseStats.DashCooldownDuration);
 	AttributeSet->SetDashDuration(BaseStats.DashDuration);
@@ -342,19 +436,26 @@ void ARogueCharacter::InitializeGASAttributes()
 
 	const FRogueInitialWeaponBonusConfig InitialBonuses = LoadedPlayerBalanceAsset
 		? LoadedPlayerBalanceAsset->InitialWeaponBonuses : FRogueInitialWeaponBonusConfig();
-	AttributeSet->SetAttackPowerBonus(InitialBonuses.AttackPower);
-	AttributeSet->SetAttackSpeedBonus(InitialBonuses.AttackSpeed);
+	AttributeSet->SetAttackPowerBonus(InitialBonuses.AttackPower + PermanentBonus(ERogueMetaStat::AttackPower));
+	AttributeSet->SetAttackSpeedBonus(InitialBonuses.AttackSpeed + PermanentBonus(ERogueMetaStat::AttackSpeed));
 	AttributeSet->SetAttackRangeBonus(InitialBonuses.AttackRange);
 	AttributeSet->SetProjectileSpeedBonus(InitialBonuses.ProjectileSpeed);
-	AttributeSet->SetProjectileCountBonus(InitialBonuses.ProjectileCount);
-	AttributeSet->SetScytheCountBonus(InitialBonuses.ScytheCount);
-	AttributeSet->SetRocketCountBonus(InitialBonuses.RocketCount);
-	AttributeSet->SetLaserCountBonus(InitialBonuses.LaserCount);
-	AttributeSet->SetHellTowerCountBonus(InitialBonuses.HellTowerCount);
-	AttributeSet->SetLaserRefractionBonus(InitialBonuses.LaserRefraction);
-	AttributeSet->SetMortarCountBonus(InitialBonuses.MortarCount);
-	AttributeSet->SetMortarBlastRadiusBonus(InitialBonuses.MortarBlastRadius);
-	AttributeSet->SetScytheSizeBonus(InitialBonuses.ScytheSize);
+	// 每局只有一张御札作为起始武器（其基础数量由 InitializeWeapons 固定为 1）。
+	// 永久解锁只让卡片入池，不直接装备；旧平衡资产的初始数量和专属加成不再跳过这条规则。
+	AttributeSet->SetProjectileCountBonus(0.0f);
+	AttributeSet->SetScytheCountBonus(0.0f);
+	AttributeSet->SetRocketCountBonus(0.0f);
+	AttributeSet->SetLaserCountBonus(0.0f);
+	AttributeSet->SetHellTowerCountBonus(0.0f);
+	AttributeSet->SetLaserRefractionBonus(0.0f);
+	AttributeSet->SetMortarCountBonus(0.0f);
+	AttributeSet->SetMortarBlastRadiusBonus(0.0f);
+	AttributeSet->SetScytheSizeBonus(0.0f);
+	AttributeSet->SetScytheLifestealBonus(0.0f);
+	AttributeSet->SetProjectileBurstBonus(0.0f);
+	AttributeSet->SetRocketBlastRadiusBonus(0.0f);
+	AttributeSet->SetHellTowerDamageRampBonus(0.0f);
+
 	RefreshWeaponBonusSnapshotFromAttributes();
 
 	// 成长运行值只在服务器首次初始化时赋值，复活或再次接管不重置钱包和升级进度。
@@ -448,7 +549,7 @@ void ARogueCharacter::ApplyBalanceAsset()
 
 	// 属性类字段不再在这里赋值。
 	// 它们的唯一真相源是 GAS 属性集，由 InitializeGASAttributes()（PossessedBy 时）
-	// 从同一份 URoguePlayerBalanceAsset::BaseStats 灌入，之后由升级 GE 修改，
+	// 从 URoguePlayerBalanceAsset 与本玩家永久成长快照灌入，之后由局内升级 GE 修改，
 	// 最后经 SyncAttributeMirrors() 每帧缓存回运行时字段。
 	//
 	// GAS 区分基值与持续修饰器，但重复施加效果仍可能重复累加；初始化和效果查重各有守卫。

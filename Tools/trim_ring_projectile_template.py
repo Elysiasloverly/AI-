@@ -1,7 +1,7 @@
 """整圈弹幕是 48 发/圈，去掉每发的点光和拖尾，避免模板默认拖性能。
 
 用法（项目根目录）：
-    UnrealEditor-Cmd.exe F:\AI_WorkSpeace\ai\ai.uproject ^
+    UnrealEditor-Cmd.exe F:\AI_WorkSpeace\baka\Baka.uproject ^
         -run=pythonscript -script="Tools/trim_ring_projectile_template.py" ^
         -unattended -nopause -nullrhi -nosplash
 """

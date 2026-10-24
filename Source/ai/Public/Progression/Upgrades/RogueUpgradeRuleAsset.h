@@ -12,7 +12,8 @@ enum class ERogueWeaponUpgradeSource : uint8
 	Rocket    UMETA(DisplayName = "八卦炉"),
 	Laser     UMETA(DisplayName = "极限火花"),
 	HellTower UMETA(DisplayName = "御柱"),
-	Mortar    UMETA(DisplayName = "阴阳玉")
+	Mortar    UMETA(DisplayName = "阴阳玉"),
+	Projectile UMETA(DisplayName = "御札")
 };
 
 USTRUCT(BlueprintType)

@@ -9,6 +9,15 @@
 #include "GameFramework/GameStateBase.h"
 #include "Player/RogueCharacter.h"
 #include "Net/UnrealNetwork.h"
+#include "Engine/GameInstance.h"
+#include "Engine/LocalPlayer.h"
+#include "GameFramework/PlayerController.h"
+#include "Progression/Meta/RogueProgressionSubsystem.h"
+#include "Progression/Meta/RogueUpgradeTreeDefinition.h"
+#include "Progression/Upgrades/RogueUpgradeSystemRules.h"
+#include "TimerManager.h"
+
+DEFINE_LOG_CATEGORY_STATIC(LogRoguePlayerState, Log, All);
 
 namespace
 {
@@ -22,6 +31,10 @@ void ARoguePlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 
 	// 只复制给拥有者：别的玩家不需要看到你的待选卡牌。
 	// COND_OwnerOnly 既省带宽又避免"看到别人的选项"这种逻辑污染。
+	DOREPLIFETIME_CONDITION(ARoguePlayerState, ProgressionSnapshot, COND_OwnerOnly);
+	DOREPLIFETIME_CONDITION(ARoguePlayerState, bProgressionReady, COND_OwnerOnly);
+	DOREPLIFETIME_CONDITION(ARoguePlayerState, bProgressionFailed, COND_OwnerOnly);
+	DOREPLIFETIME_CONDITION(ARoguePlayerState, BossIceBricksEarnedThisRun, COND_OwnerOnly);
 	DOREPLIFETIME_CONDITION(ARoguePlayerState, PendingUpgrades, COND_OwnerOnly);
 	DOREPLIFETIME_CONDITION(ARoguePlayerState, bAwaitingUpgradeChoice, COND_OwnerOnly);
 
@@ -191,6 +204,16 @@ bool ARoguePlayerState::TryConsumePendingUpgrade(int32 UpgradeIndex, FRogueUpgra
 		return false;
 	}
 
+	const ARogueCharacter* Character = GetPawn<ARogueCharacter>();
+	if (Character == nullptr || !bProgressionReady)
+	{
+		return false;
+	}
+	const ERogueUpgradeType Type = PendingUpgrades[UpgradeIndex].Type;
+	if (!RogueUpgradeSystemRules::IsUpgradeAllowedForProgression(Type, Character))
+	{
+		return false;
+	}
 	OutUpgrade = PendingUpgrades[UpgradeIndex];
 	PendingUpgrades.Reset();
 	bAwaitingUpgradeChoice = false;
@@ -315,20 +338,12 @@ void ARoguePlayerState::RefreshAbilityActorInfo(APawn* InPawn)
 		return;
 	}
 	
-	if (InPawn == nullptr)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("InPawn is nullptr"));
-	}
-	else
-	{
-		UE_LOG(LogTemp, Warning, TEXT("InPawn is not nullptr"));
-	}
-	
-	
-	
+	UE_LOG(LogRoguePlayerState, Verbose, TEXT("ActorInfo: Owner=%s Avatar=%s NetMode=%d"), *GetName(), *GetNameSafe(InPawn), GetNetMode());
+
 	// GAS OwnerActor = PlayerState，AvatarActor = 当前 Pawn（允许为空）。
 	// 网络所属连接和实际复制条件还由 Actor/ASC 的复制配置决定。
 	AbilitySystemComponent->InitAbilityActorInfo(this, InPawn);
+	BeginProgressionHandshake();
 
 	// 授予默认技能。内部自带"只在服务端、只授一次"的保护，
 	// 所以这里在 PossessedBy / OnRep_PlayerState 两条路径上重复调用是安全的。
@@ -339,4 +354,195 @@ void ARoguePlayerState::RefreshAbilityActorInfo(APawn* InPawn)
 		? DefaultAbilitySet.LoadSynchronous()
 		: nullptr;
 	AbilitySystemComponent->GrantDefaultAbilities(AbilitySet);
+}
+
+bool ARoguePlayerState::SetProgressionSnapshotForRun(const FRogueProgressionSnapshot& Snapshot)
+{
+	if (!HasAuthority() || bProgressionFailed || bProgressionSubmitted || bBaseAttributesInitialized)
+	{
+		return false;
+	}
+	// Reject a late RPC even when the repeating timer has not run in this frame yet.
+	if (ProgressionHandshakeStarted >= 0.0 && GetWorld()
+		&& GetWorld()->GetTimeSeconds() - ProgressionHandshakeStarted >= FMath::Clamp(ProgressionHandshakeTimeout, 5.0f, 120.0f))
+	{
+		FailProgressionHandshake();
+		return false;
+	}
+	ProgressionSnapshot = URogueUpgradeTreeDefinition::GetDefaultDefinition()->SanitizeSnapshot(Snapshot);
+	bProgressionReady = true;
+	bProgressionSubmitted = true;
+	GetWorldTimerManager().ClearTimer(ProgressionHandshakeTimer);
+	if (ARogueCharacter* Character = GetPawn<ARogueCharacter>())
+	{
+		Character->NotifyProgressionReady();
+	}
+	ForceNetUpdate();
+	UE_LOG(LogTemp, Log, TEXT("[RogueMeta] Profile ready for %s: %d purchased nodes"), *GetPlayerName(), ProgressionSnapshot.NodeRanks.Num());
+	return true;
+}
+
+void ARoguePlayerState::BeginProgressionHandshake()
+{
+	if (!HasAuthority() || bProgressionFailed || bProgressionSubmitted || bBaseAttributesInitialized || GetWorld() == nullptr)
+	{
+		return;
+	}
+	APlayerController* Controller = Cast<APlayerController>(GetOwner());
+	if (Controller != nullptr && Controller->GetLocalPlayer() != nullptr)
+	{
+		const URogueProgressionSubsystem* Progression = Controller->GetLocalPlayer()->GetSubsystem<URogueProgressionSubsystem>();
+		if (Progression != nullptr)
+		{
+			SetProgressionSnapshotForRun(Progression->GetSnapshot());
+			return;
+		}
+	}
+	// Native unit worlds have no local players or network connection. They can inject
+	// a profile before Possess; this fallback is deliberately not an RPC submission.
+	const UGameInstance* Instance = GetWorld()->GetGameInstance();
+	if (GetNetMode() == NM_Standalone && (Instance == nullptr || Instance->GetNumLocalPlayers() == 0)
+		&& (Controller == nullptr || Controller->GetNetConnection() == nullptr))
+	{
+		bProgressionReady = true;
+		return;
+	}
+	const double Now = GetWorld()->GetTimeSeconds();
+	if (ProgressionHandshakeStarted < 0.0) { ProgressionHandshakeStarted = Now; }
+	if (Now - ProgressionHandshakeStarted >= FMath::Clamp(ProgressionHandshakeTimeout, 5.0f, 120.0f))
+	{
+		FailProgressionHandshake();
+		return;
+	}
+	if (Controller != nullptr && Controller->GetNetConnection() != nullptr)
+	{
+		Client_RequestProgressionSnapshot();
+	}
+	// PostLogin normally completes immediately. Retry covers a late owning connection
+	// without replacing a real player's save with a premature empty profile.
+	if (!GetWorldTimerManager().IsTimerActive(ProgressionHandshakeTimer))
+	{
+		GetWorldTimerManager().SetTimer(ProgressionHandshakeTimer, this,
+			&ARoguePlayerState::BeginProgressionHandshake, 1.0f, true);
+	}
+}
+
+void ARoguePlayerState::Client_RequestProgressionSnapshot_Implementation()
+{
+	SubmitLocalProgressionWhenReady();
+}
+
+void ARoguePlayerState::SubmitLocalProgressionWhenReady()
+{
+	APlayerController* Controller = Cast<APlayerController>(GetOwner());
+	ULocalPlayer* LocalPlayer = Controller != nullptr ? Controller->GetLocalPlayer() : nullptr;
+	URogueProgressionSubsystem* Progression = LocalPlayer != nullptr ? LocalPlayer->GetSubsystem<URogueProgressionSubsystem>() : nullptr;
+	if (bProgressionFailed) { GetWorldTimerManager().ClearTimer(LocalProgressionRetryTimer); return; }
+	if (Progression != nullptr)
+	{
+		Server_SubmitProgressionSnapshot(Progression->GetSnapshot());
+		GetWorldTimerManager().ClearTimer(LocalProgressionRetryTimer);
+		return;
+	}
+	if (!GetWorldTimerManager().IsTimerActive(LocalProgressionRetryTimer))
+	{
+		GetWorldTimerManager().SetTimer(LocalProgressionRetryTimer, this,
+			&ARoguePlayerState::SubmitLocalProgressionWhenReady, 0.5f, true);
+	}
+}
+
+void ARoguePlayerState::Server_SubmitProgressionSnapshot_Implementation(const FRogueProgressionSnapshot& Snapshot)
+{
+	// Cooperative local progression: validate the node whitelist, prerequisites and
+	// caps, then freeze this run. A local save is not a proof against save editing.
+	SetProgressionSnapshotForRun(Snapshot);
+}
+
+void ARoguePlayerState::OnRep_Progression()
+{
+	if (bProgressionReady)
+	{
+		if (ARogueCharacter* Character = GetPawn<ARogueCharacter>())
+		{
+			Character->NotifyProgressionReady();
+		}
+	}
+}
+
+void ARoguePlayerState::GrantBossIceBrick(const FGuid& RewardId)
+{
+	if (!HasAuthority() || !RewardId.IsValid() || GrantedBossRewardIds.Contains(RewardId))
+	{
+		return;
+	}
+	GrantedBossRewardIds.Add(RewardId);
+	++BossIceBricksEarnedThisRun;
+	ForceNetUpdate();
+	const APlayerController* Controller = Cast<APlayerController>(GetOwner());
+	if (Controller != nullptr && (Controller->GetLocalPlayer() != nullptr || Controller->GetNetConnection() != nullptr))
+	{
+		Client_GrantBossIceBrick(RewardId);
+	}
+}
+
+void ARoguePlayerState::Client_GrantBossIceBrick_Implementation(const FGuid& RewardId)
+{
+	PendingLocalBossRewards.Add(RewardId);
+	FlushLocalBossRewards();
+}
+
+void ARoguePlayerState::FlushLocalBossRewards()
+{
+	APlayerController* Controller = Cast<APlayerController>(GetOwner());
+	ULocalPlayer* LocalPlayer = Controller != nullptr ? Controller->GetLocalPlayer() : nullptr;
+	URogueProgressionSubsystem* Progression = LocalPlayer != nullptr ? LocalPlayer->GetSubsystem<URogueProgressionSubsystem>() : nullptr;
+	if (Progression != nullptr)
+	{
+		TArray<FGuid> Committed;
+		for (const FGuid& RewardId : PendingLocalBossRewards)
+		{
+			Progression->EnqueueBossReward(RewardId);
+			Committed.Add(RewardId); // Ownership handed to the LocalPlayer, including failed saves.
+		}
+		for (const FGuid& RewardId : Committed) { PendingLocalBossRewards.Remove(RewardId); }
+	}
+	if (PendingLocalBossRewards.Num() > 0)
+	{
+		if (!GetWorldTimerManager().IsTimerActive(BossRewardRetryTimer))
+		{
+			GetWorldTimerManager().SetTimer(BossRewardRetryTimer, this,
+				&ARoguePlayerState::FlushLocalBossRewards, 1.0f, true);
+		}
+	}
+	else
+	{
+		GetWorldTimerManager().ClearTimer(BossRewardRetryTimer);
+	}
+}
+
+void ARoguePlayerState::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	FlushLocalBossRewards(); // Handoff before the PlayerState/world is destroyed.
+	GetWorldTimerManager().ClearTimer(ProgressionHandshakeTimer);
+	GetWorldTimerManager().ClearTimer(LocalProgressionRetryTimer);
+	GetWorldTimerManager().ClearAllTimersForObject(this);
+	Super::EndPlay(EndPlayReason);
+}
+
+void ARoguePlayerState::FailProgressionHandshake()
+{
+	if (!HasAuthority() || bProgressionSubmitted || bProgressionReady || bProgressionFailed) { return; }
+	bProgressionFailed = true;
+	SetIsOnlyASpectator(true); // Excluded from wipe checks and ownership repair before disconnect.
+	GetWorldTimerManager().ClearTimer(ProgressionHandshakeTimer);
+	GetWorldTimerManager().ClearTimer(LocalProgressionRetryTimer);
+	ForceNetUpdate();
+	UE_LOG(LogRoguePlayerState, Warning, TEXT("Progression handshake timed out for %s after %.1fs"), *GetPlayerName(), ProgressionHandshakeTimeout);
+	if (APlayerController* PC = Cast<APlayerController>(GetOwner()))
+	{
+		APawn* OldPawn = PC->GetPawn();
+		PC->UnPossess();
+		if (OldPawn) { OldPawn->Destroy(); }
+		PC->ClientReturnToMainMenuWithTextReason(FText::FromString(TEXT("玩家升级树初始化超时，请返回主菜单后重新加入。你的本地进度没有被修改。")));
+	}
 }

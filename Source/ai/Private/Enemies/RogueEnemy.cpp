@@ -1,4 +1,5 @@
 #include "Enemies/RogueEnemy.h"
+#include "Combat/Visuals/RogueHitFlashComponent.h"
 
 #include "Player/RogueCharacter.h"
 #include "AbilitySystem/RogueAbilitySystemComponent.h"
@@ -37,6 +38,7 @@
 ARogueEnemy::ARogueEnemy()
 {
 	PrimaryActorTick.bCanEverTick = true;
+	HitFlashComponent = CreateDefaultSubobject<URogueHitFlashComponent>(TEXT("HitFlash"));
 
 	// 原生默认使用 AAIController 并允许自动接管；蓝图默认值仍可覆盖。
 	AIControllerClass = AAIController::StaticClass();
@@ -205,6 +207,7 @@ void ARogueEnemy::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 	// "这只怪现在在不在场"。池化状态本身不复制（见头文件里的说明），
 	// 但客户端必须知道它，否则怪在客户端永远是"死的、池里的"。
 	DOREPLIFETIME_CONDITION(ARogueEnemy, bReplicatedActive, COND_None);
+	DOREPLIFETIME(ARogueEnemy, HitFeedback);
 }
 
 void ARogueEnemy::OnRep_ReplicatedActive()
@@ -249,6 +252,7 @@ void ARogueEnemy::ApplyReplicatedActiveState()
 	}
 	else
 	{
+		if (HitFlashComponent) { HitFlashComponent->ClearHitFlash(); }
 		bPoolAvailable = true;
 		bDead = true;
 		SetActorHiddenInGame(true);
@@ -265,6 +269,7 @@ void ARogueEnemy::ApplyReplicatedActiveState()
 			Tracker->UnregisterEnemy(this);
 		}
 	}
+	ConsumeReplicatedHitFeedback();
 }
 
 void ARogueEnemy::Multicast_SpawnCosmeticProjectile_Implementation(FVector_NetQuantize SpawnLocation, FVector_NetQuantizeNormal Direction, float Speed, bool bLargeVisual, TSubclassOf<ARogueEnemyProjectile> ProjectileClass)
@@ -303,10 +308,11 @@ void ARogueEnemy::Multicast_SpawnCosmeticBulletRing_Implementation(FVector_NetQu
 	}
 }
 
-void ARogueEnemy::SpawnBulletRing(const FVector& Center, float StartYaw, float SpawnRadius, const FRogueEnemyBulletRingSettings& Settings, float ProjectileDamage, TSubclassOf<ARogueEnemyProjectile> ProjectileClass)
+bool ARogueEnemy::SpawnBulletRing(const FVector& Center, float StartYaw, float SpawnRadius, const FRogueEnemyBulletRingSettings& Settings, float ProjectileDamage, TSubclassOf<ARogueEnemyProjectile> ProjectileClass)
 {
 	UWorld* World = GetWorld();
-	if (World == nullptr) { return; }
+	if (World == nullptr) { return false; }
+	bool bSpawnedAny = false;
 	URogueCombatPoolSubsystem* Pools = World->GetSubsystem<URogueCombatPoolSubsystem>();
 	const FRogueEnemyBulletRingSettings Ring = Settings.Sanitized();
 	const TSubclassOf<ARogueEnemyProjectile> ClassToSpawn = ProjectileClass != nullptr ? ProjectileClass : GetEnemyProjectileClass();
@@ -326,10 +332,12 @@ void ARogueEnemy::SpawnBulletRing(const FVector& Center, float StartYaw, float S
 			: World->SpawnActor<ARogueEnemyProjectile>(ClassToSpawn, Location, Rotation, Params);
 		if (Projectile != nullptr)
 		{
+			bSpawnedAny = true;
 			Projectile->ActivatePooledProjectile(this, this, Location, Rotation, Direction,
 				Ring.ProjectileSpeed, ProjectileDamage, false, Ring.ProjectileLifetime, Ring.ProjectileScale, true);
 		}
 	}
+	return bSpawnedAny;
 }
 
 void ARogueEnemy::SyncHealthToAbilitySystem()
@@ -405,6 +413,7 @@ void ARogueEnemy::HandleHealthChanged(const FOnAttributeChangeData& ChangeData)
 	if (DamageTaken > 0.0f)
 	{
 		ShowDamageNumber(DamageTaken);
+		RecordHitFeedback(DamageTaken);
 	}
 }
 
@@ -470,6 +479,7 @@ void ARogueEnemy::ProcessDeath()
 
 void ARogueEnemy::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (HitFlashComponent) { HitFlashComponent->ClearHitFlash(); }
 	if (UWorld* World = GetWorld())
 	{
 		if (URogueEnemyTrackerSubsystem* Tracker = World->GetSubsystem<URogueEnemyTrackerSubsystem>())
@@ -750,7 +760,7 @@ void ARogueEnemy::DecideContactAttack(float DeltaSeconds)
 	RogueEnemyAttackStats::CountContactAttempt();
 	if (TryActivateAttackAbility(ContactAttackAbilityHandle))
 	{
-		ContactTimer = ContactInterval;
+		ContactTimer = GetContactInterval();
 	}
 	else
 	{
@@ -823,6 +833,7 @@ bool ARogueEnemy::ExecuteContactAttack()
 		bDamagedAnyone = true;
 	}
 
+	if (bDamagedAnyone) { NotifyAttackAudio(MyLocation); }
 	return bDamagedAnyone;
 }
 
@@ -844,6 +855,8 @@ bool ARogueEnemy::ExecuteRangedAttack()
 
 void ARogueEnemy::InitializeEnemy(const FRogueEnemyProfile& InProfile)
 {
+	AttackAudioState.Reset();
+	if (HitFlashComponent) { HitFlashComponent->ClearHitFlash(); }
 	EnemyType = InProfile.EnemyType;
 	MaxHealth = InProfile.Health;
 	CurrentHealth = MaxHealth;
@@ -862,6 +875,12 @@ void ARogueEnemy::InitializeEnemy(const FRogueEnemyProfile& InProfile)
 		CurrentArchetype = RogueEnemyArchetypes::BuildEnemyArchetype(EnemyType, bIsBoss);
 	}
 
+    // 每次出池都从原始原型重建，再应用阶段倍率，避免回池复用时重复减半。
+    const ARogueGameMode* Mode = GetWorld() ? GetWorld()->GetAuthGameMode<ARogueGameMode>() : nullptr;
+    AttackSpeedMultiplier = Mode ? FMath::Max(1.f, Mode->GetEnemyAttackSpeedMultiplier()) : 1.f;
+    CurrentArchetype.Ranged.InitialCooldownMin /= AttackSpeedMultiplier;
+    CurrentArchetype.Ranged.InitialCooldownMax /= AttackSpeedMultiplier;
+    CurrentArchetype.Ranged.NextShotCooldown /= AttackSpeedMultiplier;
 	BurstCooldown = CurrentArchetype.Movement.Model == ERogueEnemyMovementModel::BurstCharge ? FMath::FRandRange(0.8f, 1.8f) : 0.0f;
 	BurstTimeRemaining = 0.0f;
 	ContactTimer = 0.0f;
@@ -895,6 +914,15 @@ void ARogueEnemy::InitializeEnemy(const FRogueEnemyProfile& InProfile)
 
 void ARogueEnemy::ActivatePooledEnemy(AActor* InOwner, const FVector& SpawnLocation, const FRotator& SpawnRotation)
 {
+	if (HitFlashComponent) { HitFlashComponent->ClearHitFlash(); }
+	if (HasAuthority())
+	{
+		const uint32 Generation = HitFeedback.Generation + 1;
+		HitFeedback = FRogueEnemyHitFeedback();
+		HitFeedback.Generation = Generation;
+		HitFeedback.bActive = true;
+	}
+	SpawnCycleId = FGuid::NewGuid();
 	ConfigureGroundedCollision();
 	SetOwner(InOwner);
 	SetActorLocationAndRotation(SpawnLocation, SpawnRotation, false, nullptr, ETeleportType::TeleportPhysics);
@@ -952,6 +980,9 @@ void ARogueEnemy::ActivatePooledEnemy(AActor* InOwner, const FVector& SpawnLocat
 
 void ARogueEnemy::DeactivateToPool()
 {
+	AttackAudioState.Reset();
+	if (HitFlashComponent) { HitFlashComponent->ClearHitFlash(); }
+	if (HasAuthority()) { HitFeedback.bActive = false; }
 	if (!bPoolAvailable)
 	{
 		if (UWorld* World = GetWorld())
@@ -1132,7 +1163,7 @@ void ARogueEnemy::PerformContactDamage(float DeltaSeconds)
 	{
 		// 计时器是**整只怪共享**的：同时贴住两个玩家时两人一起挨打，
 		// 而不是"第一个人吃掉这次攻击、第二个人白嫖"。
-		ContactTimer = ContactInterval;
+		ContactTimer = GetContactInterval();
 	}
 }
 
@@ -1247,8 +1278,9 @@ void ARogueEnemy::FireRangedShot(ARogueCharacter* PlayerCharacter)
 			-Capsule->GetScaledCapsuleHalfHeight() + Settings.HeightAboveGround);
 		const float SpawnRadius = Capsule->GetScaledCapsuleRadius() + 24.0f;
 		const float StartYaw = GetActorRotation().Yaw;
-		SpawnBulletRing(Center, StartYaw, SpawnRadius, Settings, ContactDamage * Settings.DamageMultiplier, ProjectileClass);
+		const bool bSpawnedRing = SpawnBulletRing(Center, StartYaw, SpawnRadius, Settings, ContactDamage * Settings.DamageMultiplier, ProjectileClass);
 		Multicast_SpawnCosmeticBulletRing(Center, StartYaw, SpawnRadius, Settings, ProjectileClass);
+		if (bSpawnedRing) { NotifyAttackAudio(Center); }
 		return;
 	}
 
@@ -1266,6 +1298,7 @@ void ARogueEnemy::FireRangedShot(ARogueCharacter* PlayerCharacter)
 	SpawnParameters.Owner = this;
 	SpawnParameters.Instigator = this;
 
+	bool bSpawnedAny = false;
 	auto SpawnProjectile = [&](const FVector& SpawnLocation, const FVector& Direction, float ProjectileSpeed, float ProjectileDamage, bool bLargeVisual)
 	{
 		// 服务端生成"真实"弹体（带伤害与命中判定）
@@ -1275,6 +1308,7 @@ void ARogueEnemy::FireRangedShot(ARogueCharacter* PlayerCharacter)
 			: GetWorld()->SpawnActor<ARogueEnemyProjectile>(ProjectileClass, SpawnLocation, Direction.Rotation(), SpawnParameters);
 		if (Projectile != nullptr)
 		{
+			bSpawnedAny = true;
 			Projectile->ActivatePooledProjectile(this, this, SpawnLocation, Direction.Rotation(), Direction, ProjectileSpeed, ProjectileDamage, bLargeVisual);
 		}
 
@@ -1300,6 +1334,8 @@ void ARogueEnemy::FireRangedShot(ARogueCharacter* PlayerCharacter)
 	{
 		SpawnProjectile(ShotOrigin, ShotDirection, RangedArchetype.ProjectileSpeed, ContactDamage * RangedArchetype.ProjectileDamageMultiplier, RangedArchetype.bLargeVisual);
 	}
+
+	if (bSpawnedAny) { NotifyAttackAudio(ShotOrigin); }
 
 	if (RangedArchetype.bSpawnMuzzleEffect)
 	{

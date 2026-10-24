@@ -76,7 +76,7 @@ namespace RogueScytheSizeTests
 				Config.WeaponClass = ARogueWeapon_Scythe::StaticClass();
 				Config.CountUpgradeType = ERogueUpgradeType::ScytheCount;
 				Config.BladeClass = LoadClass<ARogueOrbitingBlade>(nullptr,
-		TEXT("/Game/BP/Projectile/BP_RogueOrbitingBlade.BP_RogueOrbitingBlade_C"));
+		TEXT("/Game/BP/Projectiles/BP_RogueOrbitingBlade.BP_RogueOrbitingBlade_C"));
 	if (Config.BladeClass == nullptr)
 	{
 		Config.BladeClass = ARogueOrbitingBlade::StaticClass();
@@ -91,6 +91,16 @@ namespace RogueScytheSizeTests
 				TableProperty->SetObjectPropertyValue_InContainer(Players[Index], Table);
 				Players[Index]->AutoPossessPlayer = EAutoReceiveInput::Disabled;
 				Players[Index]->FinishSpawning(Transform);
+				// Permanent access admits the weapon and its two dedicated cards; it does not equip the weapon.
+				ARoguePlayerState* ControllerState = Controller->GetPlayerState<ARoguePlayerState>();
+				if (!Test.TestNotNull(TEXT("The controller owns its PlayerState before possession"), ControllerState)) { return false; }
+				FRogueProgressionSnapshot PermanentAccess;
+				PermanentAccess.NodeRanks.Add(FName(TEXT("Weapon.Scythe")), 1);
+				PermanentAccess.NodeRanks.Add(FName(TEXT("Card.ScytheCount")), 1);
+				PermanentAccess.NodeRanks.Add(FName(TEXT("Card.ScytheSize")), 1);
+				PermanentAccess.NodeRanks.Add(FName(TEXT("Card.ScytheLifesteal")), 1);
+				if (!Test.TestTrue(TEXT("Scythe and dedicated-card access is injected before the run"),
+					ControllerState->SetProgressionSnapshotForRun(PermanentAccess))) { return false; }
 				Controller->Possess(Players[Index]);
 				Players[Index]->SetActorTickEnabled(false);
 				Players[Index]->GetCharacterMovement()->SetComponentTickEnabled(false);
@@ -100,6 +110,14 @@ namespace RogueScytheSizeTests
 					|| !Test.TestNotNull(TEXT("The player owns real GAS attributes through PlayerState"), Players[Index]->GetRogueAttributeSet())
 					|| !Test.TestNotNull(TEXT("Possession creates the real PlayerState"), Players[Index]->GetPlayerState<ARoguePlayerState>())) { return false; }
 				if (!Test.TestTrue(TEXT("The test player is alive"), Players[Index]->IsAlive())) { return false; }
+				if (!Test.TestEqual(TEXT("Permanent access does not start the run with an equipped scythe"),
+					Players[Index]->GetEffectiveScytheCount(), 0)) { return false; }
+				FRogueUpgradeOption AcquireScythe;
+				AcquireScythe.Type = ERogueUpgradeType::ScytheCount;
+				AcquireScythe.Magnitude = 1.0f;
+				Players[Index]->ApplyUpgrade(AcquireScythe);
+				if (!Test.TestEqual(TEXT("The real acquisition card equips exactly one scythe through GAS"),
+					Players[Index]->GetEffectiveScytheCount(), 1)) { return false; }
 			}
 			return !Test.HasAnyErrors();
 		}
@@ -321,7 +339,7 @@ bool FRogueScytheSizeBlueprintPoolReuseTest::RunTest(const FString& Parameters)
 	FFixture Fixture;
 	if (!Fixture.Initialize(*this, 2)) { return false; }
 	UClass* BladeClass = LoadClass<ARogueOrbitingBlade>(nullptr,
-		TEXT("/Game/BP/Projectile/BP_RogueOrbitingBlade.BP_RogueOrbitingBlade_C"));
+		TEXT("/Game/BP/Projectiles/BP_RogueOrbitingBlade.BP_RogueOrbitingBlade_C"));
 	if (!TestNotNull(TEXT("The real project blade Blueprint loads"), BladeClass)) { return false; }
 	AActor* Defaults = Fixture.World->SpawnActor<AActor>(BladeClass, FVector::ZeroVector, FRotator::ZeroRotator);
 	if (!TestNotNull(TEXT("The Blueprint blade defaults can be spawned"), Defaults)) { return false; }

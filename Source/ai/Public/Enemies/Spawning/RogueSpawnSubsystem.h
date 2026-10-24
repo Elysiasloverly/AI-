@@ -42,7 +42,20 @@ public:
 	/** 生成 Boss */
 	void SpawnBoss(FRogueRunState& RunState, ARogueCharacter* Character, const ARogueEnemySpawnRegion* Region);
 
+    void SetSpawningSuspended(bool bSuspended) { bSpawningSuspended = bSuspended; }
+    bool IsSpawningSuspended() const { return bSpawningSuspended; }
+    /** 名额已用完（或所有类型的每波名额都已用完），且本波 Boss 已成功生成。 */
+    bool HasFinishedWaveSpawning(const FRogueRunState& RunState) const;
+    /** 本波生成完成，场上无剩余敌人，且 Boss 已击败。 */
+    bool IsWaveComplete(const FRogueRunState& RunState) const;
+    int32 GetWaveEnemyBudget() const { return WaveEnemyBudget; }
+    int32 GetSpawnedCountThisWave() const { return TotalSpawnedThisWave; }
 private:
+    friend struct FRogueBattleStageTestAccess;
+    bool HasRemainingNormalWaveBudget(int32 Wave) const;
+    int32 WaveEnemyBudget = 0;
+    int32 TotalSpawnedThisWave = 0;
+    bool bSpawningSuspended = false;
 	ARogueEnemy* SpawnConfiguredEnemy(const FRogueEnemyProfile& EnemyProfile, float DesiredDistance, float MinimumDistance, const ARogueEnemySpawnRegion* Region, ARogueCharacter* Character);
 	bool FindSpawnLocation(float DesiredDistance, float MinimumDistance, const ARogueEnemySpawnRegion* Region,
 		ARogueCharacter* Character, const ARogueEnemy* Enemy, FVector& OutLocation) const;

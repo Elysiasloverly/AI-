@@ -31,7 +31,7 @@ stateDiagram-v2
 ```
 
 1. 服务端处理致死伤害，进入 `Downed` 并写入「当前服务器时间 + 配置的等待时间（默认 10 秒）」。保存正常碰撞配置后关闭全部碰撞与重叠，清理移动和武器行为，排定唯一一次性世界定时器。
-2. `GameMode::NotifyPlayerDied()` 关闭该玩家的商店与升级状态，调用 `EvaluateTeamWipe()`。团灭集合按实际参与的 PlayerController/PlayerState 计算，排除旁观者；登录或重新持有期间暂缺 Pawn 的玩家不会被当成已经濒死。
+2. `GameMode::NotifyPlayerDied()` 关闭该玩家的商店与升级状态，调用 `EvaluateTeamWipe()`；`GameMode::Tick()` 每帧也会调用一次，用于同帧致死的兜底。团灭集合按实际参与的 PlayerController/PlayerState 计算，排除旁观者；登录或重新持有期间暂缺 Pawn 的玩家不会被当成已经濒死。
 3. 尚有存活队友时，定时器到期进入 `TryReviveIfExpired()`。它先检查本局结束和团灭，再确认截止时刻；符合条件才执行 `Revive()`。不依赖 Pawn Tick、GameMode 复活队列或 GE 的剩余时长。
 4. 复活在原角色上执行：移回记录的出生位置，恢复最大生命的 50%（至少 1 点）、保存的碰撞/重叠配置和移动输入，清除死亡/濒死效果并应用复活保护，复制 `Alive` 与清零后的截止时刻。
 5. 团灭时 GameMode 设置 `GameOver`，对所有参与者执行 `FinalizeForGameOver()`：进入 `Eliminated`、清零截止时刻并清理复活与待处理死亡定时器。到期回调和重复死亡通知都不能把终态玩家复活。同帧致死与复活到期竞争时，先确认团灭。
@@ -40,7 +40,7 @@ stateDiagram-v2
 
 `OnRep_LifeState()` 只应用幽灵或正常表现，不改血、不创建复活定时器，也不依据迟到的 GAS 标签改变生命阶段。倒计时到零时仍显示等待界面，直到服务器确认 `Alive`；收到复活确认后立即收起。
 
-HUD 每帧独立更新 UMG 状态，画布绘制不作为界面刷新的前提。HUD 通过自己的 owning PlayerController 获取本机角色；每个 HUD 独立缓存状态并核对实际可见性，支持同进程 PIE / 分屏。两个 WBP 具有原生默认类引用，兼容蓝图未配置 WidgetClass 的情况。
+HUD 每帧独立更新 UMG 状态，画布绘制不作为界面刷新的前提。HUD 通过自己的 owning PlayerController 获取本机角色；每个 HUD 独立缓存状态并核对实际可见性，支持同进程 PIE / 分屏。两个 WBP 的默认类来自 `DefaultGame.ini` 的 `DeathScreenWidgetClassPath` / `ReviveCountdownWidgetClassPath`（`TSoftClassPtr`），由 HUD 懒加载；蓝图未配置 WidgetClass 时仍能创建界面。
 
 团灭显示判据为 `GameState.GameOver || 本机角色.IsEliminated()`，因此角色终态与 GameState 可按任意顺序到达。没有 Pawn 时仍能通过 GameState 显示结算并操作按钮。濒死和结算界面互斥，商店、升级、暂停与设置统一收起；团灭使用 `UIOnly` 输入模式与可见光标。蓝图更新事件返回后，C++ 再应用最终可见性；隐藏时停止动画，防止复活后等待界面残留。
 
@@ -50,7 +50,7 @@ HUD 每帧独立更新 UMG 状态，画布绘制不作为界面刷新的前提�
 
 | 用例 | 预期 |
 |---|---|
-| `Rogue.Gameplay.LifeCycle.TenSecondGhostAndRestore` | 一人濒死、另一人存活；9.9 秒前不复活，10 秒后恢复。Actor/所有 PrimitiveComponent 无碰撞与重叠，索敌排除濒死玩家；复活恢复原配置、生命和保护效果 |
+| `Rogue.Gameplay.LifeCycle.TenSecondGhostAndRestore` | 一人濒死、另一人存活；9.9 秒前不复活，10 秒后恢复。Actor/所有 PrimitiveComponent 无碰撞与重叠，索敌排除濒死玩家；复活恢复原配置与生命（保护效果由 `PlayerBalance.RevivalAndReset` 用例覆盖） |
 | `Rogue.Gameplay.LifeCycle.RepeatedDeathAndMissingEffect` | 重复死亡通知不延长截止时刻或增加驱动；移除濒死 GE 不提前复活、不造成永久濒死；再次死亡仍遵循完整 10 秒 |
 | `Rogue.Gameplay.LifeCycle.TeamWipeCancelsRevival` | 第二人濒死后立即结束；所有玩家进入 Eliminated，超过原截止时刻也不复活 |
 | `Rogue.Gameplay.LifeCycle.TeamWipeAtRevivalDeadline` | 最后一名队友在复活到期前受致命伤时，团灭优先，不允许到期玩家抢先复活 |
@@ -62,7 +62,7 @@ HUD 每帧独立更新 UMG 状态，画布绘制不作为界面刷新的前提�
 
 ## 主要落点
 
-- `Source/ai/Public/Player/RoguePlayerLifeState.h`：生命阶段、复制载荷与资产缺失时使用的默认 10 秒回退常量。
+- `Source/ai/Public/Player/RoguePlayerLifeState.h`：生命阶段、复制载荷与配置值非法（非有限）时使用的 10 秒回退常量。
 - `Source/ai/Private/Player/RogueCharacter.LifeCycle.cpp`：濒死、单定时器、复活、碰撞保存/恢复与客户端应用。
 - `Source/ai/Private/Framework/RogueGameMode.Players.cpp`：参与者集合、团灭终态与重开请求。
 - `Source/ai/Private/UI/RogueHUD.cpp` 及复活/结算 Widget 基类：本地界面与输入互斥。

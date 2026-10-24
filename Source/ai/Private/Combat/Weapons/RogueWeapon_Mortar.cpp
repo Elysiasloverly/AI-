@@ -94,6 +94,7 @@ void ARogueWeapon_Mortar::FireMortarVolley(const TArray<ARogueEnemy*>& Enemies)
 	const int32 HalfCount = EffectiveCount / 2;
 	const FVector LateralDirection = GetOwnerCameraRightVector();
 
+	bool bAudioTagged = false;
 	for (int32 MortarIndex = 0; MortarIndex < EffectiveCount; ++MortarIndex)
 	{
 		ARogueEnemy* TargetEnemy = Enemies[MortarIndex % Enemies.Num()];
@@ -168,6 +169,8 @@ void ARogueWeapon_Mortar::FireMortarVolley(const TArray<ARogueEnemy*>& Enemies)
 			//     客户端也靠它把地面落点指示圈画在同一个位置。
 			//   · Param —— 爆炸半径，队友那边落点指示圈大小与爆炸特效大小都按它算。
 			FRogueWeaponCosmeticFire Fire;
+			Fire.bPlayAttackSound = !bAudioTagged;
+			bAudioTagged = true;
 			Fire.Start = SpawnLocation;
 			Fire.End = TargetLocation;
 			Fire.Direction = Direction;

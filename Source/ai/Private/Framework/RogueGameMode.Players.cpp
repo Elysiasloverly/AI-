@@ -53,6 +53,7 @@ bool ARogueGameMode::EvaluateTeamWipe()
 		{
 			continue;
 		}
+		if (!State->IsProgressionReady() || !State->IsBaseAttributesInitialized()) { return false; }
 		ARogueCharacter* Character = RoguePlayerQuery::GetCharacterOf(Controller);
 		// 正在登录/重新拥有 Pawn 的玩家不能被当成已濒死而误判团灭。
 		if (Character == nullptr || Character->IsAlive())
@@ -156,6 +157,10 @@ bool ARogueGameMode::SetPause(APlayerController* PC, FCanUnpause CanUnpauseDeleg
 void ARogueGameMode::PostLogin(APlayerController* NewPlayer)
 {
 	Super::PostLogin(NewPlayer);
+	if (ARoguePlayerState* State = NewPlayer != nullptr ? NewPlayer->GetPlayerState<ARoguePlayerState>() : nullptr)
+	{
+		State->BeginProgressionHandshake();
+	}
 
 	// Pawn 已禁用 Player0 自动接管；登录结束时保留归属检查，处理外部解除控制。
 	RepairPlayerPawnOwnership();
@@ -179,7 +184,8 @@ void ARogueGameMode::RepairPlayerPawnOwnership()
 	for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
 	{
 		APlayerController* PlayerController = It->Get();
-		if (PlayerController == nullptr || PlayerController->GetPawn() != nullptr)
+		if (PlayerController == nullptr || PlayerController->GetPawn() != nullptr
+			|| (PlayerController->PlayerState && PlayerController->PlayerState->IsOnlyASpectator()))
 		{
 			// 已经有 Pawn 的不用管（正常情况）
 			continue;
@@ -261,7 +267,10 @@ void ARogueGameMode::HandleRestartRequest(ARoguePlayerState* Requester)
 	// 使用当前世界的完整包路径，并剥离 PIE 的短名前缀；项目中有同名地图。
 	const FString MapShortName = UGameplayStatics::GetCurrentLevelName(this, true);
 	const FString MapFolder = FPackageName::GetLongPackagePath(GetWorld()->GetOutermost()->GetName());
-	const FString LevelName = MapFolder / MapShortName;
+	const FString CurrentLevel = MapFolder / MapShortName;
+    const FString LevelName = (CurrentLevel == StageSettings.NightMap.ToSoftObjectPath().GetLongPackageName()
+        || CurrentLevel == StageSettings.DayMap.ToSoftObjectPath().GetLongPackageName())
+        ? StageSettings.DayMap.ToSoftObjectPath().GetLongPackageName() : CurrentLevel;
 
 	if (LevelName.IsEmpty())
 	{
@@ -272,19 +281,30 @@ void ARogueGameMode::HandleRestartRequest(ARoguePlayerState* Requester)
 
 	UE_LOG(LogTemp, Log, TEXT("[Rogue] 重开关卡：%s"), *LevelName);
 
-	// PIE（含“作为监听服务器运行”）里 ServerTravel 会先拆掉当前 PIE 世界，
-	// 再依赖编辑器“重复上次 PIE 命令”把画面拉回来；某些情况下编辑器不会自动重开，
-	// 表现就是点了按钮后直接停在编辑器里。PIE 统一走 OpenLevel，让编辑器自己重载关卡；
-	// 只有真正打包后的联机服务器才使用 ServerTravel 带客户端一起走。
-	const bool bIsPIE = GetWorld()->IsPlayInEditor();
-	UE_LOG(LogTemp, Log, TEXT("[Rogue] 重开方式：%s"), bIsPIE ? TEXT("PIE/OpenLevel") : (GetNetMode() == NM_Standalone ? TEXT("Standalone/OpenLevel") : TEXT("ServerTravel")));
-	if (GetNetMode() == NM_Standalone || bIsPIE)
+	if (GetNetMode() == NM_Standalone)
 	{
 		UGameplayStatics::OpenLevel(this, FName(*LevelName));
 	}
-	else if (!GetWorld()->ServerTravel(LevelName + (GetNetMode() == NM_ListenServer ? TEXT("?listen") : TEXT(""))))
+	else
 	{
-		bRestartRequested = false;
-		UE_LOG(LogTemp, Error, TEXT("[RogueLife] 联机重开失败：%s"), *LevelName);
+		// Absolute URL removes old options; listen is retained for the host, also in PIE.
+		bUseSeamlessTravel = true;
+		FURL RestartURL(nullptr, *LevelName, TRAVEL_Absolute);
+		if (GetNetMode() == NM_ListenServer) { RestartURL.AddOption(TEXT("listen")); }
+		if (!GetWorld()->ServerTravel(RestartURL.ToString(), true))
+		{
+			bRestartRequested = false;
+			UE_LOG(LogTemp, Error, TEXT("[RogueLife] Server restart travel failed: %s"), *LevelName);
+		}
+	}
+}
+
+void ARogueGameMode::HandleSeamlessTravelPlayer(AController*& C)
+{
+    // 引擎替换 PC/PS。只有同局日夜切图预先准备的快照才恢复成长；重开仍创建全新一局。
+	Super::HandleSeamlessTravelPlayer(C);
+	if (ARoguePlayerState* State = C ? C->GetPlayerState<ARoguePlayerState>() : nullptr)
+	{
+		State->BeginProgressionHandshake();
 	}
 }

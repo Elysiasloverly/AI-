@@ -51,6 +51,10 @@ void URogueAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, MortarBlastRadiusBonus, COND_None);
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, ScytheSizeBonus, COND_None);
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, ScytheLifestealBonus, COND_None);
+	DOREPLIFETIME_CONDITION(URogueAttributeSet, ProjectileBurstBonus, COND_None);
+	DOREPLIFETIME_CONDITION(URogueAttributeSet, RocketBlastRadiusBonus, COND_None);
+	DOREPLIFETIME_CONDITION(URogueAttributeSet, HellTowerDamageRampBonus, COND_None);
+
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, MoveSpeed,            COND_None);
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, DashCooldownDuration, COND_None);
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, MinDashCooldown,      COND_None);
@@ -78,6 +82,9 @@ float URogueAttributeSet::GetWeaponBonusCapFor(const FGameplayAttribute& Attribu
 	if (Attribute == GetLaserRefractionBonusAttribute())   { return WeaponBonusCaps.LaserRefraction; }
 	if (Attribute == GetMortarCountBonusAttribute())       { return WeaponBonusCaps.MortarCount; }
 	if (Attribute == GetMortarBlastRadiusBonusAttribute()) { return WeaponBonusCaps.MortarBlastRadius; }
+	if (Attribute == GetProjectileBurstBonusAttribute()) { return WeaponBonusCaps.ProjectileBurst; }
+	if (Attribute == GetRocketBlastRadiusBonusAttribute()) { return WeaponBonusCaps.RocketBlastRadius; }
+	if (Attribute == GetHellTowerDamageRampBonusAttribute()) { return WeaponBonusCaps.HellTowerDamageRamp; }
 	if (Attribute == GetScytheSizeBonusAttribute())        { return WeaponBonusCaps.ScytheSize; }
 	if (Attribute == GetScytheLifestealBonusAttribute())   { return WeaponBonusCaps.ScytheLifesteal; }
 
@@ -103,6 +110,9 @@ void URogueAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute,
 		|| Attribute == GetLaserRefractionBonusAttribute()
 		|| Attribute == GetMortarBlastRadiusBonusAttribute()
 		|| Attribute == GetScytheSizeBonusAttribute()
+		|| Attribute == GetProjectileBurstBonusAttribute()
+		|| Attribute == GetRocketBlastRadiusBonusAttribute()
+		|| Attribute == GetHellTowerDamageRampBonusAttribute()
 		|| Attribute == GetScytheLifestealBonusAttribute())
 	{
 		NewValue = FMath::Max(0.0f, NewValue);
@@ -122,6 +132,7 @@ void URogueAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute,
 			|| Attribute == GetLaserCountBonusAttribute()
 			|| Attribute == GetHellTowerCountBonusAttribute()
 			|| Attribute == GetMortarCountBonusAttribute()
+			|| Attribute == GetProjectileBurstBonusAttribute()
 			|| Attribute == GetLaserRefractionBonusAttribute())
 		{
 			NewValue = FMath::RoundToFloat(NewValue);

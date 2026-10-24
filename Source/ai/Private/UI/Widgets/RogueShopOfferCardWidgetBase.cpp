@@ -48,9 +48,9 @@ void URogueShopOfferCardWidgetBase::ApplyManagedOfferView(const FRogueShopOfferV
 
 	if (Border_Card != nullptr)
 	{
-		const FLinearColor NormalColor(0.05f, 0.11f, 0.26f, 0.96f);
-		const FLinearColor PurchasedColor(0.18f, 0.18f, 0.20f, 0.92f);
-		const FLinearColor UnaffordableColor(0.26f, 0.08f, 0.08f, 0.92f);
+		const FLinearColor NormalColor = NormalCardTint;
+		const FLinearColor PurchasedColor = PurchasedCardTint;
+		const FLinearColor UnaffordableColor = UnaffordableCardTint;
 		RogueMenuWidgetHelpers::SetManagedBorderColor(Border_Card, InViewData.bPurchased ? PurchasedColor : (InViewData.bAffordable ? NormalColor : UnaffordableColor));
 	}
 }

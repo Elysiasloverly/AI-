@@ -85,7 +85,7 @@ grep -rnE "镰刀|火箭|激光|地狱塔|迫击炮|子弹|震荡柱|步枪手|�
 导出两张表对照实际内容：
 
 ```bash
-UnrealEditor-Cmd.exe ai.uproject -run=pythonscript -script="Tools/dump_data_assets.py" -unattended -nullrhi -nosplash
+UnrealEditor-Cmd.exe Baka.uproject -run=pythonscript -script="Tools/dump_data_assets.py" -unattended -nullrhi -nosplash
 # 输出在 Saved/DataDump/*.json
 ```
 

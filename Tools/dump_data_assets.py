@@ -21,7 +21,7 @@ TARGETS = {
     "DA_PlayerBalance": "/Game/Data/Player/DA_PlayerBalance",
 }
 
-OUT_DIR = r"F:/AI_WorkSpeace/ai/Saved/DataDump"
+OUT_DIR = r"F:/AI_WorkSpeace/baka/Saved/DataDump"
 
 
 def dump_table(name, path, out_dir):

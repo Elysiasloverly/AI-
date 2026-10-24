@@ -50,6 +50,11 @@ bool ARogueCharacter::IsAlive() const
 	if (IsAuthoritySide())
 	{
 		const ARoguePlayerState* State = GetPlayerState<ARoguePlayerState>();
+		// 档案握手期间还没有本局属性，暂时退出索敌/伤害集合；不是一次濒死或团灭。
+		if (State != nullptr && !State->IsBaseAttributesInitialized())
+		{
+			return false;
+		}
 		const URogueAttributeSet* Attributes = GetRogueAttributeSet();
 		if (State != nullptr && State->IsBaseAttributesInitialized() && Attributes != nullptr && Attributes->GetHealth() <= 0.0f)
 		{
@@ -101,6 +106,11 @@ void ARogueCharacter::Die()
 {
 	UWorld* World = GetWorld();
 	if (!IsAuthoritySide() || World == nullptr || LifeState.Phase != ERoguePlayerLifePhase::Alive)
+	{
+		return;
+	}
+	const ARoguePlayerState* State = GetPlayerState<ARoguePlayerState>();
+	if (State != nullptr && !State->IsBaseAttributesInitialized())
 	{
 		return;
 	}

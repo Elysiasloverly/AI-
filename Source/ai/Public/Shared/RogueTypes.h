@@ -16,7 +16,7 @@ enum class ERogueUpgradeType : uint8
 	AttackRange       UMETA(DisplayName = "攻击范围"),
 	ProjectileSpeed   UMETA(DisplayName = "弹体速度"),
 	ProjectileCount   UMETA(DisplayName = "御札数量"),
-	Armor             UMETA(DisplayName = "护甲恢复"),
+	Armor             UMETA(DisplayName = "伤害减免"),
 	ArmorCapacity     UMETA(DisplayName = "护甲上限"),
 	ExperienceGain    UMETA(DisplayName = "经验获取"),
 	ScytheCount       UMETA(DisplayName = "银刃数量"),
@@ -27,7 +27,10 @@ enum class ERogueUpgradeType : uint8
 	MortarCount       UMETA(DisplayName = "阴阳玉数量"),
 	MortarBlastRadius UMETA(DisplayName = "阴阳玉爆炸范围"),
 	ScytheSize        UMETA(DisplayName = "银刃巨化"),
-	ScytheLifesteal   UMETA(DisplayName = "红雾吸血")
+	ScytheLifesteal   UMETA(DisplayName = "红雾吸血"),
+	ProjectileBurst UMETA(DisplayName = "灵符连诵"),
+	RocketBlastRadius UMETA(DisplayName = "炉心扩散"),
+	HellTowerDamageRamp UMETA(DisplayName = "神威增幅")
 };
 
 UENUM(BlueprintType)
@@ -79,7 +82,7 @@ struct FRogueEnemyProfile
 	bool bIsBoss = false;
 };
 
-/** 武器使用的 13 项角色侧加成快照；服务端从 AttributeSet 抽取，变化后写入 Character。
+/** 武器使用的 16 项角色侧加成快照；服务端从 AttributeSet 抽取，变化后写入 Character。
  *  AttributeSet 本身也复制，此结构是统一武器输入接口，不证明 ASC 无法同步属性。
  *  快照无自定义 NetSerialize，不能假定各成员或它与属性集同帧原子到达。
  */
@@ -103,7 +106,11 @@ struct FRogueWeaponBonusValues
 	/** 额外尺寸比例：0.2 对应基础尺寸的 1.2 倍。 */
 	UPROPERTY() float ScytheSize = 0.0f;
 
-	/** 对 13 项做近似相等比较；用于跳过角色侧快照赋值，不等同于网络系统逐字段脏检测。 */
+	UPROPERTY() float ProjectileBurst = 0.0f;
+	UPROPERTY() float RocketBlastRadius = 0.0f;
+	UPROPERTY() float HellTowerDamageRamp = 0.0f;
+
+	/** 对 16 项做近似相等比较；用于跳过角色侧快照赋值，不等同于网络系统逐字段脏检测。 */
 	bool Equals(const FRogueWeaponBonusValues& Other) const
 	{
 		return FMath::IsNearlyEqual(AttackPower, Other.AttackPower)
@@ -118,7 +125,10 @@ struct FRogueWeaponBonusValues
 			&& FMath::IsNearlyEqual(MortarCount, Other.MortarCount)
 			&& FMath::IsNearlyEqual(LaserRefraction, Other.LaserRefraction)
 			&& FMath::IsNearlyEqual(MortarBlastRadius, Other.MortarBlastRadius)
-			&& FMath::IsNearlyEqual(ScytheSize, Other.ScytheSize);
+			&& FMath::IsNearlyEqual(ScytheSize, Other.ScytheSize)
+			&& FMath::IsNearlyEqual(ProjectileBurst, Other.ProjectileBurst)
+			&& FMath::IsNearlyEqual(RocketBlastRadius, Other.RocketBlastRadius)
+			&& FMath::IsNearlyEqual(HellTowerDamageRamp, Other.HellTowerDamageRamp);
 	}
 };
 
@@ -182,6 +192,10 @@ struct FRogueWeaponCosmeticFire
 	/** 风格位：大弹体 / 炼狱光束 这类"看起来不一样"的开关 */
 	UPROPERTY(BlueprintReadWrite)
 	bool bAlternateStyle = false;
+
+	/** 本轮齐射仅标记一条：音效由服务器确认后各端播放，折射/同轮其他弹体不叠播。 */
+	UPROPERTY(BlueprintReadWrite)
+	bool bPlayAttackSound = false;
 };
 
 /** 表现批次中的一条武器索引与开火载荷。

@@ -6,12 +6,14 @@
 |---|---|
 | 一个类在哪里，新增类应该放哪 | [Class-Organization.md](Class-Organization.md)：目录职责、实现拆分、独立 Widget 基类与蓝图兼容约定 |
 | 编辑器里的美术资产放在哪里 | [Content-Organization.md](Content-Organization.md)：美术主目录、素材包保留方式及玩法资产位置 |
+| 游戏蓝图在哪、实验蓝图放哪 | [Blueprint-Organization.md](Blueprint-Organization.md)：`/Game/BP` 目录职责与常用入口 |
 | 玩法配置资产放在哪、怎么改 | [Data-Configuration.md](Data-Configuration.md)：`/Game/Data/` 的 7 个资产、读取入口与 DataTable 归类 |
 | 哪些配置已经进数据资产、哪些还在代码里 | [Data-Asset-Audit.md](Data-Asset-Audit.md)：`/Game/Data` 覆盖审计与待迁清单 |
 | 中文名和代码里的英文名怎么对应 | [Content-Naming.md](Content-Naming.md)：武器 / 升级卡 / 敌人的显示名 ↔ 枚举 ↔ 表行键，改名入口与校验 |
 | 数值怎么调 | [Game-Balance-Configuration.md](Game-Balance-Configuration.md)、[Player-Balance-Configuration.md](Player-Balance-Configuration.md)：平衡与玩家数值分组 |
 | 地图、刷怪框与商店怎么摆 | [Map-Authoring.md](Map-Authoring.md)：关卡物体、刷怪区域与商店终端 |
-| 血条 / 护甲条 / 经验条 / 波数金币怎么做的 | [HUD-Vitals-And-Enemy-Bars.md](HUD-Vitals-And-Enemy-Bars.md)：玩家状态 WBP、CJK 字体、数据流 |
+| 简洁和纸 UI、选卡与商店布局、Boss 血条和平滑动画怎么改 | [UI-Touhou-Theme.md](UI-Touhou-Theme.md)：WBP 编辑入口、素材提示词与联机数据流 |
+| 血条 / 护甲条 / 经验条 / 波数金币怎么做的 | [HUD-Vitals-And-Enemy-Bars.md](HUD-Vitals-And-Enemy-Bars.md)：玩家状态 WBP、统一字体、数据流 |
 | 受伤时的屏幕泛红与镜头震动怎么调 | [Damage-Feedback.md](Damage-Feedback.md)：掉血检测、`FlashRoot` 结构、震动参数与替换方式 |
 | 敌方弹幕用哪个蓝图、怎么换外观 | [Enemy-Projectile-Blueprints.md](Enemy-Projectile-Blueprints.md)：`BP_EnemyProjectile`、每敌人覆盖与池化 |
 | 经验球怎么换外观 | [Experience-Pickup-Blueprint.md](Experience-Pickup-Blueprint.md)：`BP_ExperiencePickup` 组件结构、BP 钩子与尺寸规则 |
@@ -28,6 +30,9 @@
 | 属性从自研系统转向 GAS 的原因 | [Attribute-System-Migration.md](Attribute-System-Migration.md)：历史方案，描述的旧属性系统已被替换 |
 | 输入资产和绑定配置 | [Enhanced-Input-Migration.md](Enhanced-Input-Migration.md)：输入迁移记录与配置方式 |
 | 哪些资源是旧副本、哪些可以清理 | [Asset-Audit-Report.md](Asset-Audit-Report.md)：重定向器、断链、重复素材包与无用资产清单（只读审计，未删除） |
+| 怎么打包、为什么打包后没输入 | [Packaging.md](Packaging.md)：BuildCookRun 命令、必须强制 Cook 的目录、C1056 处理与体积构成 |
+| 如何创建、搜索、加入房间并准备开局 | [Multiplayer-Lobby.md](Multiplayer-Lobby.md)：局域网搜房、IP 连接、房主权限与 WBP 样式入口 |
+| 开始菜单在哪个 map、按钮怎么改 | [Main-Menu.md](Main-Menu.md)：主菜单关卡、WBP、按钮行为、设置复用与打包注意 |
 | 其它架构图与历史规划 | [CurrentAllSystemsArchitecture.md](CurrentAllSystemsArchitecture.md)、[GAS-Full-Coverage-Plan.md](GAS-Full-Coverage-Plan.md)、[Optimal-Portfolio-Plan.md](Optimal-Portfolio-Plan.md)、[OptimizedArchitecture.md](OptimizedArchitecture.md)：保留各阶段设计背景，当前行为以源码为准 |
 
 推荐先读 `Class-Organization.md` 找文件，再读 `Project-Structure.md` 理解运行时关系。维护时结合扩展指南理解接线，避免把新逻辑继续堆回 GameMode、Character 或 HUD。
@@ -45,3 +50,5 @@
 地图场景、可编辑刷怪框及蓝图商店摆放见 [地图摆放说明](Map-Authoring.md)。
 
 玩家漂浮组件参数与当前神社夜景调整入口见 [玩家漂浮与神社夜景](Player-Floating-And-Night-Lighting.md)。
+
+地图入口与旧枚举清理见 [Map-Entrypoints-And-Legacy-Cleanup.md](Map-Entrypoints-And-Legacy-Cleanup.md)：当前只保留 Map 文件夹下的主菜单和战斗地图。

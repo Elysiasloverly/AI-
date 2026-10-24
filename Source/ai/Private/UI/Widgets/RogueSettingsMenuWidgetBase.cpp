@@ -1,7 +1,18 @@
 #include "UI/Widgets/RogueSettingsMenuWidgetBase.h"
 #include "UI/RogueHUD.h"
+#include "Components/Button.h"
+#include "Components/TextBlock.h"
 
 #include "RogueMenuWidgetHelpers.h"
+
+void URogueSettingsMenuWidgetBase::NativeConstruct()
+{
+	Super::NativeConstruct();
+	if (auto* Button = Cast<UButton>(GetWidgetFromName(TEXT("Button_MusicMinus"))))
+		Button->OnClicked.AddUniqueDynamic(this, &ThisClass::RequestMusicVolumeDown);
+	if (auto* Button = Cast<UButton>(GetWidgetFromName(TEXT("Button_MusicPlus"))))
+		Button->OnClicked.AddUniqueDynamic(this, &ThisClass::RequestMusicVolumeUp);
+}
 
 void URogueSettingsMenuWidgetBase::SetOwningRogueHUD(ARogueHUD* InOwningHUD)
 {
@@ -12,6 +23,12 @@ void URogueSettingsMenuWidgetBase::UpdateSettingsView(const FRogueSettingsMenuVi
 {
 	SetVisibility(RogueMenuWidgetHelpers::GetMenuVisibility(InViewData.bVisible));
 	OnSettingsViewUpdated(InViewData);
+	// 保留原有 0–4 行蓝图事件，新增音乐行由同一份视图数据更新。
+	if (InViewData.Rows.IsValidIndex(5))
+	{
+		if (auto* Text = Cast<UTextBlock>(GetWidgetFromName(TEXT("Text_Label5")))) Text->SetText(InViewData.Rows[5].LabelText);
+		if (auto* Text = Cast<UTextBlock>(GetWidgetFromName(TEXT("Text_Value5")))) Text->SetText(InViewData.Rows[5].ValueText);
+	}
 }
 
 void URogueSettingsMenuWidgetBase::RequestBackToPauseMenu()
@@ -44,6 +61,16 @@ void URogueSettingsMenuWidgetBase::RequestVolumeUp()
 	{
 		RogueHUD->RequestVolumeAdjustFromSettingsMenu(true);
 	}
+}
+
+void URogueSettingsMenuWidgetBase::RequestMusicVolumeDown()
+{
+	if (ARogueHUD* HUD = OwningRogueHUD.Get()) HUD->RequestMusicVolumeAdjustFromSettingsMenu(false);
+}
+
+void URogueSettingsMenuWidgetBase::RequestMusicVolumeUp()
+{
+	if (ARogueHUD* HUD = OwningRogueHUD.Get()) HUD->RequestMusicVolumeAdjustFromSettingsMenu(true);
 }
 
 void URogueSettingsMenuWidgetBase::RequestQualityDown()

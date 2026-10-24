@@ -21,6 +21,11 @@ class URogueReviveCountdownWidgetBase;
 class URogueVitalsWidgetBase;
 class URogueDamageFlashWidgetBase;
 class URogueEnemyHealthBarWidgetBase;
+class URogueMainMenuWidgetBase;
+class URogueTutorialWidgetBase;
+class URogueUpgradeTreeWidgetBase;
+class URogueNightTransitionWidgetBase;
+class URogueBossHealthBarWidgetBase;
 class UCameraShakeBase;
 class URogueEnemyTrackerSubsystem;
 
@@ -58,10 +63,13 @@ class AI_API ARogueHUD : public AHUD
 
 public:
 	ARogueHUD();
+	virtual void EndPlay(const EEndPlayReason::Type Reason) override;
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void DrawHUD() override;
 	void AddDamageNumber(const FVector& WorldLocation, float Damage, bool bIsBossDamage);
+	/** 玩家回血飘字：与伤害飘字共用同一条绘制管线，绿色 + 号，生命周期略长。 */
+	void AddHealingNumber(const FVector& WorldLocation, float Amount);
 	void OpenPauseMenu();
 	void ClosePauseMenu();
 	void RequestSelectOfferFromShop(int32 OfferIndex);
@@ -74,16 +82,42 @@ public:
 	void RequestBackFromSettingsMenu();
 	void RequestApplyFromSettingsMenu();
 	void RequestVolumeAdjustFromSettingsMenu(bool bIncrease);
+	void RequestMusicVolumeAdjustFromSettingsMenu(bool bIncrease);
 	void RequestQualityAdjustFromSettingsMenu(bool bIncrease);
 	void RequestResolutionAdjustFromSettingsMenu(bool bIncrease);
 	void RequestFrameLimitAdjustFromSettingsMenu(bool bIncrease);
 	void RequestToggleDisplayModeFromSettingsMenu();
 	void RequestRestartAfterDeath();
 	void RequestQuitAfterDeath();
+	void RequestReturnToMainMenuAfterDeath();
+
+	// ---- 主菜单模式（由 ARogueMainMenuHUD 打开）----
+	/** 主菜单模式：只创建主菜单 / 教程 / 设置，不跑战斗 HUD 的 Tick/DrawHUD 逻辑。 */
+	void SetMainMenuMode(bool bEnabled);
+	bool IsMainMenuMode() const { return bMainMenuMode; }
+
+	/** 单人游戏：打开配置的关卡（默认 /Game/Map/Battle_Day）。 */
+	void StartSinglePlayerGame();
+	/** 主菜单里的“设置”：复用游戏内设置面板。 */
+	void OpenMainMenuSettings();
+	void CloseMainMenuSettings();
+	/** 主菜单里的“教程说明”。 */
+	void OpenMainMenuTutorial();
+	void CloseMainMenuTutorial();
+	/** 本地永久升级树，关闭后恢复主菜单焦点。 */
+	UFUNCTION(BlueprintCallable, Category = "Rogue|MainMenu") void OpenUpgradeTree();
+	UFUNCTION(BlueprintCallable, Category = "Rogue|MainMenu") void CloseUpgradeTree();
+	UFUNCTION(BlueprintCallable, Category="Rogue|MainMenu") void OpenMultiplayerMenu();
+	UFUNCTION(BlueprintCallable, Category="Rogue|MainMenu") void CloseMultiplayerMenu();
+	/** 主菜单操作提示。 */
+	void ShowMainMenuHint(const FText& Hint);
+	void QuitToDesktop();
 
 	bool IsPauseMenuOpen() const { return PauseMenuPage != ERoguePauseMenuPage::None; }
 
 private:
+	friend struct FRogueReliabilityTestAccess;
+	uint64 MenuRefreshCount = 0;
 	friend class FRogueReviveCountdownVisibilityTest;
 	friend struct FRoguePlayerLifeCycleTestAccess;
 
@@ -114,6 +148,10 @@ private:
 	void HideAllEnemyHealthBarWidgets();
 
 	void InitializeMenuWidgets();
+	/** 主菜单模式专用：创建主菜单、教程与设置面板，不创建战斗 HUD 控件。 */
+	void InitializeMainMenuWidgets();
+	/** 主菜单模式每帧：锁 UI 输入、刷新设置面板显隐。 */
+	void UpdateMainMenuWidgets();
 	/** UMG 状态不依赖画布绘制，濒死与复活在本机每帧同步。 */
 	void RefreshMenuWidgets();
 
@@ -144,7 +182,7 @@ private:
 	void StepResolution(int32 Direction);
 	void StepFrameRateLimit(int32 Direction);
 	void CycleDisplayMode();
-	void ApplyMasterVolume();
+	void RefreshAudioVolumes();
 	void ApplyDisplaySettings();
 	int32 ResolveGraphicsQualityLevel(const UGameUserSettings* UserSettings);
 	FString GetGraphicsQualityLabel() const;
@@ -157,7 +195,8 @@ private:
 	TArray<FIntPoint> ResolutionOptions;
 	TArray<float> FrameRateLimitOptions;
 	ERoguePauseMenuPage PauseMenuPage = ERoguePauseMenuPage::None;
-	float MasterVolume = 1.0f;
+	float SoundEffectsVolume = 1.0f;
+	float MusicVolume = 1.0f;
 	float FrameRateLimitValue = 0.0f;
 	float NextHealthBarCacheRefreshTime = 0.0f;
 	float NextDamageNumberProjectionRefreshTime = 0.0f;
@@ -200,6 +239,10 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<URogueUpgradeSelectionWidgetBase> UpgradeSelectionWidget = nullptr;
+
+	/** 默认路径来自 DefaultGame.ini；主菜单模式也需要它，所以补一条 Config 路径。 */
+	UPROPERTY(EditDefaultsOnly, Config, Category = "Rogue UI|Widgets")
+	TSoftClassPtr<URogueSettingsMenuWidgetBase> SettingsMenuWidgetClassPath;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Rogue UI|Widgets")
 	TSubclassOf<URogueSettingsMenuWidgetBase> SettingsMenuWidgetClass;
@@ -273,6 +316,55 @@ private:
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<URogueEnemyHealthBarWidgetBase>> EnemyHealthBarWidgets;
+
+	// ---- 主菜单 ----
+	/** 主菜单 WBP：常驻，ZOrder 100。按钮与外观都在 WBP 里改。 */
+	UPROPERTY(EditDefaultsOnly, Config, Category = "Rogue UI|MainMenu")
+	TSoftClassPtr<URogueMainMenuWidgetBase> MainMenuWidgetClassPath;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Rogue UI|MainMenu")
+	TSubclassOf<URogueMainMenuWidgetBase> MainMenuWidgetClass;
+
+	UPROPERTY(Transient)
+	TObjectPtr<URogueMainMenuWidgetBase> MainMenuWidget = nullptr;
+
+	/** 教程 WBP：默认隐藏，点“教程说明”后显示，ZOrder 120。 */
+	UPROPERTY(EditDefaultsOnly, Config, Category = "Rogue UI|MainMenu")
+	TSoftClassPtr<URogueTutorialWidgetBase> TutorialWidgetClassPath;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Rogue UI|MainMenu")
+	TSubclassOf<URogueTutorialWidgetBase> TutorialWidgetClass;
+
+	UPROPERTY(Transient)
+	TObjectPtr<URogueTutorialWidgetBase> TutorialWidget = nullptr;
+
+	/** 升级树外观入口，节点样式由树 WBP 的 NodeWidgetClass 指定。 */
+	UPROPERTY(EditDefaultsOnly, Config, Category = "Rogue UI|MainMenu")
+	TSoftClassPtr<URogueUpgradeTreeWidgetBase> UpgradeTreeWidgetClassPath;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Rogue UI|MainMenu")
+	TSubclassOf<URogueUpgradeTreeWidgetBase> UpgradeTreeWidgetClass;
+
+	UPROPERTY(Transient)
+	TObjectPtr<URogueUpgradeTreeWidgetBase> UpgradeTreeWidget = nullptr;
+
+	/** 单人游戏要打开的关卡。换关卡只改 ini，不用改代码。 */
+	UPROPERTY(EditDefaultsOnly, Config, Category = "Rogue UI|MainMenu")
+	FString SinglePlayerMapPath = TEXT("/Game/Map/Battle_Day");
+
+    UPROPERTY(EditDefaultsOnly, Config, Category="Rogue UI|Widgets")
+    TSoftClassPtr<URogueNightTransitionWidgetBase> NightTransitionWidgetClassPath;
+    UPROPERTY(Transient) TObjectPtr<URogueNightTransitionWidgetBase> NightTransitionWidget;
+    UPROPERTY(EditDefaultsOnly, Config, Category="Rogue UI|Widgets")
+    TSoftClassPtr<URogueBossHealthBarWidgetBase> BossHealthBarWidgetClassPath;
+    UPROPERTY(Transient) TObjectPtr<URogueBossHealthBarWidgetBase> BossHealthBarWidget;
+	bool bMainMenuMode = false;
+	bool bMainMenuSettingsOpen = false;
+	bool bMainMenuTutorialOpen = false;
+	bool bMainMenuUpgradeTreeOpen = false;
+	bool bMainMenuInputApplied = false;
+	/** 延迟到玩家控制器完成初始化后再锁 UI 输入，避免 SetInputMode 被引擎启动流程覆盖。 */
+	float MainMenuInputApplyTime = 0.0f;
 
 	/** 濒死且本局未结束时可见，零秒不自行推断服务器已经复活。 */
 	void UpdateReviveCountdownWidget(const ARogueCharacter* PlayerCharacter);

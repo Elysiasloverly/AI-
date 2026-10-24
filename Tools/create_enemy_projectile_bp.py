@@ -1,7 +1,7 @@
 """创建敌人弹体蓝图资产。
 
 用法（项目根目录）：
-    UnrealEditor-Cmd.exe F:\AI_WorkSpeace\ai\ai.uproject ^
+    UnrealEditor-Cmd.exe F:\AI_WorkSpeace\baka\Baka.uproject ^
         -run=pythonscript -script="Tools/create_enemy_projectile_bp.py" ^
         -unattended -nopause -nullrhi -nosplash
 

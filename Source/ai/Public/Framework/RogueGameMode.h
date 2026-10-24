@@ -6,6 +6,7 @@
 #include "GameFramework/GameModeBase.h"
 #include "Framework/RogueGameModeConfig.h"
 #include "Shared/RogueTypes.h"
+#include "Framework/RogueBattleStage.h"
 #include "RogueGameMode.generated.h"
 
 class ARogueCharacter;
@@ -36,6 +37,7 @@ public:
 	virtual void InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage) override;
 
 	virtual void Tick(float DeltaSeconds) override;
+	virtual void HandleSeamlessTravelPlayer(AController*& C) override;
 
 	void HandleEnemyKilled(ARogueEnemy* Enemy, AActor* Killer);
 	void StartUpgradeSelection(ARogueCharacter* Character);
@@ -116,6 +118,10 @@ protected:
 
 private:
 	friend struct FRoguePlayerLifeCycleTestAccess;
+	friend struct FRogueReliabilityTestAccess;
+	/** 每个世界独立计时，新局立即允许首次检查。 */
+	double LastPawnRepairTime = -1.0;
+	void TickPawnOwnershipRepair();
 	/** 双进程生命周期自检；开启时接管本局调度，避免刷怪干扰真实死亡/计时/复制。 */
 	bool RunPlayerLifeCycleSelfTest();
 	int32 LifeCycleSelfTestPhase = 0;
@@ -179,13 +185,29 @@ private:
 
 	void AdvanceShopAutoRefresh(float DeltaSeconds, bool bWorldPaused);
 	void TickRunSystems(float DeltaSeconds);
+    friend struct FRogueBattleStageTestAccess;
+    friend struct FRogueWaveProgressionTestAccess;
+    void InitializeBattleStage();
+    bool TickBattleStage(float DeltaSeconds);
+    void TravelToNight();
+    FRogueBattleStageSettings StageSettings;
+    FRogueBattleStageView StageView;
+    bool bDayStageMap = false;
+    bool bContinuingStageRun = false;
+    /** 仅累计本次黑夜当前波的经过时间；不使用包含白天战斗的 RunTimeSeconds。 */
+    double NightWaveElapsedSeconds = 0;
+    double NextTravelAttemptTime = 0;
+public:
+    float GetEnemyAttackSpeedMultiplier() const { return StageView.EnemyAttackSpeedMultiplier; }
+private:
 
 	/** 奖励归属依次尝试 Killer、本层 Owner、本层 Instigator；不递归遍历拥有链。
 	 *  无法解析时回退到奖励位置最近的存活玩家；直接解析出的玩家不在这里再过滤存活状态。 */
 	ARogueCharacter* ResolveRewardCharacter(AActor* Killer, const AActor* RewardOrigin) const;
 	void AwardEnemyCurrency(const ARogueEnemy* Enemy, ARogueCharacter* RewardCharacter);
 	void SpawnExperienceReward(ARogueEnemy* Enemy, URogueEnemyTrackerSubsystem* Tracker, URogueCombatPoolSubsystem* Pools);
-	void HandleBossKilledReward();
+	void HandleBossKilledReward(const FGuid& RewardId);
+	TSet<FGuid> RewardedBossSpawnIds;
 	void QueueUpgradeSelections(int32 Count, ARogueCharacter* Character);
 
 	/** 玩家 Pawn 蓝图；默认从 DefaultGame.ini 读取，C++ 不再写死资产路径。 */

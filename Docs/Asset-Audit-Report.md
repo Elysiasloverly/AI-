@@ -4,7 +4,7 @@
 - 审计方式：AssetRegistry 全量扫描（硬引用 + 软引用），只读，未删除任何资产
 - 复现命令：
   ```bash
-  UnrealEditor-Cmd.exe ai.uproject -run=pythonscript -script="Tools/audit_assets.py" -unattended -nopause -nullrhi -nosplash -abslog="Saved/Logs/audit.log"
+  UnrealEditor-Cmd.exe Baka.uproject -run=pythonscript -script="Tools/audit_assets.py" -unattended -nopause -nullrhi -nosplash -abslog="Saved/Logs/audit.log"
   ```
 - 原始数据：`Saved/DataDump/asset_audit.json`（1000 条资产明细，含每条引用关系）
 
@@ -32,7 +32,7 @@
 
 | 地图 | 状态 | 证据 |
 |---|---|---|
-| `/Game/GameAssets/StarterContent/Maps/Minimal_Default` | **现役** | `DefaultEngine.ini` 的 GameDefaultMap 指向它 |
+| `/Game/Map/Minimal_Default` | **现役** | `DefaultEngine.ini` 的 GameDefaultMap 指向它 |
 | `/Game/Map/Minimal_Default` | **旧副本** | 引用数 0；加载后与现役地图**完全一致**（各 20 个 actor，含 1 个 PlayerStart、1 个 RogueEnemySpawnRegion、1 个 BP_RogueShopTerminal）；文件时间早 18 小时 |
 
 ### 2. 地图内残留旧目录路径（断链来源）
@@ -53,7 +53,8 @@
 | 目录 | 资产数 | 有引用 |
 |---|---|---|
 | `/Game/GameAssets/StarterContent` | 267 | **7** |
-| `/Game/GameAssets/Library/StarterContent` | 350 | 262 |
+| `/Game/GameAssets/Library`（五包合计） | 350 | 262 |
+| 其中 `/Game/GameAssets/Library/StarterContent` | 261 | 未逐条复核 |
 
 同名重复共 354 组。其中 **15 组两边都在被使用**（同一张贴图/材质存在两份、且都有引用方），
 例如 `Shape_Cube`、`Shape_Sphere`、`M_Metal_Copper`、`T_Fire`、`T_White`、`T_Noise_04`、`VectorField_A`。
@@ -75,10 +76,10 @@
 
 | 资产 | 大小 | 判定依据 | 建议 |
 |---|---|---|---|
-| `/Game/BP/TestPickup` | 25.6 KB | 引用数 0，测试用拾取物 | 归档/删除 |
-| `/Game/BP/NewBlueprint` | 58.1 KB | 引用数 0，4 月创建的空白蓝图 | 删除 |
+| `/Game/BP/Development/Experiments/TestPickup` | 25.6 KB | 引用数 0，测试用拾取物 | 归档/删除 |
+| `/Game/BP/Development/Experiments/NewBlueprint` | 58.1 KB | 引用数 0，4 月创建的空白蓝图 | 删除 |
 | `/Game/BPEnum/EN_OrbiterMoveEnum` | 2.7 KB | 引用数 0；移动模型已是 C++ 枚举 `ERogueEnemyMovementModel` | 删除 |
-| `/Game/BP/BP_RogueArena` | 56.7 KB | 引用数 0；`Docs/Map-Authoring.md` 明确"GameMode 不再要求 BP_RogueArena" | 删除（地图未放置） |
+| `/Game/BP/Development/Legacy/BP_RogueArena` | 56.7 KB | 引用数 0；`Docs/Map-Authoring.md` 明确"GameMode 不再要求 BP_RogueArena" | 删除（地图未放置） |
 | `/Game/BP/Enemy/Projectiles/BP_EnemyProjectile` | 38.8 KB | 引用数 0；变体已改为独立 BP（`make_projectile_variants_independent.py`），文档定位为"占位模板" | 保留或删（模板价值自行判断） |
 | `/Game/BP/Enemy/Projectiles/BP_EnemyProjectile_Boss` | 41.0 KB | 引用数 0；`BossProjectileClass` 无任何 BP/数据表指向它 | 删除，或接到某个敌人 BP 的 Boss 弹体槽 |
 | `/Game/Map/Minimal_Default` | 189 KB | 引用数 0，与现役地图内容一致的旧副本 | 归档 |
@@ -99,7 +100,7 @@
 | 资产 | 为什么不是孤儿 |
 |---|---|
 | `/Game/Data/Player/DA_PlayerBalance` | 由 `RogueCharacter.GAS.cpp` 的默认路径 `/Game/Data/Player/DA_PlayerBalance` 加载，不走资产引用 |
-| `/Game/BP/BP_RogueCharacter` | `DefaultGame.ini` 的 `PlayerPawnClass` 配置引用 |
+| `/Game/BP/Player/BP_RogueCharacter` | `DefaultGame.ini` 的 `PlayerPawnClass` 配置引用 |
 | `WBP_PlayerVitals` / `WBP_EnemyHealthBar` / `WBP_DamageFlash` / `BP_ExperiencePickup` / `IMC_Default` | `DefaultGame.ini` / `DefaultInput.ini` 配置引用 |
 | `Minimal_Default`（现役） | `DefaultEngine.ini` 的 GameDefaultMap |
 

@@ -11,6 +11,7 @@ public class aiEditor : ModuleRules
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
 			"UnrealEd",
+            "ai",
 			"UMG",
 			"UMGEditor",
 			"BlueprintGraph",

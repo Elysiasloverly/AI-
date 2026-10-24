@@ -31,6 +31,7 @@ public:
 	int32 GetUpgradeIndex() const { return UpgradeIndex; }
 
 protected:
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Rogue|样式") FLinearColor CardTint = FLinearColor::White;
 	UFUNCTION(BlueprintImplementableEvent, Category = "Rogue|Upgrade")
 	void OnUpgradeCardViewUpdated(const FRogueUpgradeCardViewData& InViewData);
 

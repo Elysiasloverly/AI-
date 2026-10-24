@@ -105,6 +105,15 @@ URogueUpgradeEffect_ScytheSize::URogueUpgradeEffect_ScytheSize()
 URogueUpgradeEffect_ScytheLifesteal::URogueUpgradeEffect_ScytheLifesteal()
 { ConfigureUpgrade(URogueAttributeSet::GetScytheLifestealBonusAttribute()); }
 
+URogueUpgradeEffect_ProjectileBurst::URogueUpgradeEffect_ProjectileBurst()
+{ ConfigureUpgrade(URogueAttributeSet::GetProjectileBurstBonusAttribute()); }
+
+URogueUpgradeEffect_RocketBlastRadius::URogueUpgradeEffect_RocketBlastRadius()
+{ ConfigureUpgrade(URogueAttributeSet::GetRocketBlastRadiusBonusAttribute()); }
+
+URogueUpgradeEffect_HellTowerDamageRamp::URogueUpgradeEffect_HellTowerDamageRamp()
+{ ConfigureUpgrade(URogueAttributeSet::GetHellTowerDamageRampBonusAttribute()); }
+
 // ===================================================================
 //  枚举 → GE 子类
 // ===================================================================
@@ -136,6 +145,9 @@ TSubclassOf<UGameplayEffect> RogueUpgradeEffectMap::GetEffectClass(ERogueUpgrade
 	case ERogueUpgradeType::LaserRefraction:     return URogueUpgradeEffect_LaserRefraction::StaticClass();
 	case ERogueUpgradeType::MortarCount:         return URogueUpgradeEffect_MortarCount::StaticClass();
 	case ERogueUpgradeType::MortarBlastRadius:   return URogueUpgradeEffect_MortarBlastRadius::StaticClass();
+	case ERogueUpgradeType::ProjectileBurst: return URogueUpgradeEffect_ProjectileBurst::StaticClass();
+	case ERogueUpgradeType::RocketBlastRadius: return URogueUpgradeEffect_RocketBlastRadius::StaticClass();
+	case ERogueUpgradeType::HellTowerDamageRamp: return URogueUpgradeEffect_HellTowerDamageRamp::StaticClass();
 	case ERogueUpgradeType::ScytheSize:          return URogueUpgradeEffect_ScytheSize::StaticClass();
 	case ERogueUpgradeType::ScytheLifesteal:     return URogueUpgradeEffect_ScytheLifesteal::StaticClass();
 	}

@@ -4,7 +4,7 @@ import pathlib
 import unreal
 
 
-PROJECT_ROOT = pathlib.Path(r"F:\AI_WorkSpeace\ai")
+PROJECT_ROOT = pathlib.Path(r"F:\AI_WorkSpeace\baka")
 AUDIT_PATH = PROJECT_ROOT / "Tools" / "asset_reorg_audit.json"
 REPORT_PATH = PROJECT_ROOT / "Tools" / "asset_reorg_restore_compat_report.json"
 DEST_ROOT = "/Game/GameAssets"

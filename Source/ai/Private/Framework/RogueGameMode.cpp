@@ -66,6 +66,7 @@ bool ARogueGameMode::HasEnemyClassForType(ERogueEnemyType Type) const
 ARogueGameMode::ARogueGameMode()
 {
 	PrimaryActorTick.bCanEverTick = true;
+	bUseSeamlessTravel = true;
 	PrimaryActorTick.bTickEvenWhenPaused = true;
 
 	// 整局运行状态走 GameState（会复制到所有客户端）。
@@ -87,6 +88,8 @@ ARogueGameMode::ARogueGameMode()
 void ARogueGameMode::InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage)
 {
 	Super::InitGame(MapName, Options, ErrorMessage);
+	// Travel is a gameplay contract, including BP instances saved with an older default.
+	bUseSeamlessTravel = true;
 
 	// 玩家 Pawn 类从配置/BP 读取；缺失时回退原生 Character，避免空 DefaultPawnClass。
 	DefaultPawnClass = nullptr;
@@ -108,6 +111,7 @@ void ARogueGameMode::BeginPlay()
 	FindLevelGameplayActors();
 	ConfigureRuntimeAssets();
 	ConfigureRuntimeSubsystems();
+	InitializeBattleStage();
 	PrewarmCombatPools();
 }
 
@@ -141,7 +145,6 @@ void ARogueGameMode::ConfigureRuntimeAssets()
 		const FRogueSpawnBalanceSettings& BalanceSpawn = LoadedGameBalanceAsset->Spawn;
 		SpawnSettings.SpawnRadius = BalanceSpawn.SpawnRadius;
 		SpawnSettings.SpawnInterval = BalanceSpawn.SpawnInterval;
-		SpawnSettings.WaveDuration = BalanceSpawn.WaveDuration;
 		SpawnSettings.MaxAliveEnemies = BalanceSpawn.BaseMaxAliveEnemies;
 		SpawnSettings.EnemySpawnMinimumDistance = BalanceSpawn.EnemySpawnMinimumDistance;
 		SpawnSettings.GroundTraceHeight = BalanceSpawn.GroundTraceHeight;
@@ -301,17 +304,7 @@ void ARogueGameMode::Tick(float DeltaSeconds)
 		}
 	}
 
-	// 用世界时间间隔检查无 Pawn 控制器；这是归属兜底，不是引擎登录会抢走 Pawn 的通则。
-	// LastPawnRepairTime 是函数静态量，多个 World/重开共享它，不能视为独立的每局定时器。
-	{
-		static double LastPawnRepairTime = 0.0;
-		const double NowSeconds = GetWorld() != nullptr ? GetWorld()->GetTimeSeconds() : 0.0;
-		if (NowSeconds - LastPawnRepairTime > 0.5)
-		{
-			LastPawnRepairTime = NowSeconds;
-			RepairPlayerPawnOwnership();
-		}
-	}
+	TickPawnOwnershipRepair();
 	PushShopStateToPlayers();
 
 	// 从各玩家属性集读取 13 项加成，写入各自角色快照；近似相等时跳过赋值。
@@ -361,12 +354,14 @@ void ARogueGameMode::PushRunStateToGameState()
 	}
 
 	// 集中更新服务端的整局字段；各 UPROPERTY 独立复制，本函数不提供跨字段原子同步。
+	RogueGameState->SetBattleStage(StageView);
 	RogueGameState->SetRunStateSnapshot(
 		RunState.CurrentWave,
 		RunState.EnemiesDefeated,
 		RunState.RunTimeSeconds,
 		RunState.bGameOver,
 		RunState.bBossAlive);
+	RogueGameState->RefreshBossHealthView();
 }
 
 void ARogueGameMode::PushWeaponBonusSnapshots()
@@ -391,11 +386,50 @@ void ARogueGameMode::CollectAlivePlayers(TArray<ARogueCharacter*, TInlineAllocat
 
 void ARogueGameMode::TickRunSystems(float DeltaSeconds)
 {
-	RunState.RunTimeSeconds += DeltaSeconds;
+    // 存活时间独立于波次；清场战斗计时，休整与切图期间不计时。
+    if (StageView.Phase != ERogueBattleStage::Countdown && StageView.Phase != ERogueBattleStage::Travelling)
+        RunState.RunTimeSeconds += DeltaSeconds;
+	if (TickBattleStage(DeltaSeconds)) { return; }
 
 	// 生成调度 —— 委托给 SpawnSubsystem
 	if (URogueSpawnSubsystem* SpawnSubsystem = GetWorld()->GetSubsystem<URogueSpawnSubsystem>())
 	{
+        if (StageView.Phase == ERogueBattleStage::Night)
+        {
+            // 黑夜按独立阶段时钟推进；白天耗时、剩余敌人及 Boss 都不延迟下一波。
+            const double Duration = StageSettings.NightWaveDuration;
+            NightWaveElapsedSeconds += FMath::Max(0.f, DeltaSeconds);
+            const double CompletedPeriods = FMath::FloorToDouble(NightWaveElapsedSeconds / Duration);
+            if (CompletedPeriods >= 1)
+            {
+                // 卡帧跨过多个完整周期时补上波数，保留本周期余量，不集中补刷跳过的名额。
+                const int32 Advance = static_cast<int32>(FMath::Min(CompletedPeriods,
+                    static_cast<double>(MAX_int32 - RunState.CurrentWave)));
+                RunState.CurrentWave += Advance;
+                NightWaveElapsedSeconds = FMath::Fmod(NightWaveElapsedSeconds, Duration);
+                RunState.SpawnTimer = 0.f;
+                UE_LOG(LogTemp, Log, TEXT("[RogueWave] Night timer; starting wave %d."), RunState.CurrentWave);
+            }
+        }
+        else if (SpawnSubsystem->IsWaveComplete(RunState))
+        {
+            ++RunState.CurrentWave;
+            RunState.SpawnTimer = 0.f;
+            UE_LOG(LogTemp, Log, TEXT("[RogueWave] Cleared; starting wave %d."), RunState.CurrentWave);
+        }
 		SpawnSubsystem->TickSpawning(DeltaSeconds, RunState, GetSpawnReferenceCharacter(), LevelSpawnRegion.Get());
+	}
+}
+
+void ARogueGameMode::TickPawnOwnershipRepair()
+{
+	if (UWorld* World = GetWorld())
+	{
+		const double Now = World->GetTimeSeconds();
+		if (LastPawnRepairTime < 0.0 || Now < LastPawnRepairTime || Now - LastPawnRepairTime >= 0.5)
+		{
+			LastPawnRepairTime = Now;
+			RepairPlayerPawnOwnership();
+		}
 	}
 }

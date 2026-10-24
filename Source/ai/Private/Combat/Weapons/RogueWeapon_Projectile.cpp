@@ -21,12 +21,12 @@ void ARogueWeapon_Projectile::CollectFireTargets(TArray<ARogueEnemy*>& OutTarget
 
 void ARogueWeapon_Projectile::FireAtTargets(const TArray<ARogueEnemy*>& Targets)
 {
-	if (Targets.Num() == 0)
-	{
-		return;
-	}
-
-	FireAtTarget(Targets[0]);
+	ARogueCharacter* OwnerChar = GetOwnerCharacter();
+	if (!CanFireNow() || !IsValid(OwnerChar) || !OwnerChar->IsAlive() || Targets.IsEmpty() || !IsValid(Targets[0])) { return; }
+	BurstTarget = Targets[0];
+	BurstTargetSpawnId = Targets[0]->GetSpawnCycleId();
+	RemainingBurstShots = GetEffectiveBurstCount();
+	FireNextBurstShot();
 }
 
 // 开火节奏由能力冷却 GE 控制；每次开火从配置与加成快照计算数值。
@@ -57,6 +57,7 @@ void ARogueWeapon_Projectile::FireAtTarget(AActor* TargetActor)
 
 	URogueCombatPoolSubsystem* Pools = GetWorld() ? GetWorld()->GetSubsystem<URogueCombatPoolSubsystem>() : nullptr;
 
+	bool bAudioTagged = false;
 	for (int32 Index = 0; Index < EffectiveCount; ++Index)
 	{
 		const float OffsetIndex = static_cast<float>(Index - HalfCount);
@@ -94,6 +95,8 @@ void ARogueWeapon_Projectile::FireAtTarget(AActor* TargetActor)
 			// 一次广播整轮齐射的话，队友看到的弹道会和这里对不上。
 			// 客户端调用它是空操作（见 BroadcastCosmeticFire），所以这里可以无条件调。
 			FRogueWeaponCosmeticFire Fire;
+			Fire.bPlayAttackSound = !bAudioTagged;
+			bAudioTagged = true;
 			Fire.Start = SpawnLocation;
 			Fire.Direction = ShotDirection;
 			Fire.Speed = FinalSpeed;

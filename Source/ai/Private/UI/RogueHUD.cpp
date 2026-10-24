@@ -1,4 +1,6 @@
 #include "UI/RogueHUD.h"
+#include "UI/Widgets/RogueBossHealthBarWidgetBase.h"
+#include "UI/Widgets/RogueNightTransitionWidgetBase.h"
 
 #include "Player/RogueCharacter.h"
 #include "Enemies/RogueEnemy.h"
@@ -10,13 +12,18 @@
 #include "UI/Widgets/RogueVitalsWidgetBase.h"
 #include "UI/Widgets/RogueDamageFlashWidgetBase.h"
 #include "UI/Widgets/RogueEnemyHealthBarWidgetBase.h"
+#include "UI/Widgets/RogueMainMenuWidgetBase.h"
+#include "Networking/RogueRoomSubsystem.h"
+#include "UI/Widgets/RogueTutorialWidgetBase.h"
+#include "UI/Widgets/RogueUpgradeTreeWidgetBase.h"
 #include "Player/RogueDamageCameraShake.h"
 #include "Combat/Targeting/RogueEnemyTrackerSubsystem.h"
-#include "AudioDevice.h"
+#include "Audio/RogueMusicSubsystem.h"
 #include "Camera/CameraShakeBase.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Engine/Canvas.h"
 #include "Engine/Engine.h"
+#include "Engine/GameInstance.h"
 #include "Engine/Font.h"
 #include "GameFramework/GameUserSettings.h"
 #include "GameFramework/PlayerController.h"
@@ -24,19 +31,12 @@
 #include "Kismet/KismetSystemLibrary.h"
 #include "Misc/ConfigCacheIni.h"
 
+#include "RogueHUDWidgetFactory.h"
+using namespace RogueHUDWidgetFactory;
+
 namespace
 {
-	const TCHAR* RogueSettingsSection = TEXT("/Script/ai.RogueRuntimeSettings");
-	const TCHAR* MasterVolumeKey = TEXT("MasterVolume");
 
-	template <typename TWidget>
-	void ResolveWidgetClass(const TSoftClassPtr<TWidget>& Path, TSubclassOf<TWidget>& InOutClass)
-	{
-		if (InOutClass == nullptr && !Path.IsNull())
-		{
-			InOutClass = Path.LoadSynchronous();
-		}
-	}
 	constexpr int32 MaxDamageNumbersNormal = 42;
 	constexpr int32 MaxDamageNumbersHeavy = 24;
 	constexpr int32 MaxRegularHealthBarsNormal = 22;
@@ -69,25 +69,7 @@ namespace
 		return FText::FromString(FString::Printf(TEXT("自动补货 %d 秒"), FMath::Max(0, Seconds)));
 	}
 
-	template <typename WidgetType>
-	WidgetType* CreateRogueMenuWidget(APlayerController* PlayerController, TSubclassOf<WidgetType> WidgetClass, ARogueHUD* OwningHUD, int32 ZOrder)
-	{
-		if (PlayerController == nullptr || WidgetClass == nullptr || OwningHUD == nullptr)
-		{
-			return nullptr;
-		}
 
-		WidgetType* Widget = CreateWidget<WidgetType>(PlayerController, WidgetClass);
-		if (Widget == nullptr)
-		{
-			return nullptr;
-		}
-
-		Widget->SetOwningRogueHUD(OwningHUD);
-		Widget->AddToViewport(ZOrder);
-		Widget->SetVisibility(ESlateVisibility::Collapsed);
-		return Widget;
-	}
 }
 
 ARogueHUD::ARogueHUD()
@@ -104,8 +86,30 @@ void ARogueHUD::BeginPlay()
 	Super::BeginPlay();
 
 	RefreshPauseSettings();
-	ApplyMasterVolume();
+	RefreshAudioVolumes();
+
+	if (bMainMenuMode)
+	{
+		InitializeMainMenuWidgets();
+		UpdateMainMenuWidgets();
+		return;
+	}
+
 	InitializeMenuWidgets();
+    if (GetOwningPlayerController() && !BossHealthBarWidgetClassPath.IsNull())
+    {
+        BossHealthBarWidget = CreateWidget<URogueBossHealthBarWidgetBase>(GetOwningPlayerController(), BossHealthBarWidgetClassPath.LoadSynchronous());
+        if (BossHealthBarWidget) { BossHealthBarWidget->AddToViewport(8); BossHealthBarWidget->UpdateBossHealth({}); }
+    }
+    if (GetOwningPlayerController() && !NightTransitionWidgetClassPath.IsNull())
+    {
+        NightTransitionWidget = CreateWidget<URogueNightTransitionWidgetBase>(GetOwningPlayerController(), NightTransitionWidgetClassPath.LoadSynchronous());
+        if (NightTransitionWidget)
+        {
+            NightTransitionWidget->AddToViewport(60);
+            NightTransitionWidget->RefreshCountdown();
+        }
+    }
 }
 
 namespace
@@ -132,11 +136,23 @@ namespace
 void ARogueHUD::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	if (bMainMenuMode)
+	{
+		UpdateMainMenuWidgets();
+		return;
+	}
 	RefreshMenuWidgets();
+    if (BossHealthBarWidget)
+    {
+        const ARogueGameState* State = GetRogueGameState();
+        BossHealthBarWidget->UpdateBossHealth(State && !State->IsGameOver() ? State->GetBossHealthView() : FRogueBossHealthView());
+    }
+	if (NightTransitionWidget) { NightTransitionWidget->RefreshCountdown(); }
 }
 
 void ARogueHUD::RefreshMenuWidgets()
 {
+	++MenuRefreshCount;
 	ARogueCharacter* PlayerCharacter = GetLocalPlayerCharacter(this);
 	if (!IsValid(PlayerCharacter))
 	{
@@ -158,7 +174,7 @@ void ARogueHUD::RefreshMenuWidgets()
 	// HUD 需要的一切都从 GameState / 本地 PlayerState / 本地角色上读（它们客户端都有）。
 
 	// 菜单/界面更新与 Canvas 无关：先把状态推给 widget。
-	// 由 Tick 和 DrawHUD 入口触发，创建了 HUD/UMG 的无画布测试仍可检查菜单状态
+	// 仅由 Tick 调度；无画布测试也通过 Tick 检查菜单状态
 	// （否则"界面不刷新"的 bug 会被无头测试掩盖掉）。
 	UpdateShopWidget(PlayerCharacter);
 	UpdateUpgradeSelectionWidget();
@@ -196,13 +212,18 @@ void ARogueHUD::RefreshMenuWidgets()
 
 void ARogueHUD::DrawHUD()
 {
+	// 主菜单只有 UMG，不需要 Canvas 绘制（也没有角色/敌人数据可画）。
+	if (bMainMenuMode)
+	{
+		return;
+	}
+
 	if (Canvas != nullptr)
 	{
 		Super::DrawHUD();
 	}
 
-	// 菜单/状态条更新与 Canvas 无关；WBP 在 RefreshMenuWidgets 里刷新。
-	RefreshMenuWidgets();
+	// UMG is refreshed once by Tick; DrawHUD only renders Canvas feedback.
 
 	if (Canvas == nullptr)
 	{
@@ -244,6 +265,34 @@ void ARogueHUD::AddDamageNumber(const FVector& WorldLocation, float Damage, bool
 	// 文本在这里算一次（数值之后不会再变，见 FRogueDamageNumber::CachedText 的说明）
 	DamageNumber.CachedText = FString::Printf(TEXT("%.0f"), Damage);
 	DamageNumbers.Add(MoveTemp(DamageNumber));
+}
+
+void ARogueHUD::AddHealingNumber(const FVector& WorldLocation, float Amount)
+{
+	if (GetWorld() == nullptr || Amount <= 0.0f)
+	{
+		return;
+	}
+
+	// 与伤害飘字共用数组与上限，避免玩家回血时额外撑高绘制开销。
+	const URogueEnemyTrackerSubsystem* TrackerForNumbers = GetWorld()->GetSubsystem<URogueEnemyTrackerSubsystem>();
+	const int32 MaxNumbers = TrackerForNumbers != nullptr && TrackerForNumbers->ShouldCullCombatEffects() ? MaxDamageNumbersHeavy : MaxDamageNumbersNormal;
+	if (DamageNumbers.Num() >= MaxNumbers)
+	{
+		const int32 OverflowCount = DamageNumbers.Num() - MaxNumbers + 1;
+		DamageNumbers.RemoveAt(0, OverflowCount, EAllowShrinking::No);
+	}
+
+	FRogueDamageNumber HealingNumber;
+	HealingNumber.WorldLocation = WorldLocation;
+	HealingNumber.Damage = Amount;
+	HealingNumber.SpawnTime = GetWorld()->GetTimeSeconds();
+	HealingNumber.Lifetime = 0.9f;
+	HealingNumber.Color = FLinearColor(0.35f, 1.0f, 0.5f, 1.0f);
+	HealingNumber.bScreenPositionValid = false;
+	// 小数值也至少显示 +1，避免 "(+0)" 这种像没生效的飘字。
+	HealingNumber.CachedText = FString::Printf(TEXT("+%.0f"), FMath::Max(1.0f, Amount));
+	DamageNumbers.Add(MoveTemp(HealingNumber));
 }
 
 void ARogueHUD::OpenPauseMenu()
@@ -326,6 +375,11 @@ void ARogueHUD::RequestQuitFromPauseMenu()
 
 void ARogueHUD::RequestBackFromSettingsMenu()
 {
+	if (bMainMenuMode)
+	{
+		CloseMainMenuSettings();
+		return;
+	}
 	PauseMenuPage = ERoguePauseMenuPage::Main;
 }
 
@@ -337,8 +391,20 @@ void ARogueHUD::RequestApplyFromSettingsMenu()
 void ARogueHUD::RequestVolumeAdjustFromSettingsMenu(bool bIncrease)
 {
 	const float Direction = bIncrease ? 1.0f : -1.0f;
-	MasterVolume = FMath::Clamp(MasterVolume + Direction * 0.1f, 0.0f, 1.0f);
-	ApplyMasterVolume();
+	if (auto* Audio = GetGameInstance()->GetSubsystem<URogueMusicSubsystem>())
+	{
+		Audio->SetSoundEffectsVolume(Audio->GetSoundEffectsVolume() + Direction * .1f);
+		RefreshAudioVolumes();
+	}
+}
+
+void ARogueHUD::RequestMusicVolumeAdjustFromSettingsMenu(bool bIncrease)
+{
+	if (auto* Audio = GetGameInstance()->GetSubsystem<URogueMusicSubsystem>())
+	{
+		Audio->SetMusicVolume(Audio->GetMusicVolume() + (bIncrease ? .1f : -.1f));
+		RefreshAudioVolumes();
+	}
 }
 
 void ARogueHUD::RequestQualityAdjustFromSettingsMenu(bool bIncrease)
@@ -462,6 +528,7 @@ void ARogueHUD::UpdateVitalsWidget(const ARogueCharacter* PlayerCharacter)
 	FRoguePlayerVitalsView View;
 	if (PlayerCharacter != nullptr)
 	{
+		View.SourceActor = const_cast<ARogueCharacter*>(PlayerCharacter);
 		View.bVisible = true;
 		View.bHasArmor = PlayerCharacter->HasArmor();
 		View.bDowned = PlayerCharacter->IsDowned();
@@ -482,6 +549,7 @@ void ARogueHUD::UpdateVitalsWidget(const ARogueCharacter* PlayerCharacter)
 		}
 	}
 
+    RogueVitalsView::UpdateDashState(PlayerCharacter, View);
 	VitalsWidget->UpdateVitals(View);
 }
 
@@ -620,6 +688,9 @@ void ARogueHUD::UpdateEnemyHealthBarWidgets()
 		const float RawHealthPercent = Enemy->GetHealthPercent();
 
 		FRogueEnemyHealthBarView View;
+		View.SourceActor = Enemy;
+		View.SpawnId = Enemy->GetSpawnCycleId();
+		View.SpawnGeneration = Enemy->GetPresentationGeneration();
 		View.bVisible = true;
 		View.bBoss = CachedBar.bBoss;
 		View.HealthPercent = FMath::IsFinite(RawHealthPercent)
@@ -832,6 +903,7 @@ void ARogueHUD::InitializeMenuWidgets()
 		ResolveWidgetClass(ReviveCountdownWidgetClassPath, ReviveCountdownWidgetClass);
 		ResolveWidgetClass(VitalsWidgetClassPath, VitalsWidgetClass);
 		ResolveWidgetClass(EnemyHealthBarWidgetClassPath, EnemyHealthBarWidgetClass);
+		ResolveWidgetClass(SettingsMenuWidgetClassPath, SettingsMenuWidgetClass);
 		UpgradeSelectionWidget = CreateRogueMenuWidget(PlayerController, UpgradeSelectionWidgetClass, this, 63);
 		ShopWidget = CreateRogueMenuWidget(PlayerController, ShopWidgetClass, this, 64);
 		PauseMenuWidget = CreateRogueMenuWidget(PlayerController, PauseMenuWidgetClass, this, 65);
@@ -871,13 +943,6 @@ void ARogueHUD::InitializeMenuWidgets()
 				*GetNameSafe(ReviveCountdownWidgetClass.Get()), *GetNameSafe(DeathScreenWidgetClass.Get()));
 		}
 	}
-}
-
-const ARogueGameState* ARogueHUD::GetRogueGameState() const
-{
-	// 与 GameMode 不同，GameState 在服务端与客户端**都存在**（客户端拿到的是复制副本），
-	// 所以它是客户端 HUD 读取整局状态的正确入口。
-	return GetWorld() != nullptr ? GetWorld()->GetGameState<ARogueGameState>() : nullptr;
 }
 
 void ARogueHUD::UpdateInteractionInputMode(const ARogueCharacter* PlayerCharacter)
@@ -1106,15 +1171,18 @@ void ARogueHUD::UpdateSettingsWidget()
 
 	const ARogueCharacter* PlayerCharacter = GetLocalPlayerCharacter(this);
 	const ARogueGameState* RogueGameState = GetRogueGameState();
-	const bool bVisible = PauseMenuPage == ERoguePauseMenuPage::Settings
-		&& PlayerCharacter != nullptr && PlayerCharacter->IsAlive()
-		&& !IsRogueRunOver(RogueGameState, PlayerCharacter);
+	const bool bVisible = bMainMenuMode
+		? bMainMenuSettingsOpen
+		: (PauseMenuPage == ERoguePauseMenuPage::Settings
+			&& PlayerCharacter != nullptr && PlayerCharacter->IsAlive()
+			&& !IsRogueRunOver(RogueGameState, PlayerCharacter));
 	FString Signature = bVisible ? TEXT("Settings|Visible") : TEXT("Settings|Hidden");
 	if (bVisible)
 	{
 		Signature += FString::Printf(
-			TEXT("|Vol=%.2f|Quality=%d|Res=%d|Mode=%d|Frame=%d|FrameValue=%.1f|QualityCustom=%d|FrameCustom=%d|Dirty=%d"),
-			MasterVolume,
+			TEXT("|SFX=%.2f|Music=%.2f|Quality=%d|Res=%d|Mode=%d|Frame=%d|FrameValue=%.1f|QualityCustom=%d|FrameCustom=%d|Dirty=%d"),
+			SoundEffectsVolume,
+			MusicVolume,
 			GraphicsQualityLevel,
 			ResolutionOptionIndex,
 			static_cast<int32>(DisplayWindowMode),
@@ -1135,24 +1203,26 @@ void ARogueHUD::UpdateSettingsWidget()
 	ViewData.TitleText = FText::FromString(TEXT("设置"));
 	ViewData.bCanApply = bDisplaySettingsDirty;
 	ViewData.StatusText = FText::FromString(
-		bDisplaySettingsDirty ? TEXT("画面设置已修改，点击“应用设置”后生效") : TEXT("当前画面设置已应用"));
+		bDisplaySettingsDirty ? TEXT("音量即时保存；画面修改需点击“应用设置”") : TEXT("音量即时生效并保存；当前画面设置已应用"));
 
 	const TArray<FString> RowLabels =
 	{
-		TEXT("主音量"),
+		TEXT("音效音量"),
 		TEXT("画质等级"),
 		TEXT("分辨率"),
 		TEXT("显示模式"),
-		TEXT("限制帧率")
+		TEXT("限制帧率"),
+		TEXT("背景音乐音量")
 	};
 
 	const TArray<FString> RowValues =
 	{
-		FString::Printf(TEXT("%d%%"), FMath::RoundToInt(MasterVolume * 100.0f)),
+		FString::Printf(TEXT("%d%%"), FMath::RoundToInt(SoundEffectsVolume * 100.0f)),
 		GetGraphicsQualityLabel(),
 		GetResolutionLabel(),
 		GetDisplayModeLabel(),
-		GetFrameRateLimitLabel()
+		GetFrameRateLimitLabel(),
+		FString::Printf(TEXT("%d%%"), FMath::RoundToInt(MusicVolume * 100.0f))
 	};
 
 	for (int32 RowIndex = 0; RowIndex < RowLabels.Num() && RowIndex < RowValues.Num(); ++RowIndex)
@@ -1267,14 +1337,7 @@ void ARogueHUD::RefreshPauseSettings()
 		bDisplaySettingsDirty = false;
 	}
 
-	if (GConfig != nullptr)
-	{
-		float SavedVolume = MasterVolume;
-		if (GConfig->GetFloat(RogueSettingsSection, MasterVolumeKey, SavedVolume, GGameUserSettingsIni))
-		{
-			MasterVolume = FMath::Clamp(SavedVolume, 0.0f, 1.0f);
-		}
-	}
+	RefreshAudioVolumes();
 }
 
 void ARogueHUD::RefreshResolutionOptions(const FIntPoint& CurrentResolution, const FIntPoint& InDesktopResolution)
@@ -1415,23 +1478,14 @@ void ARogueHUD::CycleDisplayMode()
 	}
 }
 
-void ARogueHUD::ApplyMasterVolume()
+void ARogueHUD::RefreshAudioVolumes()
 {
-	if (GetWorld() == nullptr)
-	{
-		return;
-	}
-
-	if (FAudioDevice* AudioDevice = GetWorld()->GetAudioDeviceRaw())
-	{
-		AudioDevice->SetTransientPrimaryVolume(MasterVolume);
-	}
-
-	if (GConfig != nullptr)
-	{
-		GConfig->SetFloat(RogueSettingsSection, MasterVolumeKey, MasterVolume, GGameUserSettingsIni);
-		GConfig->Flush(false, GGameUserSettingsIni);
-	}
+	if (UGameInstance* Instance = GetGameInstance())
+		if (auto* Audio = Instance->GetSubsystem<URogueMusicSubsystem>())
+		{
+			SoundEffectsVolume = Audio->GetSoundEffectsVolume();
+			MusicVolume = Audio->GetMusicVolume();
+		}
 }
 
 void ARogueHUD::ApplyDisplaySettings()
@@ -1555,4 +1609,16 @@ FString ARogueHUD::GetFrameRateLimitLabel() const
 
 	const FString BaseLabel = FString::Printf(TEXT("%.0f FPS"), FrameRateLimitValue);
 	return bFrameRateLimitCustom ? FString::Printf(TEXT("自定义(%s)"), *BaseLabel) : BaseLabel;
+}
+
+
+void ARogueHUD::EndPlay(const EEndPlayReason::Type Reason)
+{
+    if (BossHealthBarWidget) { BossHealthBarWidget->RemoveFromParent(); BossHealthBarWidget = nullptr; }
+    if (NightTransitionWidget) { NightTransitionWidget->RemoveFromParent(); NightTransitionWidget = nullptr; }
+    // 只释放本 HUD 持有的状态条，避免跨地图留下旧反馈；不影响其他系统的 UI。
+    if (VitalsWidget) { VitalsWidget->RemoveFromParent(); VitalsWidget = nullptr; }
+    for (URogueEnemyHealthBarWidgetBase* Bar : EnemyHealthBarWidgets) { if (Bar) Bar->RemoveFromParent(); }
+    EnemyHealthBarWidgets.Reset();
+    Super::EndPlay(Reason);
 }

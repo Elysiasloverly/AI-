@@ -115,9 +115,9 @@ bool FRogueHellTowerIndependentBeamTest::RunTest(const FString& Parameters)
 	if (!TestNotNull(TEXT("Laser retains its configured Blueprint"), LaserClass)
 		|| !TestNotNull(TEXT("HellTower has its own Blueprint"), HellClass)) { return false; }
 	TestEqual(TEXT("Laser retains its original class"), LaserClass->GetPathName(),
-		FString(TEXT("/Game/BP/Projectile/BP_RogueLaserBeam.BP_RogueLaserBeam_C")));
+		FString(TEXT("/Game/BP/Projectiles/BP_RogueLaserBeam.BP_RogueLaserBeam_C")));
 	TestEqual(TEXT("HellTower uses the separate class"), HellClass->GetPathName(),
-		FString(TEXT("/Game/BP/Projectile/BP_RogueHellTowerBeam.BP_RogueHellTowerBeam_C")));
+		FString(TEXT("/Game/BP/Projectiles/BP_RogueHellTowerBeam.BP_RogueHellTowerBeam_C")));
 	TestFalse(TEXT("HellTower is independent of the editable laser Blueprint"), HellClass->IsChildOf(LaserClass));
 	TestTrue(TEXT("Both share only the native beam implementation"), HellClass->GetSuperClass() == ARogueLaserBeam::StaticClass());
 

@@ -198,6 +198,18 @@ public:
 	FGameplayAttributeData ScytheLifestealBonus;
 	ATTRIBUTE_ACCESSORS(URogueAttributeSet, ScytheLifestealBonus);
 
+	UPROPERTY(BlueprintReadOnly, Replicated, Category = "Rogue|武器加成")
+	FGameplayAttributeData ProjectileBurstBonus;
+	ATTRIBUTE_ACCESSORS(URogueAttributeSet, ProjectileBurstBonus);
+
+	UPROPERTY(BlueprintReadOnly, Replicated, Category = "Rogue|武器加成")
+	FGameplayAttributeData RocketBlastRadiusBonus;
+	ATTRIBUTE_ACCESSORS(URogueAttributeSet, RocketBlastRadiusBonus);
+
+	UPROPERTY(BlueprintReadOnly, Replicated, Category = "Rogue|武器加成")
+	FGameplayAttributeData HellTowerDamageRampBonus;
+	ATTRIBUTE_ACCESSORS(URogueAttributeSet, HellTowerDamageRampBonus);
+
 private:
 	/** 血量归零时给自己施加死亡效果（授予 State.Dead）。幂等：已死则直接返回。 */
 	void TryApplyDeathEffect();

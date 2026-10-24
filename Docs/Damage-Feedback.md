@@ -16,15 +16,16 @@ C++ 不引用任何 Slate 组件、不创建材质、不写死资产路径，和
 
 ```text
 服务端结算伤害 → Health 属性复制到客户端
-  → ARogueHUD::DrawHUD
-      → UpdateLocalDamageFeedback(本地角色)
+  → ARogueHUD::DrawHUD / Tick
+      → RefreshMenuWidgets()
+          → UpdateLocalDamageFeedback(本地角色)
           血量下降 > 0.5 → TriggerDamageFeedback(伤害 / 最大生命)
               ├→ URogueDamageFlashWidgetBase::PlayDamageFlash(强度)
               └→ PlayerCameraManager->StartCameraShake(震动类, 缩放)
 ```
 
 **为什么是轮询**：玩家 ASC 挂在 `PlayerState` 上，`Health` 是普通 `Replicated`，没有 RepNotify，
-客户端收不到 GAS 的属性变化委托（`RogueAttributeSet.cpp` 里也写明了这一点）。
+客户端收不到 GAS 的属性变化委托（`RogueCharacter.GAS.cpp:99-101` 写明；`RogueAttributeSet.cpp` 只说明 HUD 轮询、未用 RepNotify）。
 HUD 本来每帧就在读这些数值推状态条，直接复用同一次读取比较血量，不额外增加遍历。
 
 已处理的边界：
@@ -55,8 +56,8 @@ RootCanvas
 失效时 C++ 会打一条 Warning 说明原因，不会静默什么都不发生。
 
 **初始必须是透明的**。`FlashRoot` 的 `RenderOpacity` 默认是 1，而这个控件一创建就
-`AddToViewport` 并常驻可见（`HitTestInvisible`）。所以 C++ 在 `SetOwningRogueHUD` 和
-`NativeConstruct` 里都会主动写一次当前强度（未受伤时就是 0）—— 少了这一步，
+`AddToViewport` 并常驻可见（`HitTestInvisible`）。所以 C++ 在 `SetOwningRogueHUD` 里写 0、在
+`NativeConstruct` 里写一次当前强度—— 少了这一步，
 泛红会从进游戏起一直挂在屏幕上，直到真正挨过一次伤害、淡出结束才恢复。
 
 自己用 `bBlueprintHandlesOpacity` 接管透明度时同样要遵守这条：在 WBP 里把
@@ -99,8 +100,8 @@ Roll 振幅 1.6°（最容易读出"挨了一下"）、Pitch 0.9°、Yaw 0.5°�
 
 ```bat
 "C:\Program Files\Epic Games\UE_5.5\Engine\Binaries\Win64\UnrealEditor-Cmd.exe" ^
-  "F:\AI_WorkSpeace\ai\ai.uproject" ^
-  -run=pythonscript -script="F:\AI_WorkSpeace\ai\Tools\create_damage_flash_widget.py" ^
+  "F:\AI_WorkSpeace\baka\Baka.uproject" ^
+  -run=pythonscript -script="F:\AI_WorkSpeace\baka\Tools\create_damage_flash_widget.py" ^
   -unattended -nopause -nullrhi -nosplash
 ```
 
@@ -122,7 +123,7 @@ WBP 未配置时只会有震动，并在日志里打 Warning；两者都不配�
 可以直接跑自动化用例：
 
 ```bat
-UnrealEditor-Cmd.exe "F:\AI_WorkSpeace\ai\ai.uproject" ^
+UnrealEditor-Cmd.exe "F:\AI_WorkSpeace\baka\Baka.uproject" ^
   -ExecCmds="Automation RunTests Rogue.UI.DamageFlash;Quit" ^
   -unattended -nopause -nullrhi -nosplash
 ```

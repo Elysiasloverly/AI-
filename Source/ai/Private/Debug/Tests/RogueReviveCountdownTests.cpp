@@ -17,7 +17,7 @@ bool FRogueReviveCountdownVisibilityTest::RunTest(const FString& Parameters)
 
 	const TSubclassOf<URogueReviveCountdownWidgetBase> WidgetClass =
 		LoadClass<URogueReviveCountdownWidgetBase>(nullptr,
-			TEXT("/Game/UMG/Menus/WBP_ResurrectionScreen.WBP_ResurrectionScreen_C"));
+			TEXT("/Game/UMG/Menus/InGame/WBP_ResurrectionScreen.WBP_ResurrectionScreen_C"));
 	if (!TestNotNull(TEXT("The actual resurrection Blueprint loads"), WidgetClass.Get()))
 	{
 		return false;

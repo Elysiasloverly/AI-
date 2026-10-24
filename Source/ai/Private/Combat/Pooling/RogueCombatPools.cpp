@@ -61,44 +61,49 @@ namespace
 			return nullptr;
 		}
 
-		// 从上次命中位置继续环形查找可用且精确同类的对象。
-		// 游标可避免反复检查相同前缀，但最坏时间复杂度仍为 O(N)。
-		const int32 Num = Pool.Num();
+		FRoguePoolClassRuntime* Found = Runtime.Classes.Find(ActorClass);
+		if (!Found)
+		{
+			FRoguePoolClassRuntime& Added = Runtime.Classes.Add(ActorClass);
+			for (TActor* Actor : Pool)
+			{
+				if (IsValid(Actor) && Actor->GetClass() == ActorClass) { Added.Actors.Add(Actor); }
+			}
+			Found = &Added;
+		}
+		FRoguePoolClassRuntime& Bucket = *Found;
+		const int32 Num = Bucket.Actors.Num();
 		if (Num > 0)
 		{
-			if (Runtime.Cursor < 0 || Runtime.Cursor >= Num)
-			{
-				Runtime.Cursor = 0;
-			}
-
-			int32 Index = Runtime.Cursor;
+			Bucket.Cursor = FMath::Clamp(Bucket.Cursor, 0, Num - 1);
 			for (int32 Scanned = 0; Scanned < Num; ++Scanned)
 			{
-				TActor* Actor = Pool[Index];
-				if (IsValid(Actor) && Actor->IsAvailableInPool() && Actor->GetClass() == ActorClass)
+				const int32 Index = (Bucket.Cursor + Scanned) % Num;
+				++Bucket.Scanned;
+				TActor* Actor = Cast<TActor>(Bucket.Actors[Index].Get());
+				if (IsValid(Actor) && Actor->IsAvailableInPool())
 				{
-					Runtime.Cursor = (Index + 1) % Num;
+					Bucket.Cursor = (Index + 1) % Num;
+					++Bucket.Hits;
 					Actor->SetOwner(OwnerActor);
 					Actor->SetInstigator(InstigatorPawn);
 					Actor->SetActorLocationAndRotation(SpawnLocation, SpawnRotation, false, nullptr, ETeleportType::TeleportPhysics);
 					return Actor;
 				}
-
-				Index = (Index + 1) % Num;
 			}
 		}
-
-		// ── 未命中：先清理失效对象，再走运行时新建兜底 ──
+		++Bucket.Misses;
 		CompactPool(Pool);
-		Runtime.Cursor = 0;
+		Bucket.Actors.RemoveAll([](const TWeakObjectPtr<AActor>& Actor) { return !Actor.IsValid(); });
+		Bucket.Cursor = 0;
 
 		// 记录池未命中后的生成尝试，首次及每 32 次输出诊断。
 		// 未命中可能来自容量、类不匹配或失效对象；生成失败也会计入。
 		++Runtime.RuntimeSpawnCount;
 		if (Runtime.RuntimeSpawnCount == 1 || Runtime.RuntimeSpawnCount % 32 == 0)
 		{
-			UE_LOG(LogTemp, Warning,
-				TEXT("[Pool] 池内没有可用的 %s，运行时新建第 %d 个（当前池大小 %d，峰值 %d）—— 建议调高该池的预热量"),
+			UE_LOG(LogTemp, Verbose,
+				TEXT("[Pool] No available %s; runtime spawn attempt %d (size %d, peak %d)"),
 				*ActorClass->GetName(), Runtime.RuntimeSpawnCount, Pool.Num(), Runtime.PeakSize);
 		}
 
@@ -111,6 +116,7 @@ namespace
 		if (Actor != nullptr)
 		{
 			Pool.Add(Actor);
+			Bucket.Actors.Add(Actor);
 			Runtime.PeakSize = FMath::Max(Runtime.PeakSize, Pool.Num());
 		}
 
@@ -233,7 +239,11 @@ void FRogueCombatPools::Prewarm(
 	PrewarmActorPoolForClasses(World, LaserBeamPool, Settings.InitialLaserBeamPoolSize, LaserBeamClasses, ARogueLaserBeam::StaticClass(), OwnerActor, PoolLocation);
 	PrewarmActorPoolForClasses(World, OrbitingBladePool, Settings.InitialOrbitingBladePoolSize, OrbitingBladeClasses, ARogueOrbitingBlade::StaticClass(), OwnerActor, PoolLocation);
 
-	// 输出各池预热后的总大小；该汇总不列出每种类的数量。
+	// Prewarm may append new actors to existing pools; rebuild lazy indexes next acquire.
+	FRoguePoolRuntime* Runtimes[] = { &EnemyPoolRuntime, &PlayerProjectilePoolRuntime, &EnemyProjectilePoolRuntime,
+		&RocketProjectilePoolRuntime, &ExperiencePickupPoolRuntime, &ImpactEffectPoolRuntime, &LaserBeamPoolRuntime, &OrbitingBladePoolRuntime };
+	for (FRoguePoolRuntime* Runtime : Runtimes) { Runtime->Classes.Reset(); }
+	// 总量和每个已使用类的统计均可由诊断输出检查。
 	LogPoolDiagnostics();
 }
 
@@ -292,7 +302,13 @@ void FRogueCombatPools::LogPoolDiagnostics()
 		Runtime.PeakSize = FMath::Max(Runtime.PeakSize, Size);
 		UE_LOG(LogTemp, Log, TEXT("[Pool] %s：大小 %d，峰值 %d，运行时新建 %d%s"),
 			Name, Size, Runtime.PeakSize, Runtime.RuntimeSpawnCount,
-			Runtime.RuntimeSpawnCount > 0 ? TEXT("  ← 该调高预热量") : TEXT(""));
+			Runtime.RuntimeSpawnCount > 0 ? TEXT("  (inspect per-class occupancy before adjusting prewarm)") : TEXT(""));
+		for (const auto& Entry : Runtime.Classes)
+		{
+			const FRoguePoolClassRuntime& Bucket = Entry.Value;
+			UE_LOG(LogTemp, Log, TEXT("[PoolClass] %s size=%d hits=%llu misses=%llu scanned=%llu"),
+				*GetNameSafe(Entry.Key.Get()), Bucket.Actors.Num(), Bucket.Hits, Bucket.Misses, Bucket.Scanned);
+		}
 	};
 
 	UE_LOG(LogTemp, Log, TEXT("===== 对象池诊断 ====="));

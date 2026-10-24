@@ -156,18 +156,41 @@ void URogueSpawnSubsystem::ResetWaveSpawnCounts(int32 Wave)
 	AliveCapLoggedTypes.Reset();
 	WaveBudgetLoggedTypes.Reset();
 	CountedWave = Wave;
+    WaveEnemyBudget = RogueGameModeRules::BuildWaveEnemyCount(Wave, BalanceAsset);
+    TotalSpawnedThisWave = 0;
 	BossSpawnRetryTimer = 0.0f;
+}
+
+bool URogueSpawnSubsystem::HasRemainingNormalWaveBudget(int32 Wave) const
+{
+    if (TotalSpawnedThisWave >= WaveEnemyBudget) return false;
+    FEnemySpawnGate QuotaGate;
+    QuotaGate.ArchetypeTable = EnemyArchetypeTable;
+    QuotaGate.SpawnedCountThisWave = &SpawnedCountThisWave;
+    // 不传 Tracker：同时存活名额会随击杀释放，不能误认为本波累计名额耗尽。
+    return RogueGameModeRules::HasEligibleEnemyTypeForWave(Wave, BalanceAsset, QuotaGate);
+}
+
+bool URogueSpawnSubsystem::HasFinishedWaveSpawning(const FRogueRunState& RunState) const
+{
+    if (CountedWave != RunState.CurrentWave || WaveEnemyBudget <= 0) return false;
+    const bool bBossWave = BossSettings.BossWaveInterval > 0 && RunState.CurrentWave > 0
+        && RunState.CurrentWave % BossSettings.BossWaveInterval == 0;
+    if (bBossWave && RunState.LastBossWaveSpawned != RunState.CurrentWave) return false;
+    return !HasRemainingNormalWaveBudget(RunState.CurrentWave);
+}
+
+bool URogueSpawnSubsystem::IsWaveComplete(const FRogueRunState& RunState) const
+{
+    const URogueEnemyTrackerSubsystem* Tracker = GetWorld()->GetSubsystem<URogueEnemyTrackerSubsystem>();
+    return HasFinishedWaveSpawning(RunState) && !RunState.bBossAlive
+        && Tracker && Tracker->GetActiveEnemyCount() == 0;
 }
 
 void URogueSpawnSubsystem::TickSpawning(float DeltaSeconds, FRogueRunState& RunState, ARogueCharacter* Character, const ARogueEnemySpawnRegion* Region)
 {
+    if (bSpawningSuspended || RunState.bGameOver) { return; }
 	RunState.SpawnTimer -= DeltaSeconds;
-
-	const int32 TargetWave = FMath::FloorToInt(RunState.RunTimeSeconds / SpawnSettings.WaveDuration) + 1;
-	if (TargetWave != RunState.CurrentWave)
-	{
-		RunState.CurrentWave = TargetWave;
-	}
 
 	// 波次一变就把"本波已刷数量"清零。放在这里而不是 SpawnEnemy 里，
 	// 是为了让"跨波"这件事只有一个入口，避免每个生成点都要判一次。
@@ -184,6 +207,9 @@ void URogueSpawnSubsystem::TickSpawning(float DeltaSeconds, FRogueRunState& RunS
 		// 无有效地面时避免每帧重试整套射线；不消耗本波 Boss 名额。
 		if (!RunState.bBossAlive) { BossSpawnRetryTimer = FMath::Max(0.1f, SpawnSettings.SpawnInterval); }
 	}
+
+    // 达到本波总量后不再补刷；GameMode 决定白天清场或黑夜到时切波。Boss 失败重试仍在上方调度。
+    if (!HasRemainingNormalWaveBudget(RunState.CurrentWave)) return;
 
 	URogueEnemyTrackerSubsystem* Tracker = GetWorld()->GetSubsystem<URogueEnemyTrackerSubsystem>();
 	if (Tracker == nullptr)
@@ -210,6 +236,7 @@ void URogueSpawnSubsystem::TickSpawning(float DeltaSeconds, FRogueRunState& RunS
 
 bool URogueSpawnSubsystem::SpawnEnemy(FRogueRunState& RunState, ARogueCharacter* Character, const ARogueEnemySpawnRegion* Region)
 {
+    if (bSpawningSuspended || RunState.bGameOver) { return false; }
 	if (!IsValid(Character) || Character->IsDead())
 	{
 		return false;
@@ -222,12 +249,16 @@ bool URogueSpawnSubsystem::SpawnEnemy(FRogueRunState& RunState, ARogueCharacter*
 		ResetWaveSpawnCounts(RunState.CurrentWave);
 	}
 
+    if (!HasRemainingNormalWaveBudget(RunState.CurrentWave)) return false;
+
 	FEnemySpawnGate SpawnGate;
 	SpawnGate.ArchetypeTable = EnemyArchetypeTable;
 	SpawnGate.Tracker = GetWorld()->GetSubsystem<URogueEnemyTrackerSubsystem>();
 	SpawnGate.SpawnedCountThisWave = &SpawnedCountThisWave;
 	SpawnGate.AliveCapLoggedTypes = &AliveCapLoggedTypes;
 	SpawnGate.WaveBudgetLoggedTypes = &WaveBudgetLoggedTypes;
+
+    if (!RogueGameModeRules::HasEligibleEnemyTypeForWave(RunState.CurrentWave, BalanceAsset, SpawnGate)) return false;
 
 	const ERogueEnemyType EnemyType = RogueGameModeRules::PickWeightedEnemyTypeForWave(RunState.CurrentWave, BalanceAsset, SpawnGate);
 
@@ -247,11 +278,13 @@ bool URogueSpawnSubsystem::SpawnEnemy(FRogueRunState& RunState, ARogueCharacter*
 
 	// 只有真正刷出来了才记账：失败还计数会让"名额"被空气吃掉。
 	++SpawnedCountThisWave.FindOrAdd(EnemyType);
+    ++TotalSpawnedThisWave;
 	return true;
 }
 
 void URogueSpawnSubsystem::SpawnBoss(FRogueRunState& RunState, ARogueCharacter* Character, const ARogueEnemySpawnRegion* Region)
 {
+    if (bSpawningSuspended || RunState.bGameOver || RunState.bBossAlive || RunState.LastBossWaveSpawned == RunState.CurrentWave) { return; }
 	if (!IsValid(Character) || Character->IsDead())
 	{
 		return;

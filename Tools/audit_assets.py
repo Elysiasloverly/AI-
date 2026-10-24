@@ -1,7 +1,7 @@
 """全项目资源审计（只读，不修改任何资产）。
 
 用法：
-    UnrealEditor-Cmd.exe F:\\AI_WorkSpeace\\ai\\ai.uproject ^
+    UnrealEditor-Cmd.exe F:\\AI_WorkSpeace\\ai\\Baka.uproject ^
         -run=pythonscript -script="Tools/audit_assets.py" ^
         -unattended -nopause -nullrhi -nosplash
 
@@ -21,7 +21,7 @@ import re
 
 import unreal
 
-PROJECT_ROOT = r"F:/AI_WorkSpeace/ai"
+PROJECT_ROOT = r"F:/AI_WorkSpeace/baka"
 CONTENT_ROOT = os.path.join(PROJECT_ROOT, "Content")
 OUT_JSON = os.path.join(PROJECT_ROOT, "Saved/DataDump/asset_audit.json")
 CONFIG_DIR = os.path.join(PROJECT_ROOT, "Config")

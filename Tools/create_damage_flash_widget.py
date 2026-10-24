@@ -1,7 +1,7 @@
 """生成受伤泛红占位 WBP：WBP_DamageFlash。
 
 用法（项目根目录）：
-    UnrealEditor-Cmd.exe F:\\AI_WorkSpeace\\ai\\ai.uproject ^
+    UnrealEditor-Cmd.exe F:\\AI_WorkSpeace\\ai\\Baka.uproject ^
         -run=pythonscript -script="Tools/create_damage_flash_widget.py" ^
         -unattended -nopause -nullrhi -nosplash
 

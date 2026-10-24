@@ -1,4 +1,4 @@
-"""找出 ai 项目里"没有任何引用"的 C++ 符号（函数 / 成员），并同时检查蓝图资产是否引用。
+"""找出 Baka！项目里"没有任何引用"的 C++ 符号（函数 / 成员），并同时检查蓝图资产是否引用。
 
 用法:
     python audit_dead_code.py            # 全量扫描
@@ -17,8 +17,8 @@ import re
 import sys
 from collections import defaultdict
 
-SRC = r"F:\AI_WorkSpeace\ai\Source\ai"
-CONTENT = r"F:\AI_WorkSpeace\ai\Content"
+SRC = r"F:\AI_WorkSpeace\baka\Source\ai"
+CONTENT = r"F:\AI_WorkSpeace\baka\Content"
 
 # 声明行：返回类型 + 名字 + 参数列表 + ';'
 DECL_RE = re.compile(

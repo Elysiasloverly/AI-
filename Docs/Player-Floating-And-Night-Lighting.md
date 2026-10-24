@@ -1,5 +1,7 @@
 # 玩家漂浮与神社夜景
 
+白天与夜晚战斗地图现位于 `/Game/Map/Battle_Day` 和 `/Game/Map/Battle_Night`，默认入口沿用夜景。两张地图场景与玩法配置相同，白天副本仅调整环境灯光。详见 [昼夜地图](Battle-Day-Night.md)。
+
 ## 玩家漂浮组件
 
 在 `BP_RogueCharacter` 组件树中选中 `FloatingMotion`（漂浮组件，原生类型 `RogueFloatingComponent`），调整独立的「漂浮」设置。`Visuals` 现在只负责挂接模型。
@@ -25,7 +27,7 @@ Sphere 等模型挂在 Visuals 下。FloatingMotion 只给目标增加相对位�
 
 ## 当前地图夜景
 
-地图：`/Game/GameAssets/StarterContent/Maps/Minimal_Default`。以当前森林、鸟居、灯笼和宝箱布局配置蓝紫色月光及暖色局部光，保留中央战斗区的可读性。
+地图：`/Game/Map/Battle_Night`。以当前森林、鸟居、灯笼和宝箱布局配置蓝紫色月光及暖色局部光，保留中央战斗区的可读性。
 
 在关卡大纲「灯光/夜晚」调整：
 

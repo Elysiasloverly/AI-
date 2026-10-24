@@ -2,16 +2,19 @@
 
 #include "CoreMinimal.h"
 #include "Enemies/Data/RogueEnemyArchetypes.h"
+#include "Enemies/RogueEnemyHitFeedback.h"
 #include "GameFramework/Character.h"
 #include "AbilitySystemInterface.h"
 #include "GameplayTagContainer.h"
 // 攻击能力的句柄：AI 侧只保存句柄、用 TryActivateAbility 激活（见下面的"攻击能力接口"）。
 #include "GameplayAbilitySpec.h"
 #include "Shared/RogueTypes.h"
+#include "Audio/RogueAttackAudioSettings.h"
 #include "RogueEnemy.generated.h"
 
 class UStaticMeshComponent;
 class UMaterialInterface;
+class URogueHitFlashComponent;
 class ARogueCharacter;
 class AAIController;
 class UDataTable;
@@ -33,6 +36,11 @@ class AI_API ARogueEnemy : public ACharacter, public IAbilitySystemInterface
 
 public:
 	ARogueEnemy();
+
+private:
+	FGuid SpawnCycleId = FGuid::NewGuid();
+
+public:
 
 	virtual void Tick(float DeltaSeconds) override;
 
@@ -88,6 +96,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Enemy|State")
 	bool IsBoss() const { return bIsBoss; }
 
+	/** 每次出池生成新 ID；同一 Actor 再利用也算不同的 Boss 奖励。 */
+	FGuid GetSpawnCycleId() const { return SpawnCycleId; }
+    /** 复用周期来自已复制的受击状态，用于客户端血条重建显示基线。 */
+    uint32 GetPresentationGeneration() const { return HitFeedback.Generation; }
+
 	UFUNCTION(BlueprintPure, Category = "Enemy|State")
 	float GetCurrentHealth() const { return CurrentHealth; }
 
@@ -110,7 +123,7 @@ public:
 	float GetContactDamage() const { return ContactDamage; }
 
 	UFUNCTION(BlueprintPure, Category = "Enemy|State")
-	float GetContactInterval() const { return ContactInterval; }
+	float GetContactInterval() const { return ContactInterval / AttackSpeedMultiplier; }
 
 	UFUNCTION(BlueprintPure, Category = "Enemy|State")
 	const FRogueEnemyArchetype& GetCurrentArchetype() const { return CurrentArchetype; }
@@ -259,6 +272,14 @@ public:
 	//  蓝图可重写的事件/钩子（BlueprintNativeEvent）
 	// ===========================================================
 
+	/** 本地受击表现回调。房主在实际掉血时触发；客户端按复制快照合并触发。
+	 *  只用于材质、音效、动画；不要在这里再次扣血/发奖励。重写时调用父类以保留默认闪白。 */
+	UFUNCTION(BlueprintNativeEvent, BlueprintCosmetic, Category = "Enemy|Event", meta = (DisplayName = "敌人受击"))
+	void OnEnemyDamaged(float ActualDamage);
+
+	UFUNCTION(BlueprintPure, Category = "Enemy|Feedback")
+	URogueHitFlashComponent* GetHitFlashComponent() const { return HitFlashComponent; }
+
 	/** 敌人初始化完成后调用（蓝图中可重写以执行自定义初始化） */
 	UFUNCTION(BlueprintNativeEvent, Category = "Enemy|Event")
 	void OnEnemyInitialized(const FRogueEnemyProfile& Profile);
@@ -284,6 +305,17 @@ public:
 	void OnApplyVisualStyle();
 
 protected:
+	/** 仅供迁移旧资产；运行时由 DA_AudioConfig 按敌人类统一取值。 */
+	UPROPERTY(meta=(DeprecatedProperty, DeprecationMessage="请在 DA_AudioConfig 配置敌人音效"))
+	FRogueAttackAudioSettings AttackAudio;
+
+	/** 在 BP_EnemyBase 类默认值设置一次；子蓝图继承。清空可关闭闪白，不改模型原材质。 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "敌人|受击反馈", meta = (DisplayName = "受击材质"))
+	TObjectPtr<UMaterialInterface> HitFlashMaterial;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "敌人|组件", meta = (DisplayName = "受击闪白"))
+	TObjectPtr<URogueHitFlashComponent> HitFlashComponent;
+
 	virtual void PostInitializeComponents() override;
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -411,6 +443,7 @@ protected:
 	float OrbitDirection = 1.0f;
 
 	UPROPERTY(BlueprintReadWrite, Category = "Enemy|Runtime")
+	float AttackSpeedMultiplier = 1.f;
 	float ContactTimer = 0.0f;
 
 	UPROPERTY(BlueprintReadWrite, Category = "Enemy|Runtime")
@@ -432,6 +465,22 @@ protected:
 	float TargetRefreshCooldown = 0.0f;
 
 private:
+	friend struct FRogueAttackAudioTestAccess;
+	void NotifyAttackAudio(const FVector& Location);
+	UFUNCTION(NetMulticast, Unreliable)
+	void Multicast_AttackAudio(FVector_NetQuantize Location, uint32 Generation);
+	FRogueAttackAudioState AttackAudioState;
+	uint32 AttackAudioGeneration = 0;
+	friend struct FRogueEnemyHitFlashTestAccess;
+	UPROPERTY(ReplicatedUsing = OnRep_HitFeedback)
+	FRogueEnemyHitFeedback HitFeedback;
+	UFUNCTION() void OnRep_HitFeedback();
+	void RecordHitFeedback(float ActualDamage);
+	void ConsumeReplicatedHitFeedback();
+	uint32 ObservedHitGeneration = 0;
+	uint32 ObservedHitSequence = 0;
+	float ObservedHitTotalDamage = 0.0f;
+
 	/** 基类默认行为 */
 	void HandleDefaultBehavior(float DeltaSeconds);
 
@@ -443,7 +492,7 @@ private:
 	void DecideRangedAttack(ARogueCharacter* PlayerCharacter, float DeltaSeconds);
 
 	void FireRangedShot(ARogueCharacter* PlayerCharacter);
-	void SpawnBulletRing(const FVector& Center, float StartYaw, float SpawnRadius, const FRogueEnemyBulletRingSettings& Settings, float ProjectileDamage, TSubclassOf<ARogueEnemyProjectile> ProjectileClass);
+	bool SpawnBulletRing(const FVector& Center, float StartYaw, float SpawnRadius, const FRogueEnemyBulletRingSettings& Settings, float ProjectileDamage, TSubclassOf<ARogueEnemyProjectile> ProjectileClass);
 	void Die(AActor* Killer);
 	void ApplyEnemyStyle();
 	FVector GetMovementDirection(const FVector& ToPlayer, float DistanceToPlayer, float DeltaSeconds);

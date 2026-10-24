@@ -4,7 +4,7 @@ import pathlib
 import unreal
 
 
-PROJECT_ROOT = pathlib.Path(r"F:\AI_WorkSpeace\ai")
+PROJECT_ROOT = pathlib.Path(r"F:\AI_WorkSpeace\baka")
 REPORT_PATH = PROJECT_ROOT / "Tools" / "asset_reorg_repair_report.json"
 
 

@@ -1,7 +1,7 @@
 """把不同敌人类型的弹体蓝图写进 DT_EnemyArchetypes。
 
 用法（项目根目录）：
-    UnrealEditor-Cmd.exe F:\AI_WorkSpeace\ai\ai.uproject ^
+    UnrealEditor-Cmd.exe F:\AI_WorkSpeace\baka\Baka.uproject ^
         -run=pythonscript -script="Tools/assign_enemy_projectiles.py" ^
         -unattended -nopause -nullrhi -nosplash
 
@@ -17,8 +17,8 @@ import shutil
 import unreal
 
 TABLE_PATH = "/Game/Data/Enemies/DT_EnemyArchetypes"
-TABLE_FILE = r"F:/AI_WorkSpeace/ai/Content/Data/Enemies/DT_EnemyArchetypes.uasset"
-BACKUP_DIR = r"F:/AI_WorkSpeace/ai/Saved/Backup"
+TABLE_FILE = r"F:/AI_WorkSpeace/baka/Content/Data/Enemies/DT_EnemyArchetypes.uasset"
+BACKUP_DIR = r"F:/AI_WorkSpeace/baka/Saved/Backup"
 
 # 敌人类型 -> 弹体蓝图资产路径（None 表示保持空，走敌人 BP/原生回退）
 PROJECTILE_BY_TYPE = {

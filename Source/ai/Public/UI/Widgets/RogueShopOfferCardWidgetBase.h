@@ -31,6 +31,9 @@ public:
 	int32 GetOfferIndex() const { return OfferIndex; }
 
 protected:
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Rogue|样式") FLinearColor NormalCardTint = FLinearColor::White;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Rogue|样式") FLinearColor PurchasedCardTint = FLinearColor(.65f,.67f,.72f,1);
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Rogue|样式") FLinearColor UnaffordableCardTint = FLinearColor(1,.78f,.78f,1);
 	UFUNCTION(BlueprintImplementableEvent, Category = "Rogue|Shop")
 	void OnOfferViewUpdated(const FRogueShopOfferViewData& InViewData);
 

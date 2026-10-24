@@ -44,5 +44,5 @@ void URogueUpgradeCardWidgetBase::ApplyManagedUpgradeCardView(const FRogueUpgrad
 {
 	RogueMenuWidgetHelpers::SetManagedText(Text_Title, InViewData.TitleText);
 	RogueMenuWidgetHelpers::SetManagedText(Text_Desc, InViewData.DescriptionText);
-	RogueMenuWidgetHelpers::SetManagedBorderColor(Border_Card, FLinearColor(0.05f, 0.11f, 0.26f, 0.96f));
+	RogueMenuWidgetHelpers::SetManagedBorderColor(Border_Card, CardTint);
 }

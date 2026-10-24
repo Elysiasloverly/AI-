@@ -12,7 +12,7 @@ GameplayEffect 放 `AbilitySystem/GameplayEffects/`；战斗视觉表现放 `Com
 
 | 目录 | 职责与常用入口 |
 |---|---|
-| `Framework/` | 整局调度与快照：`RogueGameMode`、`RogueGameState`；规则、配置和平衡：`RogueGameModeRules`、`RogueGameModeConfig`、`RogueGameBalanceAsset` |
+| `Framework/` | 整局调度与快照：`RogueGameMode`、`RogueGameState`；主菜单：`RogueMainMenuGameMode`；规则、配置和平衡：`RogueGameModeRules`、`RogueGameModeConfig`、`RogueGameBalanceAsset` |
 | `AbilitySystem/` | GAS 基础设施：`RogueAbilitySystemComponent`、`RogueAttributeSet`、`RogueAttributeMacros`、`RogueAbilitySet`、`RogueAbilitySystemLibrary`、`RogueGameplayTags` |
 | `AbilitySystem/Abilities/` | 冲刺、武器开火、敌人攻击 GameplayAbility |
 | `AbilitySystem/Tasks/` | 冲刺位移、武器开火心跳 |
@@ -28,11 +28,11 @@ GameplayEffect 放 `AbilitySystem/GameplayEffects/`；战斗视觉表现放 `Com
 | `Progression/` | `RogueRewardTypes.h`：成长领域共用奖励报价结构 |
 | `Player/` | `RogueCharacter`、`RoguePlayerState`、`RoguePlayerController`、`RoguePlayerQuery`、视觉组件及玩家平衡资产 |
 | `Enemies/` | `RogueEnemy`：统一敌人运行时、移动和攻击决策 |
-| `Enemies/Data/` | `RogueEnemyArchetypes`、`RogueEnemyDataTable`、`RogueEnemyVisualResources` |
+| `Enemies/Data/` | `RogueEnemyArchetypes`、`RogueEnemyDataTable` |
 | `Enemies/Spawning/` | `RogueSpawnSubsystem`：刷怪、出生位置、波次预算 |
 | `World/` | `RogueArena`、`RogueExperiencePickup`、`RogueShopTerminal`、`RogueSceneSubsystem` |
-| `UI/` | `RogueHUD`：界面调度与原生绘制 |
-| `UI/Widgets/` | 十个独立 UMG 基类：8 个菜单类 + 玩家状态条 + 敌人血条；共享视图数据及聚合 include |
+| `UI/` | `RogueHUD`、`RogueMainMenuHUD`：界面调度与原生绘制；主菜单模式复用设置面板 |
+| `UI/Widgets/` | 十三个独立 UMG 基类：8 个菜单类 + 玩家状态条 + 敌人血条 + 受伤泛红层 + 主菜单 + 教程；共享视图数据及聚合 include |
 | `Shared/` | `RogueTypes.h`：跨玩法域的枚举、复制载荷与结构体 |
 | `Debug/` | `RogueSelfTest`、两个 `.SelfTest.cpp`：开关、链路诊断及攻击/压测探针 |
 | `Source/aiEditor/` | 仅编辑器的工具模块：`RogueWidgetBuilder`（UMG 占位资产生成），不参与游戏打包 |
@@ -71,10 +71,13 @@ GameplayEffect 放 `AbilitySystem/GameplayEffects/`；战斗视觉表现放 `Com
 - `RogueSettingsMenuWidgetBase`：设置菜单。
 - `RogueDeathScreenWidgetBase`：本局结束面板。
 - `RogueReviveCountdownWidgetBase`：倒地复活倒计时。
+- `RogueDamageFlashWidgetBase`：受伤泛红层（全屏，只驱动 `FlashRoot` 透明度）。
+- `RogueMainMenuWidgetBase`：开始菜单（6 个按钮 + 提示文字，按钮行为转交 HUD）。
+- `RogueTutorialWidgetBase`：教程页（可滚动正文 + 返回按钮）。
 - `RogueVitalsWidgetBase`：本地玩家生命 / 护甲 / 经验与左上角波数/金币，常驻视口。
 - `RogueEnemyHealthBarWidgetBase`：单个敌人血条，由 HUD 池化复用。
 
-九个菜单视图 USTRUCT 集中在 `RogueMenuViewData.h`；HUD 状态条的 `FRoguePlayerVitalsView` / `FRogueEnemyHealthBarView` 在 `RogueHUDViewData.h`。`RogueMenuWidgetBases.h` 保留为菜单聚合头，统一包含菜单视图数据和八个菜单基类；两个 HUD 状态条类单独 include，不参与菜单聚合。
+九个菜单视图 USTRUCT 集中在 `RogueMenuViewData.h`；HUD 状态条的 `FRoguePlayerVitalsView` / `FRogueEnemyHealthBarView` 在 `RogueHUDViewData.h`。`RogueMenuWidgetBases.h` 保留为菜单聚合头，统一包含菜单视图数据和八个菜单基类；两个 HUD 状态条类与受伤泛红层单独 include，不参与菜单聚合。
 
 C++ 仍通过 `Update*View` 提供数据，蓝图通过原有 `On*Updated` 等事件更新外观。拆头文件不会新增界面状态转换或改变 HUD 的调度方式。
 

@@ -65,9 +65,9 @@
 ## 验证
 
 ```bat
-UnrealEditor-Cmd.exe F:\AI_WorkSpeace\ai\ai.uproject ^
+UnrealEditor-Cmd.exe F:\AI_WorkSpeace\baka\Baka.uproject ^
   -ExecCmds="Automation RunTests Rogue.Gameplay.EnemyVariants+ Rogue.Gameplay.EnemyCollision+ Rogue.Gameplay.GameBalance+ Rogue.Gameplay.ShockPillar;Quit" ^
   -unattended -nopause -nullrhi -nosplash
 ```
 
-`Rogue.Gameplay.EnemyVariants` 会核对新类型、数据表行、敌人 BP、弹体类和 `BP_RogueGameMode.EnemyClassMap` 的映射。
+`Rogue.Gameplay.EnemyVariants` 已覆盖全部 13 种类型，核对类型、数据表行、敌人 BP、弹体类，以及蓝图默认 EnemyType 与当前类型的一致性。旧枚举兼容与地图入口见 [清理说明](Map-Entrypoints-And-Legacy-Cleanup.md)。

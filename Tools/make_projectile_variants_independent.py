@@ -1,7 +1,7 @@
 """把敌人弹体变体改为直接继承 C++ 类，并各自生成可删除的占位组件。
 
 用法（项目根目录）：
-    UnrealEditor-Cmd.exe F:\AI_WorkSpeace\ai\ai.uproject ^
+    UnrealEditor-Cmd.exe F:\AI_WorkSpeace\baka\Baka.uproject ^
         -run=pythonscript -script="Tools/make_projectile_variants_independent.py" ^
         -unattended -nopause -nullrhi -nosplash
 

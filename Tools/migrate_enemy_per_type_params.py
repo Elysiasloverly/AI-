@@ -1,7 +1,7 @@
 """把 DT_EnemyArchetypes 的专属参数从"7 个共享块"迁到"13 个一怪一块"。
 
 用法（项目根目录）：
-    UnrealEditor-Cmd.exe F:\\AI_WorkSpeace\\ai\\ai.uproject ^
+    UnrealEditor-Cmd.exe F:\\AI_WorkSpeace\\ai\\Baka.uproject ^
         -run=pythonscript -script="Tools/migrate_enemy_per_type_params.py" ^
         -unattended -nopause -nullrhi -nosplash
 
@@ -26,10 +26,10 @@ if TOOLS_DIR not in sys.path:
 import enemy_params_migration_lib as migration  # noqa: E402
 
 TABLE_PATH = "/Game/Data/Enemies/DT_EnemyArchetypes"
-TABLE_FILE = r"F:/AI_WorkSpeace/ai/Content/Data/Enemies/DT_EnemyArchetypes.uasset"
-BACKUP_DIR = r"F:/AI_WorkSpeace/ai/Saved/Backup"
+TABLE_FILE = r"F:/AI_WorkSpeace/baka/Content/Data/Enemies/DT_EnemyArchetypes.uasset"
+BACKUP_DIR = r"F:/AI_WorkSpeace/baka/Saved/Backup"
 BACKUP_FILE = os.path.join(BACKUP_DIR, "DT_EnemyArchetypes_before_per_type_params.uasset")
-VERIFY_DUMP = r"F:/AI_WorkSpeace/ai/Saved/DataDump/DT_EnemyArchetypes.after_migration.json"
+VERIFY_DUMP = r"F:/AI_WorkSpeace/baka/Saved/DataDump/DT_EnemyArchetypes.after_migration.json"
 
 VERIFY_RULES = {
     # EnemyType -> (目标块, 源块, 需要一致的 key；None = 整块一致)

@@ -108,6 +108,7 @@ void ARogueWeapon_HellTower::WeaponTick(float DeltaSeconds)
 	const float BeamSpacing = 18.0f;
 	const FVector BeamOriginBase = PlayerLocation + FVector(0.0f, 0.0f, 62.0f);
 	const float EffectiveBeamRefresh = Config.BeamRefreshInterval + (bHeavy ? Config.HeavyCombatBeamRefreshPenalty : 0.0f);
+	bool bAudioTagged = false;
 
 	for (int32 TowerIndex = 0; TowerIndex < EffectiveCount; ++TowerIndex)
 	{
@@ -142,13 +143,15 @@ void ARogueWeapon_HellTower::WeaponTick(float DeltaSeconds)
 		const float LateralOffset = EffectiveCount % 2 == 0 ? (OffsetIndex + 0.5f) * BeamSpacing : OffsetIndex * BeamSpacing;
 		const FVector BeamOrigin = BeamOriginBase + LateralDirection * LateralOffset;
 		const FVector TargetLocation = TargetEnemy->GetActorLocation() + FVector(0.0f, 0.0f, 42.0f);
-		SpawnLaserBeam(BeamOrigin, TargetLocation, true, false, EffectiveBeamRefresh + Config.BeamLifetimePadding);
+		SpawnLaserBeam(BeamOrigin, TargetLocation, true, false, EffectiveBeamRefresh + Config.BeamLifetimePadding, !bAudioTagged);
+		bAudioTagged = true;
 		HellTowerBeamTimers[TowerIndex] = EffectiveBeamRefresh;
 	}
 }
 
 void ARogueWeapon_HellTower::OnOwnerDied()
 {
+	Super::OnOwnerDied();
 	HellTowerTargets.Reset();
 	HellTowerCurrentDamages.Reset();
 	HellTowerDamageTickTimers.Reset();
@@ -169,7 +172,7 @@ float ARogueWeapon_HellTower::GetEffectiveDamageRampPerTick() const
 {
 	const FRogueWeaponBonusValues& Bonuses = GetWeaponBonusValues();
 	const float Bonus = Bonuses.AttackPower;
-	return GetConfig().DamageRampPerTick + Bonus * GetConfig().DamageRampBonusScale;
+	return FMath::Max(0.0f, GetConfig().DamageRampPerTick + Bonus * GetConfig().DamageRampBonusScale + Bonuses.HellTowerDamageRamp);
 }
 
 float ARogueWeapon_HellTower::GetEffectiveDamageTickInterval() const

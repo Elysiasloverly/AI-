@@ -5,6 +5,7 @@
 #include "Combat/Weapons/RogueWeapon_Mortar.h"
 #include "Combat/Weapons/RogueWeapon_Scythe.h"
 #include "Progression/Upgrades/RogueUpgradeSystem.h"
+#include "Progression/Meta/RogueUpgradeTreeDefinition.h"
 #include "Engine/DataTable.h"
 #include "Engine/World.h"
 #include "Framework/RogueGameMode.h"
@@ -78,6 +79,17 @@ namespace RogueUpgradePrerequisiteTests
 			WeaponTableProperty->SetObjectPropertyValue_InContainer(Player, WeaponTable);
 			Player->AutoPossessPlayer = EAutoReceiveInput::Disabled;
 			Player->FinishSpawning(FTransform(FVector(0.0f, 0.0f, 120.0f)));
+			// These tests exercise in-run weapon prerequisites after permanent access has been purchased.
+			// Inject that profile before Possess freezes the run; no permanent stat bonuses are granted.
+			ARoguePlayerState* ControllerState = Controller->GetPlayerState<ARoguePlayerState>();
+			if (!Test.TestNotNull(TEXT("The controller owns a PlayerState before possession"), ControllerState)) { return false; }
+			FRogueProgressionSnapshot PermanentAccess;
+			for (const FRogueUpgradeTreeNode& Node : URogueUpgradeTreeDefinition::GetDefaultDefinition()->GetNodes())
+			{
+				if (Node.Kind != ERogueMetaNodeKind::BaseStat) PermanentAccess.NodeRanks.Add(Node.NodeId, 1);
+			}
+			if (!Test.TestTrue(TEXT("Permanent weapon and card access is injected before the run"),
+				ControllerState->SetProgressionSnapshotForRun(PermanentAccess))) { return false; }
 			Controller->Possess(Player);
 			Player->SetActorTickEnabled(false);
 			Player->GetCharacterMovement()->SetComponentTickEnabled(false);
@@ -183,7 +195,7 @@ bool FRogueAssetUpgradePrerequisiteTest::RunTest(const FString& Parameters)
 	RogueUpgradePrerequisiteTests::FUpgradeFixture Fixture;
 	if (!Fixture.Initialize(*this)) { return false; }
 	URogueUpgradeRuleAsset* Rules = NewObject<URogueUpgradeRuleAsset>(Fixture.World);
-	TestEqual(TEXT("The default asset has the six weapon rules"), Rules->WeaponUpgradeRules.Num(), 6);
+	TestEqual(TEXT("The default asset includes the three new exclusive card rules"), Rules->WeaponUpgradeRules.Num(), 9);
 	return RogueUpgradePrerequisiteTests::CheckImmediateUnlocks(*this, Fixture, Rules);
 }
 
@@ -196,7 +208,7 @@ bool FRogueMortarFallbackUpgradePrerequisiteTest::RunTest(const FString& Paramet
 	RogueUpgradePrerequisiteTests::FUpgradeFixture Fixture;
 	if (!Fixture.Initialize(*this)) { return false; }
 	URogueUpgradeRuleAsset* Rules = RogueUpgradePrerequisiteTests::MakeRulesWithoutMortar(Fixture.World);
-	TestEqual(TEXT("The fixture leaves five non-mortar asset rules"), Rules->WeaponUpgradeRules.Num(), 5);
+	TestEqual(TEXT("The fixture leaves eight non-mortar asset rules"), Rules->WeaponUpgradeRules.Num(), 8);
 	TestTrue(TEXT("The compatibility path still offers the mortar unlock"), Fixture.BuildPool(Rules).Contains(ERogueUpgradeType::MortarCount));
 	return RogueUpgradePrerequisiteTests::CheckImmediateUnlocks(*this, Fixture, Rules);
 }

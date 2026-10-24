@@ -5,6 +5,8 @@
 #include "AbilitySystemInterface.h"
 #include "Shared/RogueTypes.h"
 #include "Progression/Shop/RogueShopSystem.h"
+#include "Progression/Meta/RogueProgressionTypes.h"
+#include "Player/RogueStagePlayerSnapshot.h"
 #include "RoguePlayerState.generated.h"
 
 class URogueAbilitySystemComponent;
@@ -29,6 +31,15 @@ class AI_API ARoguePlayerState : public APlayerState, public IAbilitySystemInter
 
 public:
 	ARoguePlayerState();
+    virtual void CopyProperties(APlayerState* NewPlayerState) override;
+    void PrepareStageTravel();
+    void CancelStageTravel();
+    void RestoreStageTravelGrowth(class ARogueCharacter* Character);
+private:
+    UPROPERTY() FRogueStagePlayerSnapshot StageGrowth;
+    bool bStageTravelPrepared = false;
+    bool bStageGrowthPending = false;
+public:
 
 	// IAbilitySystemInterface
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
@@ -45,6 +56,18 @@ public:
 	/** 由 Pawn 在 PossessedBy / OnRep_PlayerState 时调用，把 Avatar 换成当前 Pawn。
 	 *  PlayerState::BeginPlay 也会尝试初始化，此时 InPawn 可能为空；不保证其他 Actor 已完成复制。 */
 	void RefreshAbilityActorInfo(APawn* InPawn);
+
+	/** 开局只接收所属玩家的节点等级；冰砖余额和存档不上传给房主。 */
+	UFUNCTION(BlueprintPure, Category = "升级树")
+	const FRogueProgressionSnapshot& GetProgressionSnapshot() const { return ProgressionSnapshot; }
+	UFUNCTION(BlueprintPure, Category = "升级树")
+	bool IsProgressionReady() const { return bProgressionReady; }
+	bool HasProgressionFailed() const { return bProgressionFailed; }
+	bool SetProgressionSnapshotForRun(const FRogueProgressionSnapshot& Snapshot);
+	void BeginProgressionHandshake();
+	void GrantBossIceBrick(const FGuid& RewardId);
+	int32 GetBossIceBricksEarnedThisRun() const { return BossIceBricksEarnedThisRun; }
+
 
 	// ===========================================================
 	//  升级状态（每玩家一份 + 复制）
@@ -118,7 +141,7 @@ public:
 	 *  由 `ARogueCharacter::InitializeGASAttributes()` 在**第一次** possess 时置位，
 	 *  并作为它自己的重入守卫。详细理由见 `bBaseAttributesInitialized` 的注释。 */
 	bool IsBaseAttributesInitialized() const { return bBaseAttributesInitialized; }
-	void MarkBaseAttributesInitialized() { bBaseAttributesInitialized = true; }
+	void MarkBaseAttributesInitialized() { bBaseAttributesInitialized = true; bProgressionSubmitted = true; }
 
 	// ---- 复活显示查询（转发当前 Pawn 的 LifeState 截止时刻）----
 
@@ -144,6 +167,41 @@ public:
 protected:
 	virtual void BeginPlay() override;
 	virtual void PostInitializeComponents() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+	UFUNCTION(Client, Reliable)
+	void Client_RequestProgressionSnapshot();
+	UFUNCTION(Server, Reliable)
+	void Server_SubmitProgressionSnapshot(const FRogueProgressionSnapshot& Snapshot);
+	UFUNCTION(Client, Reliable)
+	void Client_GrantBossIceBrick(const FGuid& RewardId);
+	UFUNCTION()
+	void OnRep_Progression();
+
+	UPROPERTY(ReplicatedUsing = OnRep_Progression)
+	FRogueProgressionSnapshot ProgressionSnapshot;
+	UPROPERTY(ReplicatedUsing = OnRep_Progression)
+	bool bProgressionReady = false;
+	UPROPERTY(Replicated)
+	int32 BossIceBricksEarnedThisRun = 0;
+
+	friend struct FRogueReliabilityTestAccess;
+	UPROPERTY(Replicated)
+	bool bProgressionFailed = false;
+	/** 初始化期限内保留合法迟到快照，超时退出而不是伪造空进度。 */
+	UPROPERTY(EditDefaultsOnly, Category = "升级树", meta = (ClampMin = "5", ClampMax = "120"))
+	float ProgressionHandshakeTimeout = 30.0f;
+	double ProgressionHandshakeStarted = -1.0;
+	void FailProgressionHandshake();
+	bool bProgressionSubmitted = false;
+	FTimerHandle ProgressionHandshakeTimer;
+	FTimerHandle LocalProgressionRetryTimer;
+	FTimerHandle BossRewardRetryTimer;
+	TSet<FGuid> GrantedBossRewardIds;
+	TSet<FGuid> PendingLocalBossRewards;
+	void SubmitLocalProgressionWhenReady();
+	void FlushLocalBossRewards();
+
 
 	UFUNCTION()
 	void OnRep_PendingUpgrades();

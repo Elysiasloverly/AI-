@@ -1,4 +1,4 @@
-# ai 项目结构图（当前状态）
+# Baka！项目结构图（当前状态）
 
 > 本文反映按玩法职责整理后的目录。类文件索引与新增文件约定见 [Class-Organization.md](Class-Organization.md)。
 > 本次整理保留类名、反射类型、蓝图接口和原有方法体；大类只拆分函数实现文件，运行时对象关系保持。
@@ -54,7 +54,7 @@ Source/ai/
 ├── Public/
 └── Private/
     ├── Framework/
-    │   ├── RogueGameMode.* / RogueGameState.*
+    │   ├── RogueGameMode.* / RogueGameState.* / RogueMainMenuGameMode.*
     │   ├── RogueGameModeRules.* / RogueGameModeConfig.h
     │   ├── RogueGameBalanceAsset.*
     │   └── RogueGameMode.Progression.cpp / RogueGameMode.Players.cpp
@@ -75,7 +75,9 @@ Source/ai/
     ├── Progression/
     │   ├── RogueRewardTypes.h
     │   ├── Upgrades/     RogueUpgradeSystem / RogueUpgradeSystemRules / 升级定义和规则资产
-    │   └── Shop/         RogueShopSystem
+    │   ├── Shop/         RogueShopSystem
+    │   └── Meta/         UpgradeTreeDefinition / ProgressionSubsystem / SaveGame / ProgressionStorage
+    ├── Networking/       RogueRoomSubsystem / RogueLobby（房间、准备、连接与切图）
     ├── Player/
     │   ├── RogueCharacter.* / RoguePlayerState.* / RoguePlayerController.*
     │   ├── RoguePlayerLifeState.h
@@ -83,17 +85,17 @@ Source/ai/
     │   └── RogueCharacter.{GAS,Input,Weapons,Progression,Lifecycle}.cpp
     ├── Enemies/
     │   ├── RogueEnemy.*
-    │   ├── Data/         RogueEnemyArchetypes / RogueEnemyDataTable / RogueEnemyVisualResources
+    │   ├── Data/         RogueEnemyArchetypes / RogueEnemyDataTable
     │   └── Spawning/     RogueSpawnSubsystem
     ├── World/            RogueArena / RogueShopTerminal / RogueExperiencePickup / RogueSceneSubsystem
     ├── UI/
-    │   ├── RogueHUD.*
-    │   └── Widgets/      8 个 WidgetBase、RogueMenuViewData.h、RogueMenuWidgetBases.h 聚合头
+    │   ├── RogueHUD.* / RogueHUD.MainMenu.cpp / RogueMainMenuHUD.*
+    │   └── Widgets/      各功能 WidgetBase、多人页面与升级树节点、RogueMenuViewData.h、RogueMenuWidgetBases.h 聚合头
     ├── Shared/           RogueTypes.h
     └── Debug/            RogueSelfTest.* / RogueCharacter.SelfTest.cpp / RogueGameMode.SelfTest.cpp
 ```
 
-`.GAS.cpp`、`.Players.cpp` 等仍实现原来的 `ARogueCharacter` / `ARogueGameMode`，没有新增运行时类或组件。另有 `Source/aiEditor/`：仅编辑器加载的工具模块，`URogueWidgetBuilder` 用于生成 UMG 占位资产，不参与打包。UI 的十个基类（8 个菜单 + 玩家状态条 + 敌人血条）按声明职责分文件；九个菜单视图结构体在 `RogueMenuViewData.h`，状态条的两个视图结构体在 `RogueHUDViewData.h`；`RogueMenuWidgetBases.h` 保留为菜单聚合 include，蓝图继承关系和事件签名保留。完整名称见 [类文件组织说明](Class-Organization.md)。
+`.GAS.cpp`、`.Players.cpp` 等仍实现原来的 `ARogueCharacter` / `ARogueGameMode`，没有新增运行时类或组件。另有 `Source/aiEditor/`：仅编辑器加载的工具模块，`URogueWidgetBuilder` 用于生成 UMG 占位资产，不参与打包。UI 基类按战斗状态、菜单、多人房间、升级树与节点等职责组织；视图结构体分别位于 RogueMenuViewData.h、RogueHUDViewData.h 及对应功能头。RogueMenuWidgetBases.h 保留为菜单聚合 include，蓝图继承关系与事件签名保持稳定。完整名称见 [类文件组织说明](Class-Organization.md)。
 
 ---
 
@@ -165,7 +167,8 @@ graph LR
     HUD --> W6["WBP_ResurrectionScreen（濒死等待）"]
     HUD --> W7["WBP_PlayerVitals（生命 / 护甲 / 经验 + 左上角波数/金币）"]
     HUD --> W8["WBP_EnemyHealthBar（池化复用）"]
-    B["UI/Widgets：10 个独立 UMG 基类<br/>RogueMenuViewData.h / RogueHUDViewData.h：视图数据"]
+    HUD --> W9["WBP_DamageFlash（受伤泛红）"]
+    B["UI/Widgets：13 个独立 UMG 基类<br/>RogueMenuViewData.h / RogueHUDViewData.h：视图数据"]
     W1 -.-> B
     W2 -.-> B
     W3 -.-> B
@@ -174,7 +177,10 @@ graph LR
     W6 -.-> B
     W7 -.-> B
     W8 -.-> B
+    W9 -.-> B
 ```
+
+> 主菜单不在游戏 HUD 里：它使用独立关卡 `/Game/Map/MainMenu` 与 `ARogueMainMenuHUD`，见 [开始菜单](Main-Menu.md)。
 
 - 每个界面都是"**C++ 基类提供数据 + 蓝图实现外观**"：C++ 侧 `Update*View(ViewData)` 推数据，
   蓝图侧实现 `On*Updated` 画出来（例如 `URogueDeathScreenWidgetBase::UpdateDeathView`）。
@@ -343,11 +349,12 @@ sequenceDiagram
 | `Data/Upgrades/DA_UpgradeDefinitions` / `Data/Upgrades/DA_UpgradeRules` | DataAsset | `URogueUpgradeDefinitionAsset` / `URogueUpgradeRuleAsset` |
 | `BP_RogueGameMode` | Blueprint | `ARogueGameMode`（**关卡默认 GameMode**） |
 | `BP_RogueCharacter` | Blueprint | `ARogueCharacter`（蓝图里只配资源/数值引用） |
-| `BP_RogueHUD` | Blueprint | `ARogueHUD`（挂 8 个 WBP 类：6 个菜单 + 玩家状态条 + 敌人血条） |
+| `BP_RogueHUD` | Blueprint | `ARogueHUD`（挂 9 个 WBP 类：6 个菜单 + 玩家状态条 + 敌人血条 + 受伤泛红层） |
 | `BP_EnemyBase` + 13 个敌人 BP | Blueprint | `ARogueEnemy`（原型参数全部来自数据表） |
 | `BP_Projectile/*` | Blueprint | 玩家弹体/八卦炉/阴阳玉/光束/刀片（只配外观） |
-| `BP/Enemy/Projectiles/BP_EnemyProjectile(_Boss/_Shooter/_Artillery/_Spitter/_ShockPillar/_Sniper/_Shotgunner/_Burst/_Ringer)` | Blueprint | `ARogueEnemyProjectile`（敌人弹体外观；原型表按类型指定，敌人 BP 可覆盖） |
-| `WBP_*`（10 个） | UMG | `UI/Widgets/` 下的 10 个基类；8 个菜单走聚合头，两个 HUD 状态条单独 include |
+| `BP/Enemy/Projectiles/BP_EnemyProjectile(_Boss/_Marksman/_Cannoneer/_Scatterer/_Sniper/_Shotgunner/_Repeater/_Ringcaster/_ShockPillar)` | Blueprint | `ARogueEnemyProjectile`（敌人弹体外观；原型表按类型指定，敌人 BP 可覆盖） |
+| `WBP_*`（13 个） | UMG | `UI/Widgets/` 下的 13 个基类；8 个菜单走聚合头，两个 HUD 状态条、受伤泛红层、主菜单与教程单独 include |
+| `/Game/Map/MainMenu` | Level | 主菜单入口；World Settings 指定 `ARogueMainMenuGameMode`，见 [开始菜单](Main-Menu.md) |
 
 ---
 
@@ -428,3 +435,5 @@ Rogue.SelfTest.DisableEnemyAttackAbilities 1   # 对照：不授予敌人攻击�
 - 代码侧已清理：旧的三个"授予标签" GE 文件、`URogueGameplayCueManager`、`FRogueUpgradeEffectApplier`、
   旧 PlayerState 的独立 `ReviveServerTime`（现合并到角色 `LifeState`）、`TickReviveInvulnerability`、`GetServerTimeSeconds`、
   未使用的 `Effect.Upgrade.Weapon` 标签 —— 均已删除（见 §1 的结构即当前真实状态）。
+
+当前多人和永久成长流程分别见 [Multiplayer-Lobby.md](Multiplayer-Lobby.md) 与 [UpgradeTreeGuide.md](UpgradeTreeGuide.md)。HUD 主菜单职责单独放在 RogueHUD.MainMenu.cpp，存储实现单独放在 RogueProgressionStorage.cpp，类名与 WBP 继承保持不变。

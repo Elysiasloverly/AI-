@@ -3,6 +3,8 @@
 #include "CoreMinimal.h"
 #include "GameFramework/GameStateBase.h"
 #include "Combat/Visuals/RogueImpactEffect.h"
+#include "Framework/RogueBattleStage.h"
+#include "Framework/RogueBossHealthView.h"
 #include "RogueGameState.generated.h"
 
 /**
@@ -49,7 +51,15 @@ public:
 	/** 从"特效来源"解析出驱动 cue 的 ASC；解析不到返回 nullptr。 */
 	static class UAbilitySystemComponent* ResolveCueSourceASC(AActor* SourceActor);
 
+    UFUNCTION(BlueprintPure, Category="Rogue|Run")
+    const FRogueBattleStageView& GetBattleStage() const { return BattleStage; }
+    void SetBattleStage(const FRogueBattleStageView& View);
+    UFUNCTION(BlueprintPure, Category="Rogue|Boss")
+    const FRogueBossHealthView& GetBossHealthView() const { return BossHealthView; }
+    void RefreshBossHealthView();
 private:
+    UPROPERTY(Replicated) FRogueBossHealthView BossHealthView;
+    UPROPERTY(Replicated) FRogueBattleStageView BattleStage;
 	UPROPERTY(Replicated) int32 CurrentWave = 0;
 	UPROPERTY(Replicated) int32 EnemiesDefeated = 0;
 	UPROPERTY(Replicated) float RunTimeSeconds = 0.0f;

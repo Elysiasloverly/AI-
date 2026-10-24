@@ -39,6 +39,7 @@ private:
 	TArray<TObjectPtr<ARogueOrbitingBlade>> OrbitingBlades;
 
 	float SharedOrbitAngle = 0.0f;
+	bool bAudioOrbitActive = false;
 
 	/** 上一次推进相位时的**服务器时间**（详见 WeaponTick 里的说明）。
 	 *  纯本地账本、各端各自维护，所以不是 UPROPERTY。

@@ -28,6 +28,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Rogue|Settings")
 	void RequestVolumeUp();
 
+	UFUNCTION(BlueprintCallable, Category = "Rogue|Settings", meta=(DisplayName="降低背景音乐音量"))
+	void RequestMusicVolumeDown();
+
+	UFUNCTION(BlueprintCallable, Category = "Rogue|Settings", meta=(DisplayName="提高背景音乐音量"))
+	void RequestMusicVolumeUp();
+
 	UFUNCTION(BlueprintCallable, Category = "Rogue|Settings")
 	void RequestQualityDown();
 
@@ -50,6 +56,7 @@ public:
 	void RequestToggleDisplayMode();
 
 protected:
+	virtual void NativeConstruct() override;
 	UFUNCTION(BlueprintImplementableEvent, Category = "Rogue|Settings")
 	void OnSettingsViewUpdated(const FRogueSettingsMenuViewData& InViewData);
 

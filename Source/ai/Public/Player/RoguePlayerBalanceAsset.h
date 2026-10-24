@@ -145,6 +145,14 @@ struct AI_API FRogueWeaponBonusCaps
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "武器加成上限", meta = (DisplayName = "镰刀尺寸加成上限(-1=不限)", ToolTip = "限制额外尺寸比例；例如 1 表示最多增加基础尺寸的 100%，最终为基础尺寸的 2 倍。负值不限制。"))
 	float ScytheSize = -1.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "武器加成上限", meta = (DisplayName = "灵符连诵加成上限(-1=不限)"))
+	float ProjectileBurst = -1.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "武器加成上限", meta = (DisplayName = "炉心扩散加成上限(-1=不限)"))
+	float RocketBlastRadius = -1.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "武器加成上限", meta = (DisplayName = "神威增幅加成上限(-1=不限)"))
+	float HellTowerDamageRamp = -1.0f;
+
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "武器加成上限", meta = (DisplayName = "镰刀吸血上限(-1=不限)", ToolTip = "限制镰刀吸血比例；0.5 表示最多 50%。无论怎么配，最终都会钳制在 100%。"))
 	float ScytheLifesteal = -1.0f;
 };

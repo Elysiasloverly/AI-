@@ -42,7 +42,7 @@
 
 | 原说法或误导 | 当前应当如何理解 | 对照位置 |
 |---|---|---|
-| 濒死依赖 GE 到期复活，UI 跟着 GE 计时切换 | 当前由 Character 的 LifeState 与唯一服务端复活定时器决定，GE 镜像标签/表现，HUD 根据复制状态切换。倒计时为零不允许客户端自行复活 | `RogueCharacter.LifeCycle.cpp`、`RogueHUD.Widgets.cpp`、[生命周期说明](Player-LifeCycle.md) |
+| 濒死依赖 GE 到期复活，UI 跟着 GE 计时切换 | 当前由 Character 的 LifeState 与唯一服务端复活定时器决定，GE 镜像标签/表现，HUD 根据复制状态切换。倒计时为零不允许客户端自行复活 | `RogueCharacter.LifeCycle.cpp`、`RogueHUD.cpp`、[生命周期说明](Player-LifeCycle.md) |
 | 使用 TInlineAllocator\<4\> 就限定四人且永不分配堆内存 | 4 是内联容量，超过后容器可以使用后备分配器扩容 | UE `ContainerAllocationPolicies.h`，`TSizedInlineAllocator` |
 | `TFunctionRef` 只允许传左值，或可长期保存任意回调 | 它是不拥有可调用对象的引用包装；可接受的参数形式应看模板约束，重点是引用的对象在使用期间必须有效 | UE `Templates/Function.h`，`TFunctionRefBase`；`RogueGameModeRules.h` |
 | const 函数就是数学意义上的纯函数 | const 约束的是对象接口；方法仍可能消耗随机数、写输出参数或访问外部状态 | `RogueUpgradeSystem` |

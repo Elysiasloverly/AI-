@@ -1,6 +1,7 @@
 #include "Progression/Shop/RogueShopSystem.h"
 
 #include "Progression/Upgrades/RogueUpgradeSystem.h"
+#include "Progression/Upgrades/RogueUpgradeSystemRules.h"
 #include "Player/RogueCharacter.h"
 
 void FRogueShopSystem::Reset()
@@ -122,7 +123,11 @@ bool FRogueShopSystem::TryBuyOffer(int32 OfferIndex, ARogueCharacter* Character,
 	}
 
 	FRogueShopOffer& Offer = Offers[OfferIndex];
-	if (!Offer.IsUpgradeOffer() || Offer.IsPurchased() || !Character->TrySpendMoney(Offer.GetCost()))
+	// 报价可能早于本轮升级：首次获取武器后，旧数量报价已变成需要另购许可的专属卡。
+	// 扣钱前重新检查当前玩家，拒绝过期报价也不会消耗金币。
+	if (!Offer.IsUpgradeOffer() || Offer.IsPurchased()
+		|| !RogueUpgradeSystemRules::IsUpgradeAllowedForProgression(Offer.GetUpgrade().Type, Character)
+		|| !Character->TrySpendMoney(Offer.GetCost()))
 	{
 		return false;
 	}

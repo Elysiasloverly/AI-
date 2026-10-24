@@ -1,7 +1,7 @@
 """生成 HUD 占位 WBP：玩家状态条 + 敌人血条。
 
 用法（项目根目录）：
-    UnrealEditor-Cmd.exe F:\AI_WorkSpeace\ai\ai.uproject ^
+    UnrealEditor-Cmd.exe F:\AI_WorkSpeace\baka\Baka.uproject ^
         -run=pythonscript -script="Tools/create_hud_widgets.py" ^
         -unattended -nopause -nullrhi -nosplash
 

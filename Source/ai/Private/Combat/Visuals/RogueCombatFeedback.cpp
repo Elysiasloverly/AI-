@@ -36,4 +36,33 @@ namespace RogueCombatFeedback
 			}
 		}
 	}
+
+	void AddHealingNumber(AActor* WorldContextActor, const FVector& WorldLocation, float Amount)
+	{
+		if (!IsValid(WorldContextActor) || Amount <= 0.0f)
+		{
+			return;
+		}
+
+		UWorld* World = WorldContextActor->GetWorld();
+		if (World == nullptr)
+		{
+			return;
+		}
+
+		// 与伤害飘字一致：分屏下每个本地 HUD 都显示。
+		for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
+		{
+			APlayerController* PlayerController = It->Get();
+			if (PlayerController == nullptr || !PlayerController->IsLocalController())
+			{
+				continue;
+			}
+
+			if (ARogueHUD* RogueHUD = Cast<ARogueHUD>(PlayerController->GetHUD()))
+			{
+				RogueHUD->AddHealingNumber(WorldLocation, Amount);
+			}
+		}
+	}
 }
