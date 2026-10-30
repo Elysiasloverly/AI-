@@ -16,6 +16,22 @@ struct AI_API FRogueShopOffer
 	UPROPERTY()
 	FRogueRewardOffer Reward;
 
+	/** 每次生成报价都会更换；同一种升级在下一轮也是另一份报价。 */
+	UPROPERTY()
+	FGuid QuoteId;
+
+	bool NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess)
+	{
+		uint8 Kind = static_cast<uint8>(Reward.Kind), Source = static_cast<uint8>(Reward.Source);
+		Ar << QuoteId << Kind << Source << Reward.RewardId;
+		bool bUpgradeSuccess = false;
+		Reward.Upgrade.NetSerialize(Ar, Map, bUpgradeSuccess);
+		Ar << Reward.Cost << Reward.bPurchased;
+		if (Ar.IsLoading()) { Reward.Kind = static_cast<ERogueRewardKind>(Kind); Reward.Source = static_cast<ERogueRewardSource>(Source); }
+		bOutSuccess = bUpgradeSuccess && !Ar.IsError();
+		return true;
+	}
+
 	const FRogueUpgradeOption& GetUpgrade() const { return Reward.Upgrade; }
 	FRogueUpgradeOption& GetUpgrade() { return Reward.Upgrade; }
 	int32 GetCost() const { return Reward.Cost; }
@@ -23,6 +39,11 @@ struct AI_API FRogueShopOffer
 	bool IsUpgradeOffer() const { return Reward.IsUpgrade(); }
 	void SetCost(int32 NewCost) { Reward.Cost = NewCost; }
 	void MarkPurchased() { Reward.bPurchased = true; }
+};
+
+template<> struct TStructOpsTypeTraits<FRogueShopOffer> : TStructOpsTypeTraitsBase2<FRogueShopOffer>
+{
+	enum { WithNetSerializer = true };
 };
 
 /** 每玩家的服务端商店运行态；PlayerState 另行复制报价镜像。
@@ -39,7 +60,7 @@ public:
 	bool OpenShop(const ARogueCharacter* Character, const FRogueUpgradeSystem& UpgradeSystem);
 	void CloseShop();
 	bool TryRefresh(ARogueCharacter* Character, const FRogueUpgradeSystem& UpgradeSystem);
-	bool TryBuyOffer(int32 OfferIndex, ARogueCharacter* Character, FRogueUpgradeOption& OutUpgrade);
+	bool TryBuyOffer(int32 OfferIndex, const FGuid& QuoteId, int32 QuotedCost, ARogueCharacter* Character, const FRogueUpgradeSystem& UpgradeSystem, FRogueUpgradeOption& OutUpgrade);
 
 	const TArray<FRogueShopOffer>& GetOffers() const { return Offers; }
 	bool IsOpen() const { return bOpen; }

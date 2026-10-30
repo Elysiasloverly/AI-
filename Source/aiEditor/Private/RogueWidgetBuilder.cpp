@@ -1,4 +1,6 @@
 #include "RogueWidgetBuilder.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
 
 #include "Blueprint/WidgetTree.h"
 #include "AssetToolsModule.h"
@@ -499,134 +501,28 @@ bool URogueWidgetBuilder::UpdateTutorialText(UWidgetBlueprint* Blueprint, const 
 	return true;
 }
 
-bool URogueWidgetBuilder::BuildTutorial(UWidgetBlueprint* Blueprint)
+bool URogueWidgetBuilder::UpdateTextBlock(UWidgetBlueprint* Blueprint, FName WidgetName, const FString& Text)
 {
-	if (Blueprint == nullptr || Blueprint->WidgetTree == nullptr)
-	{
-		return false;
-	}
-
-	UCanvasPanel* Root = ResetCanvas(Blueprint);
-
-	UBorder* Background = Blueprint->WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("Background"));
-	Background->SetBrushColor(FLinearColor(0.01f, 0.012f, 0.025f, 1.0f));
-	if (UCanvasPanelSlot* BackgroundSlot = Root->AddChildToCanvas(Background))
-	{
-		BackgroundSlot->SetAnchors(FAnchors(0.0f, 0.0f, 1.0f, 1.0f));
-		BackgroundSlot->SetOffsets(FMargin(0.0f));
-	}
-
-	UBorder* Panel = Blueprint->WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("TutorialPanel"));
-	Panel->SetBrushColor(FLinearColor(0.04f, 0.05f, 0.09f, 0.96f));
-	Panel->SetPadding(FMargin(40.0f, 28.0f, 40.0f, 24.0f));
-	AddToCanvas(Root, Panel, FAnchors(0.5f, 0.5f), FVector2D(0.5f, 0.5f), FVector2D(0.0f, 0.0f), FVector2D(980.0f, 680.0f));
-
-	UVerticalBox* Box = Blueprint->WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("TutorialBox"));
-	Panel->SetContent(Box);
-
-	UTextBlock* Title = MakeTextBlock(Blueprint, TEXT("TitleText"), TEXT("游戏指南 · 战斗、成长与多人"), FLinearColor(0.96f, 0.94f, 1.0f), 34,
-		ETextJustify::Left, true);
-	if (UVerticalBoxSlot* TitleSlot = Box->AddChildToVerticalBox(Title))
-	{
-		TitleSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 14.0f));
-	}
-
-	UScrollBox* Scroll = Blueprint->WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(), TEXT("TutorialScroll"));
-	UTextBlock* Body = MakeTextBlock(Blueprint, TEXT("TutorialText"),
-		TEXT("【幻想乡的夜晚】\n")
-		TEXT("异变中的妖怪与妖精不断涌入神社。带上御札迎战，在敌潮中收集经验、组合武器；也可以邀请局域网中的伙伴一起守住空地。\n")
-		TEXT("\n")
-		TEXT("【基本操作】\n")
-		TEXT("W / A / S / D：移动。\n")
-		TEXT("鼠标移动：旋转视角、调整俯仰；滚轮：拉近或拉远视角。\n")
-		TEXT("左 Shift：冲刺，有冷却时间。空格：跳跃。\n")
-		TEXT("E：靠近地图上的商店后交互。\n")
-		TEXT("1 / 2 / 3：选择对应的升级卡；也可用鼠标点击卡牌或按钮。\n")
-		TEXT("Esc：打开或关闭菜单。打开菜单、选卡、逛商店时战斗仍会继续，请留意周围敌人。\n")
-		TEXT("\n")
-		TEXT("【一局如何成长】\n")
-		TEXT("开局持有 1 个御札。武器自动攻击，移动走位避开敌人与弹幕。\n")
-		TEXT("击败敌人后收集经验球，升级时从本次提供的卡牌中选择一张。局内升级与永久升级树是两种进度：本局拿到的武器、等级和加成在重开后重置。\n")
-		TEXT("商店摆放在地图里，使用金币购买或刷新商品；商品、刷新和已购次数按每位玩家分别计算。冰砖用于主菜单的永久升级树，不能替代商店金币。\n")
-		TEXT("\n")
-		TEXT("【永久升级树与冰砖】\n")
-		TEXT("在主菜单点击“升级树”。每击败 1 位 Boss，本局每位参与玩家各获得 1 个冰砖。\n")
-		TEXT("初始开放御札、御札数量卡和一般属性卡。其他武器先花 5 个冰砖永久解锁，之后它的首次获取卡才有资格进入局内卡池；解锁不会直接把武器装备到开局。\n")
-		TEXT("每张武器专属升级卡分别花 5 个冰砖解锁，并须满足所有前置节点。按箭头逐个解锁，不能跳过中间节点。\n")
-		TEXT("局内刷新还会检查你是否已经持有对应武器等条件。永久解锁表示“允许刷出”，并不保证每次刷新都出现。\n")
-		TEXT("基础属性每次升级花 3 个冰砖，每项最多 5 级。初始没有护甲，先花 3 个冰砖解锁护甲，才能继续提升基础护甲值。\n")
-		TEXT("解锁和冰砖余额保存在本机。联机时每位玩家使用自己的解锁进度生成自己的卡池，不共享房主的进度。\n")
-		TEXT("\n")
-		TEXT("【濒死、复活与结束】\n")
-		TEXT("生命归零后进入濒死，怪物不再将你作为目标，角色碰撞关闭，并显示等待复活界面。\n")
-		TEXT("只要还有队友存活，等待 10 秒即可自动复活；倒计时归零后的实际复活以服务器为准。\n")
-		TEXT("若所有参与玩家同时濒死，立即结束本局、取消自动复活，并显示游戏结束界面。单人濒死也会直接结束。\n")
-		TEXT("结算界面可以重新开始，或返回主菜单。联机重开由服务器带当前队友进入新局。\n")
-		TEXT("\n")
-		TEXT("【局域网多人】\n")
-		TEXT("主菜单 → 多人游戏 → 创建房间或加入房间。\n")
-		TEXT("创建者设置昵称、房间名和人数后成为房主。加入者可搜索同一局域网中的房间，也可输入房主 IP；例如 192.168.1.10:7777。\n")
-		TEXT("进入大厅后，每位玩家（包括房主）都要点击准备；有人未准备时不能开始。所有人准备好后，由房主点击开始游戏。\n")
-		TEXT("本机测试可以使用 127.0.0.1:7777。其他电脑加入时请使用房主的局域网 IP；当前连接方式面向局域网。\n")
-		TEXT("开局后不再接受新访客。离开房间会返回主菜单；房主离开后，其他玩家也会退出该房间。\n"),
-		FLinearColor(0.86f, 0.88f, 0.94f), 20, ETextJustify::Left, true);
-	Scroll->AddChild(Body);
-	if (UVerticalBoxSlot* ScrollSlot = Box->AddChildToVerticalBox(Scroll))
-	{
-		ScrollSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 16.0f));
-		ScrollSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-	}
-
-	MakeMenuButton(Blueprint, Box, TEXT("CloseButton"), TEXT("返回"), 24);
-
+	if (!Blueprint || !Blueprint->WidgetTree) { return false; }
+	UTextBlock* TextWidget = Cast<UTextBlock>(Blueprint->WidgetTree->FindWidget(WidgetName));
+	if (!TextWidget) { return false; }
+	TextWidget->SetText(FText::FromString(Text));
 	Finish(Blueprint);
 	return true;
 }
 
-FString URogueWidgetBuilder::DescribeTextFonts(UWidgetBlueprint* Blueprint)
+FString URogueWidgetBuilder::GetTextBlockText(UWidgetBlueprint* Blueprint, FName WidgetName)
 {
-	if (Blueprint == nullptr || Blueprint->WidgetTree == nullptr)
-	{
-		return TEXT("<no widget tree>");
-	}
-
-	TArray<UWidget*> Widgets;
-	Blueprint->WidgetTree->GetAllWidgets(Widgets);
-
-	FString Result;
-	for (const UWidget* Widget : Widgets)
-	{
-		const UTextBlock* Text = Cast<UTextBlock>(Widget);
-		if (Text == nullptr)
-		{
-			continue;
-		}
-
-		const FSlateFontInfo Font = Text->GetFont();
-		Result += FString::Printf(TEXT("%s -> %s (%.0f)\n"),
-			*GetNameSafe(Text),
-			Font.FontObject != nullptr ? *Font.FontObject->GetPathName() : TEXT("<none>"),
-			Font.Size);
-	}
-	return Result;
+	if (!Blueprint || !Blueprint->WidgetTree) { return FString(); }
+	const UTextBlock* TextWidget = Cast<UTextBlock>(Blueprint->WidgetTree->FindWidget(WidgetName));
+	return TextWidget != nullptr ? TextWidget->GetText().ToString() : FString();
 }
 
-FString URogueWidgetBuilder::DescribeWidgetTree(UWidgetBlueprint* Blueprint)
+bool URogueWidgetBuilder::BuildTutorial(UWidgetBlueprint* Blueprint)
 {
-	if (Blueprint == nullptr || Blueprint->WidgetTree == nullptr)
-	{
-		return TEXT("<no widget tree>");
-	}
-
-	TArray<UWidget*> Widgets;
-	Blueprint->WidgetTree->GetAllWidgets(Widgets);
-
-	FString Result;
-	for (const UWidget* Widget : Widgets)
-	{
-		Result += FString::Printf(TEXT("%s:%s\n"), *GetNameSafe(Widget->GetClass()), *GetNameSafe(Widget));
-	}
-	return Result;
+    FString Json;
+    if (!FFileHelper::LoadFileToString(Json,*(FPaths::ProjectDir()/TEXT("SourceArt/UI/tutorial_chapters.json")))) return false;
+    return BuildTutorialFromJson(Blueprint,Json);
 }
 
 bool URogueWidgetBuilder::AddDeathScreenMainMenuButton(UWidgetBlueprint* Blueprint)
@@ -754,9 +650,55 @@ bool URogueWidgetBuilder::BuildNightTransition(UWidgetBlueprint* Blueprint)
         FAnchors(.5f, .12f), FVector2D(.5f, 0), FVector2D(0, 20), FVector2D(800, 42))->SetJustification(ETextJustify::Center);
     MakeText(Blueprint, Root, TEXT("CountdownText"), TEXT("距离黑夜降临：30 秒"), Ice, 38,
         FAnchors(.5f, .12f), FVector2D(.5f, 0), FVector2D(0, 70), FVector2D(800, 54))->SetJustification(ETextJustify::Center);
-    MakeText(Blueprint, Root, TEXT("DescriptionText"), TEXT("白天的战斗已结束。稍作休整，黑夜中敌人的攻击将更加迅疾。"), White, 19,
+    MakeText(Blueprint, Root, TEXT("DescriptionText"), TEXT("白天的战斗已结束。稍作休整，黑夜中敌群更加密集，增援来得更快。"), White, 19,
         FAnchors(.5f, .12f), FVector2D(.5f, 0), FVector2D(0, 142), FVector2D(820, 36))->SetJustification(ETextJustify::Center);
     FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
     FKismetEditorUtilities::CompileBlueprint(Blueprint);
     return true;
+}
+
+FString URogueWidgetBuilder::DescribeWidgetTree(UWidgetBlueprint* Blueprint)
+{
+	if (Blueprint == nullptr || Blueprint->WidgetTree == nullptr)
+	{
+		return TEXT("<no widget tree>");
+	}
+
+	TArray<UWidget*> Widgets;
+	Blueprint->WidgetTree->GetAllWidgets(Widgets);
+
+	FString Result;
+	for (const UWidget* Widget : Widgets)
+	{
+		Result += FString::Printf(TEXT("%s:%s\n"), *GetNameSafe(Widget->GetClass()), *GetNameSafe(Widget));
+	}
+	return Result;
+}
+
+FString URogueWidgetBuilder::DescribeTextFonts(UWidgetBlueprint* Blueprint)
+{
+	if (Blueprint == nullptr || Blueprint->WidgetTree == nullptr)
+	{
+		return TEXT("<no widget tree>");
+	}
+
+	TArray<UWidget*> Widgets;
+	Blueprint->WidgetTree->GetAllWidgets(Widgets);
+
+	FString Result;
+	for (const UWidget* Widget : Widgets)
+	{
+		const UTextBlock* Text = Cast<UTextBlock>(Widget);
+		if (Text == nullptr)
+		{
+			continue;
+		}
+
+		const FSlateFontInfo Font = Text->GetFont();
+		Result += FString::Printf(TEXT("%s -> %s (%.0f)\n"),
+			*GetNameSafe(Text),
+			Font.FontObject != nullptr ? *Font.FontObject->GetPathName() : TEXT("<none>"),
+			Font.Size);
+	}
+	return Result;
 }

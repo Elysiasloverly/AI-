@@ -23,6 +23,8 @@ public:
 	ARogueHUD* GetOwningRogueHUDObject() const { return OwningRogueHUD.Get(); }
 
 protected:
+	virtual void NativeConstruct() override;
+
 	UFUNCTION(BlueprintImplementableEvent, Category = "Rogue|Upgrade")
 	void OnUpgradeSelectionViewUpdated(const FRogueUpgradeSelectionViewData& InViewData);
 

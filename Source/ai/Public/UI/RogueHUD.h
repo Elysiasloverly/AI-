@@ -4,6 +4,7 @@
 #include "GameFramework/GameUserSettings.h"
 #include "GameFramework/HUD.h"
 #include "UI/Widgets/RogueMenuWidgetBases.h"
+#include "Progression/Shop/RogueShopSystem.h"
 #include "RogueHUD.generated.h"
 
 class ARogueGameMode;
@@ -17,6 +18,7 @@ class URogueShopWidgetBase;
 class URogueUpgradeSelectionWidgetBase;
 class URogueSettingsMenuWidgetBase;
 class URogueDeathScreenWidgetBase;
+class URogueVictoryScreenWidgetBase;
 class URogueReviveCountdownWidgetBase;
 class URogueVitalsWidgetBase;
 class URogueDamageFlashWidgetBase;
@@ -68,14 +70,14 @@ public:
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void DrawHUD() override;
 	void AddDamageNumber(const FVector& WorldLocation, float Damage, bool bIsBossDamage);
-	/** 玩家回血飘字：与伤害飘字共用同一条绘制管线，绿色 + 号，生命周期略长。 */
+	/** 玩家和敌人回血飘字：与伤害飘字共用同一条绘制管线，绿色 + 号，生命周期略长。 */
 	void AddHealingNumber(const FVector& WorldLocation, float Amount);
 	void OpenPauseMenu();
 	void ClosePauseMenu();
-	void RequestSelectOfferFromShop(int32 OfferIndex);
+	void RequestSelectOfferFromShop(int32 OfferIndex, const FGuid& QuoteId = FGuid(), int32 QuotedCost = INDEX_NONE);
 	void RequestRefreshFromShop();
 	void RequestCloseFromShop();
-	void RequestSelectUpgradeFromWidget(int32 UpgradeIndex);
+	void RequestSelectUpgradeFromWidget(int32 UpgradeIndex, const FGuid& SelectionId = FGuid());
 	void RequestResumeFromPauseMenu();
 	void RequestOpenSettingsFromPauseMenu();
 	void RequestQuitFromPauseMenu();
@@ -116,6 +118,7 @@ public:
 	bool IsPauseMenuOpen() const { return PauseMenuPage != ERoguePauseMenuPage::None; }
 
 private:
+    friend struct FRogueEnemyHealingTestAccess;
 	friend struct FRogueReliabilityTestAccess;
 	uint64 MenuRefreshCount = 0;
 	friend class FRogueReviveCountdownVisibilityTest;
@@ -170,6 +173,7 @@ private:
 	void UpdatePauseWidget();
 	void UpdateSettingsWidget();
 	void UpdateDeathWidget();
+    void UpdateVictoryWidget();
 
 	/** 每帧按本地复制状态推导输入模式：
 	 *  暂停菜单 / 商店 / 待选升级卡 / 濒死 → 显示光标 + GameAndUI；团灭 → UIOnly。
@@ -209,10 +213,13 @@ private:
 	bool bFrameRateLimitCustom = false;
 	bool bDisplaySettingsDirty = false;
 	FString LastShopWidgetSignature;
+	FGuid PresentedUpgradeSelectionId;
+	TArray<FRogueShopOffer> PresentedShopOffers;
 	FString LastUpgradeWidgetSignature;
 	FString LastPauseWidgetSignature;
 	FString LastSettingsWidgetSignature;
 	FString LastDeathWidgetSignature;
+    FString LastVictoryWidgetSignature;
 	int32 LastShopAutoRefreshSeconds = INDEX_NONE;
 	/** 每个本地 HUD 独立缓存，避免同进程 PIE / 分屏玩家互相跳过界面更新。 */
 	int32 LastReviveCountdownSeconds = INDEX_NONE;
@@ -259,6 +266,10 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<URogueDeathScreenWidgetBase> DeathScreenWidget = nullptr;
+    UPROPERTY(EditDefaultsOnly, Config, Category="Rogue UI|Widgets") TSoftClassPtr<URogueVictoryScreenWidgetBase> VictoryScreenWidgetClassPath;
+    UPROPERTY(EditDefaultsOnly, Category="Rogue UI|Widgets") TSubclassOf<URogueVictoryScreenWidgetBase> VictoryScreenWidgetClass;
+    UPROPERTY(Transient) TObjectPtr<URogueVictoryScreenWidgetBase> VictoryScreenWidget;
+
 
 	/** 濒死期间的复活界面，默认使用 WBP_ResurrectionScreen；蓝图可覆盖样式。 */
 	UPROPERTY(EditDefaultsOnly, Config, Category = "Rogue UI|Widgets")

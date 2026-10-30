@@ -14,7 +14,7 @@ ARogueEnemy::InitializeEnemy()
 
 行查找以行内 `EnemyType` 字段为准，不依赖 RowName（`FindRowNameForEnemyType` 逐行匹配）。
 
-## 顶层列（11 个）
+## 顶层列（13 个）
 
 | 列 | 作用 |
 |---|---|
@@ -26,6 +26,8 @@ ARogueEnemy::InitializeEnemy()
 | `ProjectileClass` | 该类型使用的弹体蓝图；留空回退敌人 BP / 原生类 |
 | `MovementModelOverride` | 移动模型覆盖，默认「类型基线」；手动指定可强制替换（见下文） |
 | `SpecialParams` | **专属参数列**：一个怪物一个子结构，只填 `EnemyType` 对应的那个 |
+| `Flying` | 月蝶/风镰/星灯的悬浮、交错齐射、折返风刃和收拢星阵参数；见 [飞行敌人](Flying-Enemies.md) |
+| `Healing` | 两种治疗者的半径、间隔、回复比例、Boss系数、目标数及可选视线条件；见 [治疗说明](Enemy-Roles-And-Visibility.md) |
 | `BossOverride` | 作为 Boss 时的可选覆盖参数 |
 | `Visual` | 普通形态视觉：VisualKey / MeshScale / MeshLocation / MeshRotation / Capsule |
 | `BossVisual` | Boss 形态视觉；独立配置缩放和胶囊，不再只靠 C++ 基线 |
@@ -40,7 +42,7 @@ ARogueEnemy::InitializeEnemy()
 | 夜雀 | `Assault` | 爆发冲刺 + 散射 | 移动直接覆盖 / 射击哨兵 |
 | 鬼 | `Juggernaut` | 重型单发（移动只有顶层倍率） | 全部哨兵 |
 | 人魂 | `Orbiter` | 环绕移动 + 单发 | 移动直接覆盖 / 射击哨兵 |
-| 鸦天狗 | `Marksman` | 风筝移动 + 单发 | 全部直接覆盖 |
+| 鸦天狗 | `Marksman` | 风筝移动 + 天坠弹 / 持续红圈 / 触地散弹 | 顶层射击模式与冷却、`Skyfall` 独立参数块直接覆盖 |
 | 妖狐 | `Skirmisher` | Z 字移动 + 散射 | 移动直接覆盖 / 射击哨兵 |
 | 山蜘蛛 | `Cannoneer` | 风筝移动 + 重型单发 | 全部直接覆盖 |
 | 唐伞 | `Scatterer` | 风筝移动 + 散射（3 发） | 全部直接覆盖 |
@@ -50,7 +52,7 @@ ARogueEnemy::InitializeEnemy()
 | 血蝠 | `Repeater` | 风筝移动 + 单发速射 | 全部直接覆盖 |
 | 亡灵 | `Ringcaster` | 风筝移动 + 整圈弹幕 | 弹幕直接覆盖 / 移动哨兵 |
 
-`ToArchetype()` 只读取当前 `EnemyType` 对应的块，填错块不会生效。
+原有 13 种类型的 `ToArchetype()` 只读取当前 `EnemyType` 对应的 `SpecialParams` 块，填错块不会生效。新增的三种飞行类型读取顶层 `Flying`，不会读取其它怪物的专属块。两种治疗类型使用 `Healing`，不授予攻击能力。
 
 ### 两种字段语义
 
@@ -91,7 +93,7 @@ ARogueEnemy::InitializeEnemy()
 
 ## BossOverride
 
-只对 **Marksman / Cannoneer / Scatterer / Sniper / Shotgunner / Repeater** 六型生效：
+对 **Marksman / Cannoneer / Scatterer / Sniper / Shotgunner / Repeater** 六型及三种飞行类型生效：
 Rifleman / Assault / Juggernaut / Orbiter / Skirmisher 以及地藏、亡灵的 `BossOverride` 不会被读取
 （后两者弹幕参数在各专属块里单独调）。`bEnableBossOverride` 打开后：
 
@@ -110,7 +112,7 @@ Rifleman / Assault / Juggernaut / Orbiter / Skirmisher 以及地藏、亡灵的 
 - `VisualKey` 在 C++ 里只写不读（基线赋值 + 测试断言），真正的消费方是蓝图。
 - **行存在时视觉整块以表为准**：行里 `Visual` 保持结构默认值也会盖掉基线视觉。
 - 基线里"非地藏 Boss 缩放 ×1.75、胶囊 62/116、Boss 材质"只在**整行缺失**兜底时生效；
-  行存在时 Boss 尺寸完全由 `BossVisual` 决定。
+  行存在时原型尺寸由 `BossVisual` 决定；另由外观提示组件对用户模型分支追加Boss视觉倍率（默认1.5），回池恢复，不改变胶囊。内置地藏柱体和法阵标签网格跳过直接放大。
 
 ## 结构迁移记录
 
@@ -156,3 +158,5 @@ Rifleman / Assault / Juggernaut / Orbiter / Skirmisher 以及地藏、亡灵的 
 6. `BP_RogueGameMode` 的 `EnemyClassMap` 加类型 → 敌人 BP；BP 里重写 `OnApplyVisualStyle`
    应用外观。再把类型加进 `RogueGameModeRules.cpp` 的默认波次池
    （若 `DA_GameBalance.EnemyWaveEntries` 非空，以资产为准）。
+
+当前表共18行；新治疗类型不使用攻击专属块。首次开放波、权重和“首次开放波次保证登场”在 `DA_GameBalance.EnemyWaveEntries`，不在原型表。

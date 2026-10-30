@@ -38,7 +38,11 @@ void ARogueWeapon_Scythe::WeaponTick(float /*DeltaSeconds*/)
 	SyncOrbitingBlades();
 	const bool bHasBlades = GetEffectiveCount() > 0 && !OrbitingBlades.IsEmpty();
 	const bool bCompletedTurn = GetEffectiveRotationSpeed() >= 0 ? SharedOrbitAngle < PreviousAngle : SharedOrbitAngle > PreviousAngle;
-	if (bHasBlades && (!bAudioOrbitActive || bCompletedTurn)) { PlayAttackAudio(GetOwnerLocation()); }
+	if (bHasBlades && (!bAudioOrbitActive || bCompletedTurn))
+    {
+        PlayAttackAudio(GetOwnerLocation());
+        FRogueWeaponCosmeticFire Fire;Fire.Start=GetOwnerLocation()+FVector(0,0,25);Fire.bPlayFireAccent=true;PlayFireAccent(Fire);
+    }
 	bAudioOrbitActive = bHasBlades;
 }
 

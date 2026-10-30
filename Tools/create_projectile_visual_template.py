@@ -11,7 +11,7 @@
 """
 import unreal
 
-BLUEPRINT = "/Game/BP/Enemy/Projectiles/BP_EnemyProjectile"
+BLUEPRINT = "/Game/BP/Enemy/Common/BP_EnemyProjectile"
 
 
 def log(message):

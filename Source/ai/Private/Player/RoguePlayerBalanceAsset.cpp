@@ -13,6 +13,9 @@ void URoguePlayerBalanceAsset::ResetToDefaults()
 	Progression = FRoguePlayerProgressionConfig();
 	SpawnState = FRoguePlayerSpawnStateConfig();
 	Revival = FRoguePlayerRevivalConfig();
+#if WITH_EDITORONLY_DATA
+    bEditorUseWeaponTableStartingCounts=false;
+#endif
 }
 
 int32 FRoguePlayerProgressionConfig::GetNextExperienceRequirement(int32 CurrentRequirement) const

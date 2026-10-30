@@ -118,6 +118,15 @@ URogueUpgradeEffect_HellTowerDamageRamp::URogueUpgradeEffect_HellTowerDamageRamp
 //  枚举 → GE 子类
 // ===================================================================
 
+URogueUpgradeEffect_TalismanCount::URogueUpgradeEffect_TalismanCount()
+{ ConfigureUpgrade(URogueAttributeSet::GetTalismanCountBonusAttribute()); }
+
+URogueUpgradeEffect_TalismanPierce::URogueUpgradeEffect_TalismanPierce()
+{ ConfigureUpgrade(URogueAttributeSet::GetTalismanPierceBonusAttribute()); }
+
+URogueUpgradeEffect_TalismanRepeat::URogueUpgradeEffect_TalismanRepeat()
+{ ConfigureUpgrade(URogueAttributeSet::GetTalismanRepeatBonusAttribute()); }
+
 TSubclassOf<UGameplayEffect> RogueUpgradeEffectMap::GetEffectClass(ERogueUpgradeType UpgradeType)
 {
 	switch (UpgradeType)
@@ -145,6 +154,9 @@ TSubclassOf<UGameplayEffect> RogueUpgradeEffectMap::GetEffectClass(ERogueUpgrade
 	case ERogueUpgradeType::LaserRefraction:     return URogueUpgradeEffect_LaserRefraction::StaticClass();
 	case ERogueUpgradeType::MortarCount:         return URogueUpgradeEffect_MortarCount::StaticClass();
 	case ERogueUpgradeType::MortarBlastRadius:   return URogueUpgradeEffect_MortarBlastRadius::StaticClass();
+	case ERogueUpgradeType::TalismanCount: return URogueUpgradeEffect_TalismanCount::StaticClass();
+	case ERogueUpgradeType::TalismanPierce: return URogueUpgradeEffect_TalismanPierce::StaticClass();
+	case ERogueUpgradeType::TalismanRepeat: return URogueUpgradeEffect_TalismanRepeat::StaticClass();
 	case ERogueUpgradeType::ProjectileBurst: return URogueUpgradeEffect_ProjectileBurst::StaticClass();
 	case ERogueUpgradeType::RocketBlastRadius: return URogueUpgradeEffect_RocketBlastRadius::StaticClass();
 	case ERogueUpgradeType::HellTowerDamageRamp: return URogueUpgradeEffect_HellTowerDamageRamp::StaticClass();

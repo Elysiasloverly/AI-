@@ -54,8 +54,7 @@ struct AI_API FRoguePoolSettings
 	UPROPERTY(EditAnywhere, Category = "07.运行时", meta = (DisplayName = "敌人弹体池预热", ToolTip = "敌人弹体的初始池容量。"))
 	int32 InitialEnemyProjectilePoolSize = 96;
 
-	/** 敌人池预热量；默认 160 对应默认无 Boss 时第 16 波的存活上限（40 + 8×15）。
-	 *  运行资产、Boss 调整与硬顶可改变实际需求。池耗尽时可扩容，具体启动成本和内存应实测。
+	/** 敌人池预热量。池耗尽时可扩容；不是场上敌人的数量限制。
 	 *  用 FRogueCombatPools::LogPoolDiagnostics 查看池容量与运行时分配计数。 */
 	UPROPERTY(EditAnywhere, Category = "07.运行时", meta = (DisplayName = "敌人池预热", ToolTip = "敌人的初始池容量；池耗尽时会扩容，启动成本需实测。"))
 	int32 InitialEnemyPoolSize = 160;
@@ -91,9 +90,8 @@ struct AI_API FRogueSpawnSettings
 	UPROPERTY()
 	float WaveDuration = 25.0f;
 
-	/** 第 1 波的基础存活上限；按波次增长后还会应用硬顶与 Boss 在场时的减量/下限。
-	 *  参数在 GameBalanceAsset 配置，完整顺序见 BuildSpawnCadence。 */
-	UPROPERTY(EditAnywhere, Category = "Spawning")
+	/** 旧资产兼容字段：全场存活限制已移除，不显示、不参与刷怪计算。 */
+	UPROPERTY()
 	int32 MaxAliveEnemies = 40;
 
 	UPROPERTY(EditAnywhere, Category = "Spawning")
@@ -146,11 +144,18 @@ struct AI_API FRogueRunState
 	UPROPERTY(VisibleAnywhere, Category = "Run")
 	int32 CurrentWave = 1;
 
+    /** 同局依次为白、黑、白、黑；随切图快照承接，避免返回同一地图时重置波数。 */
+    UPROPERTY(VisibleAnywhere, Category="Run")
+    int32 BattleStageIndex = 0;
+
 	UPROPERTY(VisibleAnywhere, Category = "Run")
 	int32 EnemiesDefeated = 0;
 
 	UPROPERTY(VisibleAnywhere, Category = "Run")
 	bool bGameOver = false;
+
+    UPROPERTY(VisibleAnywhere, Category="Run")
+    bool bVictory = false;
 
 	UPROPERTY(VisibleAnywhere, Category = "Run")
 	bool bBossAlive = false;

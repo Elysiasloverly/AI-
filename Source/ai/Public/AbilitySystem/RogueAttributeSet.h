@@ -4,7 +4,7 @@
 #include "AttributeSet.h"
 #include "AbilitySystem/RogueAttributeMacros.h"
 #include "AbilitySystemComponent.h"
-// 14 个武器加成属性的上限结构（-1 = 不设上限），由玩家数值资产配置。
+// 武器加成属性的上限结构（-1 = 不设上限），由玩家数值资产配置。
 #include "Player/RoguePlayerBalanceAsset.h"
 #include "RogueAttributeSet.generated.h"
 
@@ -209,6 +209,18 @@ public:
 	UPROPERTY(BlueprintReadOnly, Replicated, Category = "Rogue|武器加成")
 	FGameplayAttributeData HellTowerDamageRampBonus;
 	ATTRIBUTE_ACCESSORS(URogueAttributeSet, HellTowerDamageRampBonus);
+
+	UPROPERTY(BlueprintReadOnly, Replicated, Category="Rogue|武器加成")
+	FGameplayAttributeData TalismanCountBonus;
+	ATTRIBUTE_ACCESSORS(URogueAttributeSet, TalismanCountBonus);
+
+	UPROPERTY(BlueprintReadOnly, Replicated, Category="Rogue|武器加成")
+	FGameplayAttributeData TalismanPierceBonus;
+	ATTRIBUTE_ACCESSORS(URogueAttributeSet, TalismanPierceBonus);
+
+	UPROPERTY(BlueprintReadOnly, Replicated, Category="Rogue|武器加成")
+	FGameplayAttributeData TalismanRepeatBonus;
+	ATTRIBUTE_ACCESSORS(URogueAttributeSet, TalismanRepeatBonus);
 
 private:
 	/** 血量归零时给自己施加死亡效果（授予 State.Dead）。幂等：已死则直接返回。 */

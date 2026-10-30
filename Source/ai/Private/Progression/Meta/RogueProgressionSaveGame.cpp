@@ -18,12 +18,13 @@ bool URogueProgressionSaveGame::TryPurchase(const URogueUpgradeTreeDefinition* D
 	return true;
 }
 
-bool URogueProgressionSaveGame::AddBossReward(const FGuid& RewardId)
+bool URogueProgressionSaveGame::AddBossReward(const FGuid& RewardId, int32 Amount)
 {
 	if (!RewardId.IsValid()) { return false; }
 	if (AppliedBossRewards.Contains(RewardId)) { return true; }
-	if (IceBricks < 0 || IceBricks == MAX_int32) { return false; }
-	++IceBricks;
+	const int32 SafeAmount = FMath::Max(Amount, 0);
+	if (IceBricks < 0 || IceBricks > MAX_int32 - SafeAmount) { return false; }
+	IceBricks += SafeAmount;
 	AppliedBossRewards.Add(RewardId);
 	return true;
 }

@@ -47,6 +47,20 @@ bool FRogueMetaFreshProfileTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueMetaBossRewardAmountTest, "Rogue.MetaProgression.BossRewardUsesConfiguredAmount", RogueMetaProgressionTests::Flags)
+bool FRogueMetaBossRewardAmountTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	URogueProgressionSaveGame* Profile = NewObject<URogueProgressionSaveGame>();
+	const FGuid Reward = FGuid::NewGuid();
+
+	TestTrue(TEXT("A configured three-brick reward is accepted"), Profile->AddBossReward(Reward, 3));
+	TestEqual(TEXT("The configured amount reaches the wallet"), Profile->IceBricks, 3);
+	TestTrue(TEXT("A repeated delivery is still acknowledged"), Profile->AddBossReward(Reward, 3));
+	TestEqual(TEXT("The same reward cannot be banked twice"), Profile->IceBricks, 3);
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueMetaWeaponPurchaseTest, "Rogue.MetaProgression.WeaponAndIndividualCardPurchases", RogueMetaProgressionTests::Flags)
 bool FRogueMetaWeaponPurchaseTest::RunTest(const FString& Parameters)
 {

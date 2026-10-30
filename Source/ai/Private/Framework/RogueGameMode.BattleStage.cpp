@@ -22,22 +22,21 @@ namespace
 void ARogueGameMode::InitializeBattleStage()
 {
     StageSettings = LoadedGameBalanceAsset ? LoadedGameBalanceAsset->BattleStage : FRogueBattleStageSettings();
-    StageSettings.DayWaveCount = FMath::Max(1, StageSettings.DayWaveCount);
+    StageSettings.NormalizeTransitionWaves();
     StageSettings.CountdownSeconds = FMath::IsFinite(StageSettings.CountdownSeconds)
         ? FMath::Max(1.f, StageSettings.CountdownSeconds) : 30.f;
-    StageSettings.NightWaveDuration = FMath::IsFinite(StageSettings.NightWaveDuration)
-        ? FMath::Max(1.f, StageSettings.NightWaveDuration) : 28.f;
-    NightWaveElapsedSeconds = 0;
-    StageSettings.NightAttackSpeedMultiplier = FMath::IsFinite(StageSettings.NightAttackSpeedMultiplier)
-        ? FMath::Max(1.f, StageSettings.NightAttackSpeedMultiplier) : 2.f;
+    StageSettings.NightEnemyCountMultiplier=FMath::IsFinite(StageSettings.NightEnemyCountMultiplier)?FMath::Clamp(StageSettings.NightEnemyCountMultiplier,1.f,10.f):2.f;
+    StageSettings.NightSpawnRateMultiplier=FMath::IsFinite(StageSettings.NightSpawnRateMultiplier)?FMath::Clamp(StageSettings.NightSpawnRateMultiplier,1.f,10.f):2.f;
     const FString Map = CurrentMapPackage(this);
     bDayStageMap = Map == StageSettings.DayMap.ToSoftObjectPath().GetLongPackageName();
     const bool bNight = Map == StageSettings.NightMap.ToSoftObjectPath().GetLongPackageName();
     StageView.Phase = bNight ? ERogueBattleStage::Night : ERogueBattleStage::Day;
-    StageView.EnemyAttackSpeedMultiplier = bNight ? StageSettings.NightAttackSpeedMultiplier : 1.f;
+    StageView.EnemyAttackSpeedMultiplier = 1.f;
+    StageView.EnemyCountMultiplier = bNight ? StageSettings.NightEnemyCountMultiplier : 1.f;
+    StageView.EnemySpawnRateMultiplier = bNight ? StageSettings.NightSpawnRateMultiplier : 1.f;
     if (URogueRunTravelSubsystem* Travel = GetGameInstance() ? GetGameInstance()->GetSubsystem<URogueRunTravelSubsystem>() : nullptr)
     {
-        bContinuingStageRun = bNight && UGameplayStatics::HasOption(OptionsString, TEXT("RogueStageContinue"))
+        bContinuingStageRun = (bNight || bDayStageMap) && UGameplayStatics::HasOption(OptionsString, TEXT("RogueStageContinue"))
             && Travel->Consume(Map, RunState);
         if (!bContinuingStageRun) { Travel->Reset(); }
     }
@@ -45,25 +44,23 @@ void ARogueGameMode::InitializeBattleStage()
     if (bNight && !bContinuingStageRun)
     {
         RunState.CurrentWave = StageSettings.DayWaveCount + 1;
+        RunState.BattleStageIndex = 1;
     }
     PushRunStateToGameState();
-    UE_LOG(LogTemp, Log, TEXT("[RogueStage] Map=%s Wave=%d Continue=%d AttackSpeed=%.2f"),
-        *Map, RunState.CurrentWave, bContinuingStageRun, StageView.EnemyAttackSpeedMultiplier);
+    UE_LOG(LogTemp, Log, TEXT("[RogueStage] Map=%s Wave=%d Continue=%d Count=%.2f SpawnRate=%.2f AttackSpeed=%.2f"),
+        *Map, RunState.CurrentWave, bContinuingStageRun, StageView.EnemyCountMultiplier, StageView.EnemySpawnRateMultiplier, StageView.EnemyAttackSpeedMultiplier);
 }
 
 bool ARogueGameMode::TickBattleStage(float DeltaSeconds)
 {
-    if (!bDayStageMap) { return false; }
+    if (!bDayStageMap && StageView.Phase == ERogueBattleStage::Day) { return false; }
     URogueSpawnSubsystem* Spawn = GetWorld()->GetSubsystem<URogueSpawnSubsystem>();
-    if (StageView.Phase == ERogueBattleStage::Day && RunState.CurrentWave >= StageSettings.DayWaveCount
+    if ((StageView.Phase == ERogueBattleStage::Day || StageView.Phase == ERogueBattleStage::Night) && RunState.CurrentWave >= StageSettings.GetTransitionEndWave(RunState.BattleStageIndex)
         && Spawn && Spawn->HasFinishedWaveSpawning(RunState))
     {
-        // 最后一波名额用完才停刷；清完本波后休整，不能在白天开始第 36 波。
-        StageView.Phase = ERogueBattleStage::Clearing;
-        Spawn->SetSpawningSuspended(true);
-        UE_LOG(LogTemp, Log, TEXT("[RogueStage] Day spawning stopped; clearing wave %d."), RunState.CurrentWave);
+        BeginBattleStageClearing();
     }
-    if (StageView.Phase == ERogueBattleStage::Day) { return false; }
+    if (StageView.Phase == ERogueBattleStage::Day || StageView.Phase == ERogueBattleStage::Night) { return false; }
     if (StageView.Phase == ERogueBattleStage::Clearing)
     {
         const URogueEnemyTrackerSubsystem* Tracker = GetWorld()->GetSubsystem<URogueEnemyTrackerSubsystem>();
@@ -71,27 +68,36 @@ bool ARogueGameMode::TickBattleStage(float DeltaSeconds)
         {
             StageView.Phase = ERogueBattleStage::Countdown;
             StageView.CountdownDeadline = GetWorld()->GetTimeSeconds() + StageSettings.CountdownSeconds;
-            UE_LOG(LogTemp, Log, TEXT("[RogueStage] Wave cleared; night countdown %.2f seconds."), StageSettings.CountdownSeconds);
+            UE_LOG(LogTemp, Log, TEXT("[RogueStage] Wave cleared; stage countdown %.2f seconds."), StageSettings.CountdownSeconds);
         }
     }
     else if (StageView.Phase == ERogueBattleStage::Countdown
         && GetWorld()->GetTimeSeconds() >= StageView.CountdownDeadline
         && GetWorld()->GetTimeSeconds() >= NextTravelAttemptTime)
     {
-        TravelToNight();
+        TravelToNextBattleStage();
     }
     PushRunStateToGameState();
     return true;
 }
 
-void ARogueGameMode::TravelToNight()
+void ARogueGameMode::BeginBattleStageClearing()
+{
+    StageView.bNextStageIsNight=(RunState.BattleStageIndex%2)==0;
+    StageView.Phase=ERogueBattleStage::Clearing;
+    if (auto* Spawn=GetWorld()->GetSubsystem<URogueSpawnSubsystem>()) Spawn->SetSpawningSuspended(true);
+    UE_LOG(LogTemp,Log,TEXT("[RogueStage] Wave %d spawning stopped; clearing before %s."),RunState.CurrentWave,
+        StageView.bNextStageIsNight?TEXT("night"):TEXT("day"));
+}
+
+void ARogueGameMode::TravelToNextBattleStage()
 {
     if (!HasAuthority() || RunState.bGameOver || StageView.Phase != ERogueBattleStage::Countdown) { return; }
     NextTravelAttemptTime = GetWorld()->GetTimeSeconds() + 5.;
-    const FString Destination = StageSettings.NightMap.ToSoftObjectPath().GetLongPackageName();
+    const FString Destination = (StageView.bNextStageIsNight?StageSettings.NightMap:StageSettings.DayMap).ToSoftObjectPath().GetLongPackageName();
     if (Destination.IsEmpty() || Destination == CurrentMapPackage(this) || !FPackageName::DoesPackageExist(Destination))
     {
-        UE_LOG(LogTemp, Error, TEXT("[RogueStage] Night map is invalid: %s. Correct DA_GameBalance to retry."), *Destination);
+        UE_LOG(LogTemp, Error, TEXT("[RogueStage] Next battle map is invalid: %s. Correct DA_GameBalance to retry."), *Destination);
         return;
     }
     URogueRunTravelSubsystem* Travel = GetGameInstance() ? GetGameInstance()->GetSubsystem<URogueRunTravelSubsystem>() : nullptr;
@@ -108,7 +114,8 @@ void ARogueGameMode::TravelToNight()
     }
     for (ARoguePlayerState* State : Players) { State->PrepareStageTravel(); }
     FRogueRunState Continuation = RunState;
-    Continuation.CurrentWave = StageSettings.DayWaveCount + 1;
+    Continuation.CurrentWave = RunState.CurrentWave + 1;
+    Continuation.BattleStageIndex = RunState.BattleStageIndex + 1;
     Continuation.SpawnTimer = 0;
     Travel->Prepare(Destination, Continuation);
     StageView.Phase = ERogueBattleStage::Travelling;

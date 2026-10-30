@@ -1,9 +1,16 @@
 #include "UI/Widgets/RogueUpgradeSelectionWidgetBase.h"
+#include "Audio/RogueMusicSubsystem.h"
 #include "UI/RogueHUD.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
 
 #include "RogueMenuWidgetHelpers.h"
+
+void URogueUpgradeSelectionWidgetBase::NativeConstruct()
+{
+	Super::NativeConstruct();
+	URogueMusicSubsystem::BindWidgetButtonSounds(this);
+}
 
 void URogueUpgradeSelectionWidgetBase::SetOwningRogueHUD(ARogueHUD* InOwningHUD)
 {

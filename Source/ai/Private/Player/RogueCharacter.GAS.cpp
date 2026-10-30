@@ -440,7 +440,7 @@ void ARogueCharacter::InitializeGASAttributes()
 	AttributeSet->SetAttackSpeedBonus(InitialBonuses.AttackSpeed + PermanentBonus(ERogueMetaStat::AttackSpeed));
 	AttributeSet->SetAttackRangeBonus(InitialBonuses.AttackRange);
 	AttributeSet->SetProjectileSpeedBonus(InitialBonuses.ProjectileSpeed);
-	// 每局只有一张御札作为起始武器（其基础数量由 InitializeWeapons 固定为 1）。
+	// 常规开局只有一张寒弹；编辑器调试开关可让 InitializeWeapons 改用武器表基础数量。
 	// 永久解锁只让卡片入池，不直接装备；旧平衡资产的初始数量和专属加成不再跳过这条规则。
 	AttributeSet->SetProjectileCountBonus(0.0f);
 	AttributeSet->SetScytheCountBonus(0.0f);
@@ -455,6 +455,10 @@ void ARogueCharacter::InitializeGASAttributes()
 	AttributeSet->SetProjectileBurstBonus(0.0f);
 	AttributeSet->SetRocketBlastRadiusBonus(0.0f);
 	AttributeSet->SetHellTowerDamageRampBonus(0.0f);
+	AttributeSet->SetTalismanCountBonus(0.0f);
+	AttributeSet->SetTalismanPierceBonus(0.0f);
+	AttributeSet->SetTalismanRepeatBonus(0.0f);
+
 
 	RefreshWeaponBonusSnapshotFromAttributes();
 

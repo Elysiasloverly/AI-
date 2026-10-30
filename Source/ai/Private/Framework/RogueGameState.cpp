@@ -27,11 +27,11 @@ void ARogueGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
 	DOREPLIFETIME_CONDITION(ARogueGameState, CurrentWave, COND_None);
 	DOREPLIFETIME_CONDITION(ARogueGameState, EnemiesDefeated, COND_None);
 	DOREPLIFETIME_CONDITION(ARogueGameState, RunTimeSeconds, COND_None);
-	DOREPLIFETIME_CONDITION(ARogueGameState, bGameOver, COND_None);
+	DOREPLIFETIME(ARogueGameState, RunResult);
 	DOREPLIFETIME_CONDITION(ARogueGameState, bBossAlive, COND_None);
 }
 
-void ARogueGameState::SetRunStateSnapshot(int32 InCurrentWave, int32 InEnemiesDefeated, float InRunTimeSeconds, bool bInGameOver, bool bInBossAlive)
+void ARogueGameState::SetRunStateSnapshot(int32 InCurrentWave, int32 InEnemiesDefeated, float InRunTimeSeconds, bool bInGameOver, bool bInBossAlive, bool bInVictory)
 {
 	// 只有服务端有权威。客户端调用会被忽略，避免"客户端改波次"这类问题。
 	if (!HasAuthority())
@@ -42,7 +42,10 @@ void ARogueGameState::SetRunStateSnapshot(int32 InCurrentWave, int32 InEnemiesDe
 	CurrentWave = InCurrentWave;
 	EnemiesDefeated = InEnemiesDefeated;
 	RunTimeSeconds = InRunTimeSeconds;
-	bGameOver = bInGameOver;
+	RunResult.Outcome = bInGameOver ? (bInVictory ? ERogueRunOutcome::Victory : ERogueRunOutcome::Defeat) : ERogueRunOutcome::InProgress;
+    RunResult.Wave = bInGameOver ? InCurrentWave : 0;
+    RunResult.EnemiesDefeated = bInGameOver ? InEnemiesDefeated : 0;
+    RunResult.RunTimeSeconds = bInGameOver ? InRunTimeSeconds : 0;
 	bBossAlive = bInBossAlive;
 }
 
@@ -128,7 +131,7 @@ void ARogueGameState::RefreshBossHealthView()
     FRogueBossHealthView Next;
     const URogueEnemyTrackerSubsystem* Tracker = GetWorld() ? GetWorld()->GetSubsystem<URogueEnemyTrackerSubsystem>() : nullptr;
     ARogueEnemy* Selected = nullptr;
-    if (!bGameOver && Tracker)
+    if (!IsGameOver() && Tracker)
     {
         for (const TWeakObjectPtr<ARogueEnemy>& Ref : Tracker->GetActiveEnemies())
         {

@@ -11,6 +11,9 @@
 #include "Combat/Weapons/RogueWeapon_HellTower.h"
 #include "Combat/Weapons/RogueWeapon_Mortar.h"
 #include "Components/Button.h"
+#include "Input/Events.h"
+#include "InputCoreTypes.h"
+#include "Widgets/SWidget.h"
 #include "Components/PanelWidget.h"
 #include "Components/TextBlock.h"
 #include "Engine/DataTable.h"
@@ -25,6 +28,7 @@
 #include "Engine/Engine.h"
 #include "UI/RogueHUD.h"
 #include "UI/Widgets/RogueSettingsMenuWidgetBase.h"
+#include "UI/Widgets/RogueMainMenuWidgetBase.h"
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/PlayerController.h"
 #include "UObject/UObjectIterator.h"
@@ -190,4 +194,37 @@ bool URogueAudioSetup::ClickPreviewButton(UUserWidget* Widget, FName Name)
     auto* Button = Widget ? Cast<UButton>(Widget->GetWidgetFromName(Name)) : nullptr;
     if (!Button || !Button->GetIsEnabled()) return false;
     Button->OnClicked.Broadcast(); return true;
+}
+
+
+UUserWidget* URogueAudioSetup::FindPreviewMainMenu(UObject* Context)
+{
+    UWorld* World = GEngine ? GEngine->GetWorldFromContextObject(Context, EGetWorldErrorMode::ReturnNull) : nullptr;
+    for (TObjectIterator<URogueMainMenuWidgetBase> It; It; ++It)
+        if (It->GetWorld() == World && It->IsInViewport() && It->IsVisible()) return *It;
+    return nullptr;
+}
+
+bool URogueAudioSetup::PreviewButtonAudio(UUserWidget* Widget, FName Name, bool bPressed)
+{
+    auto* Button = Widget ? Cast<UButton>(Widget->GetWidgetFromName(Name)) : nullptr;
+    if (!Button || !Button->GetIsEnabled()) return false;
+    // Exercise the real button delegates without launching its navigation/gameplay action.
+    if (bPressed) Button->OnPressed.Broadcast(); else Button->OnHovered.Broadcast();
+    return true;
+}
+
+
+bool URogueAudioSetup::PreviewButtonPointer(UUserWidget* Widget, FName Name, bool bEnter)
+{
+    auto* Button = Widget ? Cast<UButton>(Widget->GetWidgetFromName(Name)) : nullptr;
+    const TSharedPtr<SWidget> SlateButton = Button ? Button->GetCachedWidget() : nullptr;
+    if (!Button || !Button->GetIsEnabled() || !SlateButton.IsValid()) return false;
+    const FGeometry& Geometry = Button->GetCachedGeometry();
+    const FVector2D Position = Geometry.LocalToAbsolute(Geometry.GetLocalSize() * .5f);
+    const TSet<FKey> Keys;
+    const FPointerEvent Event(0, Position, Position, Keys, FKey(), 0.f, FModifierKeysState());
+    // Drive SButton's actual enter/leave transitions; staying inside must not emit another hover.
+    if (bEnter) SlateButton->OnMouseEnter(Geometry, Event); else SlateButton->OnMouseLeave(Event);
+    return true;
 }

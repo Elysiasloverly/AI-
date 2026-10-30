@@ -66,7 +66,7 @@ private:
 	TObjectPtr<UParticleSystem> ExplosionBurstEffect;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Pooling")
-	float PooledLifetime = 5.0f;
+	float PooledLifetime = 30.0f;
 
 	float Damage = 40.0f;
 	float ExplosionRadius = 280.0f;

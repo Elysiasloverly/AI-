@@ -65,7 +65,7 @@ public:
 	bool HasProgressionFailed() const { return bProgressionFailed; }
 	bool SetProgressionSnapshotForRun(const FRogueProgressionSnapshot& Snapshot);
 	void BeginProgressionHandshake();
-	void GrantBossIceBrick(const FGuid& RewardId);
+	void GrantBossIceBrick(const FGuid& RewardId, int32 Amount = 1);
 	int32 GetBossIceBricksEarnedThisRun() const { return BossIceBricksEarnedThisRun; }
 
 
@@ -81,6 +81,10 @@ public:
 	const TArray<FRogueUpgradeOption>& GetPendingUpgrades() const { return PendingUpgrades; }
 	bool IsAwaitingUpgradeChoice() const { return bAwaitingUpgradeChoice; }
 
+	/** 本局已选择/购买某类升级的次数；用于 DT_UpgradeDefinitions.MaxPicks 过滤。 */
+	int32 GetUpgradePickCount(ERogueUpgradeType Type) const { return UpgradePickCounts.FindRef(Type); }
+	void RegisterUpgradePick(ERogueUpgradeType Type) { ++UpgradePickCounts.FindOrAdd(Type); }
+
 	/** 服务端：写入本次待选卡牌并打开选择界面（会自动复制） */
 	void OpenUpgradeSelection(const TArray<FRogueUpgradeOption>& InOptions);
 
@@ -94,14 +98,17 @@ public:
 	bool ConsumeQueuedSelection();
 
 	/** 服务端：取出第 Index 张卡（同时清空待选）。越界或当前不在选择状态时返回 false。 */
-	bool TryConsumePendingUpgrade(int32 UpgradeIndex, FRogueUpgradeOption& OutUpgrade);
+	bool TryConsumePendingUpgrade(int32 UpgradeIndex, const FGuid& SelectionId, FRogueUpgradeOption& OutUpgrade);
+	/** 本机提交锁；服务端仍独立校验轮次，不能把防重复只交给 UI。 */
+	void SubmitUpgradeSelection(int32 UpgradeIndex, const FGuid& SelectionId);
+	bool IsUpgradeSubmissionPending(const FGuid& SelectionId) const { return SelectionId.IsValid() && SubmittedSelectionId == SelectionId; }
 
 	void ResetUpgradeState();
 
 	/** 客户端 → 服务端：请求选择第 Index 张升级卡。
 	 *  这是联机下升级流程的入口（原来是直接调 GameMode 的方法，在客户端是空操作）。 */
 	UFUNCTION(Server, Reliable, WithValidation)
-	void Server_RequestUpgradeSelection(int32 UpgradeIndex);
+	void Server_RequestUpgradeSelection(int32 UpgradeIndex, FGuid SelectionId);
 
 	// ===========================================================
 	//  商店（服务端权威 + 镜像给拥有者客户端）
@@ -150,7 +157,7 @@ public:
 
 	/** 客户端 → 服务端：商店操作请求 */
 	UFUNCTION(Server, Reliable) void Server_RequestOpenShop();
-	UFUNCTION(Server, Reliable) void Server_RequestBuyShopOffer(int32 OfferIndex);
+	UFUNCTION(Server, Reliable) void Server_RequestBuyShopOffer(int32 OfferIndex, FGuid QuoteId, int32 QuotedCost);
 	UFUNCTION(Server, Reliable) void Server_RequestRefreshShop();
 	UFUNCTION(Server, Reliable) void Server_RequestCloseShop();
 
@@ -174,7 +181,7 @@ protected:
 	UFUNCTION(Server, Reliable)
 	void Server_SubmitProgressionSnapshot(const FRogueProgressionSnapshot& Snapshot);
 	UFUNCTION(Client, Reliable)
-	void Client_GrantBossIceBrick(const FGuid& RewardId);
+	void Client_GrantBossIceBrick(const FGuid& RewardId, int32 Amount);
 	UFUNCTION()
 	void OnRep_Progression();
 
@@ -198,7 +205,7 @@ protected:
 	FTimerHandle LocalProgressionRetryTimer;
 	FTimerHandle BossRewardRetryTimer;
 	TSet<FGuid> GrantedBossRewardIds;
-	TSet<FGuid> PendingLocalBossRewards;
+	TMap<FGuid, int32> PendingLocalBossRewards;
 	void SubmitLocalProgressionWhenReady();
 	void FlushLocalBossRewards();
 
@@ -209,11 +216,16 @@ protected:
 	UPROPERTY(ReplicatedUsing = OnRep_PendingUpgrades)
 	TArray<FRogueUpgradeOption> PendingUpgrades;
 
+	/** 本局每类升级已选次数；服务端过滤卡池用，跨无缝旅行随 CopyProperties 携带。 */
+	UPROPERTY(Transient)
+	TMap<ERogueUpgradeType, int32> UpgradePickCounts;
+
 	UPROPERTY(ReplicatedUsing = OnRep_PendingUpgrades)
 	bool bAwaitingUpgradeChoice = false;
 
 	/** 排队中的待选次数。纯服务端状态，客户端不需要知道，所以不复制。 */
 	int32 QueuedUpgradeSelections = 0;
+	FGuid SubmittedSelectionId;
 
 	// ---- 商店镜像（复制给拥有者）----
 	UPROPERTY(Replicated) bool bShopOpen = false;

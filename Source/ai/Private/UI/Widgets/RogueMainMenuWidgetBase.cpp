@@ -1,4 +1,5 @@
 #include "UI/Widgets/RogueMainMenuWidgetBase.h"
+#include "Audio/RogueMusicSubsystem.h"
 
 #include "Components/Button.h"
 #include "Components/TextBlock.h"
@@ -21,6 +22,7 @@ void URogueMainMenuWidgetBase::SetHint(const FText& InHint)
 void URogueMainMenuWidgetBase::NativeConstruct()
 {
 	Super::NativeConstruct();
+	URogueMusicSubsystem::BindWidgetButtonSounds(this);
 
 	if (SinglePlayerButton != nullptr)
 	{

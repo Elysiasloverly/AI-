@@ -155,6 +155,7 @@ bool FRogueExclusivePoolsTest::RunTest(const FString& Parameters)
 		}
 	}
 	const TCHAR* Ids[]={TEXT("Card.ProjectileBurst"),TEXT("Card.RocketBlastRadius"),TEXT("Card.HellTowerDamageRamp")};
+	TArray<FRogueUpgradeOption> TitleOptions;System.BuildRandomUpgradeOptions(F.Players[0],100,TitleOptions);
 	const FName Parents[]={TEXT("Card.ProjectileCount"),TEXT("Card.RocketCount"),TEXT("Card.HellTowerCount")};
 	for(int32 I=0;I<3;++I)
 	{
@@ -177,7 +178,11 @@ bool FRogueExclusivePoolsTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("The new card can be purchased after its tail is unlocked"),Profile->TryPurchase(Tree,Node->NodeId,Failure));
 		TestEqual(TEXT("The permanent unlock spends five bricks"),Profile->IceBricks,0);
 		FRogueUpgradeDefinitionRow Row;if(!TestTrue(TEXT("Card has a real table row"),Definitions->FindDefinition(Types[I],Row)))return false;
-		TestTrue(TEXT("Matching table title is used"),Row.Title==Node->Title.ToString());
+		// 永久节点可自定义解锁标题；局内升级卡应读取自己的数据表文案。
+		TestFalse(TEXT("The upgrade data table provides a card title"),Row.Title.IsEmpty());
+		const auto* Generated=TitleOptions.FindByPredicate([&](const auto& Option){return Option.Type==Types[I];});
+		if(TestNotNull(TEXT("The unlocked card is generated through the public pool entry"),Generated))
+			TestEqual(TEXT("The generated upgrade uses its data table title"),Generated->Title,Row.Title);
 		TestTrue(TEXT("No card with missing permanent rank is available"),!Tree->IsUpgradeAvailable({},Types[I],true));
 	}
 	return true;

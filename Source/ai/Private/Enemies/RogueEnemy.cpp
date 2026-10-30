@@ -1,4 +1,7 @@
 #include "Enemies/RogueEnemy.h"
+#include "Enemies/Components/RogueEnemyPresentationComponent.h"
+#include "Enemies/Components/RogueEnemySupportComponent.h"
+#include "Enemies/Components/RogueEnemyStationaryHazardComponent.h"
 #include "Combat/Visuals/RogueHitFlashComponent.h"
 
 #include "Player/RogueCharacter.h"
@@ -39,6 +42,9 @@ ARogueEnemy::ARogueEnemy()
 {
 	PrimaryActorTick.bCanEverTick = true;
 	HitFlashComponent = CreateDefaultSubobject<URogueHitFlashComponent>(TEXT("HitFlash"));
+    EnemyPresentation=CreateDefaultSubobject<URogueEnemyPresentationComponent>(TEXT("EnemyPresentation"));
+    EnemySupport=CreateDefaultSubobject<URogueEnemySupportComponent>(TEXT("EnemySupport"));
+    StationaryHazard=CreateDefaultSubobject<URogueEnemyStationaryHazardComponent>(TEXT("StationaryHazard"));
 
 	// 原生默认使用 AAIController 并允许自动接管；蓝图默认值仍可覆盖。
 	AIControllerClass = AAIController::StaticClass();
@@ -132,10 +138,16 @@ void ARogueEnemy::ConfigureGroundedCollision()
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
 	{
 		// 旧蓝图序列化了 0，单改 C++ 构造默认值不能修正它；保留有效的正重力覆盖值。
-		if (!FMath::IsFinite(Movement->GravityScale) || Movement->GravityScale <= 0.0f)
+		if (!RogueEnemyArchetypes::IsFlyingType(EnemyType) && (!FMath::IsFinite(Movement->GravityScale) || Movement->GravityScale <= 0.0f))
 		{
 			Movement->GravityScale = 1.0f;
 		}
+        if (RogueEnemyArchetypes::IsFlyingType(EnemyType))
+        {
+            Movement->GravityScale=0; Movement->SetMovementMode(MOVE_Flying);
+        }
+        if (RogueEnemyArchetypes::IsHealerType(EnemyType))
+        { Movement->bRunPhysicsWithNoController=true;Movement->SetMovementMode(MOVE_Walking); }
 		Movement->bEnablePhysicsInteraction = false;
 	}
 }
@@ -143,6 +155,27 @@ void ARogueEnemy::ConfigureGroundedCollision()
 void ARogueEnemy::PostInitializeComponents()
 {
 	Super::PostInitializeComponents();
+	// PIE重建后属性集可能不再带默认子对象标志；按原名找默认子对象会漏掉它。
+	// ASC已在组件初始化中登记现有属性集，优先取回同一个实际结算对象。
+	if (AbilitySystemComponent != nullptr)
+	{
+		if (const auto* RegisteredSet = AbilitySystemComponent->GetSet<URogueAttributeSet>())
+		{
+			AttributeSet = const_cast<URogueAttributeSet*>(RegisteredSet);
+		}
+	}
+	// 旧蓝图可能把这个原生子对象的引用序列化成 None，但子对象本身仍存在，
+	// ASC 也能发现它。若不恢复引用，InitializeEnemy 会跳过生命写入，造成
+	// HUD 显示档案中的满血，而 GAS 仍为 0：受到任意伤害后就会死亡。
+	if (AttributeSet == nullptr)
+	{
+		AttributeSet = Cast<URogueAttributeSet>(GetDefaultSubobjectByName(TEXT("AttributeSet")));
+	}
+	if (ensureMsgf(AttributeSet != nullptr, TEXT("Enemy %s is missing its native AttributeSet"), *GetPathName())
+		&& AbilitySystemComponent != nullptr)
+	{
+		AbilitySystemComponent->AddAttributeSetSubobject(AttributeSet.Get());
+	}
 	// 此时蓝图组件已经创建，在第一次物理更新前关闭配饰碰撞。
 	ConfigureGroundedCollision();
 }
@@ -208,6 +241,8 @@ void ARogueEnemy::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 	// 但客户端必须知道它，否则怪在客户端永远是"死的、池里的"。
 	DOREPLIFETIME_CONDITION(ARogueEnemy, bReplicatedActive, COND_None);
 	DOREPLIFETIME(ARogueEnemy, HitFeedback);
+    DOREPLIFETIME(ARogueEnemy, HealingFeedback);
+    DOREPLIFETIME(ARogueEnemy, RuntimeProfile);
 }
 
 void ARogueEnemy::OnRep_ReplicatedActive()
@@ -232,6 +267,7 @@ void ARogueEnemy::ApplyReplicatedActiveState()
 		bDead = false;
 		// 显隐也按当前在场位应用，避免本地隐藏状态与活动状态不一致。
 		SetActorHiddenInGame(false);
+        RefreshUtilityComponents();
 		SetActorTickEnabled(true);
 
 		// 客户端本地索敌与血条遍历依赖此 World 的追踪器，服务端注册不会复制该容器。
@@ -256,6 +292,9 @@ void ARogueEnemy::ApplyReplicatedActiveState()
 		bPoolAvailable = true;
 		bDead = true;
 		SetActorHiddenInGame(true);
+        if (EnemyPresentation) EnemyPresentation->ResetForPool();
+        if (EnemySupport) EnemySupport->ResetForPool();
+        if (StationaryHazard) StationaryHazard->ResetForPool();
 		SetActorTickEnabled(false);
 		SetActorEnableCollision(false);
 		if (UCapsuleComponent* Capsule = GetCapsuleComponent())
@@ -270,6 +309,7 @@ void ARogueEnemy::ApplyReplicatedActiveState()
 		}
 	}
 	ConsumeReplicatedHitFeedback();
+    ConsumeReplicatedHealingFeedback();
 }
 
 void ARogueEnemy::Multicast_SpawnCosmeticProjectile_Implementation(FVector_NetQuantize SpawnLocation, FVector_NetQuantizeNormal Direction, float Speed, bool bLargeVisual, TSubclassOf<ARogueEnemyProjectile> ProjectileClass)
@@ -409,6 +449,7 @@ void ARogueEnemy::HandleHealthChanged(const FOnAttributeChangeData& ChangeData)
 		return;
 	}
 
+    if (ChangeData.NewValue>ChangeData.OldValue) RecordHealingFeedback(ChangeData.NewValue-ChangeData.OldValue);
 	const float DamageTaken = ChangeData.OldValue - ChangeData.NewValue;
 	if (DamageTaken > 0.0f)
 	{
@@ -454,20 +495,25 @@ void ARogueEnemy::HandleDeathTagChanged(FGameplayTag Tag, int32 NewCount)
 	}
 
 	bPendingDeath = true;
+	PendingDeathSpawnId = SpawnCycleId;
 
 	// SetTimerForNextTick 将死亡处理移出施加死亡 GE 的当前调用栈，
 	// 避免回池清除 GE 时在其标签通知里重入；执行时刻取决于 TimerManager 调度。
 	if (UWorld* World = GetWorld())
 	{
-		World->GetTimerManager().SetTimerForNextTick(this, &ARogueEnemy::ProcessDeath);
+		PendingDeathTimer = World->GetTimerManager().SetTimerForNextTick(this, &ARogueEnemy::ProcessDeath);
 	}
 }
 
 void ARogueEnemy::ProcessDeath()
 {
+	const bool bSameSpawn = PendingDeathSpawnId == SpawnCycleId;
 	bPendingDeath = false;
+	PendingDeathSpawnId.Invalidate();
+	PendingDeathTimer.Invalidate();
 
-	if (bDead || bPoolAvailable)
+	if (!bSameSpawn || bDead || bPoolAvailable || AttributeSet == nullptr || AttributeSet->GetHealth() > 0.0f
+		|| AbilitySystemComponent == nullptr || !AbilitySystemComponent->HasMatchingGameplayTag(RogueGameplayTags::State_Dead))
 	{
 		return;
 	}
@@ -512,6 +558,14 @@ void ARogueEnemy::Tick(float DeltaSeconds)
 	//   3) 攻击/伤害类逻辑在客户端跑没有意义（伤害只在服务端结算）。
 	if (!HasAuthority())
 	{
+		// 若复制的ASC替换了登记对象，同步使用它，避免继续读旧缓存。
+		if (AbilitySystemComponent != nullptr)
+		{
+			if (const auto* RegisteredSet = AbilitySystemComponent->GetSet<URogueAttributeSet>())
+			{
+				AttributeSet = const_cast<URogueAttributeSet*>(RegisteredSet);
+			}
+		}
 		// 客户端从已复制的 Health 更新镜像，并以差值生成飘字。
 		// 标准 GAS RepNotify 可经 GAMEPLAYATTRIBUTE_REPNOTIFY 通知变化，
 		// 不能泛称属性复制不会触发回调；此轮询只是当前实现的补偿路径。
@@ -525,6 +579,7 @@ void ARogueEnemy::Tick(float DeltaSeconds)
 			}
 			CurrentHealth = ReplicatedHealth;
 		}
+        ConsumeReplicatedHealingFeedback();
 
 		return;
 	}
@@ -538,6 +593,8 @@ void ARogueEnemy::Tick(float DeltaSeconds)
 		RefreshTargetPlayer();
 	}
 
+    TickFlight(DeltaSeconds);
+    TickFlyingAttack(DeltaSeconds);
 	// 尝试蓝图行为覆盖
 	if (OnBehaviorTick(DeltaSeconds))
 	{
@@ -564,7 +621,7 @@ void ARogueEnemy::HandleDefaultBehavior(float DeltaSeconds)
 	// 逻辑频率决定"多久想一次"，复制频率决定"多久告诉客户端一次"）。
 	UpdateReplicationBudget(DistanceToPlayer);
 
-	const float DesiredTickInterval = bIsBoss
+	const float DesiredTickInterval = (bIsBoss || RogueEnemyArchetypes::IsHealerType(EnemyType))
 		? 0.0f
 		: (DistanceToPlayer > 1700.0f ? 0.08f : (DistanceToPlayer > 950.0f ? 0.04f : 0.0f));
 	if (!FMath::IsNearlyEqual(PrimaryActorTick.TickInterval, DesiredTickInterval, KINDA_SMALL_NUMBER))
@@ -573,6 +630,12 @@ void ARogueEnemy::HandleDefaultBehavior(float DeltaSeconds)
 	}
 
 	const FVector MoveDirection = GetMovementDirection(ToPlayer, DistanceToPlayer, DeltaSeconds);
+    if (RogueEnemyArchetypes::IsHealerType(EnemyType))
+    {
+        if (!MoveDirection.IsNearlyZero()) MoveInDirection(MoveDirection,1.f,DeltaSeconds);
+        else GetCharacterMovement()->StopMovementImmediately();
+        return;
+    }
 
 	if (!MoveDirection.IsNearlyZero())
 	{
@@ -606,6 +669,8 @@ void ARogueEnemy::GrantAttackAbilities()
 	// 先清空句柄：换原型/换池周期后旧句柄不该再被使用。
 	ContactAttackAbilityHandle = FGameplayAbilitySpecHandle();
 	RangedAttackAbilityHandle = FGameplayAbilitySpecHandle();
+
+    if (RogueEnemyArchetypes::IsHealerType(EnemyType)) { return; }
 
 	// 压测对照开关（见 RogueSelfTest.h）：关掉授予就能量出"GAS 这部分到底贵多少"。
 	if (RogueSelfTest::AreEnemyAttackAbilitiesDisabled())
@@ -855,6 +920,7 @@ bool ARogueEnemy::ExecuteRangedAttack()
 
 void ARogueEnemy::InitializeEnemy(const FRogueEnemyProfile& InProfile)
 {
+    if (EnemyPresentation) EnemyPresentation->ResetForPool();
 	AttackAudioState.Reset();
 	if (HitFlashComponent) { HitFlashComponent->ClearHitFlash(); }
 	EnemyType = InProfile.EnemyType;
@@ -897,11 +963,17 @@ void ARogueEnemy::InitializeEnemy(const FRogueEnemyProfile& InProfile)
 	TargetRefreshCooldown = 0.0f;
 	GetCharacterMovement()->MaxWalkSpeed = MoveSpeed;
 	ApplyEnemyStyle();
+    InitializeFlight();
 
 	// 把这一只的血量上限/当前值写进 GAS 属性。
 	// 池复用时 AttributeSet 是同一个对象，必须在这里重写，
 	// 否则下一只怪会带着上一只的血量上限（这也是 P2-25 类问题的同类隐患）。
 	SyncHealthToAbilitySystem();
+	if (bIsBoss && AttributeSet != nullptr)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[BossLifecycle] Initialized Enemy=%s Spawn=%s Health=%.2f/%.2f"),
+			*GetName(), *SpawnCycleId.ToString(), AttributeSet->GetHealth(), AttributeSet->GetMaxHealth());
+	}
 
 	// 通知蓝图子类初始化完成
 	OnEnemyInitialized(InProfile);
@@ -910,10 +982,19 @@ void ARogueEnemy::InitializeEnemy(const FRogueEnemyProfile& InProfile)
 	// 生成顺序为 ActivatePooledEnemy → InitializeEnemy。先清旧 ASC 状态，
 	// 再按本次已加载的 CurrentArchetype 授予，避免使用上次池周期的原型。
 	GrantAttackAbilities();
+    if (HasAuthority())
+    { RuntimeProfile.Profile=InProfile;RuntimeProfile.GroundZ=FlightGroundZ;RuntimeProfile.Generation=HitFeedback.Generation;ForceNetUpdate(); }
+    RefreshUtilityComponents();
 }
 
 void ARogueEnemy::ActivatePooledEnemy(AActor* InOwner, const FVector& SpawnLocation, const FRotator& SpawnRotation)
 {
+    if (EnemyPresentation) EnemyPresentation->ResetForPool();
+    if (EnemySupport) EnemySupport->ResetForPool();
+    if (StationaryHazard) StationaryHazard->ResetForPool();
+	GetWorldTimerManager().ClearTimer(PendingDeathTimer);
+	bPendingDeath = false;
+	PendingDeathSpawnId.Invalidate();
 	if (HitFlashComponent) { HitFlashComponent->ClearHitFlash(); }
 	if (HasAuthority())
 	{
@@ -921,8 +1002,10 @@ void ARogueEnemy::ActivatePooledEnemy(AActor* InOwner, const FVector& SpawnLocat
 		HitFeedback = FRogueEnemyHitFeedback();
 		HitFeedback.Generation = Generation;
 		HitFeedback.bActive = true;
+        HealingFeedback=FRogueEnemyHealingFeedback();HealingFeedback.Generation=Generation;HealingFeedback.bActive=true;
 	}
 	SpawnCycleId = FGuid::NewGuid();
+    FlightGroundZ=SpawnLocation.Z; FlyingVolleysRemaining=0; FlyingTarget.Reset();
 	ConfigureGroundedCollision();
 	SetOwner(InOwner);
 	SetActorLocationAndRotation(SpawnLocation, SpawnRotation, false, nullptr, ETeleportType::TeleportPhysics);
@@ -980,9 +1063,16 @@ void ARogueEnemy::ActivatePooledEnemy(AActor* InOwner, const FVector& SpawnLocat
 
 void ARogueEnemy::DeactivateToPool()
 {
+    if (EnemyPresentation) EnemyPresentation->ResetForPool();
+    if (EnemySupport) EnemySupport->ResetForPool();
+    if (StationaryHazard) StationaryHazard->ResetForPool();
+    FlyingVolleysRemaining=0; FlyingVolleyTimer=0; FlyingTarget.Reset();
+	GetWorldTimerManager().ClearTimer(PendingDeathTimer);
+	bPendingDeath = false;
+	PendingDeathSpawnId.Invalidate();
 	AttackAudioState.Reset();
 	if (HitFlashComponent) { HitFlashComponent->ClearHitFlash(); }
-	if (HasAuthority()) { HitFeedback.bActive = false; }
+	if (HasAuthority()) { HitFeedback.bActive = false;HealingFeedback.bActive=false; }
 	if (!bPoolAvailable)
 	{
 		if (UWorld* World = GetWorld())
@@ -1142,6 +1232,12 @@ void ARogueEnemy::MoveInDirection(const FVector& Direction, float SpeedMultiplie
 	const FVector NormalizedDirection = Direction.GetSafeNormal2D();
 	const FRotator DesiredRotation = NormalizedDirection.Rotation();
 	SetActorRotation(FMath::RInterpTo(GetActorRotation(), DesiredRotation, DeltaSeconds, 8.0f));
+    if (RogueEnemyArchetypes::IsHealerType(EnemyType))
+    {
+        GetCharacterMovement()->MaxWalkSpeed=MoveSpeed*FMath::Max(0.f,SpeedMultiplier);
+        AddMovementInput(NormalizedDirection,1.f,true);
+        return;
+    }
 	AddActorWorldOffset(NormalizedDirection * MoveSpeed * SpeedMultiplier * DeltaSeconds, true);
 	// 手动平移绕过了 CharacterMovement 的位移，不能继续沿用旧位置的地面缓存。
 	GetCharacterMovement()->bForceNextFloorCheck = true;
@@ -1175,6 +1271,8 @@ void ARogueEnemy::FireProjectileAtPlayer()
 
 FVector ARogueEnemy::CalculateArchetypeMovement(float DeltaSeconds)
 {
+    // 治疗者寻找友军不依赖已缓存的玩家索敌目标，行为树也走同一入口。
+    if (RogueEnemyArchetypes::IsHealerType(EnemyType)) return GetMovementDirection(FVector::ZeroVector,0.f,DeltaSeconds);
 	const ARogueCharacter* PlayerCharacter = GetPlayerCharacter();
 	if (!IsValid(PlayerCharacter))
 	{
@@ -1268,8 +1366,14 @@ void ARogueEnemy::FireRangedShot(ARogueCharacter* PlayerCharacter)
 		return;
 	}
 
+    if (RogueEnemyArchetypes::IsFlyingType(EnemyType)) { StartFlyingAttack(PlayerCharacter); return; }
 	const FRogueEnemyRangedArchetype& RangedArchetype = CurrentArchetype.Ranged;
 	const TSubclassOf<ARogueEnemyProjectile> ProjectileClass = GetEnemyProjectileClass();
+    if (RangedArchetype.ShotPattern == ERogueEnemyShotPattern::Skyfall)
+    {
+        StartSkyfallAttack(PlayerCharacter);
+        return;
+    }
 	if (RangedArchetype.ShotPattern == ERogueEnemyShotPattern::RadialRing)
 	{
 		const FRogueEnemyBulletRingSettings Settings = RangedArchetype.BulletRing.Sanitized();
@@ -1425,6 +1529,8 @@ void ARogueEnemy::ApplyEnemyStyle()
 FVector ARogueEnemy::GetMovementDirection(const FVector& ToPlayer, float DistanceToPlayer, float DeltaSeconds)
 {
 	const FRogueEnemyMovementArchetype& MovementArchetype = CurrentArchetype.Movement;
+    if (MovementArchetype.Model==ERogueEnemyMovementModel::Stationary) return FVector::ZeroVector;
+    if (RogueEnemyArchetypes::IsHealerType(EnemyType)&&EnemySupport) return EnemySupport->CalculateSupportMovement(DeltaSeconds);
 	const FVector TowardPlayer = ToPlayer.GetSafeNormal2D();
 	if (TowardPlayer.IsNearlyZero())
 	{

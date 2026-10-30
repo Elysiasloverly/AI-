@@ -1,6 +1,8 @@
 # /Game/Data 数据资产覆盖审计
 
 审计日期：2026-10-20  
+2026-10-27 更新：全场同时存活限制已移除，相关字段仅保留为隐藏的旧资产兼容字段。敌人表各类型的 `MaxAlive`、`MaxSpawnPerWave` 继续生效。
+
 审计对象：`/Game/Data` 下的 DataAsset / DataTable，以及对应 C++ 结构里的代码默认值。
 
 ## 1. 已确认在数据资产里的内容
@@ -9,7 +11,7 @@
 
 | 组 | 已进资产 | 说明 |
 |---|---|---|
-| `Spawn` | `MaxAlivePerWave`、`MaxAliveLimit`、`BossAliveReduction`、`BossAliveMinimumLimit`、`BatchRules`、`AccelerationPerWave`、`MaxAcceleration`、`EarlyWaves`、`MinimumInterval` | 刷怪数量、批量规则、加速、开局放缓、最短间隔 |
+| `Spawn` | `BaseEnemiesPerWave`、`EnemiesPerWaveIncrement`、`EnemiesPerWaveLimit`、`BatchRules`、`AccelerationPerWave`、`MaxAcceleration`、`EarlyWaves`、`MinimumInterval` | 刷怪数量、批量规则、加速、开局放缓、最短间隔 |
 | `Shop` | `OfferCount`、`OfferCost`、`RefreshCost`、`AutoRefreshInterval` | 商店报价数量、购买/刷新价格、自动刷新间隔 |
 | `EnemyStats` | `Health`、`MaxHealth`、`Speed`、`Damage`、`HealthGrowthStages` | 普通敌人基础值与成长 |
 | `BossStats` | `Health`、`Damage`、`Speed`、`SpeedMultiplier`、`EarlyStage`、`LateStage`、`LateStageStartWave` | Boss 基础值与阶段成长 |
@@ -39,7 +41,7 @@
 | 资产 | 已覆盖 |
 |---|---|
 | `DA_UpgradeRules` | 武器升级规则、基础升级、最短 Dash 冷却 |
-| `DT_UpgradeDefinitions` | 22 张卡的 `Type`、`Title`、`Description`、`Magnitude`；`ScytheLifesteal` 另有 `FirstMagnitude=0.20`、`MaxMagnitude=1.0` |
+| `DT_UpgradeDefinitions` | 22 张卡的 `Type`、`Title`、`Description`、`Magnitude`、`MaxPicks`（默认 0=不限）；`ScytheLifesteal` 另有 `FirstMagnitude=0.20`、`MaxMagnitude=1.0` |
 | `DA_UpgradeDefinitions` | 定义表引用 |
 
 ## 2. 还没搬进 `/Game/Data` 的内容
@@ -50,7 +52,7 @@
 |---|---|
 | 对象池初始容量 | `DA_GameBalance.Pools` |
 | 运行时性能阈值 | `DA_GameBalance.Performance` |
-| 基础刷怪设置 | `DA_GameBalance.Spawn` 的 `BaseEnemiesPerWave` / `EnemiesPerWaveIncrement` / `EnemiesPerWaveLimit` / `SpawnRadius` / `SpawnInterval` / `BaseMaxAliveEnemies` / `EnemySpawnMinimumDistance` / `GroundTrace*` |
+| 基础刷怪设置 | `DA_GameBalance.Spawn` 的 `BaseEnemiesPerWave` / `EnemiesPerWaveIncrement` / `EnemiesPerWaveLimit` / `SpawnRadius` / `SpawnInterval` / `EnemySpawnMinimumDistance` / `GroundTrace*` |
 | Boss 节奏 | `DA_GameBalance.BossSpawn` 的 `BossWaveInterval` / `BossBonusSelections` / `BossSpawnDistance` / `BossSpawnMinimumDistance` |
 | 场景优化 | `DA_GameBalance.Scene` |
 
@@ -91,7 +93,7 @@
 
 - 玩家弹体：`CollisionRadius=16`、`PooledLifetime=3`、`Speed=1600`、`Damage=20`
 - 八卦炉：`CollisionRadius=18`、`PooledLifetime=5`、`Damage=40`
-- 敌人弹体：`CollisionRadius=22`、`BaseSpeed=920`、`PooledLifetime=4`、`ImpactEffectScale=0.24`
+- 敌人弹体：`CollisionRadius=22`、`BaseSpeed=920`、`PooledLifetime=30`、`ImpactEffectScale=0.24`
 - 环绕银刃：碰撞半径 `46`、命中冷却 `0.35`
 - 阴阳玉：`MinimumLaunchSpeed=680`、落点脉冲 `4.8`
 

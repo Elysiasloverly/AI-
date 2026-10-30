@@ -76,7 +76,8 @@ void ARoguePlayerState::ApplyShopSnapshot(bool bInOpen, const TArray<FRogueShopO
 	{
 		for (int32 Index = 0; Index < ShopOffers.Num(); ++Index)
 		{
-			if (ShopOffers[Index].GetCost() != InOffers[Index].GetCost()
+			if (ShopOffers[Index].QuoteId != InOffers[Index].QuoteId
+				|| ShopOffers[Index].GetCost() != InOffers[Index].GetCost()
 				|| ShopOffers[Index].IsPurchased() != InOffers[Index].IsPurchased()
 				|| ShopOffers[Index].GetUpgrade().Type != InOffers[Index].GetUpgrade().Type)
 			{
@@ -124,13 +125,13 @@ void ARoguePlayerState::Server_RequestOpenShop_Implementation()
 	}
 }
 
-void ARoguePlayerState::Server_RequestBuyShopOffer_Implementation(int32 OfferIndex)
+void ARoguePlayerState::Server_RequestBuyShopOffer_Implementation(int32 OfferIndex, FGuid QuoteId, int32 QuotedCost)
 {
 	if (ARogueGameMode* RogueGameMode = GetWorld() != nullptr ? GetWorld()->GetAuthGameMode<ARogueGameMode>() : nullptr)
 	{
 		// 关键：把**请求者**的 Pawn 传进去。
 		// 旧实现用 GameMode 上的 CachedCharacter，联机下会把玩家 2 的购买算到玩家 1 头上。
-		RogueGameMode->TryBuyShopOffer(OfferIndex, Cast<ARogueCharacter>(GetPawn()));
+		RogueGameMode->TryBuyShopOffer(OfferIndex, QuoteId, QuotedCost, Cast<ARogueCharacter>(GetPawn()));
 	}
 }
 
@@ -164,7 +165,10 @@ void ARoguePlayerState::OpenUpgradeSelection(const TArray<FRogueUpgradeOption>& 
 	}
 
 	PendingUpgrades = InOptions;
+	const FGuid SelectionId = FGuid::NewGuid();
+	for (FRogueUpgradeOption& Option : PendingUpgrades) Option.SelectionId = SelectionId;
 	bAwaitingUpgradeChoice = PendingUpgrades.Num() > 0;
+	ForceNetUpdate();
 }
 
 void ARoguePlayerState::CloseUpgradeSelection()
@@ -197,9 +201,10 @@ bool ARoguePlayerState::ConsumeQueuedSelection()
 	return true;
 }
 
-bool ARoguePlayerState::TryConsumePendingUpgrade(int32 UpgradeIndex, FRogueUpgradeOption& OutUpgrade)
+bool ARoguePlayerState::TryConsumePendingUpgrade(int32 UpgradeIndex, const FGuid& SelectionId, FRogueUpgradeOption& OutUpgrade)
 {
-	if (!HasAuthority() || !bAwaitingUpgradeChoice || !PendingUpgrades.IsValidIndex(UpgradeIndex))
+	if (!HasAuthority() || !bAwaitingUpgradeChoice || !PendingUpgrades.IsValidIndex(UpgradeIndex)
+		|| !SelectionId.IsValid() || PendingUpgrades[UpgradeIndex].SelectionId != SelectionId)
 	{
 		return false;
 	}
@@ -210,10 +215,12 @@ bool ARoguePlayerState::TryConsumePendingUpgrade(int32 UpgradeIndex, FRogueUpgra
 		return false;
 	}
 	const ERogueUpgradeType Type = PendingUpgrades[UpgradeIndex].Type;
-	if (!RogueUpgradeSystemRules::IsUpgradeAllowedForProgression(Type, Character))
-	{
-		return false;
-	}
+    ARogueGameMode* Mode = GetWorld() ? GetWorld()->GetAuthGameMode<ARogueGameMode>() : nullptr;
+    if (Mode == nullptr || Mode->IsGameOver() || !Character->IsAlive() || !Mode->IsUpgradeAvailableForPlayer(Character, Type))
+    {
+        if (Mode) { Mode->RefreshPendingUpgradeSelection(this); }
+        return false;
+    }
 	OutUpgrade = PendingUpgrades[UpgradeIndex];
 	PendingUpgrades.Reset();
 	bAwaitingUpgradeChoice = false;
@@ -228,6 +235,7 @@ void ARoguePlayerState::ResetUpgradeState()
 	}
 
 	PendingUpgrades.Reset();
+	UpgradePickCounts.Reset();
 	bAwaitingUpgradeChoice = false;
 	QueuedUpgradeSelections = 0;
 }
@@ -249,19 +257,28 @@ void ARoguePlayerState::Server_RequestRestartRun_Implementation()
 	}
 }
 
-bool ARoguePlayerState::Server_RequestUpgradeSelection_Validate(int32 UpgradeIndex)
+void ARoguePlayerState::SubmitUpgradeSelection(int32 UpgradeIndex, const FGuid& SelectionId)
+{
+	if (!bAwaitingUpgradeChoice || !PendingUpgrades.IsValidIndex(UpgradeIndex)
+		|| !SelectionId.IsValid() || PendingUpgrades[UpgradeIndex].SelectionId != SelectionId
+		|| IsUpgradeSubmissionPending(SelectionId)) return;
+	SubmittedSelectionId = SelectionId;
+	Server_RequestUpgradeSelection(UpgradeIndex, SelectionId);
+}
+
+bool ARoguePlayerState::Server_RequestUpgradeSelection_Validate(int32 UpgradeIndex, FGuid SelectionId)
 {
 	// 只校验"索引范围合理"，真正的合法性由服务端的 TryConsumePendingUpgrade 判定
 	// （它会检查是否真的处于待选择状态、索引是否在待选列表内）。
 	return UpgradeIndex >= 0 && UpgradeIndex <= 8;
 }
 
-void ARoguePlayerState::Server_RequestUpgradeSelection_Implementation(int32 UpgradeIndex)
+void ARoguePlayerState::Server_RequestUpgradeSelection_Implementation(int32 UpgradeIndex, FGuid SelectionId)
 {
 	// 服务端权威校验：客户端只能在自己真的有待选卡牌时消耗一次。
 	// 这里必须重新取一遍，不能相信客户端的任何状态。
 	FRogueUpgradeOption SelectedUpgrade;
-	if (!TryConsumePendingUpgrade(UpgradeIndex, SelectedUpgrade))
+	if (!TryConsumePendingUpgrade(UpgradeIndex, SelectionId, SelectedUpgrade))
 	{
 		return;
 	}
@@ -469,25 +486,26 @@ void ARoguePlayerState::OnRep_Progression()
 	}
 }
 
-void ARoguePlayerState::GrantBossIceBrick(const FGuid& RewardId)
+void ARoguePlayerState::GrantBossIceBrick(const FGuid& RewardId, int32 Amount)
 {
 	if (!HasAuthority() || !RewardId.IsValid() || GrantedBossRewardIds.Contains(RewardId))
 	{
 		return;
 	}
+	const int32 SafeAmount = FMath::Max(Amount, 0);
 	GrantedBossRewardIds.Add(RewardId);
-	++BossIceBricksEarnedThisRun;
+	BossIceBricksEarnedThisRun += SafeAmount;
 	ForceNetUpdate();
 	const APlayerController* Controller = Cast<APlayerController>(GetOwner());
 	if (Controller != nullptr && (Controller->GetLocalPlayer() != nullptr || Controller->GetNetConnection() != nullptr))
 	{
-		Client_GrantBossIceBrick(RewardId);
+		Client_GrantBossIceBrick(RewardId, SafeAmount);
 	}
 }
 
-void ARoguePlayerState::Client_GrantBossIceBrick_Implementation(const FGuid& RewardId)
+void ARoguePlayerState::Client_GrantBossIceBrick_Implementation(const FGuid& RewardId, int32 Amount)
 {
-	PendingLocalBossRewards.Add(RewardId);
+	PendingLocalBossRewards.Add(RewardId, FMath::Max(Amount, 0));
 	FlushLocalBossRewards();
 }
 
@@ -499,10 +517,10 @@ void ARoguePlayerState::FlushLocalBossRewards()
 	if (Progression != nullptr)
 	{
 		TArray<FGuid> Committed;
-		for (const FGuid& RewardId : PendingLocalBossRewards)
+		for (const TPair<FGuid, int32>& Pending : PendingLocalBossRewards)
 		{
-			Progression->EnqueueBossReward(RewardId);
-			Committed.Add(RewardId); // Ownership handed to the LocalPlayer, including failed saves.
+			Progression->EnqueueBossReward(Pending.Key, Pending.Value);
+			Committed.Add(Pending.Key); // Ownership handed to the LocalPlayer, including failed saves.
 		}
 		for (const FGuid& RewardId : Committed) { PendingLocalBossRewards.Remove(RewardId); }
 	}

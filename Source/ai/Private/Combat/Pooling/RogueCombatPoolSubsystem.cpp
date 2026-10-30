@@ -7,6 +7,10 @@
 #include "Combat/Projectiles/RogueRocketProjectile.h"
 #include "World/RogueExperiencePickup.h"
 #include "Combat/Visuals/RogueImpactEffect.h"
+#include "Combat/Visuals/RogueCombatAccentEffect.h"
+#include "Combat/Targeting/RogueEnemyTrackerSubsystem.h"
+#include "GameFramework/PlayerController.h"
+#include "Camera/PlayerCameraManager.h"
 #include "Combat/Visuals/RogueLaserBeam.h"
 #include "Combat/Projectiles/RogueOrbitingBlade.h"
 
@@ -63,4 +67,33 @@ ARogueOrbitingBlade* URogueCombatPoolSubsystem::AcquireOrbitingBlade(TSubclassOf
 void URogueCombatPoolSubsystem::LogPoolDiagnostics()
 {
 	CombatPools.LogPoolDiagnostics();
+}
+
+ARogueCombatAccentEffect* URogueCombatPoolSubsystem::PlayCombatAccent(const FRogueCombatAccentSettings& S,const FVector& Location,const FVector& Direction,bool bImpact)
+{
+    UWorld* W=GetWorld();
+    if(!W || W->GetNetMode()==NM_DedicatedServer || !S.bEnabled || !S.EffectClass || Location.ContainsNaN())return nullptr;
+    bool HasCamera=false,NearCamera=false;
+    for(auto It=W->GetPlayerControllerIterator();It;++It)
+        if(auto* PC=It->Get();PC && PC->IsLocalController() && PC->PlayerCameraManager)
+        { HasCamera=true;NearCamera|=FVector::DistSquared(PC->PlayerCameraManager->GetCameraLocation(),Location)<FMath::Square(5000.f); }
+    if(HasCamera && !NearCamera)return nullptr;
+    AccentPool.RemoveAll([](const auto& A){return !IsValid(A);});
+    const auto* Tracker=W->GetSubsystem<URogueEnemyTrackerSubsystem>();
+    const int32 Limit=Tracker && Tracker->ShouldCullCombatEffects()?16:48;
+    int32 Active=0;ARogueCombatAccentEffect* Available=nullptr;
+    for(ARogueCombatAccentEffect* A:AccentPool)
+    {
+        if(!A->IsAvailableInPool())++Active;
+        else if(A->GetClass()==S.EffectClass)Available=A;
+    }
+    if(Active>=Limit)return nullptr;
+    if(!Available)
+    {
+        if(AccentPool.Num()>=64)return nullptr;
+        FActorSpawnParameters Params;Params.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+        Available=W->SpawnActor<ARogueCombatAccentEffect>(S.EffectClass,Location,FRotator::ZeroRotator,Params);
+        if(!Available)return nullptr;AccentPool.Add(Available);
+    }
+    Available->Activate(S,Location,Direction,bImpact);return Available;
 }

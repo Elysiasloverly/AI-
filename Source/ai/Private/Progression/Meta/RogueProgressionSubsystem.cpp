@@ -66,12 +66,12 @@ bool URogueProgressionSubsystem::TryPurchaseNode(FName NodeId, FText& OutFailure
 	return true;
 }
 
-bool URogueProgressionSubsystem::ApplyBossReward(const FGuid& RewardId)
+bool URogueProgressionSubsystem::ApplyBossReward(const FGuid& RewardId, int32 Amount)
 {
 	if (!bSaveWritable || !Profile || !RewardId.IsValid()) { return false; }
 	if (Profile->AppliedBossRewards.Contains(RewardId)) { return true; }
 	URogueProgressionSaveGame* Candidate = DuplicateObject<URogueProgressionSaveGame>(Profile, this);
-	return Candidate->AddBossReward(RewardId) && CommitCandidate(Candidate);
+	return Candidate->AddBossReward(RewardId, Amount) && CommitCandidate(Candidate);
 }
 
 bool URogueProgressionSubsystem::CommitCandidate(URogueProgressionSaveGame* Candidate)
@@ -194,10 +194,10 @@ bool URogueProgressionSubsystem::SetIceBricksInSlotForDebug(const FString& Slot,
 }
 #endif
 
-void URogueProgressionSubsystem::EnqueueBossReward(const FGuid& RewardId)
+void URogueProgressionSubsystem::EnqueueBossReward(const FGuid& RewardId, int32 Amount)
 {
 	if (!RewardId.IsValid() || (Profile && Profile->AppliedBossRewards.Contains(RewardId))) { return; }
-	PendingBossRewards.Add(RewardId);
+	PendingBossRewards.Add(RewardId, FMath::Max(Amount, 0));
 	FlushPendingBossRewards();
 	if (!PendingBossRewards.IsEmpty() && !RewardRetryHandle.IsValid())
 	{
@@ -213,9 +213,9 @@ bool URogueProgressionSubsystem::FlushPendingBossRewards(float DeltaSeconds)
 	if (PendingBossRewards.IsEmpty()) { FTSTicker::GetCoreTicker().RemoveTicker(RewardRetryHandle); RewardRetryHandle.Reset(); return false; }
 	if (!bSaveWritable || !Profile) { return true; }
 	URogueProgressionSaveGame* Candidate = DuplicateObject<URogueProgressionSaveGame>(Profile, this);
-	for (const FGuid& RewardId : PendingBossRewards)
+	for (const TPair<FGuid, int32>& Pending : PendingBossRewards)
 	{
-		if (!Candidate->AddBossReward(RewardId)) { return true; }
+		if (!Candidate->AddBossReward(Pending.Key, Pending.Value)) { return true; }
 	}
 	if (CommitCandidate(Candidate))
 	{

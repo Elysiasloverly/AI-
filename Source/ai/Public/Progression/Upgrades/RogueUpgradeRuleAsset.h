@@ -9,11 +9,12 @@ UENUM(BlueprintType)
 enum class ERogueWeaponUpgradeSource : uint8
 {
 	Scythe    UMETA(DisplayName = "银刃"),
-	Rocket    UMETA(DisplayName = "八卦炉"),
-	Laser     UMETA(DisplayName = "极限火花"),
-	HellTower UMETA(DisplayName = "御柱"),
-	Mortar    UMETA(DisplayName = "阴阳玉"),
-	Projectile UMETA(DisplayName = "御札")
+	Rocket    UMETA(DisplayName = "焰符·火丸"),
+	Laser     UMETA(DisplayName = "星符·流光"),
+	HellTower UMETA(DisplayName = "焰符·灼光"),
+	Mortar    UMETA(DisplayName = "冰符·霜玉"),
+	Projectile UMETA(DisplayName = "冰符·寒弹"),
+	Talisman UMETA(DisplayName="灵符·归心")
 };
 
 USTRUCT(BlueprintType)
@@ -50,4 +51,8 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "升级", meta = (DisplayName = "冲刺最小冷却"))
 	float MinimumDashCooldown = 0.5f;
+
+    /** 保底从已通过永久许可和本局前置检查的卡池中选择，不赠送未解锁卡。0关闭。 */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="升级", meta=(DisplayName="进攻选项保底截止等级",ClampMin="0",ClampMax="100"))
+    int32 OpeningOffenseLevels = 8;
 };

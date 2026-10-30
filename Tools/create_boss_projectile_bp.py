@@ -5,7 +5,7 @@
         -run=pythonscript -script="Tools/create_boss_projectile_bp.py" ^
         -unattended -nopause -nullrhi -nosplash
 
-产物：/Game/BP/Enemy/Projectiles/BP_EnemyProjectile_Boss
+产物：/Game/BP/Enemy/Common/BP_EnemyProjectile_Boss
 父类：BP_EnemyProjectile（继承普通弹体外观，再单独改 Boss 样式）
 
 ARogueEnemy 构造函数按固定路径查找它；只有 bIsBoss 为真时使用，
@@ -13,7 +13,7 @@ ARogueEnemy 构造函数按固定路径查找它；只有 bIsBoss 为真时使�
 """
 import unreal
 
-DEST = "/Game/BP/Enemy/Projectiles"
+DEST = "/Game/BP/Enemy/Common"
 NAME = "BP_EnemyProjectile_Boss"
 BASE_PATH = DEST + "/BP_EnemyProjectile"
 

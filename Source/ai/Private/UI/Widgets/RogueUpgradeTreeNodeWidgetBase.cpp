@@ -1,4 +1,5 @@
 #include "UI/Widgets/RogueUpgradeTreeNodeWidgetBase.h"
+#include "Audio/RogueMusicSubsystem.h"
 
 #include "Components/Border.h"
 #include "Components/Button.h"
@@ -10,6 +11,7 @@
 void URogueUpgradeTreeNodeWidgetBase::NativeConstruct()
 {
 	Super::NativeConstruct();
+	URogueMusicSubsystem::BindWidgetButtonSounds(this);
 	if (PurchaseButton != nullptr)
 	{
 		PurchaseButton->OnClicked.AddUniqueDynamic(this, &URogueUpgradeTreeNodeWidgetBase::HandlePurchaseClicked);

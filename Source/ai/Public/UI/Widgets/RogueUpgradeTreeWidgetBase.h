@@ -60,6 +60,7 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> AttributesTabButton;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> CloseButton;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> IceBricksText;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> PageSubtitle;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> StatusText;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> SectionText;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> PreviousPageButton;

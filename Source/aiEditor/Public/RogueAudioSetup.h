@@ -21,4 +21,7 @@ public:
     static bool SetPreviewBattleState(UObject* Context, bool bGameOver, bool bBossAlive, bool bNight);
     UFUNCTION(BlueprintCallable, Category="Rogue|Editor|Preview", meta=(WorldContext="Context")) static UUserWidget* OpenPreviewSettings(UObject* Context);
     UFUNCTION(BlueprintCallable, Category="Rogue|Editor|Preview") static bool ClickPreviewButton(UUserWidget* Widget, FName Name);
+    UFUNCTION(BlueprintCallable, Category="Rogue|Editor|Preview", meta=(WorldContext="Context")) static UUserWidget* FindPreviewMainMenu(UObject* Context);
+    UFUNCTION(BlueprintCallable, Category="Rogue|Editor|Preview") static bool PreviewButtonAudio(UUserWidget* Widget, FName Name, bool bPressed);
+    UFUNCTION(BlueprintCallable, Category="Rogue|Editor|Preview") static bool PreviewButtonPointer(UUserWidget* Widget, FName Name, bool bEnter);
 };

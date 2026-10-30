@@ -3,6 +3,7 @@
 #include "Combat/Weapons/RogueWeapon_Projectile.h"
 #include "Enemies/RogueEnemy.h"
 #include "Engine/Engine.h"
+#include "Combat/Weapons/RogueWeapon_Talisman.h"
 #include "Engine/GameInstance.h"
 #include "HAL/FileManager.h"
 #include "Misc/AutomationTest.h"
@@ -23,7 +24,12 @@ bool FRogueCentralAudioTest::RunTest(const FString&)
 {
     auto* Saved = GetDefault<URogueMusicSubsystem>()->GetAudioConfig();
     if (!TestNotNull(TEXT("Configured central audio asset loads"), Saved)) return false;
-    TestEqual(TEXT("All six existing weapons have one central entry"), Saved->Weapons.Num(), 6);
+    for(const auto& Entry:Saved->Weapons)
+    {
+        TestNotNull(TEXT("Each central audio entry has a weapon class"),Entry.WeaponClass.Get());
+        TestNotNull(TEXT("Each weapon resolves its own central audio slot"),Saved->FindWeaponAudio(Entry.WeaponClass));
+    }
+    TestNotNull(TEXT("Returning talisman has a separate configurable audio slot"),Saved->FindWeaponAudio(ARogueWeapon_Talisman::StaticClass()));
     TestTrue(TEXT("Native enemy default plus existing blueprints are migrated"), Saved->Enemies.Num() >= 15);
     TestTrue(TEXT("Music and effects are separate child classes"), Saved->MusicClass && Saved->EffectsClass && Saved->MusicClass != Saved->EffectsClass);
     TestTrue(TEXT("Music and effects share the project master"), Saved->MusicClass->ParentClass == Saved->EffectsClass->ParentClass);
@@ -33,7 +39,7 @@ bool FRogueCentralAudioTest::RunTest(const FString&)
     auto* A = NewObject<USoundWave>(); auto* B = NewObject<USoundWave>();
     Config->Enemies.Reset();
     auto& Base = Config->Enemies.AddDefaulted_GetRef(); Base.EnemyClass = ARogueEnemy::StaticClass(); Base.AttackAudio.Sounds = {A};
-    auto* Child = LoadClass<ARogueEnemy>(nullptr, TEXT("/Game/BP/Enemy/BP_EnemyRifleman.BP_EnemyRifleman_C"));
+    auto* Child = LoadClass<ARogueEnemy>(nullptr, TEXT("/Game/BP/Enemy/Rifleman/BP_EnemyRifleman.BP_EnemyRifleman_C"));
     auto& Specific = Config->Enemies.AddDefaulted_GetRef(); Specific.EnemyClass = Child;
     TestTrue(TEXT("Empty specific entry inherits central base sound"), Config->FindEnemyAudio(Child)->Sounds.Contains(A));
     Specific.AttackAudio.Sounds = {B}; TestTrue(TEXT("Specific enemy overrides only itself"), Config->FindEnemyAudio(Child)->Sounds.Contains(B));

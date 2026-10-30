@@ -97,6 +97,9 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "外观|地狱塔材质", meta = (DisplayName = "端点圆环材质", ToolTip = "在类默认值设置此材质；留空使用网格自身默认材质。", EditCondition = "!bUseBlueprintComponentMaterials", EditConditionHides))
 	TObjectPtr<UMaterialInterface> InfernoRingMaterial;
 
+	UPROPERTY(EditDefaultsOnly, Category = "外观|几何", meta = (DisplayName = "光晕网格沿Z轴延伸", ToolTip = "用于Shape_Cylinder一类纵轴为Z的网格；在蓝图中把GlowMesh旋转到沿光束方向，再启用此项。长度仍按起终点计算。"))
+	bool bGlowMeshUsesZAxis = false;
+
 	UPROPERTY(EditDefaultsOnly, Category = "Visual")
 	float MinimumBeamLengthScale = 0.2f;
 
@@ -114,4 +117,5 @@ private:
 
 	FTimerHandle ReturnToPoolTimerHandle;
 	bool bPoolAvailable = true;
+	uint32 VisualActivationSerial = 0;
 };

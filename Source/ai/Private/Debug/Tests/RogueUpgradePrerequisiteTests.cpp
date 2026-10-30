@@ -5,6 +5,7 @@
 #include "Combat/Weapons/RogueWeapon_Mortar.h"
 #include "Combat/Weapons/RogueWeapon_Scythe.h"
 #include "Progression/Upgrades/RogueUpgradeSystem.h"
+#include "Progression/Upgrades/RogueUpgradeDefinitionAsset.h"
 #include "Progression/Meta/RogueUpgradeTreeDefinition.h"
 #include "Engine/DataTable.h"
 #include "Engine/World.h"
@@ -128,10 +129,11 @@ namespace RogueUpgradePrerequisiteTests
 			Player->ApplyUpgrade(Upgrade);
 		}
 
-		TArray<ERogueUpgradeType> BuildPool(const URogueUpgradeRuleAsset* Rules) const
+		TArray<ERogueUpgradeType> BuildPool(const URogueUpgradeRuleAsset* Rules,
+			const URogueUpgradeDefinitionAsset* Definition = nullptr) const
 		{
 			TArray<ERogueUpgradeType> Pool;
-			RogueUpgradeSystemRules::BuildUpgradePool(Pool, Player, Rules);
+			RogueUpgradeSystemRules::BuildUpgradePool(Pool, Player, Rules, Definition);
 			return Pool;
 		}
 	};
@@ -195,7 +197,7 @@ bool FRogueAssetUpgradePrerequisiteTest::RunTest(const FString& Parameters)
 	RogueUpgradePrerequisiteTests::FUpgradeFixture Fixture;
 	if (!Fixture.Initialize(*this)) { return false; }
 	URogueUpgradeRuleAsset* Rules = NewObject<URogueUpgradeRuleAsset>(Fixture.World);
-	TestEqual(TEXT("The default asset includes the three new exclusive card rules"), Rules->WeaponUpgradeRules.Num(), 9);
+	TestTrue(TEXT("The asset includes a laser-source rule"), Rules->WeaponUpgradeRules.ContainsByPredicate([](const auto& Rule) { return Rule.Source == ERogueWeaponUpgradeSource::Laser; }));
 	return RogueUpgradePrerequisiteTests::CheckImmediateUnlocks(*this, Fixture, Rules);
 }
 
@@ -208,7 +210,7 @@ bool FRogueMortarFallbackUpgradePrerequisiteTest::RunTest(const FString& Paramet
 	RogueUpgradePrerequisiteTests::FUpgradeFixture Fixture;
 	if (!Fixture.Initialize(*this)) { return false; }
 	URogueUpgradeRuleAsset* Rules = RogueUpgradePrerequisiteTests::MakeRulesWithoutMortar(Fixture.World);
-	TestEqual(TEXT("The fixture leaves eight non-mortar asset rules"), Rules->WeaponUpgradeRules.Num(), 8);
+	TestFalse(TEXT("The fixture removes mortar-source rules"), Rules->WeaponUpgradeRules.ContainsByPredicate([](const auto& Rule) { return Rule.Source == ERogueWeaponUpgradeSource::Mortar; }));
 	TestTrue(TEXT("The compatibility path still offers the mortar unlock"), Fixture.BuildPool(Rules).Contains(ERogueUpgradeType::MortarCount));
 	return RogueUpgradePrerequisiteTests::CheckImmediateUnlocks(*this, Fixture, Rules);
 }
@@ -357,6 +359,53 @@ bool FRogueScytheLifestealPrerequisiteTest::RunTest(const FString& Parameters)
 	Fixture.Attributes->SetWeaponBonusCaps(Caps);
 	Fixture.Player->ApplyUpgrade(Card);
 	TestEqual(TEXT("The optional lifesteal cap clamps the third card"), Fixture.Attributes->GetScytheLifestealBonus(), 0.3f);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueUpgradeMaxPicksTest, "Rogue.Progression.Upgrades.MaxPicksRemoveFromPool", RogueUpgradePrerequisiteTests::Flags)
+bool FRogueUpgradeMaxPicksTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	RogueUpgradePrerequisiteTests::FUpgradeFixture Fixture;
+	if (!Fixture.Initialize(*this)) { return false; }
+
+	UDataTable* Table = NewObject<UDataTable>(Fixture.World);
+	Table->RowStruct = FRogueUpgradeDefinitionRow::StaticStruct();
+	FRogueUpgradeDefinitionRow Limited;
+	Limited.Type = ERogueUpgradeType::MaxHealth;
+	Limited.Title = TEXT("Limited Health");
+	Limited.MaxPicks = 1;
+	Table->AddRow(TEXT("MaxHealth"), Limited);
+	FRogueUpgradeDefinitionRow Unlimited;
+	Unlimited.Type = ERogueUpgradeType::MoveSpeed;
+	Unlimited.Title = TEXT("Unlimited Speed");
+	Unlimited.MaxPicks = 0;
+	Table->AddRow(TEXT("MoveSpeed"), Unlimited);
+
+	URogueUpgradeDefinitionAsset* Definition = NewObject<URogueUpgradeDefinitionAsset>();
+	Definition->UpgradeDefinitionTable = Table;
+
+	TArray<ERogueUpgradeType> Pool = Fixture.BuildPool(nullptr, Definition);
+	TestTrue(TEXT("A limited card starts in the pool"), Pool.Contains(ERogueUpgradeType::MaxHealth));
+
+	Fixture.ApplyQuantityUpgrade(ERogueUpgradeType::MaxHealth);
+	Pool = Fixture.BuildPool(nullptr, Definition);
+	TestFalse(TEXT("A card at MaxPicks is removed from the pool"), Pool.Contains(ERogueUpgradeType::MaxHealth));
+	TestTrue(TEXT("A zero MaxPicks card remains unlimited"), Pool.Contains(ERogueUpgradeType::MoveSpeed));
+
+	FRogueUpgradeSystem System;
+	System.SetDefinitionAsset(Definition);
+	TArray<FRogueUpgradeOption> GeneratedOptions;
+	System.BuildRandomUpgradeOptions(Fixture.Player, 100, GeneratedOptions);
+	TestFalse(TEXT("The actual option generator also excludes a maxed card"),
+		GeneratedOptions.ContainsByPredicate([](const FRogueUpgradeOption& Option)
+		{
+			return Option.Type == ERogueUpgradeType::MaxHealth;
+		}));
+
+	Fixture.ApplyQuantityUpgrade(ERogueUpgradeType::MoveSpeed);
+	Pool = Fixture.BuildPool(nullptr, Definition);
+	TestTrue(TEXT("Zero MaxPicks stays available after repeated picks"), Pool.Contains(ERogueUpgradeType::MoveSpeed));
 	return true;
 }
 

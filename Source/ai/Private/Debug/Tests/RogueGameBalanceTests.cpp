@@ -207,28 +207,12 @@ namespace RogueGameBalanceTests
 				}
 			}
 
-			const int32 BaseLimits[] = { 7, 45 };
-			const float Intervals[] = { 0.5f, 1.25f };
-			const int32 FreeSlotBoundaries[] = { 0, 1, 2, 3, 9, 10, 11, 12, 23, 24, 25, 50 };
-			for (const int32 BaseLimit : BaseLimits)
-			{
-				for (const float Interval : Intervals)
-				{
-					for (int32 Boss = 0; Boss < 2; ++Boss)
-					{
-						const int32 Limit = RogueGameModeRules::BuildSpawnCadence(Wave, 0, BaseLimit, Boss != 0, Interval, Asset).EffectiveMaxAliveEnemies;
-						TArray<int32> AliveCounts = { 0, 1, Limit, Limit + 1 };
-						for (const int32 FreeSlots : FreeSlotBoundaries) { AliveCounts.AddUnique(FMath::Max(0, Limit - FreeSlots)); }
-						for (const int32 AliveCount : AliveCounts)
-						{
-							const FRogueSpawnCadence Cadence = RogueGameModeRules::BuildSpawnCadence(Wave, AliveCount, BaseLimit, Boss != 0, Interval, Asset);
-							Output += FString::Printf(TEXT("%s,cadence,%d,%d,%d,%d,%.9g,%d,%d,%.9g\n"), Label,
-								Wave, AliveCount, BaseLimit, Boss, Interval,
-								Cadence.EffectiveMaxAliveEnemies, Cadence.SpawnBatchSize, Cadence.NextSpawnDelay);
-						}
-					}
-				}
-			}
+            for (const float Interval : { .5f, 1.25f })
+            {
+                const FRogueSpawnCadence Cadence = RogueGameModeRules::BuildSpawnCadence(Wave, Interval, Asset);
+                Output += FString::Printf(TEXT("%s,cadence,%d,%.9g,%d,%.9g\n"), Label,
+                    Wave, Interval, Cadence.SpawnBatchSize, Cadence.NextSpawnDelay);
+            }
 
 			for (int32 Mode = 0; Mode < 4; ++Mode)
 			{
@@ -306,15 +290,14 @@ bool FRogueGameBalanceSemanticsTest::RunTest(const FString& Parameters)
 {
 	(void)Parameters;
 	const int32 Wave = 10;
-	const int32 Limit = RogueGameModeRules::BuildSpawnCadence(Wave, 0, 60, false, 1.0f).EffectiveMaxAliveEnemies;
-	TestEqual(TEXT("Twenty-four free slots permit three spawn attempts"),
-		RogueGameModeRules::BuildSpawnCadence(Wave, Limit - 24, 60, false, 1.0f).SpawnBatchSize, 3);
-	TestEqual(TEXT("Twenty-three free slots fall back to two spawn attempts"),
-		RogueGameModeRules::BuildSpawnCadence(Wave, Limit - 23, 60, false, 1.0f).SpawnBatchSize, 2);
-	TestEqual(TEXT("Nine free slots permit only one spawn attempt"),
-		RogueGameModeRules::BuildSpawnCadence(Wave, Limit - 9, 60, false, 1.0f).SpawnBatchSize, 1);
-	TestEqual(TEXT("The null-asset minimum delay remains 0.18 seconds"),
-		RogueGameModeRules::BuildSpawnCadence(100, 0, 60, false, 0.1f).NextSpawnDelay, 0.18f);
+    TestEqual(TEXT("Wave ten permits three attempts without a global free-slot check"),
+        RogueGameModeRules::BuildSpawnCadence(Wave, 1.0f).SpawnBatchSize, 3);
+    TestEqual(TEXT("Wave five permits two attempts"),
+        RogueGameModeRules::BuildSpawnCadence(5, 1.0f).SpawnBatchSize, 2);
+    TestEqual(TEXT("Early waves permit one attempt"),
+        RogueGameModeRules::BuildSpawnCadence(1, 1.0f).SpawnBatchSize, 1);
+    TestEqual(TEXT("The null-asset minimum delay remains 0.18 seconds"),
+        RogueGameModeRules::BuildSpawnCadence(100, 0.1f).NextSpawnDelay, 0.18f);
 
 	TestEqual(TEXT("Ordinary enemies start at their base health in wave one"),
 		RogueGameModeRules::BuildEnemyProfile(1, ERogueEnemyType::Rifleman).Health, 35.0f);
@@ -338,9 +321,7 @@ bool FRogueGameBalanceSemanticsTest::RunTest(const FString& Parameters)
 	TStrongObjectPtr<URogueGameBalanceAsset> ZeroCaps(RogueGameBalanceTests::MakeLegacyFixture(*this, 2));
 	if (!Custom.IsValid() || !Uncapped.IsValid() || !ZeroCaps.IsValid()) { return false; }
 	TestEqual(TEXT("Three-spawn rule can match before the two-spawn rule starts"),
-		RogueGameModeRules::BuildSpawnCadence(3, 0, 45, false, 1.0f, Custom.Get()).SpawnBatchSize, 3);
-	TestEqual(TEXT("A boss floor can raise an otherwise smaller hard limit"),
-		RogueGameModeRules::BuildSpawnCadence(1, 0, 45, true, 1.0f, ZeroCaps.Get()).EffectiveMaxAliveEnemies, 19);
+		RogueGameModeRules::BuildSpawnCadence(3, 1.0f, Custom.Get()).SpawnBatchSize, 3);
 	TestEqual(TEXT("Zero ordinary health cap means zero profile health"),
 		RogueGameModeRules::BuildEnemyProfile(10, ERogueEnemyType::Juggernaut, ZeroCaps.Get()).Health, 0.0f);
 	TestEqual(TEXT("Shop counts are clamped to at least one"), RogueGameModeRules::GetShopOfferCount(Uncapped.Get()), 1);
@@ -391,6 +372,7 @@ bool FRogueGroupedGameBalanceLayoutTest::RunTest(const FString& Parameters)
 	struct FExpectedCategory { const TCHAR* PropertyName; const TCHAR* Category; };
 	const FExpectedCategory ExpectedCategories[] =
 	{
+        { TEXT("GrowthCurveTable"), TEXT("00.成长曲线") },
 		{ TEXT("EnemyWaveEntries"), TEXT("01.敌人种类") },
 		{ TEXT("EnemyBalanceRows"), TEXT("01.敌人种类") },
 		{ TEXT("Spawn"), TEXT("02.刷怪数量与速度") },
@@ -401,7 +383,8 @@ bool FRogueGroupedGameBalanceLayoutTest::RunTest(const FString& Parameters)
 		{ TEXT("Shop"), TEXT("06.商店") },
 		{ TEXT("Pools"), TEXT("07.运行时") },
 		{ TEXT("Performance"), TEXT("07.运行时") },
-		{ TEXT("Scene"), TEXT("07.运行时") }
+		{ TEXT("Scene"), TEXT("07.运行时") },
+        { TEXT("BattleStage"), TEXT("08.昼夜阶段") }
 	};
 	TSet<FString> Categories;
 	for (const FExpectedCategory& Expected : ExpectedCategories)
@@ -424,7 +407,7 @@ bool FRogueGroupedGameBalanceLayoutTest::RunTest(const FString& Parameters)
 			}
 		}
 	}
-	TestEqual(TEXT("Eleven top-level configuration fields occupy seven Chinese categories"), Categories.Num(), 7);
+	TestEqual(TEXT("Current configuration fields occupy nine Chinese categories"), Categories.Num(), 9);
 
 	int32 EditableFieldCount = 0;
 	int32 DeprecatedFieldCount = 0;
@@ -437,8 +420,17 @@ bool FRogueGroupedGameBalanceLayoutTest::RunTest(const FString& Parameters)
 			TestFalse(It->GetName() + TEXT(" is hidden from editing and blueprint field access"), It->HasAnyPropertyFlags(CPF_Edit | CPF_BlueprintVisible));
 		}
 	}
-	TestEqual(TEXT("Only the eleven grouped top-level fields remain editable"), EditableFieldCount, 11);
+	TestEqual(TEXT("Only current grouped top-level fields remain editable"), EditableFieldCount, static_cast<int32>(UE_ARRAY_COUNT(ExpectedCategories)));
 	TestEqual(TEXT("All 55 legacy scalar fields retain real deprecated property flags"), DeprecatedFieldCount, 55);
+    for (const TCHAR* Name : { TEXT("BaseMaxAliveEnemies"), TEXT("MaxAlivePerWave"), TEXT("MaxAliveLimit"), TEXT("BossAliveReduction"), TEXT("BossAliveMinimumLimit") })
+    {
+        const FProperty* Property = FindFProperty<FProperty>(FRogueSpawnBalanceSettings::StaticStruct(), Name);
+        if (TestNotNull(TEXT("Old fields load for asset compatibility"), Property))
+            TestFalse(FString(Name) + TEXT(" is not exposed as a working configuration"), Property->HasAnyPropertyFlags(CPF_Edit | CPF_BlueprintVisible));
+    }
+    const FProperty* Slack = FindFProperty<FProperty>(FRogueSpawnBatchRule::StaticStruct(), TEXT("RequiredFreeSlots"));
+    if (TestNotNull(TEXT("Old batch slack remains loadable"), Slack))
+        TestFalse(TEXT("Global free-slot settings are hidden"), Slack->HasAnyPropertyFlags(CPF_Edit | CPF_BlueprintVisible));
 	TSet<const UStruct*> Visited;
 	RogueGameBalanceTests::CheckEditableMetadata(*this, AssetClass, Visited);
 
@@ -447,10 +439,10 @@ bool FRogueGroupedGameBalanceLayoutTest::RunTest(const FString& Parameters)
 	Asset->Spawn.MaxAliveLimit = 0;
 	Asset->Spawn.BatchRules.Reset();
 	TestEqual(TEXT("An intentionally empty batch list attempts one enemy per spawn"),
-		RogueGameModeRules::BuildSpawnCadence(50, 0, 50, false, 1.0f, Asset.Get()).SpawnBatchSize, 1);
+		RogueGameModeRules::BuildSpawnCadence(50, 1.0f, Asset.Get()).SpawnBatchSize, 1);
 	Asset->Spawn.BatchRules = { {1, 0, 5}, {1, 0, 2} };
 	TestEqual(TEXT("The last matching batch rule wins even when its count is smaller"),
-		RogueGameModeRules::BuildSpawnCadence(50, 0, 50, false, 1.0f, Asset.Get()).SpawnBatchSize, 2);
+		RogueGameModeRules::BuildSpawnCadence(50, 1.0f, Asset.Get()).SpawnBatchSize, 2);
 
 	FRogueEnemyBalanceRow Rifleman;
 	Rifleman.EnemyType = ERogueEnemyType::Rifleman;

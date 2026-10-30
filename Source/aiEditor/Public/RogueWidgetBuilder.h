@@ -50,10 +50,24 @@ public:
 	/** 清空并重建教程页：背景 + 标题 + 可滚动正文 + 返回按钮。 */
 	UFUNCTION(BlueprintCallable, Category = "Rogue|Editor")
 	static bool BuildTutorial(UWidgetBlueprint* Blueprint);
+    /** 重建六章教程；JSON 仅供编辑器制作，运行时内容保存在 WBP。 */
+    UFUNCTION(BlueprintCallable, Category="Rogue|Editor")
+    static bool BuildTutorialFromJson(UWidgetBlueprint* Blueprint, const FString& Json);
+    /** 独立通关结算：仅一个返回主菜单按钮。 */
+    UFUNCTION(BlueprintCallable, Category="Rogue|Editor")
+    static bool BuildVictoryScreen(UWidgetBlueprint* Blueprint);
 
 	/** Update existing tutorial text only; preserve the designer hierarchy and styles. */
 	UFUNCTION(BlueprintCallable, Category = "Rogue|Editor")
 	static bool UpdateTutorialText(UWidgetBlueprint* Blueprint, const FString& Title, const FString& Body);
+
+	/** 只改一个 TextBlock 的文字，不重建控件树；用于同步配置说明文案。 */
+	UFUNCTION(BlueprintCallable, Category = "Rogue|Editor")
+	static bool UpdateTextBlock(UWidgetBlueprint* Blueprint, FName WidgetName, const FString& Text);
+
+	/** 读取一个 TextBlock 的当前文字，便于脚本做精确替换。 */
+	UFUNCTION(BlueprintCallable, Category = "Rogue|Editor")
+	static FString GetTextBlockText(UWidgetBlueprint* Blueprint, FName WidgetName);
 
 	/** 项目统一字体：DroidSansMono 为主 + DroidSansFallback 回退（中文）。
 	 *  资产位于 /Game/UMG/Fonts/F_DroidMono_CJK，不存在时创建。 */

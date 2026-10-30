@@ -1,5 +1,7 @@
 #include "Framework/RogueGameBalanceAsset.h"
+#include "Engine/CurveTable.h"
 
+#include "Misc/PackageName.h"
 #include "Serialization/CustomVersion.h"
 
 namespace
@@ -24,10 +26,6 @@ void URogueGameBalanceAsset::PostLoad()
 		return;
 	}
 
-	Spawn.BossAliveMinimumLimit = BossAliveMinMaxEnemies_DEPRECATED;
-	Spawn.BossAliveReduction = BossAliveMaxEnemyReduction_DEPRECATED;
-	Spawn.MaxAlivePerWave = MaxAliveEnemiesPerWave_DEPRECATED;
-	Spawn.MaxAliveLimit = MaxAliveEnemiesHardLimit_DEPRECATED;
 	Spawn.AccelerationPerWave = DifficultyScalePerWave_DEPRECATED;
 	Spawn.MaxAcceleration = MaxDifficultyScale_DEPRECATED;
 	Spawn.EarlyWaves.EndWave = EarlyWaveSlowdownEndWave_DEPRECATED;
@@ -73,6 +71,26 @@ void URogueGameBalanceAsset::PostLoad()
 	EnemyStats.HealthGrowthStages = { {MidGameHealthStartWave_DEPRECATED, MidGameHealthPerWave_DEPRECATED, MidGameHealthCap_DEPRECATED}, {LateGameHealthStartWave_DEPRECATED, LateGameHealthPerWave_DEPRECATED, LateGameHealthCap_DEPRECATED} };
 }
 
+URogueGameBalanceAsset* URogueGameBalanceAsset::GetDefaultGameBalance()
+{
+	static TWeakObjectPtr<URogueGameBalanceAsset> Cached;
+	if (Cached.IsValid())
+	{
+		return Cached.Get();
+	}
+
+	const TCHAR* PackagePath = TEXT("/Game/Data/Core/DA_GameBalance");
+	if (!FPackageName::DoesPackageExist(PackagePath))
+	{
+		return nullptr;
+	}
+
+	URogueGameBalanceAsset* Asset = LoadObject<URogueGameBalanceAsset>(
+		nullptr, TEXT("/Game/Data/Core/DA_GameBalance.DA_GameBalance"));
+	Cached = Asset;
+	return Asset;
+}
+
 const FRogueEnemyBalanceRow* URogueGameBalanceAsset::FindEnemyBalanceRow(ERogueEnemyType Type) const
 {
 	for (const FRogueEnemyBalanceRow& Row : EnemyBalanceRows)
@@ -84,4 +102,16 @@ const FRogueEnemyBalanceRow* URogueGameBalanceAsset::FindEnemyBalanceRow(ERogueE
 	}
 
 	return nullptr;
+}
+
+bool URogueGameBalanceAsset::TryEvaluateGrowthCurve(FName RowName, float Wave, float& OutValue) const
+{
+    OutValue = 0.0f;
+    if (GrowthCurveTable == nullptr || !FMath::IsFinite(Wave)) { return false; }
+    const FRealCurve* Curve = GrowthCurveTable->FindCurve(RowName, TEXT("RogueGameBalance.Growth"), false);
+    if (Curve == nullptr || Curve->GetNumKeys() == 0) { return false; }
+    const float Value = Curve->Eval(FMath::Max(1.0f, Wave));
+    if (!FMath::IsFinite(Value) || Value < 0.0f) { return false; }
+    OutValue = Value;
+    return true;
 }

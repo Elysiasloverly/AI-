@@ -61,14 +61,21 @@ public:
 	/** 关闭请求者的商店运行态并推送镜像；本机 HUD 结合全部菜单状态推导输入模式。 */
 	void CloseShop(ARogueCharacter* Requester = nullptr);
 	/** 购买。Purchaser 是**请求者**——升级要加到他身上，不能用 GameMode 缓存的角色。 */
-	void TryBuyShopOffer(int32 OfferIndex, ARogueCharacter* Purchaser);
+	void TryBuyShopOffer(int32 OfferIndex, const FGuid& QuoteId, int32 QuotedCost, ARogueCharacter* Purchaser);
 	void TryRefreshShop(ARogueCharacter* Requester);
+    /** 已生成的选卡/报价在使用时统一复核当前服务端卡池。 */
+    bool IsUpgradeAvailableForPlayer(const ARogueCharacter* Character, ERogueUpgradeType Type) const;
+    /** 替换失效待选卡，不消耗这次选择奖励。 */
+    void RefreshPendingUpgradeSelection(ARoguePlayerState* PlayerState);
+
 	/** 收起濒死玩家的商店与待选卡，并检查团灭；尚有存活队友时继续本局。
 	 *  等待复活界面由本机 HUD 根据 LifeState 推导，团灭后才显示结算。 */
 	void NotifyPlayerDied(ARogueCharacter* DeadCharacter);
 	/** 统一团灭判定；致死处理已排队的玩家也不算存活。 */
 	bool EvaluateTeamWipe();
 	bool IsGameOver() const { return RunState.bGameOver; }
+    bool IsVictory() const { return RunState.bVictory; }
+    static constexpr int32 VictoryWave = 100;
 
 	/** 只读查询：某类型是否配置了专属敌人蓝图（测试/调试用）。 */
 	bool HasEnemyClassForType(ERogueEnemyType Type) const;
@@ -185,20 +192,23 @@ private:
 
 	void AdvanceShopAutoRefresh(float DeltaSeconds, bool bWorldPaused);
 	void TickRunSystems(float DeltaSeconds);
+    bool CompleteRunIfVictoryReached();
+    void RetireCombatActors();
     friend struct FRogueBattleStageTestAccess;
     friend struct FRogueWaveProgressionTestAccess;
     void InitializeBattleStage();
     bool TickBattleStage(float DeltaSeconds);
-    void TravelToNight();
+    void TravelToNextBattleStage();
+    void BeginBattleStageClearing();
     FRogueBattleStageSettings StageSettings;
     FRogueBattleStageView StageView;
     bool bDayStageMap = false;
     bool bContinuingStageRun = false;
-    /** 仅累计本次黑夜当前波的经过时间；不使用包含白天战斗的 RunTimeSeconds。 */
-    double NightWaveElapsedSeconds = 0;
     double NextTravelAttemptTime = 0;
 public:
     float GetEnemyAttackSpeedMultiplier() const { return StageView.EnemyAttackSpeedMultiplier; }
+    float GetEnemyCountMultiplier() const { return StageView.EnemyCountMultiplier; }
+    float GetEnemySpawnRateMultiplier() const { return StageView.EnemySpawnRateMultiplier; }
 private:
 
 	/** 奖励归属依次尝试 Killer、本层 Owner、本层 Instigator；不递归遍历拥有链。

@@ -145,12 +145,19 @@ struct AI_API FRogueWeaponBonusCaps
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "武器加成上限", meta = (DisplayName = "镰刀尺寸加成上限(-1=不限)", ToolTip = "限制额外尺寸比例；例如 1 表示最多增加基础尺寸的 100%，最终为基础尺寸的 2 倍。负值不限制。"))
 	float ScytheSize = -1.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "武器加成上限", meta = (DisplayName = "灵符连诵加成上限(-1=不限)"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "武器加成上限", meta = (DisplayName = "冰符连诵加成上限(-1=不限)"))
 	float ProjectileBurst = -1.0f;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "武器加成上限", meta = (DisplayName = "炉心扩散加成上限(-1=不限)"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "武器加成上限", meta = (DisplayName = "火丸扩散加成上限(-1=不限)"))
 	float RocketBlastRadius = -1.0f;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "武器加成上限", meta = (DisplayName = "神威增幅加成上限(-1=不限)"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "武器加成上限", meta = (DisplayName = "焰心递燃加成上限(-1=不限)"))
 	float HellTowerDamageRamp = -1.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="武器加成上限", meta=(DisplayName="灵符·归心数量加成上限(-1=不限)"))
+	float TalismanCount = -1.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="武器加成上限", meta=(DisplayName="灵符贯阵加成上限(-1=不限)"))
+	float TalismanPierce = -1.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="武器加成上限", meta=(DisplayName="灵符重奏加成上限(-1=不限)"))
+	float TalismanRepeat = -1.0f;
+
 
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "武器加成上限", meta = (DisplayName = "镰刀吸血上限(-1=不限)", ToolTip = "限制镰刀吸血比例；0.5 表示最多 50%。无论怎么配，最终都会钳制在 100%。"))
@@ -279,6 +286,12 @@ public:
 	 *  作用在**属性层**：升级卡往这些加成属性上累加时会被它夹住。详见结构体注释。 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "06 武器加成上限", meta = (DisplayName = "武器加成上限（-1 为不限）"))
 	FRogueWeaponBonusCaps WeaponBonusCaps;
+
+#if WITH_EDITORONLY_DATA
+    /** 只在编辑器进程中使用；Cook 不携带，打包游戏始终按正常开局规则。 */
+    UPROPERTY(EditAnywhere, Category="调试|开局武器", meta=(DisplayName="按武器表初始数量开局（仅编辑器）", ToolTip="开启后，PIE 和编辑器独立游戏按 DT_WeaponConfig 的初始数量开局；0 为不持有。关闭后仅开局携带 1 张寒弹。仍受武器数量上限限制，修改后需停止并重新开始游戏。不修改永久解锁存档，打包后自动忽略。"))
+    bool bEditorUseWeaponTableStartingCounts=false;
+#endif
 
 	// 武器基础参数继续由 DT_WeaponConfig 管理，避免同一参数出现两份配置来源。
 };

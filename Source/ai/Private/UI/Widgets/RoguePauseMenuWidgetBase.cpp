@@ -1,7 +1,14 @@
 #include "UI/Widgets/RoguePauseMenuWidgetBase.h"
+#include "Audio/RogueMusicSubsystem.h"
 #include "UI/RogueHUD.h"
 
 #include "RogueMenuWidgetHelpers.h"
+
+void URoguePauseMenuWidgetBase::NativeConstruct()
+{
+	Super::NativeConstruct();
+	URogueMusicSubsystem::BindWidgetButtonSounds(this);
+}
 
 void URoguePauseMenuWidgetBase::SetOwningRogueHUD(ARogueHUD* InOwningHUD)
 {

@@ -141,6 +141,8 @@ public:
 	void Revive();
 	/** 团灭：取消复活并保持幽灵，直到重开。 */
 	void FinalizeForGameOver();
+    /** 胜利只结束战斗，不将存活玩家标成阵亡。 */
+    void FinalizeForVictory();
 
 	// ---- 武器加成的跨端快照 ----
 	// 属性集保存权威加成；升级生效后立即刷新 13 项快照，GameMode 每帧补充同步，武器统一读取快照。
@@ -303,6 +305,10 @@ public:
 
 	UFUNCTION(BlueprintPure)
 	int32 GetEffectiveScytheCount() const;
+
+	/** 本局该升级已选次数，供 MaxPicks 卡池过滤。 */
+	UFUNCTION(BlueprintPure)
+	int32 GetUpgradePickCount(ERogueUpgradeType Type) const;
 
 	UFUNCTION(BlueprintPure)
 	int32 GetEffectiveRocketLauncherCount() const;

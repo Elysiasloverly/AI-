@@ -5,19 +5,15 @@
         -run=pythonscript -script="Tools/create_enemy_projectile_variants.py" ^
         -unattended -nopause -nullrhi -nosplash
 
-产物（父类均为 BP_EnemyProjectile）：
-    BP_EnemyProjectile_Shooter
-    BP_EnemyProjectile_Artillery
-    BP_EnemyProjectile_Spitter
-    BP_EnemyProjectile_ShockPillar
+产物：16种攻击敌人的独立弹体，放入各敌人的同名文件夹；复制Common模板，各自直接继承原生弹体类。
 
 已存在时只跳过，不覆盖你改过的外观。
 """
 import unreal
 
-DEST = "/Game/BP/Enemy/Projectiles"
-BASE_PATH = DEST + "/BP_EnemyProjectile"
-VARIANTS = ["Shooter", "Artillery", "Spitter", "ShockPillar"]
+DEST = "/Game/BP/Enemy"
+BASE_PATH = DEST + "/Common/BP_EnemyProjectile"
+VARIANTS = ['Rifleman', 'Assault', 'Juggernaut', 'Orbiter', 'Marksman', 'Skirmisher', 'Cannoneer', 'Scatterer', 'ShockPillar', 'Sniper', 'Shotgunner', 'Repeater', 'Ringcaster', 'SkyMoth', 'WindReaver', 'StarLantern']
 
 
 def log(message):
@@ -31,15 +27,14 @@ def main():
 
     for suffix in VARIANTS:
         name = "BP_EnemyProjectile_{}".format(suffix)
-        asset_path = "{}/{}".format(DEST, name)
+        folder = DEST + "/" + suffix
+        asset_path = "{}/{}".format(folder, name)
         if unreal.EditorAssetLibrary.does_asset_exist(asset_path):
             log("already exists: {}".format(asset_path))
             continue
 
-        factory = unreal.BlueprintFactory()
-        factory.set_editor_property("parent_class", base_class)
-        blueprint = unreal.AssetToolsHelpers.get_asset_tools().create_asset(
-            name, DEST, unreal.Blueprint, factory)
+        # Copy the standalone template so each variant owns editable components.
+        blueprint = unreal.EditorAssetLibrary.duplicate_asset(BASE_PATH, asset_path)
         if blueprint is None:
             raise RuntimeError("failed to create {}".format(asset_path))
 

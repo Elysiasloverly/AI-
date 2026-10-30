@@ -1,4 +1,5 @@
 #include "UI/Widgets/RogueShopWidgetBase.h"
+#include "Audio/RogueMusicSubsystem.h"
 #include "UI/RogueHUD.h"
 #include "Components/Button.h"
 #include "Components/UniformGridPanel.h"
@@ -9,6 +10,7 @@
 void URogueShopWidgetBase::NativeConstruct()
 {
 	Super::NativeConstruct();
+	URogueMusicSubsystem::BindWidgetButtonSounds(this);
 
 	if (Button_Refresh != nullptr)
 	{

@@ -8,6 +8,7 @@
 #include "Enemies/RogueEnemy.h"
 #include "Enemies/Spawning/RogueSpawnSubsystem.h"
 #include "Framework/RogueGameMode.h"
+#include "Framework/RogueGameBalanceAsset.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/WorldSettings.h"
 #include "Misc/AutomationTest.h"
@@ -62,7 +63,7 @@ namespace RogueGroundSpawnTests
 			Player->GetCharacterMovement()->SetComponentTickEnabled(false);
 			Player->SetActorEnableCollision(false);
 			Spawner = World->GetSubsystem<URogueSpawnSubsystem>();
-			EnemyClass = LoadClass<ARogueEnemy>(nullptr, TEXT("/Game/BP/Enemy/BP_EnemyRifleman.BP_EnemyRifleman_C"));
+			EnemyClass = LoadClass<ARogueEnemy>(nullptr, TEXT("/Game/BP/Enemy/Rifleman/BP_EnemyRifleman.BP_EnemyRifleman_C"));
 			if (!Test.TestNotNull(TEXT("The actual spawner exists"), Spawner) || !Test.TestNotNull(TEXT("The actual enemy Blueprint loads"), EnemyClass)) { return false; }
 			Settings.SpawnRadius = 1500.0f;
 			Settings.EnemySpawnMinimumDistance = 300.0f;
@@ -448,6 +449,9 @@ bool FRogueConcaveSpawnOutlineTest::RunTest(const FString& Parameters)
     TestFalse(TEXT("The forest notch is rejected even inside the outer rectangle"),F.Region->IsInsideSpawnOutline(FVector(1500,1500,0),34));
     TestFalse(TEXT("The capsule and safety gap cannot cross the concave edge"),F.Region->IsInsideSpawnOutline(FVector(450,1000,0),34));
     F.Box(FVector(0,0,480),FVector(20000,20000,20));
+    auto* Balance=NewObject<URogueGameBalanceAsset>(F.World);
+    Balance->Spawn.BaseEnemiesPerWave=30; Balance->Spawn.EnemiesPerWaveIncrement=0;
+    F.Spawner->Configure(F.EnemyClass, {}, F.Settings, F.BossSettings, Balance, nullptr);
     for (int32 Index=0;Index<30;++Index)
     {
         ARogueEnemy* Enemy=F.Spawn(*this); if (!Enemy) { return false; }

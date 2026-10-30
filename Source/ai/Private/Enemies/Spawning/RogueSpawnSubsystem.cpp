@@ -7,6 +7,7 @@
 #include "Player/RogueCharacter.h"
 #include "World/RogueEnemySpawnRegion.h"
 #include "Framework/RogueGameBalanceAsset.h"
+#include "Framework/RogueGameMode.h"
 #include "Framework/RogueGameModeRules.h"
 #include "Player/RoguePlayerQuery.h"
 #include "Enemies/Data/RogueEnemyArchetypes.h"
@@ -44,9 +45,14 @@ namespace
 	 *  2) 抽完之后调用方还要用同一套判据复核结果（所有类型都刷满时抽签会兜底成 Rifleman），
 	 *     复用同一个对象才能保证"过滤"和"复核"是同一份快照。
 	 */
+    float CountScale(const UWorld* World)
+    { const auto* Mode=World?World->GetAuthGameMode<ARogueGameMode>():nullptr;return Mode?Mode->GetEnemyCountMultiplier():1.f; }
+    float RateScale(const UWorld* World)
+    { const auto* Mode=World?World->GetAuthGameMode<ARogueGameMode>():nullptr;return Mode?Mode->GetEnemySpawnRateMultiplier():1.f; }
 	struct FEnemySpawnGate
 	{
 		const UDataTable* ArchetypeTable = nullptr;
+        float CountMultiplier=1.f;
 		const URogueEnemyTrackerSubsystem* Tracker = nullptr;
 		const TMap<ERogueEnemyType, int32>* SpawnedCountThisWave = nullptr;
 
@@ -77,7 +83,7 @@ namespace
 		{
 			// ---- 闸门①：同时存活上限 ----
 			const int32 MaxAlive = LookupCached(MaxAliveCache, EnemyType,
-				[this](ERogueEnemyType Type) { return RogueEnemyArchetypes::GetMaxAlive(ArchetypeTable, Type); });
+				[this](ERogueEnemyType Type) { const int32 Base=RogueEnemyArchetypes::GetMaxAlive(ArchetypeTable, Type); return int32(FMath::Min(double(MAX_int32),FMath::RoundToDouble(double(Base)*CountMultiplier))); });
 
 			if (MaxAlive > 0 && Tracker != nullptr)
 			{
@@ -97,7 +103,7 @@ namespace
 
 			// ---- 闸门②：每波累计刷新上限 ----
 			const int32 MaxSpawn = LookupCached(MaxSpawnPerWaveCache, EnemyType,
-				[this](ERogueEnemyType Type) { return RogueEnemyArchetypes::GetMaxSpawnPerWave(ArchetypeTable, Type); });
+				[this](ERogueEnemyType Type) { const int32 Base=RogueEnemyArchetypes::GetMaxSpawnPerWave(ArchetypeTable, Type); return int32(FMath::Min(double(MAX_int32),FMath::RoundToDouble(double(Base)*CountMultiplier))); });
 
 			if (MaxSpawn > 0)
 			{
@@ -156,7 +162,7 @@ void URogueSpawnSubsystem::ResetWaveSpawnCounts(int32 Wave)
 	AliveCapLoggedTypes.Reset();
 	WaveBudgetLoggedTypes.Reset();
 	CountedWave = Wave;
-    WaveEnemyBudget = RogueGameModeRules::BuildWaveEnemyCount(Wave, BalanceAsset);
+    WaveEnemyBudget = RogueGameModeRules::BuildWaveEnemyCount(Wave, BalanceAsset, CountScale(GetWorld()));
     TotalSpawnedThisWave = 0;
 	BossSpawnRetryTimer = 0.0f;
 }
@@ -166,6 +172,7 @@ bool URogueSpawnSubsystem::HasRemainingNormalWaveBudget(int32 Wave) const
     if (TotalSpawnedThisWave >= WaveEnemyBudget) return false;
     FEnemySpawnGate QuotaGate;
     QuotaGate.ArchetypeTable = EnemyArchetypeTable;
+    QuotaGate.CountMultiplier=CountScale(GetWorld());
     QuotaGate.SpawnedCountThisWave = &SpawnedCountThisWave;
     // 不传 Tracker：同时存活名额会随击杀释放，不能误认为本波累计名额耗尽。
     return RogueGameModeRules::HasEligibleEnemyTypeForWave(Wave, BalanceAsset, QuotaGate);
@@ -211,26 +218,20 @@ void URogueSpawnSubsystem::TickSpawning(float DeltaSeconds, FRogueRunState& RunS
     // 达到本波总量后不再补刷；GameMode 决定白天清场或黑夜到时切波。Boss 失败重试仍在上方调度。
     if (!HasRemainingNormalWaveBudget(RunState.CurrentWave)) return;
 
-	URogueEnemyTrackerSubsystem* Tracker = GetWorld()->GetSubsystem<URogueEnemyTrackerSubsystem>();
-	if (Tracker == nullptr)
+	const FRogueSpawnCadence SpawnCadence = RogueGameModeRules::BuildSpawnCadence(
+        RunState.CurrentWave, SpawnSettings.SpawnInterval, BalanceAsset, RateScale(GetWorld()));
+	int32 Batches=0;
+    while (RunState.SpawnTimer <= 0.0f && HasRemainingNormalWaveBudget(RunState.CurrentWave) && Batches++<4)
 	{
-		return;
-	}
-
-	int32 AliveEnemies = Tracker->GetActiveEnemyCount();
-	const FRogueSpawnCadence SpawnCadence = RogueGameModeRules::BuildSpawnCadence(RunState.CurrentWave, AliveEnemies, 
-		SpawnSettings.MaxAliveEnemies, RunState.bBossAlive, SpawnSettings.SpawnInterval, BalanceAsset);
-	if (RunState.SpawnTimer <= 0.0f && AliveEnemies < SpawnCadence.EffectiveMaxAliveEnemies)
-	{
-		for (int32 SpawnIndex = 0; SpawnIndex < SpawnCadence.SpawnBatchSize && AliveEnemies < SpawnCadence.EffectiveMaxAliveEnemies; ++SpawnIndex)
+        // 不以全场存活数量阻止生成；SpawnEnemy 仍检查累计预算与每类怪的限制。
+        const int32 Before=TotalSpawnedThisWave;
+        const int32 Attempts = FMath::Min(SpawnCadence.SpawnBatchSize, WaveEnemyBudget - TotalSpawnedThisWave);
+		for (int32 SpawnIndex = 0; SpawnIndex < Attempts; ++SpawnIndex)
 		{
-			if (SpawnEnemy(RunState, Character, Region))
-			{
-				++AliveEnemies;
-			}
+            SpawnEnemy(RunState, Character, Region);
 		}
-
-		RunState.SpawnTimer = SpawnCadence.NextSpawnDelay;
+		RunState.SpawnTimer += SpawnCadence.NextSpawnDelay;
+        if (TotalSpawnedThisWave==Before) { RunState.SpawnTimer=SpawnCadence.NextSpawnDelay;break; }
 	}
 }
 
@@ -253,6 +254,7 @@ bool URogueSpawnSubsystem::SpawnEnemy(FRogueRunState& RunState, ARogueCharacter*
 
 	FEnemySpawnGate SpawnGate;
 	SpawnGate.ArchetypeTable = EnemyArchetypeTable;
+    SpawnGate.CountMultiplier=CountScale(GetWorld());
 	SpawnGate.Tracker = GetWorld()->GetSubsystem<URogueEnemyTrackerSubsystem>();
 	SpawnGate.SpawnedCountThisWave = &SpawnedCountThisWave;
 	SpawnGate.AliveCapLoggedTypes = &AliveCapLoggedTypes;
@@ -260,7 +262,16 @@ bool URogueSpawnSubsystem::SpawnEnemy(FRogueRunState& RunState, ARogueCharacter*
 
     if (!RogueGameModeRules::HasEligibleEnemyTypeForWave(RunState.CurrentWave, BalanceAsset, SpawnGate)) return false;
 
-	const ERogueEnemyType EnemyType = RogueGameModeRules::PickWeightedEnemyTypeForWave(RunState.CurrentWave, BalanceAsset, SpawnGate);
+	ERogueEnemyType EnemyType = RogueGameModeRules::PickWeightedEnemyTypeForWave(RunState.CurrentWave, BalanceAsset, SpawnGate);
+    if (BalanceAsset)
+    {
+        for (const auto& Entry:BalanceAsset->EnemyWaveEntries)
+        {
+            if (Entry.bGuaranteeIntroduction && Entry.Weight>0 && Entry.MinWave==RunState.CurrentWave
+                && SpawnedCountThisWave.FindRef(Entry.EnemyType)==0 && SpawnGate(Entry.EnemyType))
+            { EnemyType=Entry.EnemyType; break; }
+        }
+    }
 
 	// 复核：所有类型都被拦下时，抽签函数只能兜底返回 Rifleman，这里必须把它拦下来，
 	// 否则两道限制都会被兜底路径绕过。
@@ -335,7 +346,7 @@ ARogueEnemy* URogueSpawnSubsystem::SpawnConfiguredEnemy(const FRogueEnemyProfile
 			Enemy->DeactivateToPool();
 			return nullptr;
 		}
-		Enemy->SetActorLocation(Adjusted, false, nullptr, ETeleportType::TeleportPhysics);
+		Enemy->SetSpawnGroundReference(Adjusted);
 	}
 
 	Tracker->RegisterEnemy(Enemy);

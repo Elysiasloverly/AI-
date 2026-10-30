@@ -15,12 +15,12 @@ namespace RogueMetaDefinitions
 	{
 		return Type == ERogueUpgradeType::ProjectileCount || Type == ERogueUpgradeType::ScytheCount
 			|| Type == ERogueUpgradeType::RocketCount || Type == ERogueUpgradeType::LaserCount
-			|| Type == ERogueUpgradeType::HellTowerCount || Type == ERogueUpgradeType::MortarCount;
+			|| Type == ERogueUpgradeType::HellTowerCount || Type == ERogueUpgradeType::MortarCount || Type == ERogueUpgradeType::TalismanCount;
 	}
 
 	bool IsDedicatedType(ERogueUpgradeType Type)
 	{
-		return Type == ERogueUpgradeType::ProjectileBurst || Type == ERogueUpgradeType::RocketBlastRadius
+		return Type == ERogueUpgradeType::TalismanPierce || Type == ERogueUpgradeType::TalismanRepeat || Type == ERogueUpgradeType::ProjectileBurst || Type == ERogueUpgradeType::RocketBlastRadius
 			|| Type == ERogueUpgradeType::HellTowerDamageRamp || Type == ERogueUpgradeType::ScytheSize || Type == ERogueUpgradeType::ScytheLifesteal
 			|| Type == ERogueUpgradeType::LaserRefraction || Type == ERogueUpgradeType::MortarBlastRadius;
 	}
@@ -48,18 +48,18 @@ void URogueUpgradeTreeDefinition::ResetToDefaults()
 		return Node;
 	};
 
-	Add(TEXT("Weapon.Projectile"), TEXT("御札"), TEXT("自动瞄准近处敌人，向前发射御札。\n初始武器，开局自带；数量卡可增加每轮弹幕。"), ERogueMetaNodeKind::Weapon,
+	Add(TEXT("Weapon.Projectile"), TEXT("冰符·寒弹"), TEXT("自动瞄准近处敌人，发射冰蓝灵弹。\n初始自带；数量卡增加每轮弹量，冰符连诵增加连发轮数。"), ERogueMetaNodeKind::Weapon,
 		ERogueUpgradeType::ProjectileCount, 0, 780).bInitiallyUnlocked = true;
-	Add(TEXT("Card.ProjectileCount"), TEXT("御札数量卡"), TEXT("初始开放。本局抽到后，增加每轮发射的御札数量。"), ERogueMetaNodeKind::UpgradeCard,
+	Add(TEXT("Card.ProjectileCount"), TEXT("寒弹增殖"), TEXT("初始开放；本局每选一次，每轮灵弹增加 1 枚。连发轮数由冰符连诵提升。"), ERogueMetaNodeKind::UpgradeCard,
 		ERogueUpgradeType::ProjectileCount, 0, 520, TEXT("Weapon.Projectile")).bInitiallyUnlocked = true;
 
-	struct FWeapon { const TCHAR* Id; const TCHAR* Name; ERogueUpgradeType Type; const TCHAR* Description; const TCHAR* CardDescription; };
+	struct FWeapon { const TCHAR* Id; const TCHAR* Name; ERogueUpgradeType Type; const TCHAR* Description; const TCHAR* CardDescription; const TCHAR* CardTitle; };
 	const FWeapon Weapons[] = {
-		{ TEXT("Scythe"), TEXT("银刃"), ERogueUpgradeType::ScytheCount, TEXT("刀刃环绕自身旋转，切割靠近的敌人。\n解锁后可在本局升级与商店中抽取。"), TEXT("开放银刃数量卡；本局持有银刃后，可继续抽卡增加环绕刀刃。") },
-		{ TEXT("Rocket"), TEXT("八卦炉"), ERogueUpgradeType::RocketCount, TEXT("向敌人齐射爆裂弹，命中后造成范围伤害。\n解锁后可在本局升级与商店中抽取。"), TEXT("开放八卦炉数量卡；持有后，可增加每轮齐射的爆裂弹数量。") },
-		{ TEXT("Laser"), TEXT("极限火花"), ERogueUpgradeType::LaserCount, TEXT("自动发射激光攻击敌人，专属卡可追加折射。\n解锁后可在本局升级与商店中抽取。"), TEXT("开放极限火花数量卡；持有后，可增加每轮发射的激光数量。") },
-		{ TEXT("HellTower"), TEXT("御柱"), ERogueUpgradeType::HellTowerCount, TEXT("持续锁定敌人照射，连续攻击同一目标时伤害递增。\n解锁后可在本局升级与商店中抽取。"), TEXT("开放御柱数量卡；持有后，可增加同时锁定的敌人数。") },
-		{ TEXT("Mortar"), TEXT("阴阳玉"), ERogueUpgradeType::MortarCount, TEXT("抛出阴阳玉轰击敌人所在区域，落地时爆炸。\n解锁后可在本局升级与商店中抽取。"), TEXT("开放阴阳玉数量卡；持有后，可增加每轮投出的阴阳玉数量。") }
+		{ TEXT("Scythe"), TEXT("银刃"), ERogueUpgradeType::ScytheCount, TEXT("银色刀刃环绕自身旋转，切割靠近的敌人。\n解锁后加入获取卡池，本局抽到才装备。"), TEXT("开放银刃数量升级；本局持有银刃后，每选一次增加 1 把环绕刀刃。"), TEXT("银刃环阵") },
+		{ TEXT("Rocket"), TEXT("焰符·火丸"), ERogueUpgradeType::RocketCount, TEXT("向敌人发射橙红火球，命中后爆炸，造成范围伤害。\n解锁后加入获取卡池，本局抽到才装备。"), TEXT("开放火丸数量升级；本局持有焰符·火丸后，每选一次每轮齐射增加 1 发火球。"), TEXT("火丸齐射") },
+		{ TEXT("Laser"), TEXT("星符·流光"), ERogueUpgradeType::LaserCount, TEXT("向敌人发射蓝白激光；星尘折射可追加跳转目标。\n解锁后加入获取卡池，本局抽到才装备。"), TEXT("开放流光数量升级；本局持有星符·流光后，每选一次每轮增加 1 束激光。"), TEXT("流光齐射") },
+		{ TEXT("HellTower"), TEXT("焰符·灼光"), ERogueUpgradeType::HellTowerCount, TEXT("金橙色火焰光束持续锁定敌人，连续命中同一目标时每跳伤害递增。\n解锁后加入获取卡池，本局抽到才装备。"), TEXT("开放灼光数量升级；本局持有焰符·灼光后，每选一次可同时锁定的不同敌人增加 1 名。"), TEXT("灼光分流") },
+		{ TEXT("Mortar"), TEXT("冰符·霜玉"), ERogueUpgradeType::MortarCount, TEXT("沿抛物线投出冰蓝球体，轰击敌人所在区域，落地爆炸。\n解锁后加入获取卡池，本局抽到才装备。"), TEXT("开放霜玉数量升级；本局持有冰符·霜玉后，每选一次每轮增加 1 枚抛射冰球。"), TEXT("霜玉连投") }
 	};
 	for (int32 Index = 0; Index < UE_ARRAY_COUNT(Weapons); ++Index)
 	{
@@ -67,42 +67,46 @@ void URogueUpgradeTreeDefinition::ResetToDefaults()
 		const FString WeaponId = FString::Printf(TEXT("Weapon.%s"), Weapon.Id);
 		const FString CardId = FString::Printf(TEXT("Card.%sCount"), Weapon.Id);
 		const FString Description = Weapon.Description;
-		const FString CardTitle = FString::Printf(TEXT("%s数量卡"), Weapon.Name);
+		const FString CardTitle = Weapon.CardTitle;
 		const float X = (Index + 1) * 330.0f;
 		Add(*WeaponId, Weapon.Name, *Description, ERogueMetaNodeKind::Weapon, Weapon.Type, X, 780);
 		Add(*CardId, *CardTitle, Weapon.CardDescription,
 			ERogueMetaNodeKind::UpgradeCard, Weapon.Type, X, 520, *WeaponId);
 	}
-	Add(TEXT("Card.ScytheSize"), TEXT("银刃巨化"), TEXT("开放银刃巨化卡；本局抽到后扩大刀刃外观和伤害范围，环绕距离不变。"),
+	Add(TEXT("Card.ScytheSize"), TEXT("银刃巨化"), TEXT("开放此专属卡；本局抽到后：\n银刃外观和伤害范围增加基础尺寸的 20%；环绕距离不变。"),
 		ERogueMetaNodeKind::UpgradeCard, ERogueUpgradeType::ScytheSize, 330, 260, TEXT("Card.ScytheCount"));
-	Add(TEXT("Card.ScytheLifesteal"), TEXT("红雾吸血"), TEXT("开放红雾吸血卡；本局抽到后，银刃造成伤害时为自身回复生命。"),
+	Add(TEXT("Card.ScytheLifesteal"), TEXT("红雾吸血"), TEXT("开放此专属卡；本局抽到后：\n银刃造成伤害时回复生命。首次吸血率 20%，再次选择 +5 个百分点，受吸血率上限限制。"),
 		ERogueMetaNodeKind::UpgradeCard, ERogueUpgradeType::ScytheLifesteal, 330, 0, TEXT("Card.ScytheSize"));
-	Add(TEXT("Card.LaserRefraction"), TEXT("星尘折射"), TEXT("开放星尘折射卡；本局抽到后，激光可继续跳向附近敌人。"),
+	Add(TEXT("Card.LaserRefraction"), TEXT("星尘折射"), TEXT("开放此专属卡；本局抽到后：\n每束流光的折射次数 +1；命中后可跳向附近敌人，折射段按武器配置的倍率结算伤害。"),
 		ERogueMetaNodeKind::UpgradeCard, ERogueUpgradeType::LaserRefraction, 990, 260, TEXT("Card.LaserCount"));
-	Add(TEXT("Card.MortarBlastRadius"), TEXT("阴阳玉爆炸范围"), TEXT("开放阴阳玉扩散卡；本局抽到后扩大爆炸半径，覆盖更多敌人。"),
+	Add(TEXT("Card.MortarBlastRadius"), TEXT("霜玉扩散"), TEXT("开放此专属卡；本局抽到后：\n霜玉爆炸半径 +100 厘米，扩大落点周围的伤害区域。"),
 		ERogueMetaNodeKind::UpgradeCard, ERogueUpgradeType::MortarBlastRadius, 1650, 260, TEXT("Card.MortarCount"));
 
-	Add(TEXT("Card.ProjectileBurst"), TEXT("灵符连诵"), TEXT("开放「灵符连诵」卡。御札每轮攻击额外连射 1 次；每次连射都发出完整弹幕。"),
+	Add(TEXT("Card.ProjectileBurst"), TEXT("冰符连诵"), TEXT("开放此专属卡；本局抽到后：\n寒弹每轮攻击额外连射 1 次，每次发出完整弹幕；首次选取从单发变为 2 连发。"),
 		ERogueMetaNodeKind::UpgradeCard, ERogueUpgradeType::ProjectileBurst, 0, 0, TEXT("Card.ProjectileCount"));
-	Add(TEXT("Card.RocketBlastRadius"), TEXT("炉心扩散"), TEXT("开放「炉心扩散」卡。八卦炉爆炸半径 +90 厘米，扩大爆裂弹的伤害覆盖范围。"),
+	Add(TEXT("Card.RocketBlastRadius"), TEXT("火丸扩散"), TEXT("开放此专属卡；本局抽到后：\n火丸爆炸半径 +90 厘米，扩大火球命中后的伤害覆盖。"),
 		ERogueMetaNodeKind::UpgradeCard, ERogueUpgradeType::RocketBlastRadius, 0, 0, TEXT("Card.RocketCount"));
-	Add(TEXT("Card.HellTowerDamageRamp"), TEXT("神威增幅"), TEXT("开放「神威增幅」卡。御柱每跳伤害递增值 +0.1；持续锁定同一目标时，伤害增长更快。"),
+	Add(TEXT("Card.HellTowerDamageRamp"), TEXT("焰心递燃"), TEXT("开放此专属卡；本局抽到后：\n灼光每跳伤害递增值 +0.1；连续锁定同一目标越久，伤害增长越快。"),
 		ERogueMetaNodeKind::UpgradeCard, ERogueUpgradeType::HellTowerDamageRamp, 0, 0, TEXT("Card.HellTowerCount"));
 
-	FRogueUpgradeTreeNode& Armor = Add(TEXT("Armor.Unlock"), TEXT("解锁护甲"),
-		TEXT("启用玩家数值配置中的基础护甲，并开放护甲相关升级卡。"),
+	Add(TEXT("Weapon.Talisman"),TEXT("灵符·归心"),TEXT("灵符环绕自身待命，自动飞出穿刺敌人，再返回身边。\n默认每次穿刺 1 名敌人 1 次；解锁后，本局抽到获取卡才装备。"),ERogueMetaNodeKind::Weapon,ERogueUpgradeType::TalismanCount,1980,780);
+	Add(TEXT("Card.TalismanCount"),TEXT("归心符阵"),TEXT("开放数量卡；本局已持有灵符后，每选一次增加 1 张环绕灵符，分别自动出击。"),ERogueMetaNodeKind::UpgradeCard,ERogueUpgradeType::TalismanCount,1980,520,TEXT("Weapon.Talisman"));
+	Add(TEXT("Card.TalismanPierce"),TEXT("灵符贯阵"),TEXT("开放此专属卡；本局每选一次，每张灵符单次出击可穿刺的不同敌人数 +1。"),ERogueMetaNodeKind::UpgradeCard,ERogueUpgradeType::TalismanPierce,1980,260,TEXT("Card.TalismanCount"));
+	Add(TEXT("Card.TalismanRepeat"),TEXT("灵符重奏"),TEXT("开放此专属卡；本局每选一次，每张灵符对每名敌人的穿刺次数 +1，飞出后往返追刺再归位。"),ERogueMetaNodeKind::UpgradeCard,ERogueUpgradeType::TalismanRepeat,1980,0,TEXT("Card.TalismanPierce"));
+
+	FRogueUpgradeTreeNode& Armor = Add(TEXT("Armor.Unlock"), TEXT("解锁护甲"), TEXT("永久启用玩家配置中的基础护甲，并开放护甲容量、减伤相关卡及基础护甲升级。"),
 		ERogueMetaNodeKind::ArmorUnlock, ERogueUpgradeType::ArmorCapacity, 660, 780);
 	Armor.Cost = 3;
 	struct FStat { const TCHAR* Id; const TCHAR* Title; const TCHAR* Description; ERogueMetaStat Stat; float Bonus; };
 	const FStat Stats[] = {
-		{ TEXT("AttackPower"), TEXT("基础攻击力"), TEXT("每级额外增加 3 点攻击力。"), ERogueMetaStat::AttackPower, 3.0f },
-		{ TEXT("MaxHealth"), TEXT("基础生命"), TEXT("每级增加 20 点最大生命。"), ERogueMetaStat::MaxHealth, 20.0f },
-		{ TEXT("ArmorCapacity"), TEXT("基础护甲"), TEXT("解锁护甲后，每级增加 10 点最大护甲。"), ERogueMetaStat::ArmorCapacity, 10.0f },
-		{ TEXT("MoveSpeed"), TEXT("基础移速"), TEXT("每级增加 30 厘米/秒移动速度。"), ERogueMetaStat::MoveSpeed, 30.0f },
-		{ TEXT("PickupRadius"), TEXT("吸取范围"), TEXT("每级增加 40 厘米经验吸取半径。"), ERogueMetaStat::PickupRadius, 40.0f },
+		{ TEXT("AttackPower"), TEXT("基础攻击力"), TEXT("每级增加 3 点基础攻击力，各武器按自身倍率获得伤害加成。"), ERogueMetaStat::AttackPower, 3.0f },
+		{ TEXT("MaxHealth"), TEXT("基础生命"), TEXT("每级增加 20 点开局最大生命。"), ERogueMetaStat::MaxHealth, 20.0f },
+		{ TEXT("ArmorCapacity"), TEXT("基础护甲"), TEXT("先解锁护甲，每级再增加 10 点开局最大护甲。"), ERogueMetaStat::ArmorCapacity, 10.0f },
+		{ TEXT("MoveSpeed"), TEXT("基础移速"), TEXT("每级增加 30 厘米/秒基础移动速度。"), ERogueMetaStat::MoveSpeed, 30.0f },
+		{ TEXT("PickupRadius"), TEXT("吸取范围"), TEXT("每级增加 40 厘米经验球吸取半径。"), ERogueMetaStat::PickupRadius, 40.0f },
 		{ TEXT("HealthRegen"), TEXT("生命恢复"), TEXT("每级增加每秒 0.2 点生命恢复。"), ERogueMetaStat::HealthRegen, 0.2f },
-		{ TEXT("AttackSpeed"), TEXT("攻击间隔缩短"), TEXT("每级将武器攻击间隔额外缩短 0.03 秒，受武器最短间隔限制。"), ERogueMetaStat::AttackSpeed, 0.03f },
-		{ TEXT("ExperienceGain"), TEXT("经验获取"), TEXT("每级经验获取倍率增加 0.05（5 个百分点）。"), ERogueMetaStat::ExperienceGain, 0.05f }
+		{ TEXT("AttackSpeed"), TEXT("攻击间隔缩短"), TEXT("每级增加 0.03 秒攻击间隔缩短加成，按各武器系数及最短间隔生效。"), ERogueMetaStat::AttackSpeed, 0.03f },
+		{ TEXT("ExperienceGain"), TEXT("经验获取"), TEXT("每级经验获取倍率增加 5 个百分点。"), ERogueMetaStat::ExperienceGain, 0.05f }
 	};
 	for (int32 Index = 0; Index < UE_ARRAY_COUNT(Stats); ++Index)
 	{

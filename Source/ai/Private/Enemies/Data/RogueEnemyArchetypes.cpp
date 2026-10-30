@@ -138,10 +138,10 @@ namespace
 		Archetype.Movement.bUseRangeBiasForMidToward = true;
 
 		Archetype.Ranged.bUsesRangedAttack = true;
-		Archetype.Ranged.ShotPattern = ERogueEnemyShotPattern::Single;
+		Archetype.Ranged.ShotPattern = ERogueEnemyShotPattern::Skyfall;
 		Archetype.Ranged.InitialCooldownMin = 0.35f;
 		Archetype.Ranged.InitialCooldownMax = 0.85f;
-		Archetype.Ranged.NextShotCooldown = bIsBoss ? 0.72f : 1.18f;
+		Archetype.Ranged.NextShotCooldown = bIsBoss ? 4.2f : 5.2f;
 		Archetype.Ranged.ProjectileSpeed = bIsBoss ? 1220.0f : 980.0f;
 		Archetype.Ranged.ProjectileDamageMultiplier = bIsBoss ? 1.0f : 0.85f;
 		Archetype.Ranged.bLargeVisual = bIsBoss;
@@ -412,7 +412,7 @@ namespace
 		FRogueEnemyBulletRingSettings Ring;
 		Ring.ProjectileCount = bIsBoss ? 24 : 16;
 		Ring.ProjectileSpeed = bIsBoss ? 880.0f : 760.0f;
-		Ring.ProjectileLifetime = 3.2f;
+		Ring.ProjectileLifetime = 30.0f;
 		Ring.ProjectileScale = 0.32f;
 		Ring.DamageMultiplier = bIsBoss ? 0.34f : 0.28f;
 		Ring.HeightAboveGround = 50.0f;
@@ -469,9 +469,31 @@ FRogueEnemyArchetype RogueEnemyArchetypes::BuildEnemyArchetype(ERogueEnemyType T
 	case ERogueEnemyType::Scatterer:
 		Archetype = MakeScattererArchetype(bIsBoss);
 		break;
+    case ERogueEnemyType::AuraHealer:
+    case ERogueEnemyType::LinkHealer:
+        Archetype=MakeOrbiterArchetype(false);
+        Archetype.Ranged.bUsesRangedAttack=false;
+        Archetype.Visual.VisualKey=Type==ERogueEnemyType::AuraHealer?ERogueEnemyVisualKey::AuraHealer:ERogueEnemyVisualKey::LinkHealer;
+        if (Type==ERogueEnemyType::LinkHealer)
+        { Archetype.Healing.Radius=650; Archetype.Healing.HealFraction=0.06f; Archetype.Healing.MaxTargets=1; }
+        break;
 	case ERogueEnemyType::ShockPillar:
 		Archetype = MakeShockPillarArchetype(bIsBoss);
 		break;
+    case ERogueEnemyType::SkyMoth:
+    case ERogueEnemyType::WindReaver:
+    case ERogueEnemyType::StarLantern:
+        Archetype = MakeOrbiterArchetype(bIsBoss);
+        Archetype.Ranged.bUsesRangedAttack = true;
+        Archetype.Ranged.ShotPattern = Type==ERogueEnemyType::SkyMoth ? ERogueEnemyShotPattern::CrossWeave
+            : (Type==ERogueEnemyType::WindReaver ? ERogueEnemyShotPattern::ReturningFan : ERogueEnemyShotPattern::StarTrap);
+        Archetype.Ranged.InitialCooldownMin=1.0f; Archetype.Ranged.InitialCooldownMax=2.0f;
+        Archetype.Ranged.NextShotCooldown=Archetype.Flying.AttackCooldown;
+        Archetype.Ranged.ProjectileSpeed=Archetype.Flying.ProjectileSpeed;
+        Archetype.Ranged.ProjectileDamageMultiplier=Archetype.Flying.DamageMultiplier;
+        Archetype.Visual.VisualKey = Type==ERogueEnemyType::SkyMoth ? ERogueEnemyVisualKey::SkyMoth
+            : (Type==ERogueEnemyType::WindReaver ? ERogueEnemyVisualKey::WindReaver : ERogueEnemyVisualKey::StarLantern);
+        break;
 	case ERogueEnemyType::Rifleman:
 	default:
 		Archetype = MakeRiflemanArchetype(bIsBoss);

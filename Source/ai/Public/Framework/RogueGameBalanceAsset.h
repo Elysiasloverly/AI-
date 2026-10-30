@@ -7,6 +7,8 @@
 #include "Framework/RogueBattleStage.h"
 #include "RogueGameBalanceAsset.generated.h"
 
+class UCurveTable;
+
 USTRUCT(BlueprintType, meta = (DisplayName = "基础值与每波成长"))
 struct AI_API FRogueStatGrowth
 {
@@ -24,13 +26,14 @@ struct AI_API FRogueSpawnBatchRule
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "从第几波开始", ToolTip = "达到该波次并满足空余名额条件时，本条规则生效。", ClampMin = "1"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "从第几波开始", ToolTip = "达到该波次时，本条规则生效；不再要求全场空余名额。", ClampMin = "1"))
 	int32 StartWave = 1;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "至少空出多少个名额", ToolTip = "空余名额 = 本次生效的场上数量上限 - 当前存活敌人数。", ClampMin = "0"))
+	/** 旧资产兼容字段：全场存活限制已移除，不显示、不参与刷怪计算。 */
+	UPROPERTY()
 	int32 RequiredFreeSlots = 0;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "每次尝试生成几只", ToolTip = "控制一次刷怪尝试的目标只数；生成上限、类型限制和落点仍可能减少实际数量。多条满足时采用列表中最后一条。", ClampMin = "1"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "每次尝试生成几只", ToolTip = "控制一次刷怪尝试的目标只数；本波累计名额、各类型限制和落点仍可能减少实际数量。多条满足时采用列表中最后一条。", ClampMin = "1"))
 	int32 BatchSize = 1;
 };
 
@@ -54,25 +57,29 @@ struct AI_API FRogueSpawnBalanceSettings
 {
 	GENERATED_BODY()
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(DisplayName="第1波普通怪总数", ToolTip="本波总量按此值加上每波增量计算，分批生成；白天名额用完并清场后切波，黑夜按独立时长切波。Boss另计。", ClampMin="1"))
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(DisplayName="第1波普通怪总数", ToolTip="本波总量按此值加上每波增量计算，分批生成；白天与黑夜均在名额用完并清场后切波。Boss另计。", ClampMin="1"))
     int32 BaseEnemiesPerWave = 24;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(DisplayName="每波增加的普通怪总数", ToolTip="第N波总量 = 第1波总数 + 本值 × (N-1)。这是累计总量，不是同时存活上限。", ClampMin="0"))
     int32 EnemiesPerWaveIncrement = 2;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(DisplayName="每波普通怪总数封顶（0=不限）", ToolTip="限制每波累计总量；每类敌人的每波名额仍单独生效。所有可用类型的名额用完时提前停刷；白天等清场，黑夜等切波时间。", ClampMin="0"))
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(DisplayName="每波普通怪总数封顶（0=不限）", ToolTip="限制每波累计总量；每类敌人的每波名额仍单独生效。所有可用类型的名额用完时提前停刷；白天与黑夜均等待清场后切波。", ClampMin="0"))
     int32 EnemiesPerWaveLimit = 0;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "每波增加的场上名额", ToolTip = "场上数量上限 = 生成系统的基础上限 + 本值 × (波次 - 1)。0表示不随波次增加。", ClampMin = "0"))
+	/** 旧资产兼容字段：全场存活限制已移除，不显示、不参与刷怪计算。 */
+	UPROPERTY()
 	int32 MaxAlivePerWave = 8;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "场上名额总上限（0=不限）", ToolTip = "先限制普通情况下的上限，再应用Boss在场时的调整；Boss保底值可能抬高此限制。", ClampMin = "0"))
+	/** 旧资产兼容字段：全场存活限制已移除，不显示、不参与刷怪计算。 */
+	UPROPERTY()
 	int32 MaxAliveLimit = 0;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "Boss在场时减少的名额", ToolTip = "Boss在场时，将场上数量上限减去本值，再与下方最低值取较大值。", ClampMin = "0"))
+	/** 旧资产兼容字段：全场存活限制已移除，不显示、不参与刷怪计算。 */
+	UPROPERTY()
 	int32 BossAliveReduction = 12;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "Boss在场时的上限最低值", ToolTip = "这是数量上限的保底值，不是保证至少刷出多少只。", ClampMin = "0"))
+	/** 旧资产兼容字段：全场存活限制已移除，不显示、不参与刷怪计算。 */
+	UPROPERTY()
 	int32 BossAliveMinimumLimit = 20;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "每次刷怪数量规则", ToolTip = "默认先尝试每次2只，再尝试每次3只；按列表顺序匹配，后面的匹配项覆盖前面。清空则每次尝试1只。", TitleProperty = "StartWave"))
@@ -98,11 +105,12 @@ struct AI_API FRogueSpawnBalanceSettings
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "基础刷怪间隔（秒）", ToolTip = "未应用波次加速和开局放缓前的基础刷怪间隔。", Units = "s", ClampMin = "0"))
 	float SpawnInterval = 0.88f;
 
-    // 仅保留旧包字段兼容；白天清场切波，黑夜读取 BattleStage.NightWaveDuration。
+    // 仅保留旧包字段兼容；昼夜均清场切波，该旧字段不参与调度。
 	UPROPERTY()
 	float WaveDuration = 25.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "基础场上上限", ToolTip = "第 1 波的场上存活上限；后续按 MaxAlivePerWave 增长。", ClampMin = "0"))
+	/** 旧资产兼容字段：全场存活限制已移除，不显示、不参与刷怪计算。 */
+	UPROPERTY()
 	int32 BaseMaxAliveEnemies = 40;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "与玩家最小生成距离", ToolTip = "生成点与玩家之间的最小水平距离。", Units = "cm", ClampMin = "0"))
@@ -275,6 +283,9 @@ struct AI_API FRogueKillRewardSettings
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "首领金币", ToolTip = "按击杀时的当前波次计算。"))
 	FRogueBossGoldReward BossGold;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "首领冰砖", ToolTip = "每击败一位首领，本局每位参与玩家本地存档获得的冰砖数量。", ClampMin = "0"))
+	int32 BossIceBrickReward = 1;
 };
 
 USTRUCT(BlueprintType, meta = (DisplayName = "商店"))
@@ -308,6 +319,9 @@ struct AI_API FRogueEnemyWaveEntryRow
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "刷出倾向（权重）", ToolTip = "相对数值：权重3通常比权重1更容易抽中；仍受生成上限等条件过滤。"))
 	int32 Weight = 1;
+    /** 在首次开放波次优先刷新一只；仍须通过合法落点、总量和类型名额检查。 */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, meta=(DisplayName="首次开放波次保证登场"))
+    bool bGuaranteeIntroduction=false;
 };
 
 USTRUCT(BlueprintType)
@@ -348,7 +362,18 @@ class AI_API URogueGameBalanceAsset : public UPrimaryDataAsset
 public:
 	virtual void Serialize(FArchive& Ar) override;
 	virtual void PostLoad() override;
+	/** 读取项目默认 DA_GameBalance；客户端/UI 也能拿到同一份数值。 */
+	UFUNCTION(BlueprintPure, Category = "Rogue|Balance")
+	static URogueGameBalanceAsset* GetDefaultGameBalance();
 	const FRogueEnemyBalanceRow* FindEnemyBalanceRow(ERogueEnemyType Type) const;
+
+    /** 有效行且有关键帧时按波次取值；缺行、空曲线、负值或非有限值返回false，由调用方保留旧公式。 */
+    UFUNCTION(BlueprintPure, Category = "Rogue|Balance")
+    bool TryEvaluateGrowthCurve(FName RowName, float Wave, float& OutValue) const;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "00.成长曲线", meta = (DisplayName = "波次成长曲线表", ToolTip = "X=波次，Y=实际数值。可用行：EnemiesPerWave、SpawnInterval、EnemyHealth、EnemySpeed、EnemyDamage、BossHealth、BossSpeed、BossDamage。属性曲线替代基础成长及阶段强化的结果，再应用敌人类型倍率；BossSpeed已含通用速度倍率。缺行时用下方公式；刷怪间隔仍受最短间隔约束。"))
+    TObjectPtr<UCurveTable> GrowthCurveTable;
+
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "01.敌人种类", meta = (DisplayName = "各波次的刷怪倾向", ToolTip = "留空使用内置波次池；同类型多条记录累计贡献权重。", TitleProperty = "EnemyType"))
 	TArray<FRogueEnemyWaveEntryRow> EnemyWaveEntries;
@@ -356,7 +381,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "01.敌人种类", meta = (DisplayName = "各敌人类型的属性修正", ToolTip = "按敌人类型调整普通敌人与首领的属性；缺少某类型时使用内置修正。", TitleProperty = "EnemyType"))
 	TArray<FRogueEnemyBalanceRow> EnemyBalanceRows;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "02.刷怪数量与速度", meta = (DisplayName = "刷怪设置", ToolTip = "控制场上名额、每次刷怪目标数量和刷怪间隔。", ShowOnlyInnerProperties))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "02.刷怪数量与速度", meta = (DisplayName = "刷怪设置", ToolTip = "控制每波累计总量、每次刷怪目标数量和刷怪间隔；各敌人类型的限制在敌人表配置。", ShowOnlyInnerProperties))
 	FRogueSpawnBalanceSettings Spawn;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "03.普通敌人属性", meta = (DisplayName = "普通敌人设置", ToolTip = "第1波使用基础属性，后续波次增加成长，再应用阶段和类型修正。", ShowOnlyInnerProperties))
@@ -383,7 +408,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "07.运行时", meta = (DisplayName = "场景优化", ToolTip = "关卡环境优化开关与灯光参数。", ShowOnlyInnerProperties))
 	FRogueSceneOptimizationSettings Scene;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="08.昼夜阶段", meta=(DisplayName="昼夜切换", ShowOnlyInnerProperties))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="08.昼夜阶段", meta=(DisplayName="昼夜切换", ToolTip="白天清场切波与休整切图、黑夜计时切波和攻击速度倍率。", ShowOnlyInnerProperties))
 	FRogueBattleStageSettings BattleStage;
 
 private:

@@ -15,6 +15,9 @@ class AI_API ARogueWeapon_Projectile : public ARogueWeaponBase
 
 public:
 	ARogueWeapon_Projectile();
+    /** 先保留瞄准主弹，再按左右交替扩展；增加数量不会挪动已有射线。 */
+    static float GetSpreadOffsetDegrees(int32 ShotIndex, float StepDegrees);
+
 
 	// ---- 能力驱动（见 ARogueWeaponBase 的"能力驱动"一节）----
 	virtual void CollectFireTargets(TArray<ARogueEnemy*>& OutTargets) const override;
@@ -23,8 +26,8 @@ public:
 	virtual bool CanFireNow() const override;
 	virtual float GetAbilityCooldown() const override;
 	virtual void OnOwnerDied() override;
-	UFUNCTION(BlueprintPure, Category="御札连发") int32 GetEffectiveBurstCount() const;
-	UFUNCTION(BlueprintPure, Category="御札连发") float GetBurstShotInterval() const;
+	UFUNCTION(BlueprintPure, Category="冰符·寒弹连发") int32 GetEffectiveBurstCount() const;
+	UFUNCTION(BlueprintPure, Category="冰符·寒弹连发") float GetBurstShotInterval() const;
 
 	virtual ERogueUpgradeType GetCountUpgradeType() const override { return ERogueUpgradeType::ProjectileCount; }
 	/** 收到表现广播后在客户端补画弹体，不结算权威伤害。 */

@@ -1,10 +1,25 @@
 #include "Enemies/RogueEnemy.h"
 #include "Combat/Visuals/RogueHitFlashComponent.h"
+#include "Combat/Pooling/RogueCombatPoolSubsystem.h"
 #include "Engine/World.h"
 #include "GameFramework/GameStateBase.h"
+#include "GameFramework/PlayerController.h"
+#include "Camera/PlayerCameraManager.h"
+#include "Components/CapsuleComponent.h"
 
 void ARogueEnemy::OnEnemyDamaged_Implementation(float ActualDamage)
 {
+    if(ActualDamage<=0 || !FMath::IsFinite(ActualDamage) || !GetWorld() || GetNetMode()==NM_DedicatedServer)return;
+    if(LastHitAccentGeneration!=HitFeedback.Generation)
+    {LastHitAccentGeneration=HitFeedback.Generation;LastHitAccentTime=-1.e30;}
+    FVector SparkLocation=GetActorLocation()+FVector(0,0,15);
+    if(const auto* PC=GetWorld()->GetFirstPlayerController();PC && PC->PlayerCameraManager)
+        SparkLocation+=(PC->PlayerCameraManager->GetCameraLocation()-SparkLocation).GetSafeNormal()*(GetCapsuleComponent()->GetScaledCapsuleRadius()+12.f);
+    const double Now=GetWorld()->GetTimeSeconds();
+    if(Now-LastHitAccentTime>=FMath::Max(.02f,HitAccent.MinimumInterval))
+        if(auto* Pool=GetWorld()->GetSubsystem<URogueCombatPoolSubsystem>())
+            if(Pool->PlayCombatAccent(HitAccent,SparkLocation,FVector::UpVector,true))LastHitAccentTime=Now;
+
 	if (HitFlashComponent)
 	{
 		HitFlashComponent->FlashMaterial = HitFlashMaterial;

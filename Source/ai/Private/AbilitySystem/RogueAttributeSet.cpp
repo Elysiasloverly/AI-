@@ -54,6 +54,10 @@ void URogueAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, ProjectileBurstBonus, COND_None);
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, RocketBlastRadiusBonus, COND_None);
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, HellTowerDamageRampBonus, COND_None);
+	DOREPLIFETIME_CONDITION(URogueAttributeSet, TalismanCountBonus, COND_None);
+	DOREPLIFETIME_CONDITION(URogueAttributeSet, TalismanPierceBonus, COND_None);
+	DOREPLIFETIME_CONDITION(URogueAttributeSet, TalismanRepeatBonus, COND_None);
+
 
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, MoveSpeed,            COND_None);
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, DashCooldownDuration, COND_None);
@@ -85,6 +89,9 @@ float URogueAttributeSet::GetWeaponBonusCapFor(const FGameplayAttribute& Attribu
 	if (Attribute == GetProjectileBurstBonusAttribute()) { return WeaponBonusCaps.ProjectileBurst; }
 	if (Attribute == GetRocketBlastRadiusBonusAttribute()) { return WeaponBonusCaps.RocketBlastRadius; }
 	if (Attribute == GetHellTowerDamageRampBonusAttribute()) { return WeaponBonusCaps.HellTowerDamageRamp; }
+	if (Attribute == GetTalismanCountBonusAttribute()) { return WeaponBonusCaps.TalismanCount; }
+	if (Attribute == GetTalismanPierceBonusAttribute()) { return WeaponBonusCaps.TalismanPierce; }
+	if (Attribute == GetTalismanRepeatBonusAttribute()) { return WeaponBonusCaps.TalismanRepeat; }
 	if (Attribute == GetScytheSizeBonusAttribute())        { return WeaponBonusCaps.ScytheSize; }
 	if (Attribute == GetScytheLifestealBonusAttribute())   { return WeaponBonusCaps.ScytheLifesteal; }
 
@@ -111,6 +118,9 @@ void URogueAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute,
 		|| Attribute == GetMortarBlastRadiusBonusAttribute()
 		|| Attribute == GetScytheSizeBonusAttribute()
 		|| Attribute == GetProjectileBurstBonusAttribute()
+			|| Attribute == GetTalismanCountBonusAttribute()
+			|| Attribute == GetTalismanPierceBonusAttribute()
+			|| Attribute == GetTalismanRepeatBonusAttribute()
 		|| Attribute == GetRocketBlastRadiusBonusAttribute()
 		|| Attribute == GetHellTowerDamageRampBonusAttribute()
 		|| Attribute == GetScytheLifestealBonusAttribute())
@@ -133,6 +143,9 @@ void URogueAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute,
 			|| Attribute == GetHellTowerCountBonusAttribute()
 			|| Attribute == GetMortarCountBonusAttribute()
 			|| Attribute == GetProjectileBurstBonusAttribute()
+			|| Attribute == GetTalismanCountBonusAttribute()
+			|| Attribute == GetTalismanPierceBonusAttribute()
+			|| Attribute == GetTalismanRepeatBonusAttribute()
 			|| Attribute == GetLaserRefractionBonusAttribute())
 		{
 			NewValue = FMath::RoundToFloat(NewValue);

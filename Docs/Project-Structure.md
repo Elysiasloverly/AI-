@@ -352,7 +352,7 @@ sequenceDiagram
 | `BP_RogueHUD` | Blueprint | `ARogueHUD`（挂 9 个 WBP 类：6 个菜单 + 玩家状态条 + 敌人血条 + 受伤泛红层） |
 | `BP_EnemyBase` + 13 个敌人 BP | Blueprint | `ARogueEnemy`（原型参数全部来自数据表） |
 | `BP_Projectile/*` | Blueprint | 玩家弹体/八卦炉/阴阳玉/光束/刀片（只配外观） |
-| `BP/Enemy/Projectiles/BP_EnemyProjectile(_Boss/_Marksman/_Cannoneer/_Scatterer/_Sniper/_Shotgunner/_Repeater/_Ringcaster/_ShockPillar)` | Blueprint | `ARogueEnemyProjectile`（敌人弹体外观；原型表按类型指定，敌人 BP 可覆盖） |
+| `BP/Enemy/<类型>/BP_EnemyProjectile_<类型>`；公共模板在 `BP/Enemy/Common` | Blueprint | `ARogueEnemyProjectile`（16种攻击敌人各有独立弹体，与敌人本体同目录；原型表按类型指定） |
 | `WBP_*`（13 个） | UMG | `UI/Widgets/` 下的 13 个基类；8 个菜单走聚合头，两个 HUD 状态条、受伤泛红层、主菜单与教程单独 include |
 | `/Game/Map/MainMenu` | Level | 主菜单入口；World Settings 指定 `ARogueMainMenuGameMode`，见 [开始菜单](Main-Menu.md) |
 

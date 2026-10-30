@@ -189,6 +189,9 @@ void ARogueCharacter::ApplyUpgrade(const FRogueUpgradeOption& Upgrade)
 	case ERogueUpgradeType::ProjectileBurst:
 	case ERogueUpgradeType::RocketBlastRadius:
 	case ERogueUpgradeType::HellTowerDamageRamp:
+	case ERogueUpgradeType::TalismanCount:
+	case ERogueUpgradeType::TalismanPierce:
+	case ERogueUpgradeType::TalismanRepeat:
 	case ERogueUpgradeType::ScytheSize:
 		ApplyUpgradeEffectViaGAS(Upgrade.Type, Upgrade.Magnitude);
 		break;
@@ -246,6 +249,21 @@ void ARogueCharacter::ApplyUpgrade(const FRogueUpgradeOption& Upgrade)
 	{
 		ClearRecentlyDamagedState();
 	}
+
+	// 服务端记录本局选择次数；卡池在 BuildUpgradePool 里按 DT 的 MaxPicks 过滤。
+	if (HasAuthority())
+	{
+		if (ARoguePlayerState* RoguePlayerState = GetPlayerState<ARoguePlayerState>())
+		{
+			RoguePlayerState->RegisterUpgradePick(Upgrade.Type);
+		}
+	}
+}
+
+int32 ARogueCharacter::GetUpgradePickCount(ERogueUpgradeType Type) const
+{
+	const ARoguePlayerState* RoguePlayerState = GetPlayerState<ARoguePlayerState>();
+	return RoguePlayerState != nullptr ? RoguePlayerState->GetUpgradePickCount(Type) : 0;
 }
 
 float ARogueCharacter::GetExperiencePercent() const
@@ -255,17 +273,9 @@ float ARogueCharacter::GetExperiencePercent() const
 
 void ARogueCharacter::RequestUpgradeSelection(int32 UpgradeIndex)
 {
-	// 联机正确路径：请求发到 PlayerState 的 ServerRPC，由服务端校验并施加。
-	// 旧写法是直接调 `GetWorld()->GetAuthGameMode()->TrySelectUpgrade(...)`，
-	// 而 GetAuthGameMode() 在客户端返回 nullptr —— 客户端玩家选了也没用。
-	//
-	// 注意这个函数在**服务端与客户端都可用**：
-	//   · 客户端调用 → 走 RPC 到服务端；
-	//   · 服务端（含 Listen Server 的主机玩家）调用 → RPC 在本机直接执行。
-	if (ARoguePlayerState* RoguePlayerState = GetPlayerState<ARoguePlayerState>())
-	{
-		RoguePlayerState->Server_RequestUpgradeSelection(UpgradeIndex);
-	}
+	// 键盘与卡片点击共用 HUD 保存的已呈现轮次，避免读到尚未显示的新一轮。
+	if (const APlayerController* PC = Cast<APlayerController>(GetController()))
+		if (ARogueHUD* HUD = PC->GetHUD<ARogueHUD>()) HUD->RequestSelectUpgradeFromWidget(UpgradeIndex);
 }
 
 void ARogueCharacter::ChooseUpgradeOne()

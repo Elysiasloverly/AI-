@@ -35,6 +35,7 @@ void ARoguePlayerState::CopyProperties(APlayerState* NewPlayerState)
     New->BossIceBricksEarnedThisRun = BossIceBricksEarnedThisRun;
     New->GrantedBossRewardIds = GrantedBossRewardIds;
     New->PendingUpgrades = PendingUpgrades;
+    New->UpgradePickCounts = UpgradePickCounts;
     New->bAwaitingUpgradeChoice = bAwaitingUpgradeChoice;
     New->QueuedUpgradeSelections = QueuedUpgradeSelections;
     New->ShopRuntime = ShopRuntime;

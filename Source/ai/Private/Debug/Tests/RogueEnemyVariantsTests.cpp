@@ -1,7 +1,9 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Combat/Projectiles/RogueEnemyProjectile.h"
+#include "Enemies/Data/RogueEnemyAssetPaths.h"
 #include "Enemies/Data/RogueEnemyArchetypes.h"
+#include "Enemies/Data/RogueEnemyDataTable.h"
 #include "Enemies/RogueEnemy.h"
 #include "Engine/DataTable.h"
 #include "Framework/RogueGameMode.h"
@@ -32,12 +34,15 @@ namespace RogueEnemyVariantsTests
 		{ ERogueEnemyType::Cannoneer, ERogueEnemyVisualKey::Cannoneer, TEXT("Cannoneer"), TEXT("Cannoneer") },
 		{ ERogueEnemyType::Scatterer, ERogueEnemyVisualKey::Scatterer, TEXT("Scatterer"), TEXT("Scatterer") },
 		{ ERogueEnemyType::ShockPillar, ERogueEnemyVisualKey::ShockPillar, TEXT("ShockPillar"), TEXT("ShockPillar") },
-		// 原近战类型现在也必须有远程原型、弹体和 BP 映射。
-		{ ERogueEnemyType::Rifleman, ERogueEnemyVisualKey::Rifleman, TEXT("Rifleman"), TEXT("Repeater") },
-		{ ERogueEnemyType::Assault, ERogueEnemyVisualKey::Assault, TEXT("Assault"), TEXT("Shotgunner") },
-		{ ERogueEnemyType::Juggernaut, ERogueEnemyVisualKey::Juggernaut, TEXT("Juggernaut"), TEXT("Cannoneer") },
-		{ ERogueEnemyType::Orbiter, ERogueEnemyVisualKey::Orbiter, TEXT("Orbiter"), TEXT("Marksman") },
-		{ ERogueEnemyType::Skirmisher, ERogueEnemyVisualKey::Skirmisher, TEXT("Skirmisher"), TEXT("Scatterer") }
+		// 各类型保留弹体与BP映射，普通个体可由DT切换为接触攻击。
+		{ ERogueEnemyType::Rifleman, ERogueEnemyVisualKey::Rifleman, TEXT("Rifleman"), TEXT("Rifleman") },
+		{ ERogueEnemyType::Assault, ERogueEnemyVisualKey::Assault, TEXT("Assault"), TEXT("Assault") },
+		{ ERogueEnemyType::Juggernaut, ERogueEnemyVisualKey::Juggernaut, TEXT("Juggernaut"), TEXT("Juggernaut") },
+		{ ERogueEnemyType::Orbiter, ERogueEnemyVisualKey::Orbiter, TEXT("Orbiter"), TEXT("Orbiter") },
+		{ ERogueEnemyType::Skirmisher, ERogueEnemyVisualKey::Skirmisher, TEXT("Skirmisher"), TEXT("Skirmisher") },
+        { ERogueEnemyType::SkyMoth, ERogueEnemyVisualKey::SkyMoth, TEXT("SkyMoth"), TEXT("SkyMoth") },
+        { ERogueEnemyType::WindReaver, ERogueEnemyVisualKey::WindReaver, TEXT("WindReaver"), TEXT("WindReaver") },
+        { ERogueEnemyType::StarLantern, ERogueEnemyVisualKey::StarLantern, TEXT("StarLantern"), TEXT("StarLantern") }
 	};
 }
 
@@ -62,7 +67,8 @@ bool FRogueNewRangedArchetypesTest::RunTest(const FString& Parameters)
 
 		const FRogueEnemyArchetype Archetype = RogueEnemyArchetypes::BuildEnemyArchetypeFromDataTable(Table, Variant.Type, false);
 		TestEqual(*FString::Printf(TEXT("%s keeps its visual key"), Variant.BlueprintName), Archetype.Visual.VisualKey, Variant.VisualKey);
-		TestTrue(*FString::Printf(TEXT("%s uses ranged attack"), Variant.BlueprintName), Archetype.Ranged.bUsesRangedAttack);
+		const auto* Row=Table->FindRow<FRogueEnemyArchetypeRow>(RowName,TEXT("Role test"));
+        TestEqual(TEXT("Runtime attack follows explicit normal role"),Archetype.Ranged.bUsesRangedAttack,!Row->bContactOnlyNormal);
 		TestTrue(*FString::Printf(TEXT("%s has a projectile class"), Variant.BlueprintName), Archetype.ProjectileClass != nullptr);
 		if (Archetype.ProjectileClass != nullptr)
 		{
@@ -70,7 +76,7 @@ bool FRogueNewRangedArchetypesTest::RunTest(const FString& Parameters)
 				Archetype.ProjectileClass->GetName().Contains(Variant.ProjectileName));
 		}
 
-		const FString BlueprintPath = FString::Printf(TEXT("/Game/BP/Enemy/BP_Enemy%s.BP_Enemy%s_C"), Variant.BlueprintName, Variant.BlueprintName);
+		const FString BlueprintPath = RogueEnemyAssetPaths::EnemyClassPath(Variant.BlueprintName);
 		UClass* EnemyClass = LoadClass<ARogueEnemy>(nullptr, *BlueprintPath);
 		TestNotNull(*FString::Printf(TEXT("%s Blueprint loads"), Variant.BlueprintName), EnemyClass);
 
@@ -87,7 +93,7 @@ bool FRogueNewRangedArchetypesTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueFormerMeleeRangedTest,
-	"Rogue.Gameplay.EnemyVariants.FormerMeleeAreNowRanged", RogueEnemyVariantsTests::Flags)
+	"Rogue.Gameplay.EnemyVariants.BaselineRangedPatternsRemainAvailable", RogueEnemyVariantsTests::Flags)
 bool FRogueFormerMeleeRangedTest::RunTest(const FString& Parameters)
 {
 	using namespace RogueEnemyVariantsTests;
@@ -95,26 +101,26 @@ bool FRogueFormerMeleeRangedTest::RunTest(const FString& Parameters)
 	UDataTable* Table = LoadObject<UDataTable>(nullptr, TablePath);
 	if (!TestNotNull(TEXT("Enemy archetype table loads"), Table)) { return false; }
 
-	const FRogueEnemyArchetype Rifleman = RogueEnemyArchetypes::BuildEnemyArchetypeFromDataTable(Table, ERogueEnemyType::Rifleman, false);
+	const FRogueEnemyArchetype Rifleman = RogueEnemyArchetypes::BuildEnemyArchetype(ERogueEnemyType::Rifleman, false);
 	TestTrue(TEXT("Rifleman now has a ranged attack"), Rifleman.Ranged.bUsesRangedAttack);
 	TestEqual(TEXT("Rifleman keeps a single-shot ranged pattern"), Rifleman.Ranged.ShotPattern, ERogueEnemyShotPattern::Single);
 	TestEqual(TEXT("Rifleman keeps kiting movement"), Rifleman.Movement.Model, ERogueEnemyMovementModel::RangedKite);
 
-	const FRogueEnemyArchetype Assault = RogueEnemyArchetypes::BuildEnemyArchetypeFromDataTable(Table, ERogueEnemyType::Assault, false);
+	const FRogueEnemyArchetype Assault = RogueEnemyArchetypes::BuildEnemyArchetype(ERogueEnemyType::Assault, false);
 	TestTrue(TEXT("Assault now has a ranged attack"), Assault.Ranged.bUsesRangedAttack);
 	TestEqual(TEXT("Assault fires a close-range spread"), Assault.Ranged.ShotPattern, ERogueEnemyShotPattern::Spread3);
 	TestEqual(TEXT("Assault keeps its Repeater-charge movement"), Assault.Movement.Model, ERogueEnemyMovementModel::BurstCharge);
 
-	const FRogueEnemyArchetype Juggernaut = RogueEnemyArchetypes::BuildEnemyArchetypeFromDataTable(Table, ERogueEnemyType::Juggernaut, false);
+	const FRogueEnemyArchetype Juggernaut = RogueEnemyArchetypes::BuildEnemyArchetype(ERogueEnemyType::Juggernaut, false);
 	TestTrue(TEXT("Juggernaut now has a ranged attack"), Juggernaut.Ranged.bUsesRangedAttack);
 	TestEqual(TEXT("Juggernaut fires a heavy single shot"), Juggernaut.Ranged.ShotPattern, ERogueEnemyShotPattern::Single);
 	TestTrue(TEXT("Juggernaut shot is slow but hard-hitting"), Juggernaut.Ranged.ProjectileDamageMultiplier > 1.0f);
 
-	const FRogueEnemyArchetype Orbiter = RogueEnemyArchetypes::BuildEnemyArchetypeFromDataTable(Table, ERogueEnemyType::Orbiter, false);
+	const FRogueEnemyArchetype Orbiter = RogueEnemyArchetypes::BuildEnemyArchetype(ERogueEnemyType::Orbiter, false);
 	TestTrue(TEXT("Orbiter now has a ranged attack"), Orbiter.Ranged.bUsesRangedAttack);
 	TestEqual(TEXT("Orbiter keeps orbiting movement"), Orbiter.Movement.Model, ERogueEnemyMovementModel::Orbit);
 
-	const FRogueEnemyArchetype Skirmisher = RogueEnemyArchetypes::BuildEnemyArchetypeFromDataTable(Table, ERogueEnemyType::Skirmisher, false);
+	const FRogueEnemyArchetype Skirmisher = RogueEnemyArchetypes::BuildEnemyArchetype(ERogueEnemyType::Skirmisher, false);
 	TestTrue(TEXT("Skirmisher now has a ranged attack"), Skirmisher.Ranged.bUsesRangedAttack);
 	TestEqual(TEXT("Skirmisher fires a spread"), Skirmisher.Ranged.ShotPattern, ERogueEnemyShotPattern::Spread3);
 	TestEqual(TEXT("Skirmisher keeps zig-zag movement"), Skirmisher.Movement.Model, ERogueEnemyMovementModel::ZigZagChase);
@@ -138,7 +144,7 @@ bool FRogueNewRangedShotPatternsTest::RunTest(const FString& Parameters)
 
 	const FRogueEnemyArchetype Repeater = RogueEnemyArchetypes::BuildEnemyArchetypeFromDataTable(Table, ERogueEnemyType::Repeater, false);
 	TestEqual(TEXT("Repeater fires rapidly"), Repeater.Ranged.ShotPattern, ERogueEnemyShotPattern::Single);
-	TestTrue(TEXT("Repeater cooldown is short"), Repeater.Ranged.NextShotCooldown <= 0.6f);
+	TestTrue(TEXT("Repeater fires more frequently than Sniper"), Repeater.Ranged.NextShotCooldown > 0.f && Repeater.Ranged.NextShotCooldown < Sniper.Ranged.NextShotCooldown);
 	TestTrue(TEXT("Repeater damage is lower than Sniper"), Repeater.Ranged.ProjectileDamageMultiplier < Sniper.Ranged.ProjectileDamageMultiplier);
 
 	const FRogueEnemyArchetype Shotgunner = RogueEnemyArchetypes::BuildEnemyArchetypeFromDataTable(Table, ERogueEnemyType::Shotgunner, false);

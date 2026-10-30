@@ -15,11 +15,13 @@
 | 简洁和纸 UI、选卡与商店布局、Boss 血条和平滑动画怎么改 | [UI-Touhou-Theme.md](UI-Touhou-Theme.md)：WBP 编辑入口、素材提示词与联机数据流 |
 | 血条 / 护甲条 / 经验条 / 波数金币怎么做的 | [HUD-Vitals-And-Enemy-Bars.md](HUD-Vitals-And-Enemy-Bars.md)：玩家状态 WBP、统一字体、数据流 |
 | 受伤时的屏幕泛红与镜头震动怎么调 | [Damage-Feedback.md](Damage-Feedback.md)：掉血检测、`FlashRoot` 结构、震动参数与替换方式 |
+| 敌人和自己的弹体在哪里 | [Enemy-Blueprint-Folders.md](Enemy-Blueprint-Folders.md)：18种敌人逐类型目录、独立弹体和公共基类 |
 | 敌方弹幕用哪个蓝图、怎么换外观 | [Enemy-Projectile-Blueprints.md](Enemy-Projectile-Blueprints.md)：`BP_EnemyProjectile`、每敌人覆盖与池化 |
 | 经验球怎么换外观 | [Experience-Pickup-Blueprint.md](Experience-Pickup-Blueprint.md)：`BP_ExperiencePickup` 组件结构、BP 钩子与尺寸规则 |
 | 弹体碰撞是否关闭 | [Combat-Collision.md](Combat-Collision.md)：所有弹体的命中球 / 视觉组件 / 物理设置审计 |
-| 敌人原型表怎么读 | [Enemy-Archetype-Table.md](Enemy-Archetype-Table.md)：11 个顶层列、一怪一块的 `SpecialParams`、字段语义与迁移记录 |
-| 13 种敌人各是什么、怎么打 | [Enemy-Ranged-Variants.md](Enemy-Ranged-Variants.md)：枚举名与中文名对照、弹道、起始波次与验证 |
+| 敌人原型表怎么读 | [Enemy-Archetype-Table.md](Enemy-Archetype-Table.md)：13 个顶层列、一怪一块的 `SpecialParams`、字段语义与迁移记录 |
+| 鸦天狗红圈、大型落弹与触地散弹怎么改 | [Enemy-Marksman-Skyfall.md](Enemy-Marksman-Skyfall.md)：攻击流程、数据表、外观蓝图与联机同步 |
+| 18 种敌人各是什么、怎么打 | [Enemy-Ranged-Variants.md](Enemy-Ranged-Variants.md)：枚举名与中文名对照、弹道、起始波次与验证 |
 | 红雾吸血卡怎么配 | [Scythe-Lifesteal-Upgrade.md](Scythe-Lifesteal-Upgrade.md)：前置、首次 20%、每级 +5%、数据资产与伤害回血链 |
 | 当前对象如何协作，伤害和升级如何流动 | [Project-Structure.md](Project-Structure.md)：运行时关系、网络划分、池化契约、核心数据流与自检入口 |
 | 源码注释哪些说法经过核验 | [Comment-Verification.md](Comment-Verification.md)：事实纠正、源码依据、当前实现边界与检查结果 |
@@ -52,3 +54,21 @@
 玩家漂浮组件参数与当前神社夜景调整入口见 [玩家漂浮与神社夜景](Player-Floating-And-Night-Lighting.md)。
 
 地图入口与旧枚举清理见 [Map-Entrypoints-And-Legacy-Cleanup.md](Map-Entrypoints-And-Legacy-Cleanup.md)：当前只保留 Map 文件夹下的主菜单和战斗地图。
+
+## 三种低空敌人
+
+[月蝶、风镰、星灯](Flying-Enemies.md)：交错扫射、单次折返风刃、带预警缺口的收拢星阵；包含蓝图、刷怪波次、参数和验证范围。
+
+[飞行怪物数值调整（2026-10-29）](Flying-Enemy-Balance-2026-10-29.md)：三种新怪物的曲线倍率、普通/Boss伤害预算、前后对照和实况验证。
+
+## 昼夜流程与玩家教程（2026-10-30）
+
+- [白昼、黑夜与百波通关](Battle-Day-Night.md)：35 / 50 / 85 三次切图，进入第 100 波通关。
+- [神社调查手帖](Player-Guide.md)：与 WBP 教程同步的六章玩家指南。
+- [教程维护说明](Tutorial-Maintenance.md)：事实核对、WBP 结构与更新方式。
+
+- [幸存者战斗节奏：第一版](Survivor-Combat-Feel.md)：追击杂兵、前期进攻保底、武器与经验成长。
+
+- [灵符·归心：环绕、穿刺、返航与升级配置](Returning-Talisman-Weapon.md)
+
+- [开火闪光、法术涟漪与敌人命中碎光](Combat-Accents.md)

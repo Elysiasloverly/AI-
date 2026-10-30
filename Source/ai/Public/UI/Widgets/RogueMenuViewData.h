@@ -71,6 +71,9 @@ struct FRogueShopOfferViewData
 {
 	GENERATED_BODY()
 
+	UPROPERTY(BlueprintReadOnly, Category="Shop") FGuid QuoteId;
+	UPROPERTY(BlueprintReadOnly, Category="Shop") int32 QuotedCost = 0;
+
 	UPROPERTY(BlueprintReadOnly, Category = "Shop")
 	FText TitleText = FText::GetEmpty();
 
@@ -118,6 +121,9 @@ USTRUCT(BlueprintType)
 struct FRogueUpgradeCardViewData
 {
 	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category="Upgrade") FGuid SelectionId;
+	UPROPERTY(BlueprintReadOnly, Category="Upgrade") bool bCanSelect = false;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Upgrade")
 	FText TitleText = FText::GetEmpty();

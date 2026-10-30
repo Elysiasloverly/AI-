@@ -55,4 +55,6 @@ private:
 
 	TWeakObjectPtr<ARogueHUD> OwningRogueHUD;
 	int32 UpgradeIndex = INDEX_NONE;
+	FGuid SelectionId;
+	bool bCanSelect = false;
 };

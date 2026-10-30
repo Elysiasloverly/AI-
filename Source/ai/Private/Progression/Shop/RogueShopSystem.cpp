@@ -1,7 +1,6 @@
 #include "Progression/Shop/RogueShopSystem.h"
 
 #include "Progression/Upgrades/RogueUpgradeSystem.h"
-#include "Progression/Upgrades/RogueUpgradeSystemRules.h"
 #include "Player/RogueCharacter.h"
 
 void FRogueShopSystem::Reset()
@@ -115,7 +114,7 @@ bool FRogueShopSystem::TryRefresh(ARogueCharacter* Character, const FRogueUpgrad
 	return true;
 }
 
-bool FRogueShopSystem::TryBuyOffer(int32 OfferIndex, ARogueCharacter* Character, FRogueUpgradeOption& OutUpgrade)
+bool FRogueShopSystem::TryBuyOffer(int32 OfferIndex, const FGuid& QuoteId, int32 QuotedCost, ARogueCharacter* Character, const FRogueUpgradeSystem& UpgradeSystem, FRogueUpgradeOption& OutUpgrade)
 {
 	if (!bOpen || Character == nullptr || !Offers.IsValidIndex(OfferIndex))
 	{
@@ -123,10 +122,11 @@ bool FRogueShopSystem::TryBuyOffer(int32 OfferIndex, ARogueCharacter* Character,
 	}
 
 	FRogueShopOffer& Offer = Offers[OfferIndex];
-	// 报价可能早于本轮升级：首次获取武器后，旧数量报价已变成需要另购许可的专属卡。
+	// 报价可能早于升级：重新核对永久许可、次数上限与当前是否仍有提升效果。
 	// 扣钱前重新检查当前玩家，拒绝过期报价也不会消耗金币。
-	if (!Offer.IsUpgradeOffer() || Offer.IsPurchased()
-		|| !RogueUpgradeSystemRules::IsUpgradeAllowedForProgression(Offer.GetUpgrade().Type, Character)
+	if (!QuoteId.IsValid() || Offer.QuoteId != QuoteId || Offer.GetCost() != QuotedCost
+		|| !Offer.IsUpgradeOffer() || Offer.IsPurchased()
+		|| !UpgradeSystem.IsUpgradeAvailable(Character, Offer.GetUpgrade().Type)
 		|| !Character->TrySpendMoney(Offer.GetCost()))
 	{
 		return false;
@@ -159,6 +159,7 @@ bool FRogueShopSystem::BuildOffers(const ARogueCharacter* Character, const FRogu
 	for (const FRogueUpgradeOption& Upgrade : GeneratedOffers)
 	{
 		FRogueShopOffer& Offer = Offers.AddDefaulted_GetRef();
+		Offer.QuoteId = FGuid::NewGuid();
 		Offer.Reward = FRogueRewardOffer::MakeUpgrade(Upgrade, ERogueRewardSource::Shop, GetOfferCostForUpgradeType(Upgrade.Type));
 	}
 

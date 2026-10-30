@@ -167,7 +167,7 @@ bool FRogueShieldOrbitBlueprintTest::RunTest(const FString& Parameters)
 	const auto* Orbit = Cast<URogueShieldOrbitComponent>(Defaults->GetDefaultSubobjectByName(TEXT("ShieldOrbit")));
 	if (!TestNotNull(TEXT("The existing Blueprint inherits the new component"), Orbit)) { return false; }
 	TestTrue(TEXT("Inherited component is enabled"), Orbit->bOrbitEnabled);
-	TestNull(TEXT("The new component does not hardcode a mesh"), Orbit->ShieldMesh.Get());
+	TestNull(TEXT("The native component leaves the mesh editable for Blueprint defaults"), GetDefault<URogueShieldOrbitComponent>()->ShieldMesh.Get());
 	for (const FName Name : { FName(TEXT("ShieldMesh")), FName(TEXT("OrbitRadius")), FName(TEXT("OrbitSpeed")) })
 	{
 		const FProperty* Property = FindFProperty<FProperty>(URogueShieldOrbitComponent::StaticClass(), Name);

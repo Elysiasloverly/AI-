@@ -71,7 +71,7 @@ namespace RogueShockPillarTests
 			// Exercise the actual Blueprint and its serialized DataTable reference, including
 			// any Blueprint behavior hook that could accidentally keep the old attack alive.
 			UClass* PillarClass = LoadClass<ARogueEnemy>(nullptr,
-				TEXT("/Game/BP/Enemy/BP_EnemyShockPillar.BP_EnemyShockPillar_C"));
+				TEXT("/Game/BP/Enemy/ShockPillar/BP_EnemyShockPillar.BP_EnemyShockPillar_C"));
 			if (!Test.TestNotNull(TEXT("The project ShockPillar Blueprint loads"), PillarClass)) { return false; }
 			FActorSpawnParameters Spawn;
 			Spawn.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
@@ -121,25 +121,26 @@ bool FRogueShockPillarAISalvoTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("The pillar receives no contact attack"), Fixture.Pillar->ContactAttackAbilityHandle.IsValid());
 	TestEqual(TEXT("No active enemy bullets precede the attack"), Fixture.ActiveProjectiles().Num(), 0);
 
+	const auto Ring = Fixture.Pillar->GetRangedArchetype().BulletRing.Sanitized();
 	Fixture.Pillar->SetRangedAttackCooldown(0.02f);
 	Fixture.Pillar->Tick(0.03f);
 	TArray<ARogueEnemyProjectile*> Projectiles = Fixture.ActiveProjectiles();
-	if (!TestEqual(TEXT("One AI/GAS attack emits exactly 48 bullets"), Projectiles.Num(), 48)) { return false; }
+	if (!TestEqual(TEXT("One AI/GAS attack emits the authored bullet count"), Projectiles.Num(), Ring.ProjectileCount)) { return false; }
 	TestTrue(TEXT("Successful attack starts the configured cooldown"),
 		FMath::IsNearlyEqual(Fixture.Pillar->GetRangedAttackCooldownRemaining(),
 			Fixture.Pillar->GetRangedArchetype().NextShotCooldown));
 
 	TArray<float> Yaws;
 	const FVector PillarLocation = Fixture.Pillar->GetActorLocation();
-	const float ExpectedHeight = PillarLocation.Z - Fixture.Pillar->GetCapsuleComponent()->GetScaledCapsuleHalfHeight() + 48.0f;
+	const float ExpectedHeight = PillarLocation.Z - Fixture.Pillar->GetCapsuleComponent()->GetScaledCapsuleHalfHeight() + Ring.HeightAboveGround;
 	for (ARogueEnemyProjectile* Projectile : Projectiles)
 	{
 		UProjectileMovementComponent* Movement = Projectile->FindComponentByClass<UProjectileMovementComponent>();
 		if (!TestNotNull(TEXT("Each bullet has real projectile movement"), Movement)) { return false; }
 		const FVector Direction = Movement->Velocity.GetSafeNormal();
-		TestTrue(TEXT("Bullets travel horizontally at 720 cm/s"),
-			FMath::IsNearlyZero(Movement->Velocity.Z) && FMath::IsNearlyEqual(static_cast<float>(Movement->Velocity.Size()), 720.0f, 0.01f));
-		TestTrue(TEXT("Every bullet spawns 48 cm above the column foot"),
+		TestTrue(TEXT("Bullets travel horizontally at the authored speed"),
+			FMath::IsNearlyZero(Movement->Velocity.Z) && FMath::IsNearlyEqual(static_cast<float>(Movement->Velocity.Size()), Ring.ProjectileSpeed, 0.01f));
+		TestTrue(TEXT("Every bullet spawns at the authored height above the column foot"),
 			FMath::IsNearlyEqual(static_cast<float>(Projectile->GetActorLocation().Z), ExpectedHeight, 0.01f));
 		TestTrue(TEXT("Every bullet points outward from the column"),
 			(Projectile->GetActorLocation() - PillarLocation).GetSafeNormal2D().Equals(Direction, 0.001f));
@@ -149,11 +150,11 @@ bool FRogueShockPillarAISalvoTest::RunTest(const FString& Parameters)
 	for (int32 Index = 0; Index < Yaws.Num(); ++Index)
 	{
 		const float Next = Index + 1 < Yaws.Num() ? Yaws[Index + 1] : Yaws[0] + 360.0f;
-		TestTrue(TEXT("The complete ring has uniform 7.5-degree gaps, including its seam"),
-			FMath::IsNearlyEqual(Next - Yaws[Index], 7.5f, 0.01f));
+		TestTrue(TEXT("The complete ring has uniform gaps, including its seam"),
+			FMath::IsNearlyEqual(Next - Yaws[Index], 360.f / Ring.ProjectileCount, 0.01f));
 	}
 	Fixture.Pillar->Tick(0.2f);
-	TestEqual(TEXT("AI ticks during cooldown do not emit another ring"), Fixture.ActiveProjectiles().Num(), 48);
+	TestEqual(TEXT("AI ticks during cooldown do not emit another ring"), Fixture.ActiveProjectiles().Num(), Ring.ProjectileCount);
 	return true;
 }
 
@@ -186,8 +187,10 @@ bool FRogueShockPillarProjectileReuseTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Ordinary reuse restores the original 22 cm collision"), FMath::IsNearlyEqual(Collision->GetScaledSphereRadius(), 22.0f));
 	Projectile->Tick(1.1f);
 	TestFalse(TEXT("Ordinary reuse does not retain the short ring lifetime"), Projectile->IsAvailableInPool());
-	Projectile->Tick(3.0f);
-	TestTrue(TEXT("Ordinary reuse expires at its original four-second lifetime"), Projectile->IsAvailableInPool());
+	Projectile->Tick(28.0f);
+	TestFalse(TEXT("Ordinary reuse survives before the 30-second deadline"), Projectile->IsAvailableInPool());
+	Projectile->Tick(1.0f);
+	TestTrue(TEXT("Ordinary reuse expires at its 30-second lifetime"), Projectile->IsAvailableInPool());
 	return true;
 }
 

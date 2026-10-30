@@ -9,6 +9,9 @@
 #include "GameFramework/Pawn.h"
 #include "GameplayEffect.h"
 #include "Player/RogueCharacter.h"
+#include "Enemies/RogueEnemy.h"
+#include "Framework/RogueGameMode.h"
+#include "Engine/World.h"
 
 bool RogueAbilitySystem::ApplyDamageToTarget(AActor* SourceActor, AActor* TargetActor, float DamageAmount, FGameplayTag SourceTag, float* OutDamageDealt)
 {
@@ -22,9 +25,21 @@ bool RogueAbilitySystem::ApplyDamageToTarget(AActor* SourceActor, AActor* Target
 		return false;
 	}
 
+	// 以权威 RunState 为准；结算状态尚未复制到 GameState 时也必须停止伤害。
+	if (const UWorld* World = TargetActor->GetWorld())
+	{
+		const ARogueGameMode* Mode = World->GetAuthGameMode<ARogueGameMode>();
+		if (Mode && Mode->IsGameOver()) return false;
+	}
+
 	// 玩家生命状态是权威判据，不能依赖死亡 GE 是否已经施加或清理完毕。
 	const ARogueCharacter* TargetCharacter = Cast<ARogueCharacter>(TargetActor);
 	if (TargetCharacter != nullptr && !TargetCharacter->IsAlive())
+	{
+		return false;
+	}
+	const ARogueEnemy* TargetEnemy = Cast<ARogueEnemy>(TargetActor);
+	if (TargetEnemy != nullptr && (TargetEnemy->IsDead() || TargetEnemy->IsAvailableInPool()))
 	{
 		return false;
 	}
@@ -40,6 +55,12 @@ bool RogueAbilitySystem::ApplyDamageToTarget(AActor* SourceActor, AActor* Target
 	// 服务端权威。注意用的是 IsOwnerActorAuthoritative() 而不是 Actor 上的 HasAuthority()：
 	// 玩家的 ASC 挂在 PlayerState 上，权威性由 OwnerActor 决定。
 	if (!TargetASC->IsOwnerActorAuthoritative())
+	{
+		return false;
+	}
+	const URogueAttributeSet* TargetAttributes = TargetASC->GetSet<URogueAttributeSet>();
+	// 出池开启碰撞与写入新档案之间，旧生命可能仍为0；不能在这段窗口排死亡。
+	if (TargetEnemy != nullptr && (TargetAttributes == nullptr || TargetAttributes->GetHealth() <= 0.0f))
 	{
 		return false;
 	}
@@ -78,12 +99,17 @@ bool RogueAbilitySystem::ApplyDamageToTarget(AActor* SourceActor, AActor* Target
 		SpecHandle.Data->AddDynamicAssetTag(SourceTag);
 	}
 
-	const URogueAttributeSet* TargetAttributes = TargetASC->GetSet<URogueAttributeSet>();
 	const float BeforeTotal = TargetAttributes != nullptr
 		? TargetAttributes->GetHealth() + TargetAttributes->GetArmor()
 		: 0.0f;
 
 	const bool bApplied = TargetASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get()).WasSuccessfullyApplied();
+	if (bApplied && TargetEnemy != nullptr && TargetEnemy->IsBoss() && TargetAttributes != nullptr && TargetAttributes->GetHealth() <= 0.0f)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[BossLifecycle] LethalHit Enemy=%s Spawn=%s Before=%.2f Damage=%.2f Source=%s Tag=%s"),
+			*GetNameSafe(TargetEnemy), *TargetEnemy->GetSpawnCycleId().ToString(), BeforeTotal, DamageAmount,
+			*GetNameSafe(SourceActor), *SourceTag.ToString());
+	}
 
 	if (OutDamageDealt != nullptr && TargetAttributes != nullptr)
 	{

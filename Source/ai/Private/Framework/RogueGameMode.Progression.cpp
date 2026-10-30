@@ -59,6 +59,7 @@ void ARogueGameMode::AdvanceShopAutoRefresh(float DeltaSeconds, bool bWorldPause
 
 void ARogueGameMode::HandleEnemyKilled(ARogueEnemy* Enemy, AActor* Killer)
 {
+	if (!HasAuthority() || RunState.bGameOver || !IsValid(Enemy)) return;
 	if (IsValid(Enemy) && Enemy->IsBoss() && RewardedBossSpawnIds.Contains(Enemy->GetSpawnCycleId())) { return; }
 	++RunState.EnemiesDefeated;
 
@@ -147,12 +148,17 @@ void ARogueGameMode::SpawnExperienceReward(ARogueEnemy* Enemy, URogueEnemyTracke
 
 void ARogueGameMode::HandleBossKilledReward(const FGuid& RewardId)
 {
-	if (!RewardId.IsValid() || RewardedBossSpawnIds.Contains(RewardId))
+	if (!HasAuthority() || RunState.bGameOver || !RewardId.IsValid() || RewardedBossSpawnIds.Contains(RewardId))
 	{
 		return;
 	}
 	RewardedBossSpawnIds.Add(RewardId);
 	RunState.bBossAlive = false;
+
+	// 冰砖数量来自 DA_GameBalance 的“击杀奖励 → 首领冰砖”；缺失资产时保持 1 的代码兜底。
+	const int32 IceBrickReward = LoadedGameBalanceAsset != nullptr
+		? FMath::Max(LoadedGameBalanceAsset->Rewards.BossIceBrickReward, 0)
+		: 1;
 
 	// 冰砖发给本局每个参与者，包括正在濒死等待复活的玩家。
 	// 各自客户端写自己的本地存档；旁观者和已经断开的控制器不参与。
@@ -161,7 +167,7 @@ void ARogueGameMode::HandleBossKilledReward(const FGuid& RewardId)
 		APlayerController* Controller = It->Get();
 		if (!IsValid(Controller) || Controller->IsActorBeingDestroyed()) { continue; }
 		ARoguePlayerState* State = Controller->GetPlayerState<ARoguePlayerState>();
-		if (State != nullptr && !State->IsOnlyASpectator()) { State->GrantBossIceBrick(RewardId); }
+		if (State != nullptr && !State->IsOnlyASpectator()) { State->GrantBossIceBrick(RewardId, IceBrickReward); }
 	}
 
 	// 本局即时选卡仍只给存活玩家，避免濒死界面被无法操作的卡牌遮挡。
@@ -242,7 +248,7 @@ void ARogueGameMode::CloseShop(ARogueCharacter* Requester)
 	// 关店后仍可能有其他 UI 需要输入，因此此服务端入口只更新商店状态。
 }
 
-void ARogueGameMode::TryBuyShopOffer(int32 OfferIndex, ARogueCharacter* Purchaser)
+void ARogueGameMode::TryBuyShopOffer(int32 OfferIndex, const FGuid& QuoteId, int32 QuotedCost, ARogueCharacter* Purchaser)
 {
 	ARoguePlayerState* PlayerState = IsValid(Purchaser) ? Purchaser->GetPlayerState<ARoguePlayerState>() : nullptr;
 	if (PlayerState == nullptr)
@@ -265,13 +271,14 @@ void ARogueGameMode::TryBuyShopOffer(int32 OfferIndex, ARogueCharacter* Purchase
 	}
 
 	FRogueUpgradeOption PurchasedUpgrade;
-	if (Shop.TryBuyOffer(OfferIndex, Purchaser, PurchasedUpgrade))
+	if (Shop.TryBuyOffer(OfferIndex, QuoteId, QuotedCost, Purchaser, UpgradeSystem, PurchasedUpgrade))
 	{
 		// 升级施加给**购买者**（旧实现固定给 CachedCharacter，联机下会把玩家 2 的购买算到玩家 1 头上）
 		Purchaser->ApplyUpgrade(PurchasedUpgrade);
 		// 购买会改变"已购"标记与刷新价格，立刻同步
-		PushShopSnapshotForPlayer(PlayerState);
 	}
+	// 旧报价被拒绝也发送当前快照，让界面恢复到可操作的最新报价。
+	PushShopSnapshotForPlayer(PlayerState);
 }
 
 void ARogueGameMode::TryRefreshShop(ARogueCharacter* Requester)
@@ -440,4 +447,26 @@ void ARogueGameMode::OpenNextUpgradeSelectionForPlayer(ARoguePlayerState* Player
 	PlayerState->OpenUpgradeSelection(Options);
 	Character->SetUpgradeSelectionInput(true);
 	// 不暂停（见 HandlePlayerUpgradeSelected 的说明）
+}
+
+bool ARogueGameMode::IsUpgradeAvailableForPlayer(const ARogueCharacter* Character, ERogueUpgradeType Type) const
+{
+    return !RunState.bGameOver && IsValid(Character) && Character->IsAlive() && UpgradeSystem.IsUpgradeAvailable(Character, Type);
+}
+
+void ARogueGameMode::RefreshPendingUpgradeSelection(ARoguePlayerState* PlayerState)
+{
+    ARogueCharacter* Character = PlayerState ? Cast<ARogueCharacter>(PlayerState->GetPawn()) : nullptr;
+    if (!HasAuthority() || RunState.bGameOver || !IsValid(Character) || !Character->IsAlive() || !PlayerState->IsAwaitingUpgradeChoice()) { return; }
+    TArray<FRogueUpgradeOption> Options;
+    UpgradeSystem.BuildRandomUpgradeOptions(Character, 3, Options);
+    if (Options.IsEmpty())
+    {
+        PlayerState->QueueUpgradeSelections(1);
+        PlayerState->CloseUpgradeSelection();
+        Character->SetUpgradeSelectionInput(false);
+        return;
+    }
+    PlayerState->OpenUpgradeSelection(Options);
+    Character->SetUpgradeSelectionInput(true);
 }

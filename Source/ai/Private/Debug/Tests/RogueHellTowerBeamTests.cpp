@@ -7,6 +7,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Engine/DataTable.h"
 #include "Engine/World.h"
+#include "Engine/StaticMesh.h"
 #include "EngineUtils.h"
 #include "Framework/RogueGameMode.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -250,6 +251,51 @@ bool FRogueHellTowerComponentMaterialTest::RunTest(const FString& Parameters)
 	Beam->ActivatePooledBeam(Fixture.Player, FVector::ZeroVector, FVector(500.0f, 0.0f, 0.0f), true, false, 0.10f);
 	TestTrue(TEXT("An empty component slot stays on the mesh default"), Mesh(Beam, TEXT("BeamMesh"))->GetMaterial(0) == MeshDefault);
 	return true;
+}
+
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueBeamFlowLifecycleTest,
+    "Rogue.Gameplay.HellTowerBeam.FlowLifecycleAndCylinderAxis", RogueHellTowerBeamTests::Flags)
+bool FRogueBeamFlowLifecycleTest::RunTest(const FString&)
+{
+    using namespace RogueHellTowerBeamTests;
+    FFixture Fixture;
+    if (!Fixture.Initialize(*this)) return false;
+    auto* Beam = Fixture.World->SpawnActor<ARogueLaserBeam>(Fixture.HellTower->BeamClass);
+    if (!TestNotNull(TEXT("Actual flame beam blueprint spawns"), Beam)) return false;
+    auto* Core = Mesh(Beam, TEXT("BeamMesh"));
+    auto* Glow = Mesh(Beam, TEXT("GlowMesh"));
+    if (!TestNotNull(TEXT("Core exists"), Core) || !TestNotNull(TEXT("Glow exists"), Glow)) return false;
+    Beam->ActivatePooledBeam(Fixture.Player, FVector(0,0,100), FVector(600,0,100), true, false, .05f);
+    TestFalse(TEXT("Material animation does not enable actor tick"), Beam->PrimaryActorTick.bCanEverTick);
+    TestTrue(TEXT("Bottom-pivot cylinder is centered between the actual endpoints"),
+        Glow->GetComponentTransform().TransformPosition(Glow->GetStaticMesh()->GetBounds().Origin)
+            .Equals(FVector(300,0,100), .01f));
+    const auto FirstData = Core->GetCustomPrimitiveData().Data;
+    if (!TestTrue(TEXT("The activation publishes all visual inputs"), FirstData.Num() >= 11)) return false;
+    TestEqual(TEXT("Visual lifetime matches the requested activation"), FirstData[9], .05f);
+    const auto* Axis = FindFProperty<FBoolProperty>(ARogueLaserBeam::StaticClass(), TEXT("bGlowMeshUsesZAxis"));
+    if (!TestNotNull(TEXT("Cylinder axis is author-configurable"), Axis)) return false;
+    if (Axis->GetPropertyValue_InContainer(Beam))
+        TestTrue(TEXT("Cylinder stretches on its native Z axis"), Glow->GetRelativeScale3D().Z > Glow->GetRelativeScale3D().X);
+    Fixture.Advance(.02f);
+    Beam->ActivatePooledBeam(Fixture.Player, FVector(0,0,100), FVector(300,0,100), true, false, .20f);
+    const auto ReusedData = Core->GetCustomPrimitiveData().Data;
+    TestTrue(TEXT("Reuse resets the shader's birth time"), ReusedData[8] > FirstData[8]);
+    TestEqual(TEXT("Reuse replaces the shader lifetime"), ReusedData[9], .20f);
+    TestTrue(TEXT("Reused beam receives a different visual-only phase"), ReusedData[10] != FirstData[10]);
+    Fixture.Advance(.06f);
+    TestFalse(TEXT("Old timer cannot stop the new visual activation"), Beam->IsAvailableInPool());
+    Beam->DeactivateToPool();
+    TestEqual(TEXT("Return clears the active shader lifetime"), Core->GetCustomPrimitiveData().Data[9], 0.f);
+    TestTrue(TEXT("Returned actor is hidden"), Beam->IsHidden());
+    Beam->ActivatePooledBeam(Fixture.Player, FVector(NAN,0,0), FVector(300,0,0), true, false, .20f);
+    TestTrue(TEXT("Invalid endpoints cannot leave visible orphan beams"), Beam->IsAvailableInPool());
+    Beam->ActivatePooledBeam(Fixture.Player, FVector::ZeroVector, FVector(300,0,0), true, false, NAN);
+    TestTrue(TEXT("Invalid lifetime is converted to a finite visual lifetime"), FMath::IsFinite(Core->GetCustomPrimitiveData().Data[9]));
+    Fixture.Advance(.15f);
+    TestTrue(TEXT("Invalid lifetime cannot leak a visible pooled actor"), Beam->IsAvailableInPool());
+    return true;
 }
 
 #endif

@@ -21,6 +21,9 @@ public:
 	/** 从候选池随机抽取不重复类型，写入 OutOptions；不修改本对象配置，但会推进随机数状态。 */
 	void BuildRandomUpgradeOptions(const ARogueCharacter* Character, int32 DesiredCount, TArray<FRogueUpgradeOption>& OutOptions) const;
 
+    /** 点击已生成的选项时重新核对当前许可、次数上限及实际效果；不推进随机数。 */
+    bool IsUpgradeAvailable(const ARogueCharacter* Character, ERogueUpgradeType Type) const;
+
 	void SetDefinitionAsset(URogueUpgradeDefinitionAsset* InDefinitionAsset) { DefinitionAsset = InDefinitionAsset; }
 	void SetRuleAsset(URogueUpgradeRuleAsset* InRuleAsset) { RuleAsset = InRuleAsset; }
 

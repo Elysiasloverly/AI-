@@ -6,6 +6,7 @@
 #include "Engine/DataTable.h"
 #include "Shared/RogueTypes.h"
 #include "Audio/RogueAttackAudioSettings.h"
+#include "Combat/Visuals/RogueCombatAccentEffect.h"
 #include "RogueWeaponBase.generated.h"
 
 class ARogueCharacter;
@@ -16,6 +17,7 @@ class ARogueMortarProjectile;
 class ARogueRocketProjectile;
 class ARogueLaserBeam;
 class ARogueOrbitingBlade;
+class ARogueReturningTalisman;
 class URogueAttributeSet;
 class URogueWeaponAbility;
 struct FRogueCombatPoolPrewarmClasses;
@@ -34,12 +36,12 @@ struct AI_API FRogueWeaponTableRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "通用", meta = (DisplayName = "武器名称"))
 	FString DisplayName;
 
-	/** 武器逻辑类，优先于角色蓝图里的 WeaponClasses 数组 */
+	/** 武器逻辑类；留空时按数量升级类型匹配角色 WeaponClasses，不依赖行顺序 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "通用", meta = (DisplayName = "武器类"))
 	TSubclassOf<ARogueWeaponBase> WeaponClass;
 
-	/** 初始数量（0 = 未解锁，1 = 开局拥有） */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "通用", meta = (DisplayName = "初始数量"))
+	/** 编辑器“按武器表初始数量开局”开启时的基础数量；0 为开局不持有，不代表永久未解锁。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "通用", meta = (DisplayName = "初始数量", ClampMin="0", UIMin="0", ToolTip="在 DA_PlayerBalance → 调试 → 开局武器中开启“按武器表初始数量开局”后生效。0 为不持有，正数为开局数量；仍受数量上限限制。正常开局只带一张寒弹，修改后重新开始一局。"))
 	int32 Count = 0;
 
 	/** 基础伤害 */
@@ -57,6 +59,9 @@ struct AI_API FRogueWeaponTableRow : public FTableRowBase
 	// 仅用于一次性迁移旧数据；运行时统一读取 DA_AudioConfig，不再显示于武器配置。
 	UPROPERTY(meta=(DeprecatedProperty, DeprecationMessage="请在 DA_AudioConfig 配置武器音效"))
 	FRogueAttackAudioSettings AttackAudio;
+
+    UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="开火特效",meta=(DisplayName="开火闪光与碎光"))
+    FRogueCombatAccentSettings FireAccent;
 
 	/** 对应的"数量升级"枚举类型 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "升级", meta = (DisplayName = "数量升级类型"))
@@ -90,10 +95,10 @@ struct AI_API FRogueWeaponTableRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "上限", meta = (DisplayName = "折射上限(-1=不限)"))
 	int32 MaxRefractionCount = -1;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "御札连发", meta = (DisplayName = "连发间隔(秒)", ClampMin = "0.02"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "冰符·寒弹连发", meta = (DisplayName = "连发间隔(秒)", ClampMin = "0.02"))
 	float ProjectileBurstInterval = 0.12f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "御札连发", meta = (DisplayName = "连发次数上限(含首发，-1=不限)"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "冰符·寒弹连发", meta = (DisplayName = "连发次数上限(含首发，-1=不限)"))
 	int32 MaxProjectileBurstCount = -1;
 
 	// ---- 弹道随机化（弹体 & 火箭通用） ----
@@ -184,6 +189,10 @@ struct AI_API FRogueWeaponTableRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "镰刀", meta = (DisplayName = "旋转速度"))
 	float RotationSpeed = 130.0f;
 
+	/** 环绕半径、转速、飞行速度、网格缩放与拖尾在此弹体蓝图中配置。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="灵符·归心", meta=(DisplayName="归心符弹体蓝图"))
+	TSubclassOf<ARogueReturningTalisman> TalismanClass;
+
 	// ---- 火箭武器专属 ----
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "火箭", meta = (DisplayName = "火箭类"))
@@ -250,7 +259,7 @@ public:
 	void InitializeWeapon(ARogueCharacter* InOwnerCharacter, const FRogueWeaponTableRow& InConfig);
 
 	/** 由 Character 每帧调用 —— **只给"没有某一发可广播"的持续型表现武器用**
-	 *  （目前只有环绕刀片；见 NeedsCosmeticTick）。
+	 *  （环绕刀片与归心符；见 NeedsCosmeticTick）。
 	 *  事件型武器的开火已经全部搬进 GameplayAbility（见下面 Ability 一节），
 	 *  它们的逐帧节拍由 URogueAbilityTask_WeaponFireLoop 驱动。 */
 	virtual void WeaponTick(float DeltaSeconds) PURE_VIRTUAL(ARogueWeaponBase::WeaponTick, );
@@ -301,6 +310,8 @@ public:
 
 	/** 仅本地播放。事件型武器由服务器确认的开火批次触发；环绕刀片按本地转圈触发。 */
 	void PlayAttackAudio(const FVector& Location);
+    /** 由发射确认事件驱动；独立于音量和音效是否已配置。 */
+    void PlayFireAccent(const FRogueWeaponCosmeticFire& Fire);
 
 	/**
 	 * 客户端：把这一发**纯表现**地画出来，不结算任何伤害。
@@ -410,6 +421,7 @@ protected:
 
 private:
 	FRogueAttackAudioState AttackAudioState;
+    double LastFireAccentTime=-1.e30;
 	UPROPERTY()
 	TObjectPtr<ARogueCharacter> OwnerCharacter;
 };

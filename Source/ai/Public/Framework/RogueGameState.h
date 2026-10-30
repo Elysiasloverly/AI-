@@ -5,6 +5,7 @@
 #include "Combat/Visuals/RogueImpactEffect.h"
 #include "Framework/RogueBattleStage.h"
 #include "Framework/RogueBossHealthView.h"
+#include "Framework/RogueRunResult.h"
 #include "RogueGameState.generated.h"
 
 /**
@@ -32,13 +33,18 @@ public:
 	float GetRunTimeSeconds() const { return RunTimeSeconds; }
 
 	UFUNCTION(BlueprintPure, Category = "Rogue|Run")
-	bool IsGameOver() const { return bGameOver; }
+	bool IsGameOver() const { return RunResult.Outcome != ERogueRunOutcome::InProgress; }
+
+    UFUNCTION(BlueprintPure, Category="Rogue|Run")
+    bool IsVictory() const { return RunResult.Outcome == ERogueRunOutcome::Victory; }
+    UFUNCTION(BlueprintPure, Category="Rogue|Run")
+    const FRogueRunResult& GetRunResult() const { return RunResult; }
 
 	UFUNCTION(BlueprintPure, Category = "Rogue|Run")
 	bool IsBossAlive() const { return bBossAlive; }
 
 	/** 服务端集中写入当前整局字段；这些独立 UPROPERTY 的客户端到达不是原子事务。 */
-	void SetRunStateSnapshot(int32 InCurrentWave, int32 InEnemiesDefeated, float InRunTimeSeconds, bool bInGameOver, bool bInBossAlive);
+	void SetRunStateSnapshot(int32 InCurrentWave, int32 InEnemiesDefeated, float InRunTimeSeconds, bool bInGameOver, bool bInBossAlive, bool bInVictory = false);
 
 	// 表现入口：通过来源 ASC 分发 GameplayCue；仅承载外观，不参与伤害与生命周期判定。
 
@@ -63,6 +69,6 @@ private:
 	UPROPERTY(Replicated) int32 CurrentWave = 0;
 	UPROPERTY(Replicated) int32 EnemiesDefeated = 0;
 	UPROPERTY(Replicated) float RunTimeSeconds = 0.0f;
-	UPROPERTY(Replicated) bool bGameOver = false;
+	UPROPERTY(Replicated) FRogueRunResult RunResult;
 	UPROPERTY(Replicated) bool bBossAlive = false;
 };

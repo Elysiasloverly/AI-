@@ -5,7 +5,7 @@
         -run=pythonscript -script="Tools/create_enemy_projectile_bp.py" ^
         -unattended -nopause -nullrhi -nosplash
 
-产物：/Game/BP/Enemy/Projectiles/BP_EnemyProjectile
+产物：/Game/BP/Enemy/Common/BP_EnemyProjectile
 父类：ARogueEnemyProjectile
 
 说明：
@@ -15,7 +15,7 @@
 """
 import unreal
 
-DEST = "/Game/BP/Enemy/Projectiles"
+DEST = "/Game/BP/Enemy/Common"
 NAME = "BP_EnemyProjectile"
 
 

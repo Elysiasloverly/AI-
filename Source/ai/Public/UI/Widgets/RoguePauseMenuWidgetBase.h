@@ -26,6 +26,8 @@ public:
 	void RequestQuitGame();
 
 protected:
+	virtual void NativeConstruct() override;
+
 	UFUNCTION(BlueprintImplementableEvent, Category = "Rogue|Pause")
 	void OnPauseViewUpdated(const FRoguePauseMenuViewData& InViewData);
 

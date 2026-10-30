@@ -14,10 +14,15 @@ public:
     UFUNCTION(BlueprintPure, Category="昼夜提示") int32 GetSecondsRemaining() const { return SecondsRemaining; }
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="昼夜提示", meta=(DisplayName="倒计时格式", ToolTip="{Seconds} 为剩余秒数。"))
     FText CountdownFormat = NSLOCTEXT("RogueStage", "Countdown", "距离黑夜降临：{Seconds} 秒");
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="昼夜提示", meta=(DisplayName="切回白天倒计时格式"))
+    FText DayCountdownFormat = NSLOCTEXT("RogueStage", "DayCountdown", "距离白昼归来：{Seconds} 秒");
 protected:
+    UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> TitleText;
+    UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> DescriptionText;
     UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> CountdownText;
     UFUNCTION(BlueprintImplementableEvent, Category="昼夜提示") void OnCountdownUpdated(int32 Seconds, bool bVisible);
 private:
     int32 SecondsRemaining = -1;
     bool bCountdownVisible = false;
+    bool bLastNextStageIsNight = true;
 };

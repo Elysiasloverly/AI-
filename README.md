@@ -112,7 +112,7 @@
 ### 敌人
 
 - **统一运行时类 + 原型模式**：所有敌人共用 `ARogueEnemy`，差异由原型组合 + 数据表配置驱动，无蓝图子类爆炸
-- **13 种敌人**（妖精 / 夜雀 / 鬼 / 人魂 / 鸦天狗 / 妖狐 / 山蜘蛛 / 唐伞 / 地藏 / 月兔 / 毒茸 / 血蝠 / 亡灵）
+- **18种敌人**：13种地面攻击者、月蝶/风镰/星灯3种低空攻击者，以及青叶灵/祈愿妖精2种治疗者；Boss视觉提示、治疗效果与固定敌人法阵伤害见配置文档
 - **6 种移动模型** + **3 种射击模式**（单发 / 散射 / 整圈弹幕）；地藏使用整圈弹幕
 
 ### 成长
@@ -172,6 +172,11 @@ UnrealEditor.exe Baka.uproject <map> -game -nullrhi -log \
 | **受伤泛红与镜头震动怎么调** | [Damage-Feedback.md](Docs/Damage-Feedback.md) — 掉血检测、`FlashRoot` 结构、震动参数与替换方式 |
 | **开始菜单怎么做 / 怎么改样式** | [Main-Menu.md](Docs/Main-Menu.md) — 独立主菜单 map、`WBP_MainMenu` / `WBP_Tutorial`、按钮行为与打包注意 |
 | **敌方弹幕怎么换外观** | [Enemy-Projectile-Blueprints.md](Docs/Enemy-Projectile-Blueprints.md) — `BP_EnemyProjectile`、每敌人覆盖与池化 |
+| **Boss / 飞行提示 / 绿圈与治疗连线怎么改** | [Enemy-Roles-And-Visibility.md](Docs/Enemy-Roles-And-Visibility.md) — 独立效果BP、治疗表参数、固定敌人法阵伤害 |
+| **敌人尺寸与治疗/法阵数值怎么调** | [Enemy-Balance-And-Size-2026-10-29.md](Docs/Enemy-Balance-And-Size-2026-10-29.md) — BP模型高度、数值前后对照与曲线样本 |
+| **敌人角色模型与替换对应** | [Enemy-Character-Assets.md](Docs/Enemy-Character-Assets.md) — 10个新角色、9处重复外观替换及BP修改位置 |
+| **治疗怪走位、治疗量、弹体寿命** | [Healer-Movement-And-Projectile-Lifetime.md](Docs/Healer-Movement-And-Projectile-Lifetime.md) — 寻友、退避、BP参数和统一30秒过期 |
+| **治疗敌人停滞、DT范围与绿色回血数字** | [Enemy-Healing-Fix-And-Numbers.md](Docs/Enemy-Healing-Fix-And-Numbers.md) — 保留750cm、取消治疗量封顶与联机数字 |
 | **经验球怎么换外观** | [Experience-Pickup-Blueprint.md](Docs/Experience-Pickup-Blueprint.md) — `BP_ExperiencePickup`、BP 钩子与尺寸规则 |
 | **全部系统架构图** | [CurrentAllSystemsArchitecture.md](Docs/CurrentAllSystemsArchitecture.md) |
 | **历史：自研属性系统** | [Attribute-System-Migration.md](Docs/Attribute-System-Migration.md) — ⚠️ 描述的是已删除的系统，保留用于解释"为何转向 GAS" |
@@ -190,3 +195,9 @@ https://www.bilibili.com/video/BV1mbQGBkE1v
 - [游戏教程](Docs/Player-Guide.md)：操作、冰砖、个人卡池、濒死复活与多人流程。
 - [联机大厅](Docs/Multiplayer-Lobby.md)、[升级树](Docs/UpgradeTreeGuide.md)。
 - [可靠性与维护说明](Docs/Reliability-And-Optimization.md)：存档原子提交 / 备份、待保存奖励、初始化期限、性能测量和素材归档。
+
+## 昼夜流程与玩家教程（2026-10-30）
+
+- [白昼、黑夜与百波通关](Docs/Battle-Day-Night.md)：35 / 50 / 85 三次切图，进入第 100 波通关。
+- [神社调查手帖](Docs/Player-Guide.md)：与 WBP 教程同步的六章玩家指南。
+- [教程维护说明](Docs/Tutorial-Maintenance.md)：事实核对、WBP 结构与更新方式。

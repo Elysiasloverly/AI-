@@ -6,8 +6,8 @@
 | --- | --- |
 | `Framework` | 战斗 GameMode、HUD |
 | `Player` | 玩家 Character 蓝图 |
-| `Enemy` | 敌人本体；`AI` 放敌人控制器，`Projectiles` 放敌方弹体 |
-| `Projectiles` | 玩家御札、银刃、八卦炉、极限火花、御柱和阴阳玉弹体 |
+| `Enemy/<敌人类型>` | 敌人本体、自己的弹体与专属效果放在同一文件夹；`AI` 放控制器，`Common` 放基类与通用标记 |
+| `Projectiles` | 玩家冰符·寒弹、银刃、焰符·火丸、星符·流光、焰符·灼光和冰符·霜玉弹体 |
 | `World` | 可拖入关卡的商店终端、正式经验球 |
 | `MainMenu` | 主菜单场景中的角色展示 Actor |
 | `Development/Experiments` | `NewBlueprint`、`TestPickup` 等实验内容；继续保留供查看 |
@@ -22,3 +22,5 @@
 - 玩家弹体外观：`/Game/BP/Projectiles`。
 
 根目录只放分类文件夹。新增蓝图按用途放入已有分类，实验蓝图放 `Development/Experiments`；正式接入后再移入功能目录。资产移动应使用 UE 内容浏览器或 AssetTools，并更新配置与脚本中的字符串路径。
+
+敌人逐类型目录、中文名及迁移说明见 [Enemy-Blueprint-Folders.md](Enemy-Blueprint-Folders.md)。

@@ -106,6 +106,7 @@ void ARogueWeapon_Rocket::FireRocketVolley(const TArray<ARogueEnemy*>& Enemies)
 			// （见 ARogueRocketProjectile::Explode），不传的话队友看到的爆炸会偏小。
 			FRogueWeaponCosmeticFire Fire;
 			Fire.bPlayAttackSound = !bAudioTagged;
+            Fire.bPlayFireAccent = !bAudioTagged;
 			bAudioTagged = true;
 			Fire.Start = SpawnLocation;
 			Fire.Direction = Direction;

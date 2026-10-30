@@ -1,5 +1,6 @@
 #if WITH_DEV_AUTOMATION_TESTS
 #include "AbilitySystem/RogueAbilitySystemLibrary.h"
+#include "Enemies/Data/RogueEnemyAssetPaths.h"
 #include "AbilitySystem/RogueAbilitySystemComponent.h"
 #include "AbilitySystem/RogueAttributeSet.h"
 #include "AbilitySystem/RogueGameplayTags.h"
@@ -167,14 +168,14 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueEnemyBaseFlashInheritanceTest,
 	"Rogue.Gameplay.EnemyHitFlash.ActualBlueprintsInheritBaseMaterial", RogueEnemyHitFlashTests::Flags)
 bool FRogueEnemyBaseFlashInheritanceTest::RunTest(const FString& Parameters)
 {
-	UClass* Base=LoadClass<ARogueEnemy>(nullptr,TEXT("/Game/BP/Enemy/BP_EnemyBase.BP_EnemyBase_C"));
+	UClass* Base=LoadClass<ARogueEnemy>(nullptr,TEXT("/Game/BP/Enemy/Common/BP_EnemyBase.BP_EnemyBase_C"));
 	if (!TestNotNull(TEXT("Base BP loads"),Base)) { return false; }
 	const auto* Material=FRogueEnemyHitFlashTestAccess::Material(Base->GetDefaultObject<ARogueEnemy>());
 	if (!TestNotNull(TEXT("Base BP owns configured hit material"),Material)) { return false; }
 	const TCHAR* Names[]={TEXT("Rifleman"),TEXT("Assault"),TEXT("Juggernaut"),TEXT("Orbiter"),TEXT("Marksman"),TEXT("Scatterer"),TEXT("Skirmisher"),TEXT("Cannoneer"),TEXT("ShockPillar"),TEXT("Sniper"),TEXT("Shotgunner"),TEXT("Repeater"),TEXT("Ringcaster")};
 	for (const TCHAR* Name:Names)
 	{
-		UClass* Class=LoadClass<ARogueEnemy>(nullptr,*FString::Printf(TEXT("/Game/BP/Enemy/BP_Enemy%s.BP_Enemy%s_C"),Name,Name));
+		UClass* Class=LoadClass<ARogueEnemy>(nullptr,*RogueEnemyAssetPaths::EnemyClassPath(Name));
 		if (!TestNotNull(Name,Class)) { return false; }
 		TestTrue(*FString::Printf(TEXT("%s inherits BP_EnemyBase"),Name),Class->GetSuperClass()==Base);
 		TestTrue(*FString::Printf(TEXT("%s inherits shared hit material"),Name),FRogueEnemyHitFlashTestAccess::Material(Class->GetDefaultObject<ARogueEnemy>())==Material);

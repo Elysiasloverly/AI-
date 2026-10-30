@@ -1,4 +1,5 @@
 #include "UI/Widgets/RogueShopOfferCardWidgetBase.h"
+#include "Audio/RogueMusicSubsystem.h"
 #include "UI/RogueHUD.h"
 #include "Components/Button.h"
 
@@ -7,6 +8,7 @@
 void URogueShopOfferCardWidgetBase::NativeConstruct()
 {
 	Super::NativeConstruct();
+	URogueMusicSubsystem::BindWidgetButtonSounds(this);
 
 	if (Button_Offer != nullptr)
 	{
@@ -23,6 +25,9 @@ void URogueShopOfferCardWidgetBase::InitializeOfferCard(ARogueHUD* InOwningHUD, 
 
 void URogueShopOfferCardWidgetBase::UpdateOfferView(const FRogueShopOfferViewData& InViewData)
 {
+	QuoteId = InViewData.QuoteId;
+	QuotedCost = InViewData.QuotedCost;
+	if (Button_Offer) Button_Offer->SetIsEnabled(QuoteId.IsValid() && InViewData.bAffordable && !InViewData.bPurchased);
 	ApplyManagedOfferView(InViewData);
 	OnOfferViewUpdated(InViewData);
 }
@@ -36,7 +41,7 @@ void URogueShopOfferCardWidgetBase::RequestPurchaseOffer()
 {
 	if (ARogueHUD* RogueHUD = OwningRogueHUD.Get())
 	{
-		RogueHUD->RequestSelectOfferFromShop(OfferIndex);
+		RogueHUD->RequestSelectOfferFromShop(OfferIndex, QuoteId, QuotedCost);
 	}
 }
 

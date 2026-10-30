@@ -16,7 +16,7 @@ flowchart TD
     GM --> Subsystems["WorldSubsystem 系统\n刷怪 / 追踪 / 对象池 / 场景优化"]
     GM --> UI["UI 系统\nHUD / WBP"]
 
-    Player --> Combat["Combat 武器系统\n御札 / 八卦炉 / 阴阳玉 / 极限火花 / 御柱 / 银刃"]
+    Player --> Combat["Combat 武器系统\n冰符·寒弹 / 焰符·火丸 / 冰符·霜玉 / 星符·流光 / 焰符·灼光 / 银刃"]
     Player --> PlayerBalance["URoguePlayerBalanceAsset\n玩家基础数值"]
     Player --> Visuals["URogueCharacterVisualComponent\n玩家视觉表现"]
 
@@ -101,11 +101,11 @@ flowchart TD
     Character --> WeaponInit["InitializeWeapons\n生成武器 Actor"]
     WeaponInit --> WeaponBase["ARogueWeaponBase"]
 
-    WeaponBase --> ProjectileWeapon["ARogueWeapon_Projectile\n御札"]
-    WeaponBase --> RocketWeapon["ARogueWeapon_Rocket\n八卦炉"]
-    WeaponBase --> MortarWeapon["ARogueWeapon_Mortar\n阴阳玉"]
-    WeaponBase --> LaserWeapon["ARogueWeapon_Laser\n极限火花"]
-    WeaponBase --> HellTower["ARogueWeapon_HellTower\n御柱"]
+    WeaponBase --> ProjectileWeapon["ARogueWeapon_Projectile\n冰符·寒弹"]
+    WeaponBase --> RocketWeapon["ARogueWeapon_Rocket\n焰符·火丸"]
+    WeaponBase --> MortarWeapon["ARogueWeapon_Mortar\n冰符·霜玉"]
+    WeaponBase --> LaserWeapon["ARogueWeapon_Laser\n星符·流光"]
+    WeaponBase --> HellTower["ARogueWeapon_HellTower\n焰符·灼光"]
     WeaponBase --> Scythe["ARogueWeapon_Scythe\n银刃"]
 
     WeaponBase --> Targeting["索敌辅助\nFindNearest / CollectEnemies"]
@@ -277,6 +277,6 @@ flowchart LR
 - `ARogueGameMode` 现在主要负责总流程协调，但它仍然是运行时入口，所有“开局初始化、暂停状态、Boss奖励、商店打开关闭”都从这里过。
 - `FRogueRewardOffer` 已经作为统一奖励报价结构接入商店，但目前真正落地的奖励类型仍是升级卡，未来道具/遗物可以接在这里。
 - 历史上的 `RogueCombatAttribute` 自研数值系统已被 GAS 属性集取代（过程见 [Attribute-System-Migration.md](Attribute-System-Migration.md)）；本文保留它作为当时的边界说明，不代表当前实现。
-- 武器配置的唯一真相源是 **`DT_WeaponConfig`（行结构 `FRogueWeaponTableRow`）**：`ARogueCharacter::InitializeWeapons()` 遍历该表逐行 `InitializeWeapon()`，行里的 `WeaponClass` 为空时按**行顺序**回退到 `ARogueCharacter::WeaponClasses[Index]`。
+- 武器配置的唯一真相源是 **`DT_WeaponConfig`（行结构 `FRogueWeaponTableRow`）**：`ARogueCharacter::InitializeWeapons()` 遍历该表逐行 `InitializeWeapon()`，行里的 `WeaponClass` 显式指定对应类，重排行不会改变绑定。历史空类行按稳定行 ID / 数量升级类型匹配 `WeaponClasses`，不再按行下标匹配。
   - 旧的 `Source/ai/Public/Player/RogueWeaponConfig.h`（`FRogueProjectileWeaponConfig` 等 5 个结构体）**已删除**——删除前做过全量取证：全源码 0 引用、752 个资产 0 引用、257MB 的 `ai-Windows.ucas` 0 引用、无字符串式反射引用；临时改名后完整重建 exit 0。若将来需要那套"按武器族分结构"的设计，请从 git 历史取回。
 - UI 当前是混合结构：战斗信息仍由 C++ HUD 绘制，商店/升级/菜单/死亡界面走 WBP。

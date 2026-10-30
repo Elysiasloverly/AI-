@@ -34,6 +34,18 @@ struct AI_API FRogueMusicTrack
     bool bLoop = true;
 };
 
+/** 界面交互统一配置；声音留空时保持安静，按钮功能仍正常。 */
+USTRUCT(BlueprintType)
+struct AI_API FRogueButtonAudioSettings
+{
+    GENERATED_BODY()
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(DisplayName="启用按钮音效")) bool bEnabled = true;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(DisplayName="按钮按下音效", ToolTip="按钮按下时播放一次；支持鼠标、键盘和手柄。留空时静音。")) TObjectPtr<USoundBase> ClickSound;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(DisplayName="按钮悬停音效", ToolTip="每次移入启用按钮时播放；停留不重复，移出再移入会重新播放。快速切换按钮不会被时间限流跳过。")) TObjectPtr<USoundBase> HoverSound;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(DisplayName="按下音量", ClampMin="0", ClampMax="2")) float ClickVolume = .65f;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(DisplayName="悬停音量", ClampMin="0", ClampMax="2")) float HoverVolume = .35f;
+};
+
 USTRUCT(BlueprintType)
 struct AI_API FRogueWeaponAudioEntry
 {
@@ -58,7 +70,7 @@ class AI_API URogueAudioConfig : public UDataAsset
 {
     GENERATED_BODY()
 public:
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="曲目", meta=(DisplayName="主菜单与房间")) FRogueMusicTrack Menu;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="曲目", meta=(DisplayName="主菜单与房间背景音乐", ToolTip="主菜单、联机房间及菜单内的设置和升级树共享此曲目；可填 SoundWave、SoundCue 或 MetaSound Source。留空时安静，使用独立的背景音乐音量。")) FRogueMusicTrack Menu;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="曲目", meta=(DisplayName="白天战斗")) FRogueMusicTrack Day;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="曲目", meta=(DisplayName="黑夜战斗")) FRogueMusicTrack Night;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="曲目", meta=(DisplayName="Boss 战斗")) FRogueMusicTrack Boss;
@@ -74,6 +86,7 @@ public:
     TArray<FRogueWeaponAudioEntry> Weapons;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="敌人音效", meta=(DisplayName="各敌人攻击音效", TitleProperty="EnemyName"))
     TArray<FRogueEnemyAudioEntry> Enemies;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="界面音效", meta=(DisplayName="按钮交互")) FRogueButtonAudioSettings Buttons;
     const FRogueAttackAudioSettings* FindEnemyAudio(const UClass* Class) const;
     const FRogueAttackAudioSettings* FindWeaponAudio(const UClass* Class) const;
     const FRogueMusicTrack* FindTrack(ERogueMusicScene Scene) const;

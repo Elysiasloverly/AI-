@@ -11,12 +11,12 @@
 """
 import unreal
 
-DEST = "/Game/BP/Enemy/Projectiles"
+DEST = "/Game/BP/Enemy"
 VARIANTS = [
     "BP_EnemyProjectile_Boss",
-    "BP_EnemyProjectile_Shooter",
-    "BP_EnemyProjectile_Artillery",
-    "BP_EnemyProjectile_Spitter",
+    "BP_EnemyProjectile_Marksman",
+    "BP_EnemyProjectile_Cannoneer",
+    "BP_EnemyProjectile_Scatterer",
     "BP_EnemyProjectile_ShockPillar",
 ]
 
@@ -27,12 +27,17 @@ def log(message):
 
 def main():
     for name in VARIANTS:
-        path = "{}/{}".format(DEST, name)
+        kind = name.removeprefix("BP_EnemyProjectile_")
+        folder = "Common" if kind == "Boss" else kind
+        path = "{}/{}/{}".format(DEST, folder, name)
         bp = unreal.EditorAssetLibrary.load_asset(path)
         if bp is None:
             log("missing: {}".format(path))
             continue
 
+        if unreal.RogueProjectileVisualBuilder.get_parent_class_path(bp) == "/Script/ai.RogueEnemyProjectile":
+            log("already independent: {}".format(path))
+            continue
         reparented = unreal.BlueprintEditorLibrary.reparent_blueprint(bp, unreal.RogueEnemyProjectile)
         log("{} reparent -> {}".format(name, reparented))
 

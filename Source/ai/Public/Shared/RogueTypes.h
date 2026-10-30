@@ -15,22 +15,25 @@ enum class ERogueUpgradeType : uint8
 	Recovery          UMETA(DisplayName = "生命恢复"),
 	AttackRange       UMETA(DisplayName = "攻击范围"),
 	ProjectileSpeed   UMETA(DisplayName = "弹体速度"),
-	ProjectileCount   UMETA(DisplayName = "御札数量"),
+	ProjectileCount   UMETA(DisplayName = "冰符·寒弹数量"),
 	Armor             UMETA(DisplayName = "伤害减免"),
 	ArmorCapacity     UMETA(DisplayName = "护甲上限"),
 	ExperienceGain    UMETA(DisplayName = "经验获取"),
 	ScytheCount       UMETA(DisplayName = "银刃数量"),
-	RocketCount       UMETA(DisplayName = "八卦炉数量"),
-	LaserCount        UMETA(DisplayName = "极限火花数量"),
-	HellTowerCount    UMETA(DisplayName = "御柱数量"),
+	RocketCount       UMETA(DisplayName = "焰符·火丸数量"),
+	LaserCount        UMETA(DisplayName = "星符·流光数量"),
+	HellTowerCount    UMETA(DisplayName = "焰符·灼光数量"),
 	LaserRefraction   UMETA(DisplayName = "星尘折射"),
-	MortarCount       UMETA(DisplayName = "阴阳玉数量"),
-	MortarBlastRadius UMETA(DisplayName = "阴阳玉爆炸范围"),
+	MortarCount       UMETA(DisplayName = "冰符·霜玉数量"),
+	MortarBlastRadius UMETA(DisplayName = "霜玉扩散"),
 	ScytheSize        UMETA(DisplayName = "银刃巨化"),
 	ScytheLifesteal   UMETA(DisplayName = "红雾吸血"),
-	ProjectileBurst UMETA(DisplayName = "灵符连诵"),
-	RocketBlastRadius UMETA(DisplayName = "炉心扩散"),
-	HellTowerDamageRamp UMETA(DisplayName = "神威增幅")
+	ProjectileBurst UMETA(DisplayName = "冰符连诵"),
+	RocketBlastRadius UMETA(DisplayName = "火丸扩散"),
+	HellTowerDamageRamp UMETA(DisplayName = "焰心递燃"),
+	TalismanCount UMETA(DisplayName = "灵符·归心数量"),
+	TalismanPierce UMETA(DisplayName = "灵符贯阵"),
+	TalismanRepeat UMETA(DisplayName = "灵符重奏")
 };
 
 UENUM(BlueprintType)
@@ -48,12 +51,16 @@ enum class ERogueEnemyType : uint8
 	Sniper      UMETA(DisplayName = "月兔"),
 	Shotgunner  UMETA(DisplayName = "毒茸"),
 	Repeater    UMETA(DisplayName = "血蝠"),
-	Ringcaster  UMETA(DisplayName = "亡灵")
+	Ringcaster  UMETA(DisplayName = "亡灵"),
+    SkyMoth UMETA(DisplayName = "月蝶"),
+    WindReaver UMETA(DisplayName = "风镰"),
+    StarLantern UMETA(DisplayName = "星灯"),
+    AuraHealer UMETA(DisplayName = "青叶灵（范围治疗）"),
+    LinkHealer UMETA(DisplayName = "祈愿妖精（单体治疗）")
 };
 
 struct FRogueSpawnCadence
 {
-	int32 EffectiveMaxAliveEnemies = 0;
 	int32 SpawnBatchSize = 1;
 	float NextSpawnDelay = 0.0f;
 };
@@ -82,7 +89,7 @@ struct FRogueEnemyProfile
 	bool bIsBoss = false;
 };
 
-/** 武器使用的 16 项角色侧加成快照；服务端从 AttributeSet 抽取，变化后写入 Character。
+/** 武器使用的角色侧加成快照；服务端从 AttributeSet 抽取，变化后写入 Character。
  *  AttributeSet 本身也复制，此结构是统一武器输入接口，不证明 ASC 无法同步属性。
  *  快照无自定义 NetSerialize，不能假定各成员或它与属性集同帧原子到达。
  */
@@ -110,7 +117,11 @@ struct FRogueWeaponBonusValues
 	UPROPERTY() float RocketBlastRadius = 0.0f;
 	UPROPERTY() float HellTowerDamageRamp = 0.0f;
 
-	/** 对 16 项做近似相等比较；用于跳过角色侧快照赋值，不等同于网络系统逐字段脏检测。 */
+	UPROPERTY() float TalismanCount = 0.0f;
+	UPROPERTY() float TalismanPierce = 0.0f;
+	UPROPERTY() float TalismanRepeat = 0.0f;
+
+	/** 对武器加成做近似相等比较；用于跳过角色侧快照赋值，不等同于网络系统逐字段脏检测。 */
 	bool Equals(const FRogueWeaponBonusValues& Other) const
 	{
 		return FMath::IsNearlyEqual(AttackPower, Other.AttackPower)
@@ -128,14 +139,23 @@ struct FRogueWeaponBonusValues
 			&& FMath::IsNearlyEqual(ScytheSize, Other.ScytheSize)
 			&& FMath::IsNearlyEqual(ProjectileBurst, Other.ProjectileBurst)
 			&& FMath::IsNearlyEqual(RocketBlastRadius, Other.RocketBlastRadius)
-			&& FMath::IsNearlyEqual(HellTowerDamageRamp, Other.HellTowerDamageRamp);
+			&& FMath::IsNearlyEqual(HellTowerDamageRamp, Other.HellTowerDamageRamp)
+			&& FMath::IsNearlyEqual(TalismanCount, Other.TalismanCount)
+			&& FMath::IsNearlyEqual(TalismanPierce, Other.TalismanPierce)
+			&& FMath::IsNearlyEqual(TalismanRepeat, Other.TalismanRepeat);
 	}
 };
+
+class UPackageMap;
 
 USTRUCT()
 struct FRogueUpgradeOption
 {
 	GENERATED_BODY()
+
+	/** 仅待选卡使用：同一轮共享编号，新开/重建一轮必须换号。 */
+	UPROPERTY()
+	FGuid SelectionId;
 
 	UPROPERTY()
 	ERogueUpgradeType Type = ERogueUpgradeType::MaxHealth;
@@ -156,6 +176,21 @@ struct FRogueUpgradeOption
 	/** 该升级允许的最大值；-1 = 使用代码默认。 */
 	UPROPERTY()
 	float MaxMagnitude = -1.0f;
+
+	// 编号与卡牌内容原子复制，防止新编号与旧文字短暂组合成可点击的报价。
+	bool NetSerialize(FArchive& Ar, UPackageMap*, bool& bOutSuccess)
+	{
+		uint8 Value = static_cast<uint8>(Type);
+		Ar << SelectionId << Value << Title << Description << Magnitude << FirstMagnitude << MaxMagnitude;
+		if (Ar.IsLoading()) Type = static_cast<ERogueUpgradeType>(Value);
+		bOutSuccess = !Ar.IsError();
+		return true;
+	}
+};
+
+template<> struct TStructOpsTypeTraits<FRogueUpgradeOption> : TStructOpsTypeTraitsBase2<FRogueUpgradeOption>
+{
+	enum { WithNetSerializer = true };
 };
 
 /** 一次开火的表现载荷，不传伤害值。
@@ -196,6 +231,8 @@ struct FRogueWeaponCosmeticFire
 	/** 本轮齐射仅标记一条：音效由服务器确认后各端播放，折射/同轮其他弹体不叠播。 */
 	UPROPERTY(BlueprintReadWrite)
 	bool bPlayAttackSound = false;
+    /** 同轮仅播一次开火闪光；与音效启用、音量和素材独立。 */
+    UPROPERTY(BlueprintReadWrite) bool bPlayFireAccent=false;
 };
 
 /** 表现批次中的一条武器索引与开火载荷。

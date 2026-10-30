@@ -175,7 +175,7 @@ bool FRogueClassPoolTest::RunTest(const FString& Parameters)
 	FTestWorldWrapper Fixture;
 	if (!Fixture.CreateTestWorld(EWorldType::Game)) { return false; }
 	UWorld* World = Fixture.GetTestWorld();
-	UClass* Blueprint = LoadClass<ARogueEnemy>(nullptr, TEXT("/Game/BP/Enemy/BP_EnemySniper.BP_EnemySniper_C"));
+	UClass* Blueprint = LoadClass<ARogueEnemy>(nullptr, TEXT("/Game/BP/Enemy/Sniper/BP_EnemySniper.BP_EnemySniper_C"));
 	if (!TestNotNull(TEXT("Existing enemy BP class"), Blueprint)) { return false; }
 	FRogueCombatPools Pools;
 	ARogueEnemy* Native = Pools.AcquireEnemy(World, ARogueEnemy::StaticClass(), nullptr, FVector::ZeroVector, FRotator::ZeroRotator);

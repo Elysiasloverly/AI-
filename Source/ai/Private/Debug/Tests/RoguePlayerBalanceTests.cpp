@@ -4,6 +4,15 @@
 #include "AbilitySystem/RogueAttributeSet.h"
 #include "AbilitySystem/RogueGameplayTags.h"
 #include "AbilitySystemComponent.h"
+#include "Engine/DataTable.h"
+#include "Combat/Weapons/RogueWeapon_Projectile.h"
+#include "Combat/Weapons/RogueWeapon_Scythe.h"
+#include "Combat/Weapons/RogueWeapon_Rocket.h"
+#include "Combat/Weapons/RogueWeapon_Laser.h"
+#include "Combat/Weapons/RogueWeapon_HellTower.h"
+#include "Combat/Weapons/RogueWeapon_Mortar.h"
+#include "Combat/Weapons/RogueWeapon_Talisman.h"
+#include "Progression/Upgrades/RogueUpgradeSystem.h"
 #include "Engine/World.h"
 #include "Framework/RogueGameMode.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -20,6 +29,7 @@
 // Assertions read public gameplay APIs and the real authoritative AttributeSet.
 struct FRoguePlayerBalanceTestAccess
 {
+	static void SetTable(ARogueCharacter* Character, UDataTable* Table) { Character->WeaponDataTable=Table; }
 	static void SetAsset(ARogueCharacter* Character, URoguePlayerBalanceAsset* Asset)
 	{
 		Character->PlayerBalanceAsset = Asset;
@@ -35,6 +45,7 @@ namespace RoguePlayerBalanceTests
 		FTestConsoleVariable WeaponSelfTest{TEXT("Rogue.SelfTest.WeaponUpgradeChain")};
 		FTestConsoleVariable EnemyStress{TEXT("Rogue.SelfTest.EnemyStress")};
 		TStrongObjectPtr<URoguePlayerBalanceAsset> Config{NewObject<URoguePlayerBalanceAsset>()};
+		TStrongObjectPtr<UDataTable> WeaponTable{nullptr};
 		FTestWorldWrapper TestWorld;
 		UWorld* World = nullptr;
 		ARoguePlayerController* Controllers[2] = {};
@@ -76,6 +87,7 @@ namespace RoguePlayerBalanceTests
 					Transform, nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
 				if (!Test.TestNotNull(TEXT("The configured Pawn exists"), Pawns[Index])) { return false; }
 				FRoguePlayerBalanceTestAccess::SetAsset(Pawns[Index], Config.Get());
+                if(WeaponTable.IsValid())FRoguePlayerBalanceTestAccess::SetTable(Pawns[Index],WeaponTable.Get());
 				Pawns[Index]->FinishSpawning(Transform);
 				Controllers[Index]->Possess(Pawns[Index]);
 				Pawns[Index]->GetCharacterMovement()->SetComponentTickEnabled(false);
@@ -226,7 +238,13 @@ bool FRoguePlayerConfiguredRevivalTest::RunTest(const FString& Parameters)
 	Config->Progression.StartingMoney = 99;
 	Config->SpawnState.HealthRatio = 0.1f;
 	Config->SpawnState.ArmorRatio = 0.1f;
+#if WITH_EDITORONLY_DATA
+    Config->bEditorUseWeaponTableStartingCounts=true;
+#endif
 	Config->ResetToDefaults();
+#if WITH_EDITORONLY_DATA
+    TestFalse(TEXT("Reset turns off editor starting-count override"),Config->bEditorUseWeaponTableStartingCounts);
+#endif
 	TestEqual(TEXT("Reset includes existing base stats"), Config->BaseStats.MaxHealth, 100.0f);
 	TestEqual(TEXT("Reset includes existing weapon caps"), Config->WeaponBonusCaps.AttackPower, -1.0f);
 	TestEqual(TEXT("Reset includes new initial weapon bonuses"), Config->InitialWeaponBonuses.LaserCount, 0);
@@ -242,5 +260,56 @@ bool FRoguePlayerConfiguredRevivalTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Reset restores normal revival protection"), Config->Revival.InvulnerableSeconds, 1.5f);
 	return true;
 }
+
+#if WITH_EDITOR
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueEditorStartingWeaponCountsTest,
+    "Rogue.Gameplay.PlayerBalance.EditorWeaponTableStartingCountsAndNormalLoadout",RoguePlayerBalanceTests::Flags)
+bool FRogueEditorStartingWeaponCountsTest::RunTest(const FString& Parameters)
+{
+    using namespace RoguePlayerBalanceTests;
+    struct FRow { const TCHAR* Name;UClass* Class;int32 Count; };
+    const FRow Rows[]={
+        {TEXT("Projectile"),ARogueWeapon_Projectile::StaticClass(),0},
+        {TEXT("Scythe"),ARogueWeapon_Scythe::StaticClass(),2},
+        {TEXT("Rocket"),ARogueWeapon_Rocket::StaticClass(),3},
+        {TEXT("Laser"),ARogueWeapon_Laser::StaticClass(),4},
+        {TEXT("HellTower"),ARogueWeapon_HellTower::StaticClass(),5},
+        {TEXT("Mortar"),ARogueWeapon_Mortar::StaticClass(),-3},
+        {TEXT("Talisman"),ARogueWeapon_Talisman::StaticClass(),6}};
+    for(const bool Debug:{false,true})
+    {
+        FFixture F;F.Config->bEditorUseWeaponTableStartingCounts=Debug;
+        F.WeaponTable.Reset(NewObject<UDataTable>());F.WeaponTable->RowStruct=FRogueWeaponTableRow::StaticStruct();
+        for(const auto& Input:Rows)
+        {
+            FRogueWeaponTableRow Row;Row.WeaponClass=Input.Class;Row.Count=Input.Count;
+            Row.CountUpgradeType=Input.Class->GetDefaultObject<ARogueWeaponBase>()->GetCountUpgradeType();
+            if(Input.Class==ARogueWeapon_Laser::StaticClass())Row.MaxCount=3;
+            F.WeaponTable->AddRow(Input.Name,Row);
+        }
+        if(!F.Initialize(*this))return false;
+        auto* P=F.Pawns[0];P->SetActorTickEnabled(false);P->GetAbilitySystemComponent()->CancelAllAbilities();
+        TestEqual(TEXT("Seven table rows create exactly seven weapons"),P->GetWeapons().Num(),7);
+        for(const auto& Input:Rows)
+        {
+            const auto* Entry=P->GetWeapons().FindByPredicate([&](const auto& W){return W && W->GetClass()==Input.Class;});
+            if(!TestNotNull(TEXT("Weapon exists for each class"),Entry))return false;
+            const int32 Base=Debug?FMath::Max(0,Input.Count):(Input.Class==ARogueWeapon_Projectile::StaticClass()?1:0);
+            TestEqual(FString::Printf(TEXT("%s authored base count, debug=%d"),Input.Name,Debug),(*Entry)->GetCount(),Base);
+            const int32 Effective=Input.Class==ARogueWeapon_Laser::StaticClass()?FMath::Min(3,Base):Base;
+            TestEqual(TEXT("Final count still honors MaxCount"),(*Entry)->GetEffectiveCount(),Effective);
+        }
+        TestEqual(TEXT("Debug base counts do not grant GAS quantity bonuses"),P->GetRogueAttributeSet()->GetTalismanCountBonus(),0.f);
+        FRogueUpgradeSystem System;
+        TestFalse(TEXT("Debug weapon ownership does not buy permanent exclusive-card access"),System.IsUpgradeAvailable(P,ERogueUpgradeType::TalismanPierce));
+        FRogueUpgradeOption Upgrade;Upgrade.Type=ERogueUpgradeType::TalismanCount;Upgrade.Magnitude=1;P->ApplyUpgrade(Upgrade);
+        auto* Talisman=P->FindWeapon<ARogueWeapon_Talisman>();const int32 Expected=Debug?7:1;
+        TestEqual(TEXT("GAS quantity card adds to the chosen starting count"),Talisman->GetEffectiveCount(),Expected);
+        F.Controllers[0]->UnPossess();F.Controllers[0]->Possess(P);
+        TestEqual(TEXT("Repossession does not reset or double starting quantities"),Talisman->GetEffectiveCount(),Expected);
+    }
+    return true;
+}
+#endif
 
 #endif

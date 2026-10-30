@@ -145,7 +145,6 @@ void ARogueGameMode::ConfigureRuntimeAssets()
 		const FRogueSpawnBalanceSettings& BalanceSpawn = LoadedGameBalanceAsset->Spawn;
 		SpawnSettings.SpawnRadius = BalanceSpawn.SpawnRadius;
 		SpawnSettings.SpawnInterval = BalanceSpawn.SpawnInterval;
-		SpawnSettings.MaxAliveEnemies = BalanceSpawn.BaseMaxAliveEnemies;
 		SpawnSettings.EnemySpawnMinimumDistance = BalanceSpawn.EnemySpawnMinimumDistance;
 		SpawnSettings.GroundTraceHeight = BalanceSpawn.GroundTraceHeight;
 		SpawnSettings.GroundTraceDepth = BalanceSpawn.GroundTraceDepth;
@@ -360,7 +359,7 @@ void ARogueGameMode::PushRunStateToGameState()
 		RunState.EnemiesDefeated,
 		RunState.RunTimeSeconds,
 		RunState.bGameOver,
-		RunState.bBossAlive);
+		RunState.bBossAlive, RunState.bVictory);
 	RogueGameState->RefreshBossHealthView();
 }
 
@@ -386,6 +385,7 @@ void ARogueGameMode::CollectAlivePlayers(TArray<ARogueCharacter*, TInlineAllocat
 
 void ARogueGameMode::TickRunSystems(float DeltaSeconds)
 {
+    if (RunState.bGameOver || CompleteRunIfVictoryReached()) return;
     // 存活时间独立于波次；清场战斗计时，休整与切图期间不计时。
     if (StageView.Phase != ERogueBattleStage::Countdown && StageView.Phase != ERogueBattleStage::Travelling)
         RunState.RunTimeSeconds += DeltaSeconds;
@@ -394,29 +394,13 @@ void ARogueGameMode::TickRunSystems(float DeltaSeconds)
 	// 生成调度 —— 委托给 SpawnSubsystem
 	if (URogueSpawnSubsystem* SpawnSubsystem = GetWorld()->GetSubsystem<URogueSpawnSubsystem>())
 	{
-        if (StageView.Phase == ERogueBattleStage::Night)
-        {
-            // 黑夜按独立阶段时钟推进；白天耗时、剩余敌人及 Boss 都不延迟下一波。
-            const double Duration = StageSettings.NightWaveDuration;
-            NightWaveElapsedSeconds += FMath::Max(0.f, DeltaSeconds);
-            const double CompletedPeriods = FMath::FloorToDouble(NightWaveElapsedSeconds / Duration);
-            if (CompletedPeriods >= 1)
-            {
-                // 卡帧跨过多个完整周期时补上波数，保留本周期余量，不集中补刷跳过的名额。
-                const int32 Advance = static_cast<int32>(FMath::Min(CompletedPeriods,
-                    static_cast<double>(MAX_int32 - RunState.CurrentWave)));
-                RunState.CurrentWave += Advance;
-                NightWaveElapsedSeconds = FMath::Fmod(NightWaveElapsedSeconds, Duration);
-                RunState.SpawnTimer = 0.f;
-                UE_LOG(LogTemp, Log, TEXT("[RogueWave] Night timer; starting wave %d."), RunState.CurrentWave);
-            }
-        }
-        else if (SpawnSubsystem->IsWaveComplete(RunState))
+        if (SpawnSubsystem->IsWaveComplete(RunState))
         {
             ++RunState.CurrentWave;
             RunState.SpawnTimer = 0.f;
             UE_LOG(LogTemp, Log, TEXT("[RogueWave] Cleared; starting wave %d."), RunState.CurrentWave);
         }
+        if (CompleteRunIfVictoryReached()) return;
 		SpawnSubsystem->TickSpawning(DeltaSeconds, RunState, GetSpawnReferenceCharacter(), LevelSpawnRegion.Get());
 	}
 }

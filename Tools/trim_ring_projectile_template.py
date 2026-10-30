@@ -7,7 +7,7 @@
 """
 import unreal
 
-BLUEPRINT = "/Game/BP/Enemy/Projectiles/BP_EnemyProjectile_ShockPillar"
+BLUEPRINT = "/Game/BP/Enemy/ShockPillar/BP_EnemyProjectile_ShockPillar"
 REMOVE = ["GlowLight", "TrailMesh"]
 
 

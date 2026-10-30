@@ -30,11 +30,15 @@ void URogueUpgradeRuleAsset::ResetToDefaultRules()
 		ERogueUpgradeType::RocketCount,
 		ERogueUpgradeType::LaserCount,
 		ERogueUpgradeType::HellTowerCount,
-		ERogueUpgradeType::MortarCount
+		ERogueUpgradeType::MortarCount,
+		ERogueUpgradeType::TalismanCount
 	};
 
 	WeaponUpgradeRules =
 	{
+		{ ERogueWeaponUpgradeSource::Talisman, ERogueUpgradeType::TalismanCount },
+		{ ERogueWeaponUpgradeSource::Talisman, ERogueUpgradeType::TalismanPierce },
+		{ ERogueWeaponUpgradeSource::Talisman, ERogueUpgradeType::TalismanRepeat },
 		{ ERogueWeaponUpgradeSource::Projectile, ERogueUpgradeType::ProjectileBurst },
 		{ ERogueWeaponUpgradeSource::Rocket, ERogueUpgradeType::RocketBlastRadius },
 		{ ERogueWeaponUpgradeSource::HellTower, ERogueUpgradeType::HellTowerDamageRamp },

@@ -1,4 +1,5 @@
 #include "UI/Widgets/RogueUpgradeCardWidgetBase.h"
+#include "Audio/RogueMusicSubsystem.h"
 #include "UI/RogueHUD.h"
 #include "Components/Button.h"
 
@@ -13,6 +14,7 @@ void URogueUpgradeCardWidgetBase::InitializeUpgradeCard(ARogueHUD* InOwningHUD, 
 void URogueUpgradeCardWidgetBase::NativeConstruct()
 {
 	Super::NativeConstruct();
+	URogueMusicSubsystem::BindWidgetButtonSounds(this);
 
 	if (Button_Select != nullptr)
 	{
@@ -23,15 +25,19 @@ void URogueUpgradeCardWidgetBase::NativeConstruct()
 
 void URogueUpgradeCardWidgetBase::UpdateUpgradeCardView(const FRogueUpgradeCardViewData& InViewData)
 {
+	SelectionId = InViewData.SelectionId;
+	bCanSelect = InViewData.bCanSelect;
+	if (Button_Select) Button_Select->SetIsEnabled(bCanSelect);
 	ApplyManagedUpgradeCardView(InViewData);
 	OnUpgradeCardViewUpdated(InViewData);
 }
 
 void URogueUpgradeCardWidgetBase::RequestSelectUpgrade()
 {
+	if (!bCanSelect || !SelectionId.IsValid()) return;
 	if (ARogueHUD* RogueHUD = OwningRogueHUD.Get())
 	{
-		RogueHUD->RequestSelectUpgradeFromWidget(UpgradeIndex);
+		RogueHUD->RequestSelectUpgradeFromWidget(UpgradeIndex, SelectionId);
 	}
 }
 

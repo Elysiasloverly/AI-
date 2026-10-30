@@ -80,6 +80,7 @@ bool ARogueGameMode::EvaluateTeamWipe()
 			State->ForceNetUpdate();
 		}
 	}
+	RetireCombatActors();
 	PushRunStateToGameState();
 	if (ARogueGameState* State = GetGameState<ARogueGameState>())
 	{
@@ -168,7 +169,7 @@ void ARogueGameMode::PostLogin(APlayerController* NewPlayer)
 	{
 		if (ARogueCharacter* Character = RoguePlayerQuery::GetCharacterOf(NewPlayer))
 		{
-			Character->FinalizeForGameOver();
+			if (IsVictory()) Character->FinalizeForVictory(); else Character->FinalizeForGameOver();
 		}
 	}
 }
@@ -247,7 +248,7 @@ void ARogueGameMode::HandleRestartRequest(ARoguePlayerState* Requester)
 	// 为什么服务端必须挡这一下：客户端那个按钮是蓝图界面上摆着的，
 	// 只靠 UI 约束等于没有约束 —— 一个已阵亡的玩家在队友还在打的时候点它，
 	// 会把整局连人一起重开。
-	if (!RunState.bGameOver)
+	if (!RunState.bGameOver || RunState.bVictory)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[Rogue] 拒绝重开请求：本局尚未结束（请求者=%s）"),
 			Requester != nullptr ? *Requester->GetPlayerName() : TEXT("未知"));

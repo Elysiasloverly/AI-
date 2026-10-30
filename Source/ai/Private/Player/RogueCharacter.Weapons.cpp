@@ -58,7 +58,7 @@ namespace
 			MortarProjectileClass = ARogueMortarProjectile::StaticClass();
 		}
 
-		Row.DisplayName = TEXT("阴阳玉");
+		Row.DisplayName = TEXT("冰符·霜玉");
 		Row.WeaponClass = ARogueWeapon_Mortar::StaticClass();
 		Row.Count = 0;
 		Row.Damage = 12.0f;
@@ -92,7 +92,12 @@ void ARogueCharacter::InitializeWeapons()
 		return;
 	}
 
-	auto SpawnWeaponInstance = [this](TSubclassOf<ARogueWeaponBase> WeaponClass, const FRogueWeaponTableRow& Config)
+    bool bUseTableStartingCounts=false;
+#if WITH_EDITOR
+    bUseTableStartingCounts=LoadedPlayerBalanceAsset && LoadedPlayerBalanceAsset->bEditorUseWeaponTableStartingCounts;
+#endif
+
+    auto SpawnWeaponInstance = [this,bUseTableStartingCounts](TSubclassOf<ARogueWeaponBase> WeaponClass, const FRogueWeaponTableRow& Config)
 	{
 		if (WeaponClass == nullptr)
 		{
@@ -107,10 +112,10 @@ void ARogueCharacter::InitializeWeapons()
 		if (Weapon != nullptr)
 		{
 			Weapon->InitializeWeapon(this, Config);
-			// 蓝图/数据表继续决定模型、弹道和伤害；初始装备统一为一张御札。
-			// 其它武器保留数量 0 的实例，抽到获取卡后由 GAS 数量加成启用。
-			// 读取子类的实际数量类型，避免旧数据表中错配的数量枚举把其它武器当作御札。
-			Weapon->GetConfig().Count = Weapon->GetCountUpgradeType() == ERogueUpgradeType::ProjectileCount ? 1 : 0;
+            // 常规开局只带一张寒弹；编辑器可显式按武器表数量直接测试，且不写永久存档。
+            // 调试只替换基础数量，GAS 数量升级和最终 MaxCount 仍按原公式叠加/钳制。
+            Weapon->GetConfig().Count=bUseTableStartingCounts ? FMath::Max(0,Config.Count)
+                :(Weapon->GetCountUpgradeType()==ERogueUpgradeType::ProjectileCount ? 1 : 0);
 			Weapons.Add(Weapon);
 		}
 		return Weapon;
@@ -159,9 +164,24 @@ void ARogueCharacter::InitializeWeapons()
 		}
 
 		TSubclassOf<ARogueWeaponBase> WeaponClass = Row->WeaponClass;
-		if (WeaponClass == nullptr && WeaponClasses.IsValidIndex(Index))
+		if (WeaponClass == nullptr)
 		{
-			WeaponClass = WeaponClasses[Index];
+			// 兼容旧表中未填写的类及默认未改的类型字段；历史行 ID 是稳定键，绝不依赖行位置。
+            static const TMap<FName, ERogueUpgradeType> LegacyTypes={
+                {TEXT("Projectile"),ERogueUpgradeType::ProjectileCount},{TEXT("Scythe"),ERogueUpgradeType::ScytheCount},
+                {TEXT("Rocket"),ERogueUpgradeType::RocketCount},{TEXT("Laser"),ERogueUpgradeType::LaserCount},
+                {TEXT("HellTower"),ERogueUpgradeType::HellTowerCount},{TEXT("Mortar"),ERogueUpgradeType::MortarCount}};
+            const auto* LegacyType=LegacyTypes.Find(RowNames[Index]);
+            const ERogueUpgradeType Type=LegacyType?*LegacyType:Row->CountUpgradeType;
+			for (TSubclassOf<ARogueWeaponBase> Candidate : WeaponClasses)
+			{
+				const ARogueWeaponBase* Defaults = Candidate ? Candidate->GetDefaultObject<ARogueWeaponBase>() : nullptr;
+				if (Defaults && Defaults->GetCountUpgradeType() == Type)
+				{
+					WeaponClass = Candidate;
+					break;
+				}
+			}
 		}
 
 		if (WeaponClass == nullptr)
@@ -217,7 +237,7 @@ void ARogueCharacter::InitializeWeapons()
 void ARogueCharacter::TickWeapons(float DeltaSeconds)
 {
 	// 常规离散开火由 GA/Task 驱动；NeedsCosmeticTick 武器在此维护持续实体。
-	// 当前镰刀会在各端创建和配置环绕刀片，客户端用于表现，服务端刀片仍可结算命中。
+	// 镰刀在各端维护环绕表现；归心符只在服务端创建实体，再复制给所有客户端。
 	// 因此整个函数不能概括为无伤害的纯表现路径。
 	for (ARogueWeaponBase* Weapon : Weapons)
 	{
@@ -412,7 +432,7 @@ void ARogueCharacter::Multicast_WeaponCosmetics_Implementation(const TArray<FRog
 		return;
 	}
 
-	// 服务端已在真实发射时播过音效。客户端先接收确认音效，只有远端角色重放弹体；
+	// 服务端已在真实发射时播放声音/闪光。客户端接收确认表现，只有远端角色重放弹体；
 	// 所属客户端保留自己的预测弹体，也能在服务端接管开火时听到确认音效。
 	if (IsAuthoritySide())
 	{
@@ -430,6 +450,7 @@ void ARogueCharacter::Multicast_WeaponCosmetics_Implementation(const TArray<FRog
 		{
 			// 音效统一回放服务器确认的这一轮，包含所属客户端；本地预测不另播一份。
 			if (Entry.Fire.bPlayAttackSound) { Weapon->PlayAttackAudio(Entry.Fire.Start); }
+            Weapon->PlayFireAccent(Entry.Fire);
 			if (!IsLocallyControlled()) { Weapon->PlayCosmeticFire(Entry.Fire); }
 		}
 	}
@@ -445,7 +466,7 @@ void ARogueCharacter::Multicast_WeaponCosmetics_Implementation(const TArray<FRog
 float ARogueCharacter::GetAttackDamage() const
 {
 	const ARogueWeapon_Projectile* PW = FindWeapon<ARogueWeapon_Projectile>();
-	return PW != nullptr ? PW->GetDamage() : 0.0f;
+	return PW != nullptr ? PW->GetEffectiveDamage() : 0.0f;
 }
 
 float ARogueCharacter::GetAttackInterval() const
@@ -562,6 +583,10 @@ void ARogueCharacter::RefreshWeaponBonusSnapshotFromAttributes()
 	Values.ProjectileBurst = AttributeSet->GetProjectileBurstBonus();
 	Values.RocketBlastRadius = AttributeSet->GetRocketBlastRadiusBonus();
 	Values.HellTowerDamageRamp = AttributeSet->GetHellTowerDamageRampBonus();
+	Values.TalismanCount = AttributeSet->GetTalismanCountBonus();
+	Values.TalismanPierce = AttributeSet->GetTalismanPierceBonus();
+	Values.TalismanRepeat = AttributeSet->GetTalismanRepeatBonus();
+
 
 	ApplyWeaponBonusSnapshot(Values);
 }
@@ -574,7 +599,7 @@ void ARogueCharacter::ApplyWeaponBonusSnapshot(const FRogueWeaponBonusValues& In
 		return;
 	}
 
-	// 脏检查：16 个值都没变就直接返回（调用方 GameMode 每帧都会推一次）
+	// 脏检查：所有武器加成都没变就直接返回（调用方 GameMode 每帧都会推一次）
 	if (WeaponBonusSnapshot.Equals(InValues))
 	{
 		return;

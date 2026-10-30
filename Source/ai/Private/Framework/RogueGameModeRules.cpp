@@ -1,9 +1,16 @@
 #include "Framework/RogueGameModeRules.h"
+#include "Enemies/Data/RogueEnemyArchetypes.h"
 
 #include "Framework/RogueGameBalanceAsset.h"
 
 namespace
 {
+    float ResolveGrowthValue(const URogueGameBalanceAsset* Asset, FName Row, int32 Wave, float Fallback)
+    {
+        float Value = 0.0f;
+        return Asset && Asset->TryEvaluateGrowthCurve(Row, static_cast<float>(Wave), Value) ? Value : Fallback;
+    }
+
 	static const FRogueEnemyWaveEntryRow DefaultEnemyWaveEntries[] =
 	{
 		{ 1, ERogueEnemyType::Rifleman, 3 },
@@ -31,7 +38,12 @@ namespace
 		{ 10, ERogueEnemyType::Cannoneer, 1 },
 		{ 10, ERogueEnemyType::Scatterer, 1 },
 		{ 10, ERogueEnemyType::Skirmisher, 1 },
-		{ 13, ERogueEnemyType::ShockPillar, 1 }
+		{ 13, ERogueEnemyType::ShockPillar, 1 },
+        { 5, ERogueEnemyType::SkyMoth, 2, true },
+        { 9, ERogueEnemyType::WindReaver, 2, true },
+        { 14, ERogueEnemyType::StarLantern, 2, true },
+        { 10, ERogueEnemyType::AuraHealer, 1, true },
+        { 18, ERogueEnemyType::LinkHealer, 1, true }
 	};
 
 	static const FRogueEnemyBalanceRow DefaultEnemyBalanceRows[] =
@@ -48,7 +60,12 @@ namespace
 		{ ERogueEnemyType::Sniper, 1.05f, 0.90f, 1.35f, 1, 1.10f, 0.92f, 1.45f },
 		{ ERogueEnemyType::Shotgunner, 0.90f, 1.05f, 1.05f, 1, 0.98f, 1.08f, 1.18f },
 		{ ERogueEnemyType::Repeater, 0.78f, 1.18f, 0.90f, 1, 0.92f, 1.20f, 1.05f },
-		{ ERogueEnemyType::Ringcaster, 1.15f, 0.95f, 1.00f, 1, 1.08f, 0.98f, 1.12f }
+		{ ERogueEnemyType::Ringcaster, 1.15f, 0.95f, 1.00f, 1, 1.08f, 0.98f, 1.12f },
+        { ERogueEnemyType::SkyMoth, 0.85f, 0.9f, 0.85f, 1, 1, 1, 1 },
+        { ERogueEnemyType::WindReaver, 1.1f, 1.05f, 1, 2, 1, 1, 1 },
+        { ERogueEnemyType::StarLantern, 1.2f, 0.75f, 0.9f, 2, 1, 1, 1 },
+        { ERogueEnemyType::AuraHealer, 0.85f, 0.82f, 0.f, 3, 1, 1, 1 },
+        { ERogueEnemyType::LinkHealer, 0.95f, 0.85f, 0.f, 4, 1, 1, 1 }
 	};
 
 	const TArray<FRogueEnemyWaveEntryRow>* GetWaveEntries(const URogueGameBalanceAsset* BalanceAsset)
@@ -158,13 +175,19 @@ namespace
 	}
 }
 
-int32 RogueGameModeRules::BuildWaveEnemyCount(int32 Wave, const URogueGameBalanceAsset* BalanceAsset)
+int32 RogueGameModeRules::BuildWaveEnemyCount(int32 Wave, const URogueGameBalanceAsset* BalanceAsset, float CountMultiplier)
 {
     const FRogueSpawnBalanceSettings& Settings = BalanceAsset ? BalanceAsset->Spawn : GetDefault<URogueGameBalanceAsset>()->Spawn;
     int64 Count = static_cast<int64>(FMath::Max(1, Settings.BaseEnemiesPerWave))
         + static_cast<int64>(FMath::Max(0, Settings.EnemiesPerWaveIncrement)) * FMath::Max<int64>(0, static_cast<int64>(Wave) - 1);
+    float CurveCount = 0.0f;
+    if (BalanceAsset && BalanceAsset->TryEvaluateGrowthCurve(TEXT("EnemiesPerWave"), static_cast<float>(Wave), CurveCount))
+    {
+        Count = FMath::RoundToInt64(FMath::Clamp(static_cast<double>(CurveCount), 1.0, static_cast<double>(MAX_int32)));
+    }
     if (Settings.EnemiesPerWaveLimit > 0) Count = FMath::Min(Count, static_cast<int64>(Settings.EnemiesPerWaveLimit));
-    return static_cast<int32>(FMath::Clamp<int64>(Count, 1, MAX_int32));
+    const double Multiplier=FMath::IsFinite(CountMultiplier)?FMath::Clamp(CountMultiplier,1.f,10.f):1.f;
+    return static_cast<int32>(FMath::RoundToInt64(FMath::Clamp(double(Count)*Multiplier,1.,double(MAX_int32))));
 }
 
 bool RogueGameModeRules::HasEligibleEnemyTypeForWave(int32 Wave, const URogueGameBalanceAsset* BalanceAsset,
@@ -185,7 +208,7 @@ ERogueEnemyType RogueGameModeRules::PickWeightedEnemyTypeForWave(int32 Wave, con
 {
 	// 无约束版本：Boss 生成走这条（Boss 不应该被"普通敌人的存活上限"挡住）。
 	// TFunctionRef 不拥有回调；这里用具名 lambda 使其在本次调用中保持有效，不能将引用保存到回调生命期之外。
-	auto AllowAll = [](ERogueEnemyType) { return true; };
+	auto AllowAll = [](ERogueEnemyType Type) { return !RogueEnemyArchetypes::IsHealerType(Type); };
 	return PickWeightedEnemyTypeForWave(Wave, BalanceAsset, AllowAll);
 }
 
@@ -200,13 +223,9 @@ ERogueEnemyType RogueGameModeRules::PickWeightedEnemyTypeForWave(int32 Wave, con
 	return PickWeightedEnemyTypeInternal(Wave, DefaultEnemyWaveEntries, CanSpawnType);
 }
 
-FRogueSpawnCadence RogueGameModeRules::BuildSpawnCadence(int32 Wave, int32 AliveEnemies, int32 MaxAliveEnemies, bool bBossAlive, float BaseSpawnInterval, const URogueGameBalanceAsset* BalanceAsset)
+FRogueSpawnCadence RogueGameModeRules::BuildSpawnCadence(int32 Wave, float BaseSpawnInterval, const URogueGameBalanceAsset* BalanceAsset, float SpawnRateMultiplier)
 {
 	//数据资产优先，代码兜底
-	const int32 BossAliveMinMaxEnemies = BalanceAsset != nullptr ? BalanceAsset->Spawn.BossAliveMinimumLimit : 20;
-	const int32 BossAliveMaxEnemyReduction = BalanceAsset != nullptr ? BalanceAsset->Spawn.BossAliveReduction : 12;
-	const int32 MaxAliveEnemiesPerWave = BalanceAsset != nullptr ? BalanceAsset->Spawn.MaxAlivePerWave : 8;
-	const int32 MaxAliveEnemiesHardLimit = BalanceAsset != nullptr ? BalanceAsset->Spawn.MaxAliveLimit : 0;
 	const float DifficultyScalePerWave = BalanceAsset != nullptr ? BalanceAsset->Spawn.AccelerationPerWave : 0.21f;
 	const float MaxDifficultyScale = BalanceAsset != nullptr ? BalanceAsset->Spawn.MaxAcceleration : 4.8f;
 	const int32 EarlyWaveSlowdownEndWave = BalanceAsset != nullptr ? BalanceAsset->Spawn.EarlyWaves.EndWave : 4;
@@ -216,28 +235,15 @@ FRogueSpawnCadence RogueGameModeRules::BuildSpawnCadence(int32 Wave, int32 Alive
 
 	FRogueSpawnCadence Cadence;
 
-	// 存活上限随波次逐级增长： 基础上限 + 每波增长 × (波次 - 1)
-	// HardLimit > 0 时才封顶；默认 0 = 不设上限（持续增长）。
-	int32 WaveScaledMaxAlive = MaxAliveEnemies + MaxAliveEnemiesPerWave * FMath::Max<int64>(0, static_cast<int64>(Wave) - 1);
-	if (MaxAliveEnemiesHardLimit > 0)
-	{
-		WaveScaledMaxAlive = FMath::Min(WaveScaledMaxAlive, MaxAliveEnemiesHardLimit);
-	}
-
-	// Boss 在场时仍然压低上限，给它留性能预算
-	Cadence.EffectiveMaxAliveEnemies = bBossAlive
-		? FMath::Max(BossAliveMinMaxEnemies, WaveScaledMaxAlive - BossAliveMaxEnemyReduction)
-		: WaveScaledMaxAlive;
-	
-	// 规则按列表顺序覆盖，保留原先三只规则独立于两只规则的行为。
+	// 批量数量只按波次匹配；累计预算、类型限制和落点由生成入口检查。
 	Cadence.SpawnBatchSize = 1;
 	const TArray<FRogueSpawnBatchRule>& BatchRules = BalanceAsset != nullptr
 		? BalanceAsset->Spawn.BatchRules : GetDefault<URogueGameBalanceAsset>()->Spawn.BatchRules;
 	for (const FRogueSpawnBatchRule& Rule : BatchRules)
 	{
-		if (Wave >= Rule.StartWave && AliveEnemies <= Cadence.EffectiveMaxAliveEnemies - Rule.RequiredFreeSlots)
+		if (Wave >= Rule.StartWave)
 		{
-			Cadence.SpawnBatchSize = Rule.BatchSize;
+			Cadence.SpawnBatchSize = FMath::Max(1, Rule.BatchSize);
 		}
 	}
 
@@ -247,6 +253,12 @@ FRogueSpawnCadence RogueGameModeRules::BuildSpawnCadence(int32 Wave, int32 Alive
 			FVector2D(EarlyWaveSpawnMultiplierAtWaveOne, EarlyWaveSpawnMultiplierAtEnd), static_cast<float>(Wave))
 		: 1.0f;
 	Cadence.NextSpawnDelay = FMath::Max(MinimumSpawnDelay, BaseSpawnInterval * DifficultyScale * EarlyWaveSpawnMultiplier);
+    float CurveInterval = 0.0f;
+    if (BalanceAsset && BalanceAsset->TryEvaluateGrowthCurve(TEXT("SpawnInterval"), static_cast<float>(Wave), CurveInterval))
+    {
+        Cadence.NextSpawnDelay = FMath::Max(FMath::Max(MinimumSpawnDelay, 0.01f), CurveInterval);
+    }
+    Cadence.NextSpawnDelay /= FMath::IsFinite(SpawnRateMultiplier)?FMath::Clamp(SpawnRateMultiplier,1.f,10.f):1.f;
 	return Cadence;
 }
 
@@ -285,6 +297,11 @@ FRogueEnemyProfile RogueGameModeRules::BuildEnemyProfile(int32 Wave, ERogueEnemy
 			Profile.Health *= 1.0f + Bonus;
 		}
 	}
+
+    // 曲线提供通用成长结果（已含阶段强化），类型倍率在下方只应用一次。
+    Profile.Health = ResolveGrowthValue(BalanceAsset, TEXT("EnemyHealth"), Wave, Profile.Health);
+    Profile.Speed = ResolveGrowthValue(BalanceAsset, TEXT("EnemySpeed"), Wave, Profile.Speed);
+    Profile.Damage = ResolveGrowthValue(BalanceAsset, TEXT("EnemyDamage"), Wave, Profile.Damage);
 
 	if (const FRogueEnemyBalanceRow* BalanceRow = FindBalanceRow(BalanceAsset, EnemyType))
 	{
@@ -336,6 +353,11 @@ FRogueEnemyProfile RogueGameModeRules::BuildBossProfile(int32 Wave, ERogueEnemyT
 	Profile.Health *= Wave >= LateEliteBossStartWave ? LateEliteBossHealthMultiplier : EarlyEliteBossHealthMultiplier;
 	Profile.Damage *= Wave >= LateEliteBossStartWave ? LateEliteBossDamageMultiplier : EarlyEliteBossDamageMultiplier;
 	Profile.Speed *= EliteBossSpeedMultiplier;
+
+    // 曲线提供通用成长结果（已含阶段强化），类型倍率在下方只应用一次。
+    Profile.Health = ResolveGrowthValue(BalanceAsset, TEXT("BossHealth"), Wave, Profile.Health);
+    Profile.Speed = ResolveGrowthValue(BalanceAsset, TEXT("BossSpeed"), Wave, Profile.Speed);
+    Profile.Damage = ResolveGrowthValue(BalanceAsset, TEXT("BossDamage"), Wave, Profile.Damage);
 
 	if (const FRogueEnemyBalanceRow* BalanceRow = FindBalanceRow(BalanceAsset, EnemyType))
 	{

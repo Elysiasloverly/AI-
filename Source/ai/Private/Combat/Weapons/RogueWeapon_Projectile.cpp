@@ -53,15 +53,13 @@ void ARogueWeapon_Projectile::FireAtTarget(AActor* TargetActor)
 
 	const float SpreadStepDegrees = Config.SpreadStepDegrees;
 	const int32 EffectiveCount = GetEffectiveProjectileCount();
-	const int32 HalfCount = EffectiveCount / 2;
 
 	URogueCombatPoolSubsystem* Pools = GetWorld() ? GetWorld()->GetSubsystem<URogueCombatPoolSubsystem>() : nullptr;
 
 	bool bAudioTagged = false;
 	for (int32 Index = 0; Index < EffectiveCount; ++Index)
 	{
-		const float OffsetIndex = static_cast<float>(Index - HalfCount);
-		const float SpreadOffset = EffectiveCount % 2 == 0 ? (OffsetIndex + 0.5f) * SpreadStepDegrees : OffsetIndex * SpreadStepDegrees;
+		const float SpreadOffset = GetSpreadOffsetDegrees(Index, SpreadStepDegrees);
 		FVector ShotDirection = Direction.RotateAngleAxis(SpreadOffset, FVector::UpVector).GetSafeNormal();
 
 		// 弹道随机平面偏转
@@ -96,6 +94,7 @@ void ARogueWeapon_Projectile::FireAtTarget(AActor* TargetActor)
 			// 客户端调用它是空操作（见 BroadcastCosmeticFire），所以这里可以无条件调。
 			FRogueWeaponCosmeticFire Fire;
 			Fire.bPlayAttackSound = !bAudioTagged;
+            Fire.bPlayFireAccent = !bAudioTagged;
 			bAudioTagged = true;
 			Fire.Start = SpawnLocation;
 			Fire.Direction = ShotDirection;
@@ -139,4 +138,11 @@ void ARogueWeapon_Projectile::PlayCosmeticFire(const FRogueWeaponCosmeticFire& F
 
 	Projectile->ActivatePooledProjectile(
 		OwnerChar, OwnerChar, Fire.Start, Fire.Direction.Rotation(), Fire.Direction, Fire.Speed, /*InDamage=*/0.0f);
+}
+
+float ARogueWeapon_Projectile::GetSpreadOffsetDegrees(int32 ShotIndex, float StepDegrees)
+{
+    if (ShotIndex <= 0) { return 0.0f; }
+    const int32 Ring = ShotIndex / 2 + ShotIndex % 2;
+    return static_cast<float>(Ring) * StepDegrees * (ShotIndex % 2 ? -1.0f : 1.0f);
 }

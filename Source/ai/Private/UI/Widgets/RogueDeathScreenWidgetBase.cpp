@@ -1,4 +1,5 @@
 #include "UI/Widgets/RogueDeathScreenWidgetBase.h"
+#include "Audio/RogueMusicSubsystem.h"
 #include "Engine/World.h"
 #include "Components/Button.h"
 #include "Kismet/GameplayStatics.h"
@@ -52,6 +53,7 @@ void URogueDeathScreenWidgetBase::RequestQuitGame()
 void URogueDeathScreenWidgetBase::NativeConstruct()
 {
 	Super::NativeConstruct();
+	URogueMusicSubsystem::BindWidgetButtonSounds(this);
 	if (MainMenuButton != nullptr)
 	{
 		MainMenuButton->OnClicked.AddUniqueDynamic(this, &URogueDeathScreenWidgetBase::RequestReturnToMainMenu);

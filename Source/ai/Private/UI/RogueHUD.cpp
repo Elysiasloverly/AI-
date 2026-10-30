@@ -1,4 +1,6 @@
 #include "UI/RogueHUD.h"
+#include "UnrealClient.h"
+#include "UI/Widgets/RogueVictoryScreenWidgetBase.h"
 #include "UI/Widgets/RogueBossHealthBarWidgetBase.h"
 #include "UI/Widgets/RogueNightTransitionWidgetBase.h"
 
@@ -196,6 +198,7 @@ void ARogueHUD::RefreshMenuWidgets()
 	// 先收起等待界面，再交由团灭结算接管，避免同一帧两种界面同时可见。
 	UpdateReviveCountdownWidget(PlayerCharacter);
 	UpdateDeathWidget();
+    UpdateVictoryWidget();
 
 	// 常驻状态条与敌人血条：与 Canvas 无关，无画布测试也能检查数据是否推到位。
 	UpdateVitalsWidget(PlayerCharacter);
@@ -290,8 +293,8 @@ void ARogueHUD::AddHealingNumber(const FVector& WorldLocation, float Amount)
 	HealingNumber.Lifetime = 0.9f;
 	HealingNumber.Color = FLinearColor(0.35f, 1.0f, 0.5f, 1.0f);
 	HealingNumber.bScreenPositionValid = false;
-	// 小数值也至少显示 +1，避免 "(+0)" 这种像没生效的飘字。
-	HealingNumber.CachedText = FString::Printf(TEXT("+%.0f"), FMath::Max(1.0f, Amount));
+	// 小额实际回复保留小数，避免将0.1点写成1点。
+	HealingNumber.CachedText = Amount<.1f?FString::Printf(TEXT("+%.2f"),Amount):(Amount<1.f?FString::Printf(TEXT("+%.1f"),Amount):FString::Printf(TEXT("+%.0f"),Amount));
 	DamageNumbers.Add(MoveTemp(HealingNumber));
 }
 
@@ -314,12 +317,18 @@ void ARogueHUD::ClosePauseMenu()
 	PauseMenuPage = ERoguePauseMenuPage::None;
 }
 
-void ARogueHUD::RequestSelectOfferFromShop(int32 OfferIndex)
+void ARogueHUD::RequestSelectOfferFromShop(int32 OfferIndex, const FGuid& QuoteId, int32 QuotedCost)
 {
 	// 走本地玩家 PlayerState 的 ServerRPC —— 服务端与客户端都可用
 	if (ARoguePlayerState* RoguePlayerState = GetLocalRoguePlayerState())
 	{
-		RoguePlayerState->Server_RequestBuyShopOffer(OfferIndex);
+		// 旧蓝图的按索引入口也必须使用最后一次实际呈现的报价，不能临时读取新快照。
+		if (QuoteId.IsValid()) RoguePlayerState->Server_RequestBuyShopOffer(OfferIndex, QuoteId, QuotedCost);
+		else if (PresentedShopOffers.IsValidIndex(OfferIndex))
+		{
+			const FRogueShopOffer& Offer = PresentedShopOffers[OfferIndex];
+			RoguePlayerState->Server_RequestBuyShopOffer(OfferIndex, Offer.QuoteId, Offer.GetCost());
+		}
 	}
 }
 
@@ -339,7 +348,7 @@ void ARogueHUD::RequestCloseFromShop()
 	}
 }
 
-void ARogueHUD::RequestSelectUpgradeFromWidget(int32 UpgradeIndex)
+void ARogueHUD::RequestSelectUpgradeFromWidget(int32 UpgradeIndex, const FGuid& SelectionId)
 {
 	// 走本地玩家 PlayerState 的 ServerRPC —— 这样服务端与客户端都能正确请求。
 	// 旧写法调 GetRogueGameMode()->TrySelectUpgrade(...)，而 GetRogueGameMode() 在客户端是 nullptr。
@@ -347,7 +356,7 @@ void ARogueHUD::RequestSelectUpgradeFromWidget(int32 UpgradeIndex)
 	{
 		if (ARoguePlayerState* RoguePlayerState = OwningPlayerController->GetPlayerState<ARoguePlayerState>())
 		{
-			RoguePlayerState->Server_RequestUpgradeSelection(UpgradeIndex);
+			RoguePlayerState->SubmitUpgradeSelection(UpgradeIndex, SelectionId.IsValid() ? SelectionId : PresentedUpgradeSelectionId);
 		}
 	}
 }
@@ -772,7 +781,7 @@ void ARogueHUD::DrawDamageNumbers(UFont* Font)
 
 	// 飘字为空时跳过投影缓存更新；有数据时按设定间隔更新屏幕位置。
 	// 是否为 HUD 性能瓶颈需要在具体场景测量，不能仅由元素数推断。
-	if (DamageNumbers.Num() > 0 && CurrentTime >= NextDamageNumberProjectionRefreshTime)
+	if (DamageNumbers.Num() > 0 && (CurrentTime >= NextDamageNumberProjectionRefreshTime || GIsHighResScreenshot))
 	{
 		RefreshDamageNumberProjectionCache(PlayerController, Tracker);
 		NextDamageNumberProjectionRefreshTime = CurrentTime + RefreshInterval;
@@ -890,7 +899,14 @@ void ARogueHUD::RefreshDamageNumberProjectionCache(APlayerController* PlayerCont
 		}
 
 		const FVector PopupLocation = DamageNumber.WorldLocation + FVector(0.0f, 0.0f, Age * PopupRiseSpeed);
-		DamageNumber.bScreenPositionValid = PlayerController->ProjectWorldLocationToScreen(PopupLocation, DamageNumber.CachedScreenPosition, true);
+		// Canvas使用当前绘制视图和尺寸，避免高分辨率输出仍套用原窗口像素坐标。
+        if (Canvas)
+        {
+            const FVector Projected=Canvas->Project(PopupLocation);
+            DamageNumber.CachedScreenPosition=FVector2D(Projected.X,Projected.Y);
+            DamageNumber.bScreenPositionValid=Projected.Z>0;
+        }
+        else DamageNumber.bScreenPositionValid=PlayerController->ProjectWorldLocationToScreen(PopupLocation,DamageNumber.CachedScreenPosition,true);
 	}
 }
 
@@ -900,6 +916,7 @@ void ARogueHUD::InitializeMenuWidgets()
 	{
 		// 兼容旧 HUD 蓝图将默认属性保存为 None 的情况；默认路径来自 DefaultGame.ini。
 		ResolveWidgetClass(DeathScreenWidgetClassPath, DeathScreenWidgetClass);
+        ResolveWidgetClass(VictoryScreenWidgetClassPath, VictoryScreenWidgetClass);
 		ResolveWidgetClass(ReviveCountdownWidgetClassPath, ReviveCountdownWidgetClass);
 		ResolveWidgetClass(VitalsWidgetClassPath, VitalsWidgetClass);
 		ResolveWidgetClass(EnemyHealthBarWidgetClassPath, EnemyHealthBarWidgetClass);
@@ -909,6 +926,7 @@ void ARogueHUD::InitializeMenuWidgets()
 		PauseMenuWidget = CreateRogueMenuWidget(PlayerController, PauseMenuWidgetClass, this, 65);
 		SettingsMenuWidget = CreateRogueMenuWidget(PlayerController, SettingsMenuWidgetClass, this, 66);
 		DeathScreenWidget = CreateRogueMenuWidget(PlayerController, DeathScreenWidgetClass, this, 70);
+        VictoryScreenWidget = CreateRogueMenuWidget(PlayerController, VictoryScreenWidgetClass, this, 71);
 
 		ReviveCountdownWidget = CreateRogueMenuWidget(PlayerController, ReviveCountdownWidgetClass, this, 69);
 
@@ -984,11 +1002,9 @@ void ARogueHUD::UpdateInteractionInputMode(const ARogueCharacter* PlayerCharacte
 	{
 		FInputModeUIOnly InputMode;
 		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-		if (DeathScreenWidget != nullptr)
-		{
-			DeathScreenWidget->SetIsFocusable(true);
-			InputMode.SetWidgetToFocus(DeathScreenWidget->TakeWidget());
-		}
+        UUserWidget* ResultWidget=RogueGameState && RogueGameState->IsVictory()
+            ? static_cast<UUserWidget*>(VictoryScreenWidget.Get()) : static_cast<UUserWidget*>(DeathScreenWidget.Get());
+        if (ResultWidget) { ResultWidget->SetIsFocusable(true); InputMode.SetWidgetToFocus(ResultWidget->TakeWidget()); }
 		PlayerController->SetInputMode(InputMode);
 	}
 	else if (bWantUIInput)
@@ -1036,6 +1052,7 @@ void ARogueHUD::UpdateShopWidget(const ARogueCharacter* PlayerCharacter)
 				bAffordable ? 1 : 0,
 				*Offer.GetUpgrade().Title,
 				*Offer.GetUpgrade().Description);
+			Signature += TEXT("|") + Offer.QuoteId.ToString();
 		}
 	}
 
@@ -1048,6 +1065,7 @@ void ARogueHUD::UpdateShopWidget(const ARogueCharacter* PlayerCharacter)
 		}
 		return;
 	}
+	PresentedShopOffers = bVisible ? LocalPlayerState->GetShopOffers() : TArray<FRogueShopOffer>();
 	LastShopWidgetSignature = Signature;
 	LastShopAutoRefreshSeconds = AutoRefreshSeconds;
 
@@ -1073,6 +1091,8 @@ void ARogueHUD::UpdateShopWidget(const ARogueCharacter* PlayerCharacter)
 		for (const FRogueShopOffer& Offer : Offers)
 		{
 			FRogueShopOfferViewData& OfferView = ViewData.Offers.AddDefaulted_GetRef();
+			OfferView.QuoteId = Offer.QuoteId;
+			OfferView.QuotedCost = Offer.GetCost();
 			OfferView.TitleText = FText::FromString(Offer.GetUpgrade().Title);
 			OfferView.DescriptionText = FText::FromString(Offer.GetUpgrade().Description);
 			OfferView.bPurchased = Offer.IsPurchased();
@@ -1111,7 +1131,8 @@ void ARogueHUD::UpdateUpgradeSelectionWidget()
 	FString Signature = bVisible ? TEXT("Upgrade|Visible") : TEXT("Upgrade|Hidden");
 	for (const FRogueUpgradeOption& Option : Options)
 	{
-		Signature += FString::Printf(TEXT("|%d:%s:%s"), static_cast<int32>(Option.Type), *Option.Title, *Option.Description);
+		Signature += FString::Printf(TEXT("|%d:%s:%s:%s:%d"), static_cast<int32>(Option.Type), *Option.Title, *Option.Description,
+			*Option.SelectionId.ToString(), LocalPlayerState && LocalPlayerState->IsUpgradeSubmissionPending(Option.SelectionId));
 	}
 
 	if (!UpdateCachedSignature(LastUpgradeWidgetSignature, Signature))
@@ -1119,12 +1140,15 @@ void ARogueHUD::UpdateUpgradeSelectionWidget()
 		return;
 	}
 
+	PresentedUpgradeSelectionId = bVisible && Options.Num() ? Options[0].SelectionId : FGuid();
 	FRogueUpgradeSelectionViewData ViewData;
 	ViewData.bVisible = bVisible;
 	ViewData.TitleText = FText::FromString(TEXT("请选择升级"));
 	for (const FRogueUpgradeOption& Option : Options)
 	{
 		FRogueUpgradeCardViewData& Card = ViewData.Cards.AddDefaulted_GetRef();
+		Card.SelectionId = Option.SelectionId;
+		Card.bCanSelect = bVisible && Option.SelectionId.IsValid() && !LocalPlayerState->IsUpgradeSubmissionPending(Option.SelectionId);
 		Card.TitleText = FText::FromString(Option.Title);
 		Card.DescriptionText = FText::FromString(Option.Description);
 	}
@@ -1276,6 +1300,21 @@ void ARogueHUD::UpdateReviveCountdownWidget(const ARogueCharacter* PlayerCharact
 		bVisible ? 1 : 0, SecondsRemaining, PlayerCharacter != nullptr ? static_cast<int32>(PlayerCharacter->GetLifePhase()) : -1);
 }
 
+void ARogueHUD::UpdateVictoryWidget()
+{
+    if (!VictoryScreenWidget) return;
+    const auto* State=GetRogueGameState();
+    const FRogueRunResult Result=State?State->GetRunResult():FRogueRunResult();
+    const bool bVisible=Result.Outcome==ERogueRunOutcome::Victory;
+    const FString Signature=FString::Printf(TEXT("%d|%d|%d|%.2f"),static_cast<int32>(Result.Outcome),Result.Wave,Result.EnemiesDefeated,Result.RunTimeSeconds);
+    const bool bChanged=UpdateCachedSignature(LastVictoryWidgetSignature,Signature);
+    if (bChanged || VictoryScreenWidget->IsVisible()!=bVisible)
+    {
+        VictoryScreenWidget->UpdateVictoryView(Result);
+        if (bVisible) UE_LOG(LogTemp,Log,TEXT("[RogueVictory] UI Player=%s Wave=%d"),*GetNameSafe(GetOwningPlayerController()),Result.Wave);
+    }
+}
+
 void ARogueHUD::UpdateDeathWidget()
 {
 	if (DeathScreenWidget == nullptr)
@@ -1288,7 +1327,7 @@ void ARogueHUD::UpdateDeathWidget()
 	const ARogueGameState* RogueGameState = GetRogueGameState();
 	const float SummaryRunTime = RogueGameState != nullptr ? RogueGameState->GetRunTimeSeconds() : 0.0f;
 	const int32 SummaryKills = RogueGameState != nullptr ? RogueGameState->GetEnemiesDefeated() : 0;
-	const bool bVisible = IsRogueRunOver(RogueGameState, PlayerCharacter);
+	const bool bVisible = !(RogueGameState && RogueGameState->IsVictory()) && IsRogueRunOver(RogueGameState, PlayerCharacter);
 
 	FString Signature = bVisible ? TEXT("Death|Visible") : TEXT("Death|Hidden");
 	if (bVisible)
@@ -1614,6 +1653,7 @@ FString ARogueHUD::GetFrameRateLimitLabel() const
 
 void ARogueHUD::EndPlay(const EEndPlayReason::Type Reason)
 {
+    if (VictoryScreenWidget) { VictoryScreenWidget->RemoveFromParent(); VictoryScreenWidget=nullptr; }
     if (BossHealthBarWidget) { BossHealthBarWidget->RemoveFromParent(); BossHealthBarWidget = nullptr; }
     if (NightTransitionWidget) { NightTransitionWidget->RemoveFromParent(); NightTransitionWidget = nullptr; }
     // 只释放本 HUD 持有的状态条，避免跨地图留下旧反馈；不影响其他系统的 UI。

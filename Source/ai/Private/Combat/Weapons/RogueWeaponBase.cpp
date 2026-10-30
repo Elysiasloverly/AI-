@@ -39,11 +39,13 @@ void ARogueWeaponBase::InitializeWeapon(ARogueCharacter* InOwnerCharacter, const
 	OwnerCharacter = InOwnerCharacter;
 	Config = InConfig;
 	AttackAudioState.Reset();
+    LastFireAccentTime=-1.e30;
 }
 
 void ARogueWeaponBase::OnOwnerDied()
 {
 	AttackAudioState.Reset();
+    LastFireAccentTime=-1.e30;
 }
 
 void ARogueWeaponBase::CollectFireTargets(TArray<ARogueEnemy*>& OutTargets) const
@@ -85,6 +87,7 @@ int32 ARogueWeaponBase::GetEffectiveCount() const
 	{
 		switch (GetCountUpgradeType())
 		{
+		case ERogueUpgradeType::TalismanCount: WeaponSpecificBonus = FMath::RoundToInt(Bonuses.TalismanCount); break;
 		case ERogueUpgradeType::ScytheCount:    WeaponSpecificBonus = FMath::RoundToInt(Bonuses.ScytheCount); break;
 		case ERogueUpgradeType::RocketCount:    WeaponSpecificBonus = FMath::RoundToInt(Bonuses.RocketCount); break;
 		case ERogueUpgradeType::LaserCount:     WeaponSpecificBonus = FMath::RoundToInt(Bonuses.LaserCount); break;
@@ -253,6 +256,7 @@ void ARogueWeaponBase::SpawnLaserBeam(const FVector& Start, const FVector& End, 
 	Fire.Param = Lifetime;
 	Fire.bAlternateStyle = bInfernoStyle;
 	Fire.bPlayAttackSound = bPlayAttackSound && Beam != nullptr;
+    Fire.bPlayFireAccent = bPlayAttackSound && Beam != nullptr;
 	BroadcastCosmeticFire(Fire);
 }
 
@@ -267,7 +271,19 @@ void ARogueWeaponBase::BroadcastCosmeticFire(const FRogueWeaponCosmeticFire& Fir
 	}
 
 	OwnerCharacter->BroadcastWeaponCosmetic(this, Fire);
+    const_cast<ARogueWeaponBase*>(this)->PlayFireAccent(Fire);
 	if (Fire.bPlayAttackSound) { const_cast<ARogueWeaponBase*>(this)->PlayAttackAudio(Fire.Start); }
+}
+
+void ARogueWeaponBase::PlayFireAccent(const FRogueWeaponCosmeticFire& Fire)
+{
+    if(!Fire.bPlayFireAccent || !OwnerCharacter || !OwnerCharacter->IsAlive() || !GetWorld())return;
+    const double Now=GetWorld()->GetTimeSeconds();
+    if(Now-LastFireAccentTime<FMath::Max(.02f,Config.FireAccent.MinimumInterval))return;
+    FVector Direction=FVector(Fire.Direction);
+    if(!FVector(Fire.End).IsNearlyZero())Direction=FVector(Fire.End)-FVector(Fire.Start);
+    if(auto* Pool=GetWorld()->GetSubsystem<URogueCombatPoolSubsystem>())
+        if(Pool->PlayCombatAccent(Config.FireAccent,Fire.Start,Direction,false))LastFireAccentTime=Now;
 }
 
 void ARogueWeaponBase::PlayAttackAudio(const FVector& Location)

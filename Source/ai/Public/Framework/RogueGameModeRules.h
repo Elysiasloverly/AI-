@@ -9,7 +9,7 @@ class URogueGameBalanceAsset;
 namespace RogueGameModeRules
 {
     /** 本波普通怪累计名额；不包含额外的 Boss。 */
-    AI_API int32 BuildWaveEnemyCount(int32 Wave, const URogueGameBalanceAsset* BalanceAsset = nullptr);
+    AI_API int32 BuildWaveEnemyCount(int32 Wave, const URogueGameBalanceAsset* BalanceAsset = nullptr, float CountMultiplier = 1.f);
     /** 是否还有正权重、已到解锁波次且通过给定条件的类型。 */
     AI_API bool HasEligibleEnemyTypeForWave(int32 Wave, const URogueGameBalanceAsset* BalanceAsset,
         TFunctionRef<bool(ERogueEnemyType)> CanSpawnType);
@@ -23,7 +23,7 @@ namespace RogueGameModeRules
 	AI_API ERogueEnemyType PickWeightedEnemyTypeForWave(int32 Wave, const URogueGameBalanceAsset* BalanceAsset,
 		TFunctionRef<bool(ERogueEnemyType)> CanSpawnType);
 
-	AI_API FRogueSpawnCadence BuildSpawnCadence(int32 Wave, int32 AliveEnemies, int32 MaxAliveEnemies, bool bBossAlive, float BaseSpawnInterval, const URogueGameBalanceAsset* BalanceAsset = nullptr);
+	AI_API FRogueSpawnCadence BuildSpawnCadence(int32 Wave, float BaseSpawnInterval, const URogueGameBalanceAsset* BalanceAsset = nullptr, float SpawnRateMultiplier = 1.f);
 	AI_API FRogueEnemyProfile BuildEnemyProfile(int32 Wave, ERogueEnemyType EnemyType, const URogueGameBalanceAsset* BalanceAsset = nullptr);
 	AI_API FRogueEnemyProfile BuildBossProfile(int32 Wave, ERogueEnemyType EnemyType, const URogueGameBalanceAsset* BalanceAsset = nullptr);
 	AI_API int32 BuildCurrencyReward(int32 Wave, bool bIsBoss, const URogueGameBalanceAsset* BalanceAsset = nullptr);

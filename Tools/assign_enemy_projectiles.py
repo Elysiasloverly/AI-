@@ -22,10 +22,22 @@ BACKUP_DIR = r"F:/AI_WorkSpeace/baka/Saved/Backup"
 
 # 敌人类型 -> 弹体蓝图资产路径（None 表示保持空，走敌人 BP/原生回退）
 PROJECTILE_BY_TYPE = {
-    "Shooter": "/Game/BP/Enemy/Projectiles/BP_EnemyProjectile_Shooter.BP_EnemyProjectile_Shooter_C",
-    "Artillery": "/Game/BP/Enemy/Projectiles/BP_EnemyProjectile_Artillery.BP_EnemyProjectile_Artillery_C",
-    "Spitter": "/Game/BP/Enemy/Projectiles/BP_EnemyProjectile_Spitter.BP_EnemyProjectile_Spitter_C",
-    "ShockPillar": "/Game/BP/Enemy/Projectiles/BP_EnemyProjectile_ShockPillar.BP_EnemyProjectile_ShockPillar_C",
+    "Rifleman": "/Game/BP/Enemy/Rifleman/BP_EnemyProjectile_Rifleman.BP_EnemyProjectile_Rifleman_C",
+    "Assault": "/Game/BP/Enemy/Assault/BP_EnemyProjectile_Assault.BP_EnemyProjectile_Assault_C",
+    "Juggernaut": "/Game/BP/Enemy/Juggernaut/BP_EnemyProjectile_Juggernaut.BP_EnemyProjectile_Juggernaut_C",
+    "Orbiter": "/Game/BP/Enemy/Orbiter/BP_EnemyProjectile_Orbiter.BP_EnemyProjectile_Orbiter_C",
+    "Marksman": "/Game/BP/Enemy/Marksman/BP_EnemyProjectile_Marksman.BP_EnemyProjectile_Marksman_C",
+    "Skirmisher": "/Game/BP/Enemy/Skirmisher/BP_EnemyProjectile_Skirmisher.BP_EnemyProjectile_Skirmisher_C",
+    "Cannoneer": "/Game/BP/Enemy/Cannoneer/BP_EnemyProjectile_Cannoneer.BP_EnemyProjectile_Cannoneer_C",
+    "Scatterer": "/Game/BP/Enemy/Scatterer/BP_EnemyProjectile_Scatterer.BP_EnemyProjectile_Scatterer_C",
+    "ShockPillar": "/Game/BP/Enemy/ShockPillar/BP_EnemyProjectile_ShockPillar.BP_EnemyProjectile_ShockPillar_C",
+    "Sniper": "/Game/BP/Enemy/Sniper/BP_EnemyProjectile_Sniper.BP_EnemyProjectile_Sniper_C",
+    "Shotgunner": "/Game/BP/Enemy/Shotgunner/BP_EnemyProjectile_Shotgunner.BP_EnemyProjectile_Shotgunner_C",
+    "Repeater": "/Game/BP/Enemy/Repeater/BP_EnemyProjectile_Repeater.BP_EnemyProjectile_Repeater_C",
+    "Ringcaster": "/Game/BP/Enemy/Ringcaster/BP_EnemyProjectile_Ringcaster.BP_EnemyProjectile_Ringcaster_C",
+    "SkyMoth": "/Game/BP/Enemy/SkyMoth/BP_EnemyProjectile_SkyMoth.BP_EnemyProjectile_SkyMoth_C",
+    "WindReaver": "/Game/BP/Enemy/WindReaver/BP_EnemyProjectile_WindReaver.BP_EnemyProjectile_WindReaver_C",
+    "StarLantern": "/Game/BP/Enemy/StarLantern/BP_EnemyProjectile_StarLantern.BP_EnemyProjectile_StarLantern_C"
 }
 
 
@@ -52,7 +64,9 @@ def main():
     changed = 0
     for row in rows:
         enemy_type = row.get("EnemyType")
-        target = PROJECTILE_BY_TYPE.get(enemy_type, "None")
+        target = PROJECTILE_BY_TYPE.get(enemy_type)
+        if target is None:
+            continue
         if row.get("ProjectileClass") != target:
             row["ProjectileClass"] = target
             changed += 1

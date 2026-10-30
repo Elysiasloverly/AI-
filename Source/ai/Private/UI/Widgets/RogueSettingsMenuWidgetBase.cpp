@@ -1,4 +1,5 @@
 #include "UI/Widgets/RogueSettingsMenuWidgetBase.h"
+#include "Audio/RogueMusicSubsystem.h"
 #include "UI/RogueHUD.h"
 #include "Components/Button.h"
 #include "Components/TextBlock.h"
@@ -8,6 +9,7 @@
 void URogueSettingsMenuWidgetBase::NativeConstruct()
 {
 	Super::NativeConstruct();
+	URogueMusicSubsystem::BindWidgetButtonSounds(this);
 	if (auto* Button = Cast<UButton>(GetWidgetFromName(TEXT("Button_MusicMinus"))))
 		Button->OnClicked.AddUniqueDynamic(this, &ThisClass::RequestMusicVolumeDown);
 	if (auto* Button = Cast<UButton>(GetWidgetFromName(TEXT("Button_MusicPlus"))))

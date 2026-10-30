@@ -176,7 +176,7 @@ FRogueEnemyArchetype FRogueEnemyArchetypeRow::ToArchetype(bool bIsBoss) const
 
 	case ERogueEnemyType::Marksman:
 		{
-			// 鸦天狗：远程风筝 + 单发，全部直接覆盖（默认值 = 鸦天狗非 Boss 基线）。
+			// 鸦天狗：远程风筝 + 空中召唤落弹，全部直接覆盖（默认值 = 鸦天狗非 Boss 基线）。
 			const FRogueMarksmanSpecialParams& P = SpecialParams.Marksman;
 			Archetype.Movement.PreferredRange = P.PreferredRange;
 			Archetype.Movement.CloseDistance = P.CloseDistance;
@@ -190,6 +190,7 @@ FRogueEnemyArchetype FRogueEnemyArchetypeRow::ToArchetype(bool bIsBoss) const
 
 			Archetype.Ranged.bUsesRangedAttack = true;
 			Archetype.Ranged.ShotPattern = P.ShotPattern;
+            Archetype.Ranged.Skyfall = P.Skyfall.Sanitized();
 			Archetype.Ranged.InitialCooldownMin = P.InitialCooldownMin;
 			Archetype.Ranged.InitialCooldownMax = P.InitialCooldownMax;
 			Archetype.Ranged.NextShotCooldown = P.NextShotCooldown;
@@ -432,6 +433,20 @@ FRogueEnemyArchetype FRogueEnemyArchetypeRow::ToArchetype(bool bIsBoss) const
 		Archetype.Movement.Model = ToMovementModel(MovementModelOverride);
 	}
 
+    if (RogueEnemyArchetypes::IsFlyingType(EnemyType))
+    {
+        Archetype.Flying = Flying.Sanitized();
+        Archetype.Ranged.NextShotCooldown = Archetype.Flying.AttackCooldown;
+        Archetype.Ranged.ProjectileSpeed = Archetype.Flying.ProjectileSpeed;
+        Archetype.Ranged.ProjectileDamageMultiplier = Archetype.Flying.DamageMultiplier;
+        ApplyBossOverride(Archetype, BossOverride, bIsBoss);
+    }
+    if (bContactOnlyNormal && !bIsBoss && !RogueEnemyArchetypes::IsHealerType(EnemyType))
+    {
+        Archetype.Ranged.bUsesRangedAttack=false;
+        Archetype.Movement.Model=ERogueEnemyMovementModel::Direct;
+    }
+    Archetype.Healing=Healing.Sanitized();
 	Archetype.ProjectileClass = ProjectileClass;
 	Archetype.Visual = bIsBoss ? BossVisual : Visual;
 	return Archetype;

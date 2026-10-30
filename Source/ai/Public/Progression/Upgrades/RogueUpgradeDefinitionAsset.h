@@ -38,6 +38,10 @@ struct AI_API FRogueUpgradeDefinitionRow : public FTableRowBase
 	/** 该升级允许的最大值；-1 表示使用代码默认。 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "升级", meta = (DisplayName = "最大值(-1=默认)"))
 	float MaxMagnitude = -1.0f;
+
+	/** 本局最多选择/购买几次；0 表示不限。达到后从升级卡池与商店卡池中移除。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "升级", meta = (DisplayName = "最多选择次数(0=不限)", ClampMin = "0"))
+	int32 MaxPicks = 0;
 };
 
 /**

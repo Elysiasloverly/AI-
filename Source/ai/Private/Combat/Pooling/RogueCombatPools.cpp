@@ -313,12 +313,12 @@ void FRogueCombatPools::LogPoolDiagnostics()
 
 	UE_LOG(LogTemp, Log, TEXT("===== 对象池诊断 ====="));
 	Report(TEXT("敌人"),         EnemyPool.Num(),              EnemyPoolRuntime);
-	Report(TEXT("御札"),         PlayerProjectilePool.Num(),   PlayerProjectilePoolRuntime);
+	Report(TEXT("冰符·寒弹"),         PlayerProjectilePool.Num(),   PlayerProjectilePoolRuntime);
 	Report(TEXT("敌方弹体"),     EnemyProjectilePool.Num(),    EnemyProjectilePoolRuntime);
-	Report(TEXT("八卦炉/阴阳玉"), RocketProjectilePool.Num(),   RocketProjectilePoolRuntime);
+	Report(TEXT("焰符·火丸/冰符·霜玉"), RocketProjectilePool.Num(),   RocketProjectilePoolRuntime);
 	Report(TEXT("经验球"),       ExperiencePickupPool.Num(),   ExperiencePickupPoolRuntime);
 	Report(TEXT("命中特效"),     ImpactEffectPool.Num(),       ImpactEffectPoolRuntime);
-	Report(TEXT("极限火花/御柱"), LaserBeamPool.Num(),          LaserBeamPoolRuntime);
+	Report(TEXT("星符·流光/焰符·灼光"), LaserBeamPool.Num(),          LaserBeamPoolRuntime);
 	Report(TEXT("银刃"),         OrbitingBladePool.Num(),      OrbitingBladePoolRuntime);
 	UE_LOG(LogTemp, Log, TEXT("======================"));
 }

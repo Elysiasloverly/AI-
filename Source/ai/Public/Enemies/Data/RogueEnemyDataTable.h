@@ -202,7 +202,7 @@ struct AI_API FRogueOrbiterSpecialParams
 	float ProjectileDamageMultiplier = 0.0f;
 };
 
-/** 鸦天狗（Marksman）专属参数 —— 远程风筝 + 单发。全部直接覆盖，默认值 = 鸦天狗非 Boss 基线。 */
+/** 鸦天狗（Marksman）专属参数：风筝走位、天坠弹与触地散华。 */
 USTRUCT(BlueprintType)
 struct AI_API FRogueMarksmanSpecialParams
 {
@@ -239,18 +239,21 @@ struct AI_API FRogueMarksmanSpecialParams
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement", meta = (ToolTip = "中距离朝向权重是否随「当前距离 vs 偏好距离」做偏置：越贴近玩家，朝向权重越趋向负值（后退）。", DisplayName = "使用距离偏差计算中距离朝向"))
 	bool bUseRangeBiasForMidToward = true;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="天坠弹", meta=(DisplayName="天坠弹与红圈预警"))
+    FRogueEnemySkyfallSettings Skyfall;
+
 	// --- 射击参数 ---
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ranged", meta = (DisplayName = "射击模式"))
-	ERogueEnemyShotPattern ShotPattern = ERogueEnemyShotPattern::Single;
+	ERogueEnemyShotPattern ShotPattern = ERogueEnemyShotPattern::Skyfall;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ranged", meta = (DisplayName = "初始冷却最小值"))
-	float InitialCooldownMin = 0.35f;
+	float InitialCooldownMin = 1.2f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ranged", meta = (DisplayName = "初始冷却最大值"))
-	float InitialCooldownMax = 0.85f;
+	float InitialCooldownMax = 2.2f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ranged", meta = (DisplayName = "射击冷却时间"))
-	float NextShotCooldown = 1.18f;
+	float NextShotCooldown = 5.2f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ranged", meta = (DisplayName = "弹丸速度"))
 	float ProjectileSpeed = 980.0f;
@@ -701,12 +704,12 @@ struct AI_API FRogueRingcasterSpecialParams
 {
 	GENERATED_BODY()
 
-	/** 弹幕默认值 = 亡灵非 Boss 基线（16 发 / 760 弹速 / 3.2s 寿命 / 0.32 缩放 / 0.28 伤害 / 高 50）。 */
+	/** 弹幕默认值 = 亡灵非 Boss 基线（16 发 / 760 弹速 / 30s 寿命 / 0.32 缩放 / 0.28 伤害 / 高 50）。 */
 	FRogueRingcasterSpecialParams()
 	{
 		BulletRing.ProjectileCount = 16;
 		BulletRing.ProjectileSpeed = 760.0f;
-		BulletRing.ProjectileLifetime = 3.2f;
+		BulletRing.ProjectileLifetime = 30.0f;
 		BulletRing.ProjectileScale = 0.32f;
 		BulletRing.DamageMultiplier = 0.28f;
 		BulletRing.HeightAboveGround = 50.0f;
@@ -904,10 +907,21 @@ struct AI_API FRogueEnemyArchetypeRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Base", meta = (DisplayName = "专属参数（只填当前类型）", ToolTip = "只展开 EnemyType 对应的子结构；其它子结构保持默认即可。"))
 	FRogueEnemySpecialParams SpecialParams;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Flying", meta=(DisplayName="飞行敌人参数（月蝶/风镰/星灯）"))
+    FRogueFlyingEnemySettings Flying;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="治疗敌人", meta=(DisplayName="治疗参数（青叶灵/祈愿妖精）"))
+    FRogueEnemyHealingSettings Healing;
+
+
 	// ===== Boss 覆盖 =====
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BossOverride", meta = (DisplayName = "Boss覆盖参数"))
 	FRogueEnemyBossOverride BossOverride;
 
 	/** 将此行数据转换为运行时 FRogueEnemyArchetype 结构体 */
+    /** 普通个体改为追击接触伤害，Boss仍保留原弹幕。 */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Combat", meta=(DisplayName="普通怪仅接触攻击"))
+    bool bContactOnlyNormal = false;
+
 	FRogueEnemyArchetype ToArchetype(bool bIsBoss) const;
 };

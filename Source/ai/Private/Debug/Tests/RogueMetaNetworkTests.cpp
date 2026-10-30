@@ -6,6 +6,7 @@
 #include "Engine/DataTable.h"
 #include "Engine/World.h"
 #include "Framework/RogueGameMode.h"
+#include "Framework/RogueGameBalanceAsset.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/WorldSettings.h"
 #include "Misc/AutomationTest.h"
@@ -58,6 +59,10 @@ namespace RogueMetaNetworkTests
 			Mode = World->GetAuthGameMode<ARogueGameMode>();
 			if (!Test.TestNotNull(TEXT("Authoritative mode exists"), Mode)) { return false; }
 			Mode->SetActorTickEnabled(false);
+			// 独立配置验证奖励幂等性，不依赖用户在正式资产里设置的奖励量。
+			auto* Rewards = NewObject<URogueGameBalanceAsset>(World);
+			Rewards->Rewards.BossIceBrickReward = 3;
+			FindFProperty<FObjectProperty>(ARogueGameMode::StaticClass(), TEXT("LoadedGameBalanceAsset"))->SetObjectPropertyValue_InContainer(Mode, Rewards);
 			for (int32 Index = 0; Index < ParticipantCount; ++Index)
 			{
 				ARoguePlayerController* Controller = World->SpawnActor<ARoguePlayerController>();
@@ -164,8 +169,8 @@ bool FRogueMetaBossParticipantsTest::RunTest(const FString& Parameters)
 	Fixture.States[0]->GrantBossIceBrick(Boss->GetSpawnCycleId());
 
 	// Assert: server bookkeeping is independent and idempotent; no local save was accessed.
-	TestEqual(TEXT("Alive participant receives exactly one"), Fixture.States[0]->GetBossIceBricksEarnedThisRun(), 1);
-	TestEqual(TEXT("Downed participant receives exactly one"), Fixture.States[1]->GetBossIceBricksEarnedThisRun(), 1);
+	TestEqual(TEXT("Alive participant receives one configured reward"), Fixture.States[0]->GetBossIceBricksEarnedThisRun(), 3);
+	TestEqual(TEXT("Downed participant receives one configured reward"), Fixture.States[1]->GetBossIceBricksEarnedThisRun(), 3);
 	TestEqual(TEXT("Spectator receives none"), SpectatorState->GetBossIceBricksEarnedThisRun(), 0);
 	TestNull(TEXT("First participant still has no disk-backed local player"), Fixture.Controllers[0]->GetLocalPlayer());
 	return true;
@@ -196,8 +201,8 @@ bool FRogueMetaBossPoolRewardTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("First cycle ID is valid"), FirstCycle.IsValid());
 	TestTrue(TEXT("Second cycle ID is valid"), SecondCycle.IsValid());
 	TestTrue(TEXT("Pool activation changes the ID"), FirstCycle != SecondCycle);
-	TestEqual(TEXT("First participant receives both bosses exactly once"), Fixture.States[0]->GetBossIceBricksEarnedThisRun(), 2);
-	TestEqual(TEXT("Second participant receives both bosses exactly once"), Fixture.States[1]->GetBossIceBricksEarnedThisRun(), 2);
+	TestEqual(TEXT("First participant receives both bosses exactly once"), Fixture.States[0]->GetBossIceBricksEarnedThisRun(), 6);
+	TestEqual(TEXT("Second participant receives both bosses exactly once"), Fixture.States[1]->GetBossIceBricksEarnedThisRun(), 6);
 	return true;
 }
 

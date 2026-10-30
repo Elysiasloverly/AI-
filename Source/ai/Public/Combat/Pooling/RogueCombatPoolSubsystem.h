@@ -5,6 +5,7 @@
 #include "Subsystems/WorldSubsystem.h"
 #include "Combat/Pooling/RogueCombatPools.h"
 #include "Framework/RogueGameModeConfig.h"
+#include "Combat/Visuals/RogueCombatAccentEffect.h"
 #include "RogueCombatPoolSubsystem.generated.h"
 
 class ARogueEnemy;
@@ -15,6 +16,8 @@ class ARogueExperiencePickup;
 class ARogueImpactEffect;
 class ARogueLaserBeam;
 class ARogueOrbitingBlade;
+class ARogueCombatAccentEffect;
+struct FRogueCombatAccentSettings;
 
 UCLASS()
 class AI_API URogueCombatPoolSubsystem : public UWorldSubsystem
@@ -54,6 +57,10 @@ public:
 	/** 获取环绕刀片 */
 	ARogueOrbitingBlade* AcquireOrbitingBlade(TSubclassOf<ARogueOrbitingBlade> BladeClass, AActor* OwnerActor, const FVector& SpawnLocation, const FRotator& SpawnRotation);
 
+    /** 复用仅本机显示的施法/受击短特效，专用服务器不创建。 */
+    UFUNCTION(BlueprintCallable,Category="Rogue|特效")
+    ARogueCombatAccentEffect* PlayCombatAccent(const FRogueCombatAccentSettings& Settings,const FVector& Location,const FVector& Direction,bool bImpact);
+
 	/** 打印池大小、峰值与运行时生成尝试数（含失败）。
 	 *  在日志中搜索 [Pool]；增加预热前先检查占用率、类配置与内存成本。 */
 	UFUNCTION(BlueprintCallable, Category = "Rogue|Pool")
@@ -62,4 +69,5 @@ public:
 private:
 	UPROPERTY()
 	FRogueCombatPools CombatPools;
+    UPROPERTY() TArray<TObjectPtr<ARogueCombatAccentEffect>> AccentPool;
 };

@@ -2,7 +2,11 @@
 
 #include "CoreMinimal.h"
 #include "Shared/RogueTypes.h"
+#include "Enemies/Data/RogueFlyingEnemySettings.h"
+#include "Enemies/Data/RogueEnemyUtilitySettings.h"
 #include "RogueEnemyArchetypes.generated.h"
+
+class ARogueEnemySkyfallProjectile;
 
 UENUM(BlueprintType)
 enum class ERogueEnemyMovementModel : uint8
@@ -21,7 +25,11 @@ enum class ERogueEnemyShotPattern : uint8
 	None     UMETA(DisplayName = "无"),
 	Single   UMETA(DisplayName = "单发"),
 	Spread3  UMETA(DisplayName = "散射"),
-	RadialRing UMETA(DisplayName = "整圈弹幕")
+	RadialRing UMETA(DisplayName = "整圈弹幕"),
+    CrossWeave UMETA(DisplayName = "交织蝶舞"),
+    ReturningFan UMETA(DisplayName = "折返风刃"),
+    StarTrap UMETA(DisplayName = "星阵合围"),
+    Skyfall UMETA(DisplayName = "天坠弹·触地散华")
 };
 
 UENUM(BlueprintType)
@@ -39,7 +47,9 @@ enum class ERogueEnemyVisualKey : uint8
 	Sniper,
 	Shotgunner,
 	Repeater,
-	Ringcaster
+	Ringcaster, SkyMoth, WindReaver, StarLantern,
+    AuraHealer,
+    LinkHealer
 };
 
 USTRUCT(BlueprintType)
@@ -117,8 +127,8 @@ struct AI_API FRogueEnemyBulletRingSettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "环形弹幕", meta = (DisplayName = "子弹速度（厘米/秒）", ClampMin = "100", ClampMax = "3000"))
 	float ProjectileSpeed = 720.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "环形弹幕", meta = (DisplayName = "最长飞行时间（秒）", ClampMin = "0.1", ClampMax = "10"))
-	float ProjectileLifetime = 5.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "环形弹幕", meta = (DisplayName = "最长飞行时间（秒）", ClampMin = "0.1", ClampMax = "30"))
+	float ProjectileLifetime = 30.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "环形弹幕", meta = (DisplayName = "碰撞与特效大小倍率", ToolTip = "影响碰撞球、灯光、拖尾偏移和命中特效；模型网格大小以蓝图组件的缩放为准。", ClampMin = "0.1", ClampMax = "1"))
 	float ProjectileScale = 0.4f;
@@ -135,12 +145,53 @@ struct AI_API FRogueEnemyBulletRingSettings
 		FRogueEnemyBulletRingSettings Result = *this;
 		Result.ProjectileCount = FMath::Clamp(ProjectileCount, 8, 128);
 		Result.ProjectileSpeed = FMath::Clamp(ProjectileSpeed, 100.0f, 3000.0f);
-		Result.ProjectileLifetime = FMath::Clamp(ProjectileLifetime, 0.1f, 10.0f);
+		Result.ProjectileLifetime = FMath::Clamp(ProjectileLifetime, 0.1f, 30.0f);
 		Result.ProjectileScale = FMath::Clamp(ProjectileScale, 0.1f, 1.0f);
 		Result.DamageMultiplier = FMath::Max(DamageMultiplier, 0.0f);
 		Result.HeightAboveGround = FMath::Clamp(HeightAboveGround, 20.0f, 200.0f);
 		return Result;
 	}
+};
+
+/** 鸦天狗的锁定落点、红圈预警及触地散弹。预警时间与下落时间均不受黑夜攻速影响。 */
+USTRUCT(BlueprintType)
+struct AI_API FRogueEnemySkyfallSettings
+{
+    GENERATED_BODY()
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, meta=(DisplayName="大型落弹蓝图"))
+    TSubclassOf<ARogueEnemySkyfallProjectile> ProjectileClass;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, meta=(DisplayName="悬停预警时间（秒）",ClampMin="0.3",ClampMax="5"))
+    float WarningSeconds = 0.8f;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, meta=(DisplayName="下落时间（秒）",ClampMin="0.4",ClampMax="5"))
+    float FallSeconds = 0.9f;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, meta=(DisplayName="召唤离地高度（厘米）",ClampMin="300",ClampMax="3000"))
+    float SpawnHeight = 900.f;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, meta=(DisplayName="朝施法者偏移（厘米）",ClampMin="0",ClampMax="1000",ToolTip="弹体从落点朝施法者方向偏移后升空，再斜向砸向锁定落点。0为垂直下落。"))
+    float LaunchOffset = 260.f;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, meta=(DisplayName="红圈与落地伤害半径（厘米）",ClampMin="80",ClampMax="600"))
+    float ImpactRadius = 180.f;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, meta=(DisplayName="大型弹体地面碰撞半径（厘米）",ClampMin="20",ClampMax="160"))
+    float CollisionRadius = 65.f;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, meta=(DisplayName="落地伤害倍率",ClampMin="0",ClampMax="5"))
+    float ImpactDamageMultiplier = 1.2f;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, meta=(DisplayName="触地环形弹幕"))
+    FRogueEnemyBulletRingSettings Burst;
+
+    FRogueEnemySkyfallSettings()
+    {
+        Burst.ProjectileCount=24; Burst.ProjectileSpeed=650; Burst.ProjectileScale=1;
+        Burst.DamageMultiplier=.45f; Burst.HeightAboveGround=55;
+    }
+    FRogueEnemySkyfallSettings Sanitized() const
+    {
+        auto R=*this;
+        auto Safe=[](float V,float D,float Min,float Max){return FMath::Clamp(FMath::IsFinite(V)?V:D,Min,Max);};
+        R.WarningSeconds=Safe(WarningSeconds,.8f,.3f,5); R.FallSeconds=Safe(FallSeconds,.9f,.4f,5);
+        R.SpawnHeight=Safe(SpawnHeight,900,300,3000); R.LaunchOffset=Safe(LaunchOffset,260,0,1000);
+        R.ImpactRadius=Safe(ImpactRadius,180,80,600); R.CollisionRadius=Safe(CollisionRadius,65,20,160);
+        R.ImpactDamageMultiplier=Safe(ImpactDamageMultiplier,1.2f,0,5);
+        R.Burst=Burst.Sanitized(); return R;
+    }
 };
 
 USTRUCT(BlueprintType)
@@ -186,6 +237,9 @@ struct AI_API FRogueEnemyRangedArchetype
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ranged|Ring", meta = (DisplayName = "整圈弹幕参数"))
 	FRogueEnemyBulletRingSettings BulletRing;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ranged|Skyfall", meta=(DisplayName="天坠弹参数"))
+    FRogueEnemySkyfallSettings Skyfall;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ranged|Spread")
 	float SpreadAngleStep = 10.0f;
@@ -237,6 +291,12 @@ struct AI_API FRogueEnemyArchetype
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Archetype")
 	FRogueEnemyVisualArchetype Visual;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="飞行敌人")
+    FRogueFlyingEnemySettings Flying;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="治疗敌人")
+    FRogueEnemyHealingSettings Healing;
+
 	/** 可选攻击能力集；加载失败或未配置时按原型标志授予默认接触/远程能力。
 	 *  默认 AI 只识别这两类能力槽；新增独立攻击决策仍需扩展 C++ 或蓝图调用路径。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Archetype|Abilities")
@@ -251,6 +311,12 @@ class UDataTable;
 
 namespace RogueEnemyArchetypes
 {
+    inline bool IsHealerType(ERogueEnemyType Type)
+    { return Type==ERogueEnemyType::AuraHealer || Type==ERogueEnemyType::LinkHealer; }
+
+    inline bool IsFlyingType(ERogueEnemyType Type)
+    { return Type==ERogueEnemyType::SkyMoth || Type==ERogueEnemyType::WindReaver || Type==ERogueEnemyType::StarLantern; }
+
 	/** 从硬编码构建原型（保留向后兼容，DataTable 未配置时的回退） */
 	AI_API FRogueEnemyArchetype BuildEnemyArchetype(ERogueEnemyType Type, bool bIsBoss);
 

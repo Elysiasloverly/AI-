@@ -170,6 +170,7 @@ void ARogueWeapon_Mortar::FireMortarVolley(const TArray<ARogueEnemy*>& Enemies)
 			//   · Param —— 爆炸半径，队友那边落点指示圈大小与爆炸特效大小都按它算。
 			FRogueWeaponCosmeticFire Fire;
 			Fire.bPlayAttackSound = !bAudioTagged;
+            Fire.bPlayFireAccent = !bAudioTagged;
 			bAudioTagged = true;
 			Fire.Start = SpawnLocation;
 			Fire.End = TargetLocation;

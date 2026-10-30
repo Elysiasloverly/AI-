@@ -141,7 +141,7 @@ private:
 	float CollisionRadius = 16.0f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Pooling")
-	float PooledLifetime = 3.0f;
+	float PooledLifetime = 30.0f;
 
 	FVector TravelDirection = FVector::ForwardVector;
 	float Speed = 1600.0f;

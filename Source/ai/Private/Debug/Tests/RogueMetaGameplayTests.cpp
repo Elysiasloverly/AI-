@@ -272,7 +272,7 @@ bool FRogueMetaStaleShopOfferTest::RunTest(const FString& Parameters)
 {
 	(void)Parameters;
 	using namespace RogueMetaGameplayTests;
-	// Arrange: 玩家只解锁极限火花的首次获取，没有重复数量卡的许可。
+	// Arrange: 玩家只解锁星符·流光的首次获取，没有重复数量卡的许可。
 	FRogueProgressionSnapshot Profile;
 	AddUnlock(Profile, ERogueMetaNodeKind::Weapon, ERogueUpgradeType::LaserCount);
 	FFixture Fixture;
@@ -293,11 +293,11 @@ bool FRogueMetaStaleShopOfferTest::RunTest(const FString& Parameters)
 		return Offer.GetUpgrade().Type == ERogueUpgradeType::ScytheCount;
 	}));
 
-	// Act: 在商店报价仍保留时，通过局内升级获取极限火花。
+	// Act: 在商店报价仍保留时，通过局内升级获取星符·流光。
 	Fixture.Apply(0, ERogueUpgradeType::LaserCount);
 	const int32 PreviousMoney = Player->GetMoney();
 	FRogueUpgradeOption Bought;
-	const bool bPurchased = Shop.TryBuyOffer(OfferIndex, Player, Bought);
+	const bool bPurchased = Shop.TryBuyOffer(OfferIndex, Shop.GetOffers()[OfferIndex].QuoteId, Shop.GetOffers()[OfferIndex].GetCost(), Player, Upgrades, Bought);
 
 	// Assert: 这份旧报价如今属于未解锁的重复数量卡，必须在扣费前拒绝。
 	TestFalse(TEXT("A stale acquisition offer cannot bypass the dedicated-card unlock"), bPurchased);

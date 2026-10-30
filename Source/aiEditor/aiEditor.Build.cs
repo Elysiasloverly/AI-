@@ -5,6 +5,8 @@ public class aiEditor : ModuleRules
 	public aiEditor(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+        // 各编辑器工具的文件内辅助函数重名，独立编译以免依赖 Git 工作集的偶然排除。
+        bUseUnity = false;
 
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine" });
 
@@ -12,6 +14,7 @@ public class aiEditor : ModuleRules
 		{
 			"UnrealEd",
             "ai",
+            "GameplayAbilities",
 			"UMG",
 			"UMGEditor",
 			"BlueprintGraph",
@@ -20,7 +23,7 @@ public class aiEditor : ModuleRules
 			"AssetRegistry",
 			"EditorScriptingUtilities",
 			"Slate",
-			"SlateCore"
+			"SlateCore", "Json"
 		});
 	}
 }

@@ -1,7 +1,12 @@
 #include "Progression/Upgrades/RogueUpgradeSystemRules.h"
 
 #include "Progression/Upgrades/RogueUpgradeRuleAsset.h"
+#include "Progression/Upgrades/RogueUpgradeDefinitionAsset.h"
 #include "Player/RogueCharacter.h"
+#include "AbilitySystem/RogueAttributeSet.h"
+#include "Combat/Weapons/RogueWeapon_HellTower.h"
+#include "Combat/Weapons/RogueWeapon_Scythe.h"
+#include "Combat/Weapons/RogueWeapon_Talisman.h"
 #include "Player/RoguePlayerState.h"
 #include "Progression/Meta/RogueUpgradeTreeDefinition.h"
 
@@ -31,6 +36,8 @@ namespace
 		// 解锁奖励保存在 GAS 加成中；前置条件与实际开火共用合并并应用上限后的数量。
 		switch (Source)
 		{
+		case ERogueWeaponUpgradeSource::Talisman:
+			return Character.FindWeapon<ARogueWeapon_Talisman>() ? Character.FindWeapon<ARogueWeapon_Talisman>()->GetEffectiveCount() : 0;
 		case ERogueWeaponUpgradeSource::Projectile:
 			return Character.GetEffectiveProjectileCount();
 		case ERogueWeaponUpgradeSource::Scythe:
@@ -89,7 +96,8 @@ namespace
 			ERogueUpgradeType::RocketCount,
 			ERogueUpgradeType::LaserCount,
 			ERogueUpgradeType::HellTowerCount,
-			ERogueUpgradeType::MortarCount
+			ERogueUpgradeType::MortarCount,
+			ERogueUpgradeType::TalismanCount
 		};
 
 		if (RuleAsset != nullptr && RuleAsset->DefaultWeaponUpgradeTypes.Num() > 0)
@@ -105,6 +113,9 @@ namespace
 	{
 		static const FRogueWeaponUpgradeRuleRow DefaultWeaponRules[] =
 		{
+		{ ERogueWeaponUpgradeSource::Talisman, ERogueUpgradeType::TalismanCount },
+		{ ERogueWeaponUpgradeSource::Talisman, ERogueUpgradeType::TalismanPierce },
+		{ ERogueWeaponUpgradeSource::Talisman, ERogueUpgradeType::TalismanRepeat },
 		{ ERogueWeaponUpgradeSource::Projectile, ERogueUpgradeType::ProjectileBurst },
 		{ ERogueWeaponUpgradeSource::Rocket, ERogueUpgradeType::RocketBlastRadius },
 		{ ERogueWeaponUpgradeSource::HellTower, ERogueUpgradeType::HellTowerDamageRamp },
@@ -184,6 +195,10 @@ namespace
 		}
 		switch (Type)
 		{
+		case ERogueUpgradeType::TalismanCount:
+		case ERogueUpgradeType::TalismanPierce:
+		case ERogueUpgradeType::TalismanRepeat:
+			return Character->FindWeapon<ARogueWeapon_Talisman>() ? Character->FindWeapon<ARogueWeapon_Talisman>()->GetEffectiveCount() : 0;
 		case ERogueUpgradeType::ProjectileBurst:
 		case ERogueUpgradeType::ProjectileCount: return Character->GetEffectiveProjectileCount();
 		case ERogueUpgradeType::ScytheCount:
@@ -217,6 +232,8 @@ namespace
 		// 永久许可与本局前置分别验证；自定义基础池也不能提前塞进这些专属升级。
 		switch (Type)
 		{
+		case ERogueUpgradeType::TalismanPierce:
+		case ERogueUpgradeType::TalismanRepeat:
 		case ERogueUpgradeType::ProjectileBurst:
 		case ERogueUpgradeType::RocketBlastRadius:
 		case ERogueUpgradeType::HellTowerDamageRamp:
@@ -244,7 +261,65 @@ bool RogueUpgradeSystemRules::IsUpgradeAllowedForProgression(ERogueUpgradeType T
 	return IsProgressionAndPrerequisitesAllowed(Type, Character);
 }
 
-void RogueUpgradeSystemRules::BuildUpgradePool(TArray<ERogueUpgradeType>& OutTypes, const ARogueCharacter* Character, const URogueUpgradeRuleAsset* RuleAsset)
+/** MaxPicks=0 表示不限；达到上限后从升级选择与商店共用的卡池中移除。 */
+static void FilterMaxPickUpgrades(TArray<ERogueUpgradeType>& OutTypes, const ARogueCharacter* Character,
+	const URogueUpgradeDefinitionAsset* DefinitionAsset)
+{
+	if (DefinitionAsset == nullptr)
+	{
+		return;
+	}
+
+	OutTypes.RemoveAll([DefinitionAsset, Character](ERogueUpgradeType Type)
+	{
+		FRogueUpgradeDefinitionRow Row;
+		if (!DefinitionAsset->FindDefinition(Type, Row) || Row.MaxPicks <= 0)
+		{
+			return false;
+		}
+		const int32 Picked = Character != nullptr ? Character->GetUpgradePickCount(Type) : 0;
+		return Picked >= Row.MaxPicks;
+	});
+}
+
+namespace
+{
+    void FilterNoEffectUpgrades(TArray<ERogueUpgradeType>& Types, const ARogueCharacter* Character, const URogueUpgradeDefinitionAsset* Definitions)
+    {
+        const URogueAttributeSet* Attributes = Character ? Character->GetRogueAttributeSet() : nullptr;
+        if (!Attributes) { return; }
+        float LifestealLimit = 1.0f;
+        FRogueUpgradeDefinitionRow Row;
+        if (Definitions && Definitions->FindDefinition(ERogueUpgradeType::ScytheLifesteal, Row) && Row.MaxMagnitude >= 0.0f)
+            LifestealLimit = FMath::Min(LifestealLimit, Row.MaxMagnitude);
+        const float LifestealCap = Attributes->GetWeaponBonusCapFor(URogueAttributeSet::GetScytheLifestealBonusAttribute());
+        if (LifestealCap >= 0.0f) { LifestealLimit = FMath::Min(LifestealLimit, LifestealCap); }
+        if (Attributes->GetScytheLifestealBonus() + KINDA_SMALL_NUMBER >= LifestealLimit)
+            Types.Remove(ERogueUpgradeType::ScytheLifesteal);
+
+        const float SpeedCap = Attributes->GetWeaponBonusCapFor(URogueAttributeSet::GetAttackSpeedBonusAttribute());
+        bool UsefulSpeed = false;
+        if (SpeedCap < 0.0f || Attributes->GetAttackSpeedBonus() + KINDA_SMALL_NUMBER < SpeedCap)
+        {
+            for (const ARogueWeaponBase* Weapon : Character->GetWeapons())
+            {
+                if (!IsValid(Weapon) || Weapon->GetEffectiveCount() <= 0) { continue; }
+                if (Cast<ARogueWeapon_Scythe>(Weapon)) { UsefulSpeed = true; break; }
+                if (const auto* Tower = Cast<ARogueWeapon_HellTower>(Weapon))
+                {
+                    if (Tower->GetEffectiveDamageTickInterval() > 0.03f + KINDA_SMALL_NUMBER) { UsefulSpeed = true; break; }
+                    continue;
+                }
+                if (Weapon->GetEffectiveCooldown() > FMath::Max(0.0f, Weapon->GetConfig().MinCooldown) + KINDA_SMALL_NUMBER)
+                { UsefulSpeed = true; break; }
+            }
+        }
+        if (!UsefulSpeed) { Types.Remove(ERogueUpgradeType::AttackSpeed); }
+    }
+}
+
+void RogueUpgradeSystemRules::BuildUpgradePool(TArray<ERogueUpgradeType>& OutTypes, const ARogueCharacter* Character,
+	const URogueUpgradeRuleAsset* RuleAsset, const URogueUpgradeDefinitionAsset* DefinitionAsset)
 {
 	OutTypes.Reset();
 	AppendBaseUpgradeTypes(OutTypes, RuleAsset);
@@ -256,6 +331,7 @@ void RogueUpgradeSystemRules::BuildUpgradePool(TArray<ERogueUpgradeType>& OutTyp
 		OutTypes.Remove(ERogueUpgradeType::ScytheSize);
 		OutTypes.Remove(ERogueUpgradeType::ScytheLifesteal);
 		FilterProgressionAndPrerequisites(OutTypes, nullptr);
+		FilterMaxPickUpgrades(OutTypes, nullptr, DefinitionAsset);
 		return;
 	}
 
@@ -274,4 +350,6 @@ void RogueUpgradeSystemRules::BuildUpgradePool(TArray<ERogueUpgradeType>& OutTyp
 
 	// 升级选择与商店共用本入口，最终统一过滤永久解锁和本局武器前置。
 	FilterProgressionAndPrerequisites(OutTypes, Character);
+	FilterMaxPickUpgrades(OutTypes, Character, DefinitionAsset);
+    FilterNoEffectUpgrades(OutTypes, Character, DefinitionAsset);
 }

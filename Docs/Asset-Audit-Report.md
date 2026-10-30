@@ -80,8 +80,8 @@
 | `/Game/BP/Development/Experiments/NewBlueprint` | 58.1 KB | 引用数 0，4 月创建的空白蓝图 | 删除 |
 | `/Game/BPEnum/EN_OrbiterMoveEnum` | 2.7 KB | 引用数 0；移动模型已是 C++ 枚举 `ERogueEnemyMovementModel` | 删除 |
 | `/Game/BP/Development/Legacy/BP_RogueArena` | 56.7 KB | 引用数 0；`Docs/Map-Authoring.md` 明确"GameMode 不再要求 BP_RogueArena" | 删除（地图未放置） |
-| `/Game/BP/Enemy/Projectiles/BP_EnemyProjectile` | 38.8 KB | 引用数 0；变体已改为独立 BP（`make_projectile_variants_independent.py`），文档定位为"占位模板" | 保留或删（模板价值自行判断） |
-| `/Game/BP/Enemy/Projectiles/BP_EnemyProjectile_Boss` | 41.0 KB | 引用数 0；`BossProjectileClass` 无任何 BP/数据表指向它 | 删除，或接到某个敌人 BP 的 Boss 弹体槽 |
+| `/Game/BP/Enemy/Common/BP_EnemyProjectile` | 38.8 KB | 引用数 0；变体已改为独立 BP（`make_projectile_variants_independent.py`），文档定位为"占位模板" | 保留或删（模板价值自行判断） |
+| `/Game/BP/Enemy/Common/BP_EnemyProjectile_Boss` | 41.0 KB | 引用数 0；`BossProjectileClass` 无任何 BP/数据表指向它 | 删除，或接到某个敌人 BP 的 Boss 弹体槽 |
 | `/Game/Map/Minimal_Default` | 189 KB | 引用数 0，与现役地图内容一致的旧副本 | 归档 |
 
 > 删除前注意：这些资产目前**没有任何引用者**，但删除属于不可逆操作，建议在编辑器内删除（会进回收站）而不是直接删磁盘文件。

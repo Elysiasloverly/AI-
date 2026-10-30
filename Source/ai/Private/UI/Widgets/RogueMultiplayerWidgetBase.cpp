@@ -1,4 +1,5 @@
 #include "UI/Widgets/RogueMultiplayerWidgetBase.h"
+#include "Audio/RogueMusicSubsystem.h"
 #include "Networking/RogueLobby.h"
 #include "UI/RogueHUD.h"
 #include "Components/Button.h"
@@ -18,6 +19,7 @@ namespace
 void URogueRoomEntryWidgetBase::NativeConstruct()
 {
 	Super::NativeConstruct();
+	URogueMusicSubsystem::BindWidgetButtonSounds(this);
 	if (ActionButton) ActionButton->OnClicked.AddUniqueDynamic(this,&ThisClass::Join);
 }
 void URogueRoomEntryWidgetBase::Join() { if (RoomIndex!=INDEX_NONE) OnJoinPressed.Broadcast(RoomIndex); }
@@ -47,6 +49,7 @@ FString URogueMultiplayerWidgetBase::PlayerName() const
 void URogueMultiplayerWidgetBase::NativeConstruct()
 {
 	Super::NativeConstruct();
+	URogueMusicSubsystem::BindWidgetButtonSounds(this);
 	if (CreateRoomButton) CreateRoomButton->OnClicked.AddUniqueDynamic(this,&ThisClass::CreateRoom);
 	if (JoinRoomButton) JoinRoomButton->OnClicked.AddUniqueDynamic(this,&ThisClass::BrowseRooms);
 	if (RefreshButton) RefreshButton->OnClicked.AddUniqueDynamic(this,&ThisClass::SearchRooms);

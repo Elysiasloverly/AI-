@@ -3,15 +3,21 @@
 #include "CoreMinimal.h"
 #include "Enemies/Data/RogueEnemyArchetypes.h"
 #include "Enemies/RogueEnemyHitFeedback.h"
+#include "Enemies/RogueEnemyHealingFeedback.h"
 #include "GameFramework/Character.h"
 #include "AbilitySystemInterface.h"
 #include "GameplayTagContainer.h"
 // 攻击能力的句柄：AI 侧只保存句柄、用 TryActivateAbility 激活（见下面的"攻击能力接口"）。
 #include "GameplayAbilitySpec.h"
+#include "TimerManager.h"
 #include "Shared/RogueTypes.h"
 #include "Audio/RogueAttackAudioSettings.h"
+#include "Combat/Visuals/RogueCombatAccentEffect.h"
 #include "RogueEnemy.generated.h"
 
+class URogueEnemyPresentationComponent;
+class URogueEnemySupportComponent;
+class URogueEnemyStationaryHazardComponent;
 class UStaticMeshComponent;
 class UMaterialInterface;
 class URogueHitFlashComponent;
@@ -60,6 +66,9 @@ public:
 	/** 整圈只发送一条可靠消息；客户端在本地对象池中重建零伤害弹幕。 */
 	UFUNCTION(NetMulticast, Reliable)
 	void Multicast_SpawnCosmeticBulletRing(FVector_NetQuantize Center, float StartYaw, float SpawnRadius, const FRogueEnemyBulletRingSettings& Settings, TSubclassOf<ARogueEnemyProjectile> ProjectileClass);
+
+    UFUNCTION(NetMulticast, Reliable)
+    void Multicast_FlyingVolley(const TArray<FRogueEnemyPatternShot>& Shots, float Speed, float Lifetime, TSubclassOf<ARogueEnemyProjectile> ProjectileClass);
 
 	URogueAttributeSet* GetRogueAttributeSet() const { return AttributeSet; }
 
@@ -118,6 +127,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Enemy|State")
 	float GetMoveSpeed() const { return MoveSpeed; }
+    UFUNCTION(BlueprintPure,Category="Enemy|Combat") float GetAttackSpeedMultiplier() const { return FMath::Max(1.f,AttackSpeedMultiplier); }
+    UFUNCTION(BlueprintPure,Category="Enemy|Flight") float GetSpawnGroundZ() const { return FlightGroundZ; }
+    void SetSpawnGroundReference(const FVector& Location);
 
 	UFUNCTION(BlueprintPure, Category = "Enemy|State")
 	float GetContactDamage() const { return ContactDamage; }
@@ -304,6 +316,18 @@ public:
 	UFUNCTION(BlueprintNativeEvent, Category = "Enemy|Event")
 	void OnApplyVisualStyle();
 
+private:
+    void InitializeFlight();
+    void TickFlight(float DeltaSeconds);
+    void TickFlyingAttack(float DeltaSeconds);
+    void StartFlyingAttack(ARogueCharacter* Target);
+    void EmitFlyingVolley(const TArray<FRogueEnemyPatternShot>& Shots, float Lifetime);
+    void SpawnFlyingVolley(const TArray<FRogueEnemyPatternShot>& Shots, float Speed, float Damage, float Lifetime, TSubclassOf<ARogueEnemyProjectile> Class);
+    float FlightGroundZ=0, FlightAge=0, FlyingVolleyTimer=0;
+    int32 FlyingVolleyIndex=0, FlyingVolleysRemaining=0;
+    FVector FlyingAim=FVector::ForwardVector;
+    TWeakObjectPtr<ARogueCharacter> FlyingTarget;
+
 protected:
 	/** 仅供迁移旧资产；运行时由 DA_AudioConfig 按敌人类统一取值。 */
 	UPROPERTY(meta=(DeprecatedProperty, DeprecationMessage="请在 DA_AudioConfig 配置敌人音效"))
@@ -312,9 +336,21 @@ protected:
 	/** 在 BP_EnemyBase 类默认值设置一次；子蓝图继承。清空可关闭闪白，不改模型原材质。 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "敌人|受击反馈", meta = (DisplayName = "受击材质"))
 	TObjectPtr<UMaterialInterface> HitFlashMaterial;
+    /** BP_EnemyBase 配置一次，所有敌人子类继承；与原有闪白可独立开关。 */
+    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="敌人|受击反馈",meta=(DisplayName="受击火花与碎光"))
+    FRogueCombatAccentSettings HitAccent;
+    double LastHitAccentTime=-1.e30;
+    uint32 LastHitAccentGeneration=MAX_uint32;
+
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "敌人|组件", meta = (DisplayName = "受击闪白"))
 	TObjectPtr<URogueHitFlashComponent> HitFlashComponent;
+    UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="敌人|组件")
+    TObjectPtr<URogueEnemyPresentationComponent> EnemyPresentation;
+    UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="敌人|组件")
+    TObjectPtr<URogueEnemySupportComponent> EnemySupport;
+    UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="敌人|组件")
+    TObjectPtr<URogueEnemyStationaryHazardComponent> StationaryHazard;
 
 	virtual void PostInitializeComponents() override;
 	virtual void BeginPlay() override;
@@ -358,6 +394,8 @@ protected:
 
 	/** 死亡处理已排队（防止标签回调与 Tick 重复触发） */
 	bool bPendingDeath = false;
+	FTimerHandle PendingDeathTimer;
+	FGuid PendingDeathSpawnId;
 
 	/** 初始化/池复用期间抑制"伤害飘字"。
 	 *  为什么需要：InitializeEnemy 会把新一只的血量写进 AttributeSet，
@@ -465,12 +503,22 @@ protected:
 	float TargetRefreshCooldown = 0.0f;
 
 private:
+    UPROPERTY(ReplicatedUsing=OnRep_RuntimeProfile) FRogueEnemyRuntimeProfile RuntimeProfile;
+    UFUNCTION() void OnRep_RuntimeProfile();
+    void RefreshUtilityComponents();
 	friend struct FRogueAttackAudioTestAccess;
 	void NotifyAttackAudio(const FVector& Location);
 	UFUNCTION(NetMulticast, Unreliable)
 	void Multicast_AttackAudio(FVector_NetQuantize Location, uint32 Generation);
 	FRogueAttackAudioState AttackAudioState;
 	uint32 AttackAudioGeneration = 0;
+    friend struct FRogueEnemyHealingTestAccess;
+    UPROPERTY(ReplicatedUsing=OnRep_HealingFeedback) FRogueEnemyHealingFeedback HealingFeedback;
+    UFUNCTION() void OnRep_HealingFeedback();
+    void RecordHealingFeedback(float Amount);
+    void ConsumeReplicatedHealingFeedback();
+    uint32 ObservedHealingGeneration=0,ObservedHealingSequence=0;
+    float ObservedTotalHealing=0;
 	friend struct FRogueEnemyHitFlashTestAccess;
 	UPROPERTY(ReplicatedUsing = OnRep_HitFeedback)
 	FRogueEnemyHitFeedback HitFeedback;
@@ -492,6 +540,7 @@ private:
 	void DecideRangedAttack(ARogueCharacter* PlayerCharacter, float DeltaSeconds);
 
 	void FireRangedShot(ARogueCharacter* PlayerCharacter);
+    bool StartSkyfallAttack(ARogueCharacter* Target);
 	bool SpawnBulletRing(const FVector& Center, float StartYaw, float SpawnRadius, const FRogueEnemyBulletRingSettings& Settings, float ProjectileDamage, TSubclassOf<ARogueEnemyProjectile> ProjectileClass);
 	void Die(AActor* Killer);
 	void ApplyEnemyStyle();

@@ -136,7 +136,7 @@ void ARogueLaserBeam::ActivatePooledBeam(AActor* InOwner, const FVector& StartLo
 
 	const FVector BeamVector = EndLocation - StartLocation;
 	const float Length = BeamVector.Size();
-	if (Length <= KINDA_SMALL_NUMBER)
+	if (StartLocation.ContainsNaN() || EndLocation.ContainsNaN() || !FMath::IsFinite(Length) || Length <= KINDA_SMALL_NUMBER)
 	{
 		DeactivateToPool();
 		return;
@@ -150,8 +150,8 @@ void ARogueLaserBeam::ActivatePooledBeam(AActor* InOwner, const FVector& StartLo
 	SetActorLocation(MidPoint);
 	SetActorRotation(Direction.Rotation());
 
-	// 独立地狱塔蓝图使用组件材质；对象池激活与切换光束样式均不覆盖作者设置的槽位。
-	// 旧材质配置模式仍供激光及其他已有类使用，空值也必须写回以清理上次激活的覆盖。
+	// 使用组件材质时，激活、切换样式和对象池复用均保留蓝图材质槽。
+	// 兼容旧材质配置模式；空值也须写回以清理上次激活的覆盖。
 	if (!bUseBlueprintComponentMaterials)
 	{
 		BeamMesh->SetMaterial(0, bUseInfernoStyle ? InfernoBeamMaterial.Get() : PlayerBeamMaterial.Get());
@@ -165,7 +165,16 @@ void ARogueLaserBeam::ActivatePooledBeam(AActor* InOwner, const FVector& StartLo
 	EndRingMesh->SetVisibility(VisualStyle.bShowStartAndEndRings);
 
 	BeamMesh->SetRelativeScale3D(FVector(BeamLengthScale, VisualStyle.BeamThickness, VisualStyle.BeamThickness));
-	GlowMesh->SetRelativeScale3D(FVector(BeamLengthScale * VisualStyle.GlowLengthScaleMultiplier, VisualStyle.GlowThickness, VisualStyle.GlowThickness));
+	const float GlowLength = BeamLengthScale * VisualStyle.GlowLengthScaleMultiplier;
+	GlowMesh->SetRelativeScale3D(bGlowMeshUsesZAxis
+		? FVector(VisualStyle.GlowThickness, VisualStyle.GlowThickness, GlowLength)
+		: FVector(GlowLength, VisualStyle.GlowThickness, VisualStyle.GlowThickness));
+	if (bGlowMeshUsesZAxis && GlowMesh->GetStaticMesh())
+	{
+		// StarterContent 圆柱的原点在底面。按实际网格中心补偿，避免光晕只覆盖半束。
+		const FVector Center = GlowMesh->GetStaticMesh()->GetBounds().Origin * GlowMesh->GetRelativeScale3D();
+		GlowMesh->SetRelativeLocation(-GlowMesh->GetRelativeRotation().RotateVector(Center));
+	}
 	StartRingMesh->SetRelativeLocation(FVector(-Length * 0.5f, 0.0f, 0.0f));
 	StartRingMesh->SetRelativeScale3D(FVector(VisualStyle.StartRingSize, VisualStyle.StartRingSize, VisualStyle.StartRingDepth));
 	EndRingMesh->SetRelativeLocation(FVector(Length * 0.5f, 0.0f, 0.0f));
@@ -173,8 +182,18 @@ void ARogueLaserBeam::ActivatePooledBeam(AActor* InOwner, const FVector& StartLo
 
 	if (UWorld* World = GetWorld())
 	{
+		const float MinimumLifetime = FMath::IsFinite(MinimumBeamLifetime) ? FMath::Max(.005f, MinimumBeamLifetime) : .03f;
+		const float SafeLifetime = FMath::IsFinite(BeamLifetime) ? FMath::Max(MinimumLifetime, BeamLifetime) : FMath::Max(MinimumLifetime, .1f);
+		++VisualActivationSerial;
+		const float Phase = FMath::Fmod(static_cast<float>(GetUniqueID() % 1024) * .618034f + VisualActivationSerial * .371f, 1.f) * UE_TWO_PI;
+		// Shared materials read activation time/lifetime/phase from CPD 8..10.
+		// Reset on every pool use; no material instances, actor tick, or gameplay random stream required.
+		for (UStaticMeshComponent* Mesh : {BeamMesh.Get(), GlowMesh.Get(), StartRingMesh.Get(), EndRingMesh.Get()})
+		{
+			Mesh->SetCustomPrimitiveDataVector3(8, FVector(World->GetTimeSeconds(), SafeLifetime, Phase));
+		}
 		World->GetTimerManager().ClearTimer(ReturnToPoolTimerHandle);
-		World->GetTimerManager().SetTimer(ReturnToPoolTimerHandle, this, &ARogueLaserBeam::DeactivateToPool, FMath::Max(MinimumBeamLifetime, BeamLifetime), false);
+		World->GetTimerManager().SetTimer(ReturnToPoolTimerHandle, this, &ARogueLaserBeam::DeactivateToPool, SafeLifetime, false);
 	}
 
 	if (bSpawnImpactEffect)
@@ -190,6 +209,10 @@ void ARogueLaserBeam::DeactivateToPool()
 		World->GetTimerManager().ClearTimer(ReturnToPoolTimerHandle);
 	}
 
+	for (UStaticMeshComponent* Mesh : {BeamMesh.Get(), GlowMesh.Get(), StartRingMesh.Get(), EndRingMesh.Get()})
+	{
+		Mesh->SetCustomPrimitiveDataFloat(9, 0.f);
+	}
 	bPoolAvailable = true;
 	SetActorHiddenInGame(true);
 	SetOwner(nullptr);

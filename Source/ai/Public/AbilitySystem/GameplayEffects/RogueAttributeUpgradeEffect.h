@@ -233,6 +233,30 @@ public:
 	URogueUpgradeEffect_HellTowerDamageRamp();
 };
 
+UCLASS()
+class AI_API URogueUpgradeEffect_TalismanCount : public URogueAttributeUpgradeEffect
+{
+	GENERATED_BODY()
+public:
+	URogueUpgradeEffect_TalismanCount();
+};
+
+UCLASS()
+class AI_API URogueUpgradeEffect_TalismanPierce : public URogueAttributeUpgradeEffect
+{
+	GENERATED_BODY()
+public:
+	URogueUpgradeEffect_TalismanPierce();
+};
+
+UCLASS()
+class AI_API URogueUpgradeEffect_TalismanRepeat : public URogueAttributeUpgradeEffect
+{
+	GENERATED_BODY()
+public:
+	URogueUpgradeEffect_TalismanRepeat();
+};
+
 /** 升级枚举到效果类的映射；目标属性由对应子类配置。
  * 未映射的枚举返回 nullptr，调用方须报告并处理配置缺失。 */
 namespace RogueUpgradeEffectMap

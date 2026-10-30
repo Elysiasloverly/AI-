@@ -50,7 +50,7 @@ void ARogueEnemyProjectile::BeginPlay()
 	DeactivateToPool();
 }
 
-void ARogueEnemyProjectile::ActivatePooledProjectile(AActor* InOwner, APawn* InInstigator, const FVector& SpawnLocation, const FRotator& SpawnRotation, const FVector& InDirection, float InSpeed, float InDamage, bool bInBossShot, float InLifetime, float InVisualScale, bool bInSimpleVisual)
+void ARogueEnemyProjectile::ActivatePooledProjectile(AActor* InOwner, APawn* InInstigator, const FVector& SpawnLocation, const FRotator& SpawnRotation, const FVector& InDirection, float InSpeed, float InDamage, bool bInBossShot, float InLifetime, float InVisualScale, bool bInSimpleVisual, const FRogueEnemyProjectileMotion& InMotion)
 {
 	// 初始化期间保持无碰撞；最后启用球体查询时才允许触发即时重叠。
 	SetActorEnableCollision(false);
@@ -74,6 +74,13 @@ void ARogueEnemyProjectile::ActivatePooledProjectile(AActor* InOwner, APawn* InI
 	bPoolAvailable = false;
 	bVisualsSimplified = false;
 	bWasActivated = true;
+    PatternMotion=InMotion;
+    PatternMotion.WarningSeconds=FMath::IsFinite(InMotion.WarningSeconds)?FMath::Clamp(InMotion.WarningSeconds,0.f,3.f):0.f;
+    PatternMotion.ReturnAfter=FMath::IsFinite(InMotion.ReturnAfter)?FMath::Clamp(InMotion.ReturnAfter,0.f,2.f):0.f;
+    PatternAge=0; bPatternLaunched=PatternMotion.WarningSeconds<=0; bPatternReturned=false;
+    PatternVelocity=InDirection.GetSafeNormal()*InSpeed;
+    const auto* SourceEnemy=Cast<ARogueEnemy>(InOwner);
+    PatternOwnerCycle=SourceEnemy?SourceEnemy->GetSpawnCycleId():FGuid();
 
 	SetOwner(InOwner);
 	SetInstigator(InInstigator);
@@ -98,7 +105,7 @@ void ARogueEnemyProjectile::ActivatePooledProjectile(AActor* InOwner, APawn* InI
 		ProjectileMovement->StopMovementImmediately();
 		ProjectileMovement->InitialSpeed = InSpeed;
 		ProjectileMovement->MaxSpeed = InSpeed;
-		ProjectileMovement->Velocity = InDirection.GetSafeNormal() * InSpeed;
+		ProjectileMovement->Velocity = bPatternLaunched ? PatternVelocity : FVector::ZeroVector;
 		ProjectileMovement->UpdateComponentVelocity();
 		ProjectileMovement->Activate(true);
 	}
@@ -110,6 +117,7 @@ void ARogueEnemyProjectile::ActivatePooledProjectile(AActor* InOwner, APawn* InI
 	// 外观完全交给蓝图：在开启碰撞前给蓝图一次设置材质/粒子/缩放的机会。
 	OnProjectileActivated(bBossShot, bSimpleVisual, VisualScale);
 
+    if (!bPatternLaunched) { return; } // 预警期显示星阵，但不能造成接触伤害。
 	Collision->SetGenerateOverlapEvents(true);
 	SetActorEnableCollision(true);
 	// 此调用可能立即命中并归池；之后不再写入激活状态、运动或外观。
@@ -120,6 +128,8 @@ void ARogueEnemyProjectile::DeactivateToPool()
 {
 	const bool bShouldNotify = bWasActivated;
 	bWasActivated = false;
+    PatternMotion=FRogueEnemyProjectileMotion(); PatternAge=0; PatternVelocity=FVector::ZeroVector;
+    bPatternLaunched=true; bPatternReturned=false; PatternOwnerCycle.Invalidate();
 
 	bPoolAvailable = true;
 	bResolvedImpact = true;
@@ -176,6 +186,25 @@ void ARogueEnemyProjectile::Tick(float DeltaSeconds)
 		return;
 	}
 
+    PatternAge+=DeltaSeconds;
+    if (PatternMotion.WarningSeconds>0 || PatternMotion.ReturnAfter>0)
+    {
+        // 生命周期ID只在权威端比较；客户端的本地ID不是服务器池周期ID。
+        const auto* SourceEnemy=Cast<ARogueEnemy>(GetOwner());
+        if (HasAuthority() && GetNetMode()!=NM_Client && (!SourceEnemy || SourceEnemy->IsDead() || SourceEnemy->GetSpawnCycleId()!=PatternOwnerCycle))
+        { DeactivateToPool(); return; }
+        if (!bPatternLaunched && PatternAge>=PatternMotion.WarningSeconds)
+        {
+            bPatternLaunched=true; ProjectileMovement->SetUpdatedComponent(Collision); ProjectileMovement->Activate(true); ProjectileMovement->Velocity=PatternVelocity; ProjectileMovement->UpdateComponentVelocity();
+            Collision->SetGenerateOverlapEvents(true); SetActorEnableCollision(true); Collision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+            if (bPoolAvailable) { return; }
+        }
+        if (!bPatternReturned && PatternMotion.ReturnAfter>0 && PatternAge>=PatternMotion.WarningSeconds+PatternMotion.ReturnAfter)
+        {
+            bPatternReturned=true; ProjectileMovement->Velocity=-PatternVelocity;
+            ProjectileMovement->UpdateComponentVelocity(); SetActorRotation((-PatternVelocity).Rotation());
+        }
+    }
 	URogueEnemyTrackerSubsystem* Tracker = GetWorld() ? GetWorld()->GetSubsystem<URogueEnemyTrackerSubsystem>() : nullptr;
 	const bool bCullCombatEffects = Tracker != nullptr && Tracker->ShouldCullCombatEffects();
 	if (bCullCombatEffects != bVisualsSimplified)
@@ -226,8 +255,9 @@ void ARogueEnemyProjectile::ResolveImpact(AActor* OtherActor, const FVector& Imp
 		return;
 	}
 
-	// 密集环形弹可以穿过其它敌人，避免出生圈与友方 Pawn 重叠时立即消耗。
-	if (bSimpleVisual && Cast<ARogueEnemy>(OtherActor) != nullptr)
+	// 所有敌方弹体都穿过友方敌人；表现简化标记不应决定碰撞规则。
+	// 否则普通弹体在怪堆中出生或飞入怪堆时，会被友方 Pawn 提前消耗。
+	if (Cast<ARogueEnemy>(OtherActor) != nullptr)
 	{
 		return;
 	}

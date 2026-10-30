@@ -60,4 +60,6 @@ private:
 
 	TWeakObjectPtr<ARogueHUD> OwningRogueHUD;
 	int32 OfferIndex = INDEX_NONE;
+	FGuid QuoteId;
+	int32 QuotedCost = INDEX_NONE;
 };

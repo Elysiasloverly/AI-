@@ -26,19 +26,25 @@ namespace
 		Option.Type = Type;
 		switch (Type)
 		{
+		case ERogueUpgradeType::TalismanCount:
+			Option.Title=TEXT("归心符阵"); Option.Description=TEXT("获得灵符·归心；已持有时，增加 1 张环绕灵符，独立出击并返回。"); Option.Magnitude=1; break;
+		case ERogueUpgradeType::TalismanPierce:
+			Option.Title=TEXT("灵符贯阵"); Option.Description=TEXT("每张灵符每次出击可穿刺的不同敌人数 +1；默认命中 1 名敌人后返回。"); Option.Magnitude=1; break;
+		case ERogueUpgradeType::TalismanRepeat:
+			Option.Title=TEXT("灵符重奏"); Option.Description=TEXT("每张灵符每次出击对每名敌人的穿刺次数 +1；每次穿刺造成完整伤害。"); Option.Magnitude=1; break;
 		case ERogueUpgradeType::ProjectileBurst:
-			Option.Title = TEXT("灵符连诵");
-			Option.Description = TEXT("御札每轮攻击额外连射 1 次；每次连射都发出完整弹幕。");
+			Option.Title = TEXT("冰符连诵");
+			Option.Description = TEXT("冰符·寒弹每轮攻击额外连射 1 次；每次连射都发出完整弹幕。");
 			Option.Magnitude = 1.0f;
 			break;
 		case ERogueUpgradeType::RocketBlastRadius:
-			Option.Title = TEXT("炉心扩散");
-			Option.Description = TEXT("八卦炉爆炸半径 +90 厘米，扩大爆裂弹的伤害覆盖范围。");
+			Option.Title = TEXT("火丸扩散");
+			Option.Description = TEXT("焰符·火丸爆炸半径 +90 厘米，扩大爆裂弹的伤害覆盖范围。");
 			Option.Magnitude = 90.0f;
 			break;
 		case ERogueUpgradeType::HellTowerDamageRamp:
-			Option.Title = TEXT("神威增幅");
-			Option.Description = TEXT("御柱每跳伤害递增值 +0.1；持续锁定同一目标时，伤害增长更快。");
+			Option.Title = TEXT("焰心递燃");
+			Option.Description = TEXT("焰符·灼光每跳伤害递增值 +0.1；持续锁定同一目标时，伤害增长更快。");
 			Option.Magnitude = 0.1f;
 			break;
 		case ERogueUpgradeType::ScytheSize:
@@ -54,13 +60,13 @@ namespace
 			Option.MaxMagnitude = 1.0f;
 			break;
 		case ERogueUpgradeType::MortarCount:
-			Option.Title = TEXT("阴阳玉连投");
-			Option.Description = TEXT("获得阴阳玉；已持有时，每轮额外投出 1 枚阴阳玉。");
+			Option.Title = TEXT("霜玉连投");
+			Option.Description = TEXT("获得冰符·霜玉；已持有时，每轮额外投出 1 枚冰符·霜玉。");
 			Option.Magnitude = 1.0f;
 			break;
 		case ERogueUpgradeType::MortarBlastRadius:
-			Option.Title = TEXT("阴阳玉·扩散");
-			Option.Description = TEXT("阴阳玉爆炸半径 +90 厘米，扩大落点周围的伤害区域。");
+			Option.Title = TEXT("霜玉扩散");
+			Option.Description = TEXT("冰符·霜玉爆炸半径 +90 厘米，扩大落点周围的伤害区域。");
 			Option.Magnitude = 90.0f;
 			break;
 		default:
@@ -82,8 +88,22 @@ void FRogueUpgradeSystem::BuildRandomUpgradeOptions(const ARogueCharacter* Chara
 	}
 
 	TArray<ERogueUpgradeType> Types;
-	RogueUpgradeSystemRules::BuildUpgradePool(Types, Character, RuleAsset);
-	for (int32 Index = 0; Index < DesiredCount && Types.Num() > 0; ++Index)
+	RogueUpgradeSystemRules::BuildUpgradePool(Types, Character, RuleAsset, DefinitionAsset);
+    const int32 OpeningLevels=RuleAsset?RuleAsset->OpeningOffenseLevels:8;
+    if (Character->GetPlayerLevel()<=OpeningLevels)
+    {
+        // 前期至少一项能立即加强当前武器；其余位置仍随机且不重复。
+        TArray<ERogueUpgradeType> Offensive;
+        for (auto Type:Types)
+            if (Type==ERogueUpgradeType::ProjectileCount || Type==ERogueUpgradeType::AttackPower || Type==ERogueUpgradeType::AttackSpeed)
+                Offensive.Add(Type);
+        if (!Offensive.IsEmpty())
+        {
+            const auto Type=Offensive[FMath::RandRange(0,Offensive.Num()-1)];
+            OutOptions.Add(MakeUpgradeOption(Type));Types.Remove(Type);
+        }
+    }
+	for (int32 Index = OutOptions.Num(); Index < DesiredCount && Types.Num() > 0; ++Index)
 	{
 		const int32 PickedIndex = FMath::RandRange(0, Types.Num() - 1);
 		OutOptions.Add(MakeUpgradeOption(Types[PickedIndex]));
@@ -105,4 +125,11 @@ FRogueUpgradeOption FRogueUpgradeSystem::MakeUpgradeOption(ERogueUpgradeType Typ
 	// DataTable 中未找到对应配置，返回默认值
 	UE_LOG(LogTemp, Verbose, TEXT("RogueUpgradeSystem: 升级类型 %d 未在 DataTable 中配置，使用默认值。"), static_cast<int32>(Type));
 	return MakeDefaultUpgradeOption(Type);
+}
+
+bool FRogueUpgradeSystem::IsUpgradeAvailable(const ARogueCharacter* Character, ERogueUpgradeType Type) const
+{
+    TArray<ERogueUpgradeType> Types;
+    RogueUpgradeSystemRules::BuildUpgradePool(Types, Character, RuleAsset, DefinitionAsset);
+    return Types.Contains(Type);
 }

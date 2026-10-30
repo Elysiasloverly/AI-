@@ -3,20 +3,24 @@
 敌方弹幕现在和御札一样走蓝图类，而且**外观完全由蓝图决定**：
 
 ```text
-/Game/BP/Enemy/Projectiles/
-├── BP_EnemyProjectile                  占位模板（独立 BP，不再作为其它变体的父类）
-├── BP_EnemyProjectile_Boss            Boss
-├── BP_EnemyProjectile_Marksman       鸦天狗 / 人魂
-├── BP_EnemyProjectile_Cannoneer      山蜘蛛 / 鬼
-├── BP_EnemyProjectile_Scatterer      唐伞 / 妖狐
-├── BP_EnemyProjectile_ShockPillar    地藏
-├── BP_EnemyProjectile_Sniper         月兔
-├── BP_EnemyProjectile_Shotgunner     毒茸 / 夜雀
-├── BP_EnemyProjectile_Repeater       血蝠 / 妖精
-└── BP_EnemyProjectile_Ringcaster     亡灵
+/Game/BP/Enemy/
+├── Marksman/
+│   ├── BP_EnemyMarksman
+│   ├── BP_EnemyProjectile_Marksman
+│   └── BP_EnemySkyfall_Marksman
+├── Rifleman/
+│   ├── BP_EnemyRifleman
+│   └── BP_EnemyProjectile_Rifleman
+├── AuraHealer/  BP_EnemyAuraHealer + BP_EnemyHealingCircle
+├── LinkHealer/  BP_EnemyLinkHealer + BP_EnemyHealingLink
+├── 其它类型/     BP_Enemy类型 + BP_EnemyProjectile_类型
+├── Common/      基类、普通/Boss模板、Boss/飞行标记
+└── AI/          BP_AIController
 ```
 
-这 10 个 BP 都**直接继承 C++ 的 `ARogueEnemyProjectile`**，各自持有一套 SCS 组件，互不继承。
+其中18个普通/Boss模板及各类型弹体BP都**直接继承C++的 `ARogueEnemyProjectile`**，各自持有SCS组件，互不继承。最后4个纯表现BP继承 `ARogueEnemyEffectVisual`；没有弹幕碰撞或伤害，其圆圈半径、连线长度与方向由敌人组件更新，样式由BP决定。见 [治疗绿圈、绿线与Boss提示](Enemy-Roles-And-Visibility.md)。
+
+每种敌人本体和专属弹体位于同一目录。完整目录见 [Enemy-Blueprint-Folders.md](Enemy-Blueprint-Folders.md)。鸦天狗另有独立的天坠弹蓝图，使用 `ARogueEnemySkyfallProjectile`，不属于普通池化弹体。
 
 ## 为什么现在能自由删组件
 
@@ -58,12 +62,12 @@ C++ **不写死任何弹体资产路径**：没有配置就回退原生类，不
 
 | 敌人类型 | 弹体 |
 |---|---|
-| Rifleman（妖精） | `BP_EnemyProjectile_Repeater` |
-| Assault（夜雀） | `BP_EnemyProjectile_Shotgunner` |
-| Juggernaut（鬼） | `BP_EnemyProjectile_Cannoneer` |
-| Orbiter（人魂） | `BP_EnemyProjectile_Marksman` |
+| Rifleman（妖精） | `BP_EnemyProjectile_Rifleman` |
+| Assault（夜雀） | `BP_EnemyProjectile_Assault` |
+| Juggernaut（鬼） | `BP_EnemyProjectile_Juggernaut` |
+| Orbiter（人魂） | `BP_EnemyProjectile_Orbiter` |
 | Marksman（鸦天狗） | `BP_EnemyProjectile_Marksman` |
-| Skirmisher（妖狐） | `BP_EnemyProjectile_Scatterer` |
+| Skirmisher（妖狐） | `BP_EnemyProjectile_Skirmisher` |
 | Cannoneer（山蜘蛛） | `BP_EnemyProjectile_Cannoneer` |
 | Scatterer（唐伞） | `BP_EnemyProjectile_Scatterer` |
 | ShockPillar（地藏） | `BP_EnemyProjectile_ShockPillar` |
@@ -71,6 +75,10 @@ C++ **不写死任何弹体资产路径**：没有配置就回退原生类，不
 | Shotgunner（毒茸） | `BP_EnemyProjectile_Shotgunner` |
 | Repeater（血蝠） | `BP_EnemyProjectile_Repeater` |
 | Ringcaster（亡灵） | `BP_EnemyProjectile_Ringcaster` |
+| SkyMoth（月蝶） | `BP_EnemyProjectile_SkyMoth` |
+| WindReaver（风镰） | `BP_EnemyProjectile_WindReaver` |
+| StarLantern（星灯） | `BP_EnemyProjectile_StarLantern` |
+| AuraHealer / LinkHealer（治疗者） | 不发伤害弹；使用独立绿圈/绿线表现BP |
 
 批量写入用 `Tools/assign_enemy_projectiles.py`，只改 `ProjectileClass` 一列；
 改前自动备份到 `Saved/Backup/DT_EnemyArchetypes_before_projectiles.uasset`。
@@ -86,7 +94,7 @@ C++ 提供这些给蓝图：
 | `OnProjectileCulled(bool bCulled)` | 事件 | 高负载裁剪状态变化，隐藏装饰表现 |
 | `VisualScale` / `bBossShot` / `bSimpleVisual` | 只读属性 | 读取本次激活状态 |
 | `ImpactEffectScale` | 可编辑 | 命中特效缩放（会再乘 `VisualScale`） |
-| `PooledLifetime` | 可编辑 | 未命中时的存活时间 |
+| `PooledLifetime` | 可编辑 | 未命中时的存活时间（当前默认 30 秒） |
 | `Collision` 组件 | 组件 | 改 `Sphere Radius` 即可改命中范围；C++ 以蓝图半径为基础，激活时乘以 `VisualScale` |
 
 蓝图里加什么组件都可以：StaticMesh、Niagara、Cascade、PointLight、Trail 等；

@@ -23,6 +23,7 @@ void ARogueWeapon_HellTower::WeaponTick(float DeltaSeconds)
 	{
 		UpdateAccumulator = 0.0f;
 		HellTowerTargets.Reset();
+		HellTowerTargetSpawnIds.Reset();
 		HellTowerCurrentDamages.Reset();
 		HellTowerDamageTickTimers.Reset();
 		HellTowerBeamTimers.Reset();
@@ -47,6 +48,7 @@ void ARogueWeapon_HellTower::WeaponTick(float DeltaSeconds)
 	UpdateAccumulator = 0.0f;
 
 	HellTowerTargets.SetNum(EffectiveCount);
+	HellTowerTargetSpawnIds.SetNum(EffectiveCount);
 	HellTowerCurrentDamages.SetNum(EffectiveCount);
 	HellTowerDamageTickTimers.SetNum(EffectiveCount);
 	HellTowerBeamTimers.SetNum(EffectiveCount);
@@ -62,6 +64,7 @@ void ARogueWeapon_HellTower::WeaponTick(float DeltaSeconds)
 		ARogueEnemy* CurrentTarget = HellTowerTargets[TowerIndex].Get();
 		const bool bValid =
 			IsValid(CurrentTarget) &&
+			HellTowerTargetSpawnIds[TowerIndex] == CurrentTarget->GetSpawnCycleId() &&
 			!CurrentTarget->IsDead() &&
 			!CurrentTarget->IsAvailableInPool() &&
 			!CurrentTarget->IsActorBeingDestroyed() &&
@@ -70,6 +73,7 @@ void ARogueWeapon_HellTower::WeaponTick(float DeltaSeconds)
 		if (!bValid)
 		{
 			HellTowerTargets[TowerIndex] = nullptr;
+			HellTowerTargetSpawnIds[TowerIndex].Invalidate();
 			HellTowerCurrentDamages[TowerIndex] = FMath::Max(1.0f, GetEffectiveBaseDamage());
 			HellTowerDamageTickTimers[TowerIndex] = 0.0f;
 			HellTowerBeamTimers[TowerIndex] = 0.0f;
@@ -96,6 +100,7 @@ void ARogueWeapon_HellTower::WeaponTick(float DeltaSeconds)
 		}
 
 		HellTowerTargets[TowerIndex] = NewTarget;
+		HellTowerTargetSpawnIds[TowerIndex] = NewTarget->GetSpawnCycleId();
 		HellTowerCurrentDamages[TowerIndex] = FMath::Max(1.0f, GetEffectiveBaseDamage());
 		HellTowerDamageTickTimers[TowerIndex] = 0.0f;
 		HellTowerBeamTimers[TowerIndex] = 0.0f;
@@ -153,12 +158,14 @@ void ARogueWeapon_HellTower::OnOwnerDied()
 {
 	Super::OnOwnerDied();
 	HellTowerTargets.Reset();
+	HellTowerTargetSpawnIds.Reset();
+	UpdateAccumulator = 0.0f;
 	HellTowerCurrentDamages.Reset();
 	HellTowerDamageTickTimers.Reset();
 	HellTowerBeamTimers.Reset();
 }
 
-// 生效数值：地狱塔的换算系数（伤害 ×0.125、每跳递增 ×0.0625、跳间隔 ×0.08/下限 0.03、范围 ×0.70）
+// 生效数值：基础伤害、递增伤害、结算间隔与范围的换算系数读取本武器配置；跳间隔最低0.03秒。
 // 加成输入来自角色的 GAS 属性快照。
 
 float ARogueWeapon_HellTower::GetEffectiveBaseDamage() const

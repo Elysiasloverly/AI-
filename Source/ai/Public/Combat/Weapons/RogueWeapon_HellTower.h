@@ -30,22 +30,24 @@ public:
 	virtual void PlayCosmeticFire(const FRogueWeaponCosmeticFire& Fire) override;
 
 	// ---- 生效数值：地狱塔的换算系数与其它武器都不同----
-	// 伤害只吃 12.5%（每跳递增吃 6.25%）、伤害跳间隔按 0.08 缩放、范围只吃 70%。
+	// 各倍率读取本武器DT配置；伤害跳间隔最低0.03秒。
 
-	/** 塔基础伤害 = Config.BaseDamage + 伤害加成×0.125 */
+	/** 塔基础伤害 = Config.BaseDamage + 伤害加成×Config.BaseDamageBonusScale */
 	float GetEffectiveBaseDamage() const;
 
-	/** 每跳递增 = Config.DamageRampPerTick + 伤害加成×0.0625 */
+	/** 每跳递增 = Config.DamageRampPerTick + 伤害加成×Config.DamageRampBonusScale + 专属递增加成 */
 	float GetEffectiveDamageRampPerTick() const;
 
-	/** 伤害跳间隔 = max(0.03, Config.DamageTickInterval − 攻速加成×0.08) */
+	/** 伤害跳间隔 = max(0.03, Config.DamageTickInterval − 攻速加成×Config.DamageTickIntervalReductionScale) */
 	float GetEffectiveDamageTickInterval() const;
 
-	/** 索敌范围 = Config.Range + 范围加成×0.70 */
+	/** 索敌范围 = Config.Range + 范围加成×Config.HellTowerRangeBonusScale */
 	virtual float GetEffectiveRange() const override;
 
 private:
 	TArray<TWeakObjectPtr<ARogueEnemy>> HellTowerTargets;
+	// 同一Actor可在两次武器采样间回池再生；锁定必须属于同一次生成。
+	TArray<FGuid> HellTowerTargetSpawnIds;
 	TArray<float> HellTowerCurrentDamages;
 	TArray<float> HellTowerDamageTickTimers;
 	TArray<float> HellTowerBeamTimers;

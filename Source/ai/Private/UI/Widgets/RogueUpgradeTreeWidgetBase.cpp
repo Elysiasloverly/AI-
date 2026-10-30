@@ -1,4 +1,6 @@
 #include "UI/Widgets/RogueUpgradeTreeWidgetBase.h"
+#include "Audio/RogueMusicSubsystem.h"
+#include "Framework/RogueGameBalanceAsset.h"
 #include "UI/Widgets/RogueUpgradeTreeLayout.h"
 #include "UI/Widgets/RogueUpgradeTreePaintSpace.h"
 
@@ -24,6 +26,7 @@ void URogueUpgradeTreeWidgetBase::SetOwningRogueHUD(ARogueHUD* InOwningHUD)
 void URogueUpgradeTreeWidgetBase::NativeConstruct()
 {
 	Super::NativeConstruct();
+	URogueMusicSubsystem::BindWidgetButtonSounds(this);
 	SetIsFocusable(true);
 	if (UTextBlock* Footer = Cast<UTextBlock>(GetWidgetFromName(TEXT("FooterText"))))
 	{
@@ -80,6 +83,17 @@ void URogueUpgradeTreeWidgetBase::RefreshTree()
 	}
 	else if (!LocalProgression->GetSaveError().IsEmpty() && StatusText != nullptr) StatusText->SetText(LocalProgression->GetSaveError());
 	if (IceBricksText != nullptr) IceBricksText->SetText(FText::FromString(FString::Printf(TEXT("冰砖  %d"), IceBricks)));
+	if (PageSubtitle != nullptr)
+	{
+		int32 BossIceBrickReward = 1;
+		if (const URogueGameBalanceAsset* Balance = URogueGameBalanceAsset::GetDefaultGameBalance())
+		{
+			BossIceBrickReward = FMath::Max(Balance->Rewards.BossIceBrickReward, 0);
+		}
+		PageSubtitle->SetText(FText::FromString(FString::Printf(
+			TEXT("每击败一位 Boss，本局每位玩家获得 %d 冰砖。解锁进度保存在自己的本地存档。"),
+			BossIceBrickReward)));
+	}
 	if (SectionText != nullptr) SectionText->SetText(FText::FromString(bAttributeTree
 		? TEXT("基础属性 · 每级 3 冰砖 · 每项最多 5 级")
 		: TEXT("武器与专属卡 · 每个节点 5 冰砖 · 沿箭头逐步解锁")));

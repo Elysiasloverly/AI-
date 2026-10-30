@@ -295,8 +295,8 @@ FString URogueUIThemeBuilder::DescribePresentation(UWidgetBlueprint* BP)
 UUserWidget* CreateCardPagePreview(APlayerController* Owner,int32 Page)
 {
     if (!Owner) { return nullptr; }
-    const TCHAR* Titles[]={TEXT("灵符连诵"),TEXT("炉心扩散"),TEXT("神威增幅"),TEXT("生命强化"),TEXT("灵力强化"),TEXT("吸取范围")};
-    const TCHAR* Descs[]={TEXT("每次攻击额外追加一轮御札连射。连续选取可叠加连发次数。"),TEXT("八卦炉的爆炸半径增加，覆盖更广的范围。"),TEXT("御柱锁定同一敌人时，每跳伤害递增值增加 0.1。"),TEXT("提高最大生命值，并补充新增部分的生命。"),TEXT("提高武器伤害，让每次攻击更有力量。"),TEXT("扩大经验球的吸取范围，更从容地穿行于弹幕之间。")};
+    const TCHAR* Titles[]={TEXT("冰符连诵"),TEXT("火丸扩散"),TEXT("焰心递燃"),TEXT("生命强化"),TEXT("灵力强化"),TEXT("吸取范围")};
+    const TCHAR* Descs[]={TEXT("每次攻击额外追加一轮冰符·寒弹连射。连续选取可叠加连发次数。"),TEXT("焰符·火丸的爆炸半径增加，覆盖更广的范围。"),TEXT("焰符·灼光锁定同一敌人时，每跳伤害递增值增加 0.1。"),TEXT("提高最大生命值，并补充新增部分的生命。"),TEXT("提高武器伤害，让每次攻击更有力量。"),TEXT("扩大经验球的吸取范围，更从容地穿行于弹幕之间。")};
     if (Page==1)
     {
         UClass* Class=LoadClass<URogueShopWidgetBase>(nullptr,TEXT("/Game/UMG/Menus/Shop/WBP_Shop.WBP_Shop_C"));

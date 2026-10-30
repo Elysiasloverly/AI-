@@ -219,6 +219,18 @@ void ARogueCharacter::Revive()
 	UE_LOG(LogTemp, Log, TEXT("[RogueLife] %s 已复活：碰撞/移动恢复，等待界面由 Alive 快照收起"), *GetName());
 }
 
+void ARogueCharacter::FinalizeForVictory()
+{
+    if (!IsAuthoritySide() || !GetWorld()) return;
+    GetWorldTimerManager().ClearTimer(ReviveTimerHandle);
+    GetWorldTimerManager().ClearTimer(PendingDeathTimerHandle);
+    bPendingDeath=false;
+    if (auto* ASC=GetRogueAbilitySystemComponent()) ASC->CancelAllAbilities();
+    GetCharacterMovement()->StopMovementImmediately();
+    GetCharacterMovement()->DisableMovement();
+    ForceNetUpdate();
+}
+
 void ARogueCharacter::FinalizeForGameOver()
 {
 	if (!IsAuthoritySide() || GetWorld() == nullptr)

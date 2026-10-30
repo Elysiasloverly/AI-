@@ -158,8 +158,8 @@ bool FRogueAudioEnemyInheritanceTest::RunTest(const FString& Parameters)
 {
     using namespace RogueAttackAudioTests; using Access = FRogueAttackAudioTestAccess;
     FFixture F; if (!F.Initialize()) return false;
-    UClass* Base = LoadClass<ARogueEnemy>(nullptr, TEXT("/Game/BP/Enemy/BP_EnemyBase.BP_EnemyBase_C"));
-    UClass* Child = LoadClass<ARogueEnemy>(nullptr, TEXT("/Game/BP/Enemy/BP_EnemyRifleman.BP_EnemyRifleman_C"));
+    UClass* Base = LoadClass<ARogueEnemy>(nullptr, TEXT("/Game/BP/Enemy/Common/BP_EnemyBase.BP_EnemyBase_C"));
+    UClass* Child = LoadClass<ARogueEnemy>(nullptr, TEXT("/Game/BP/Enemy/Rifleman/BP_EnemyRifleman.BP_EnemyRifleman_C"));
     if (!TestTrue(TEXT("Saved enemy child derives from saved base"), Base && Child && Child->IsChildOf(Base))) return false;
     auto* Defaults = Cast<ARogueEnemy>(Base->GetDefaultObject());
     struct FRestore { ARogueEnemy* Object; FRogueAttackAudioSettings Saved; ~FRestore() { Access::Settings(Object) = Saved; } } Restore{Defaults, Access::Settings(Defaults)};

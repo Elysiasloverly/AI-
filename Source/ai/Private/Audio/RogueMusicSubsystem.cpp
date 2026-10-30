@@ -1,5 +1,9 @@
 #include "Audio/RogueMusicSubsystem.h"
 #include "AudioDevice.h"
+#include "Blueprint/UserWidget.h"
+#include "Blueprint/WidgetTree.h"
+#include "Components/Button.h"
+#include "Sound/SoundConcurrency.h"
 #include "Components/AudioComponent.h"
 #include "Engine/GameInstance.h"
 #include "Framework/RogueGameState.h"
@@ -23,6 +27,67 @@ URogueMusicSubsystem* URogueMusicSubsystem::GetAudioSystem(const UObject* Contex
     return Instance ? Instance->GetSubsystem<URogueMusicSubsystem>() : nullptr;
 }
 
+int32 URogueMusicSubsystem::BindWidgetButtonSounds(UUserWidget* Widget)
+{
+    if (!IsValid(Widget)) return 0;
+    if (auto* Audio = GetAudioSystem(Widget)) return Audio->BindButtonSounds(Widget);
+    return 0;
+}
+
+int32 URogueMusicSubsystem::BindButtonSounds(UUserWidget* Widget)
+{
+    if (!Widget || !Widget->WidgetTree) return 0;
+    int32 ButtonCount = 0;
+    Widget->WidgetTree->ForEachWidgetAndDescendants([this, &ButtonCount](UWidget* Child)
+    {
+        if (auto* Button = Cast<UButton>(Child))
+        {
+            // 只移除 Slate 自带声音，保留美术样式和原有的按钮业务事件。
+            FButtonStyle Style = Button->GetStyle();
+            Style.PressedSlateSound = FSlateSound();
+            Style.HoveredSlateSound = FSlateSound();
+            Button->SetStyle(Style);
+            Button->OnPressed.AddUniqueDynamic(this, &ThisClass::HandleUIButtonPressed);
+            Button->OnHovered.AddUniqueDynamic(this, &ThisClass::HandleUIButtonHovered);
+            ++ButtonCount;
+        }
+    });
+    return ButtonCount;
+}
+
+void URogueMusicSubsystem::HandleUIButtonPressed() { PlayButtonSound(true); }
+void URogueMusicSubsystem::HandleUIButtonHovered() { PlayButtonSound(false); }
+
+void URogueMusicSubsystem::PlayButtonSound(bool bPressed)
+{
+    if (!CanPlayInWorld() || !LoadedConfig || !LoadedConfig->Buttons.bEnabled || SoundEffectsVolume <= KINDA_SMALL_NUMBER) return;
+    const auto& Settings = LoadedConfig->Buttons;
+    USoundBase* Sound = bPressed ? Settings.ClickSound.Get() : Settings.HoverSound.Get();
+    const float RawVolume = bPressed ? Settings.ClickVolume : Settings.HoverVolume;
+    const float Volume = FMath::IsFinite(RawVolume) ? FMath::Clamp(RawVolume, 0.f, 2.f) : 0.f;
+    if (!Sound || Volume <= KINDA_SMALL_NUMBER) return;
+    // UButton 只在进入/按下的状态边沿发事件。跨按钮的时间限流会吞掉真实输入；
+    // 密集声音交由有上限的并发组处理，不丢弃后续按钮的进入事件。
+    if (MixWorld.Get() != GetWorld()) ApplyVolumes();
+    if (!UIButtonConcurrency)
+    {
+        UIButtonConcurrency = NewObject<USoundConcurrency>(this);
+        UIButtonConcurrency->Concurrency.MaxCount = 6;
+        UIButtonConcurrency->Concurrency.ResolutionRule = EMaxConcurrentResolutionRule::StopOldest;
+        UIButtonConcurrency->Concurrency.VoiceStealReleaseTime = .01f;
+    }
+    // 先配置分类再播放；按下时响，进入地图后可播完短尾音，结束后组件自行回收。
+    UAudioComponent* Component = UGameplayStatics::CreateSound2D(this, Sound, Volume, 1.f, 0.f, UIButtonConcurrency, true, true);
+    if (!Component) return;
+    Component->SoundClassOverride = LoadedConfig->UIClass ? LoadedConfig->UIClass.Get() : LoadedConfig->EffectsClass.Get();
+    Component->bIsUISound = true;
+    Component->bAllowSpatialization = false;
+    Component->bStopWhenOwnerDestroyed = false;
+    Component->Play();
+    LastUIButtonComponent = Component;
+    if (bPressed) ++UIButtonPressedCount; else ++UIButtonHoveredCount;
+}
+
 void URogueMusicSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
     Super::Initialize(Collection);
@@ -37,6 +102,8 @@ void URogueMusicSubsystem::Deinitialize()
     bInitialized = false;
     for (UAudioComponent* Component : Channels)
         if (IsValid(Component)) { Component->OnAudioFinishedNative.RemoveAll(this); Component->Stop(); Component->DestroyComponent(); }
+    if (UAudioComponent* Component = LastUIButtonComponent.Get()) Component->Stop();
+    LastUIButtonComponent.Reset(); UIButtonConcurrency = nullptr;
     Channels.Empty(); CurrentSound = nullptr; LoadedConfig = nullptr; MixWorld.Reset();
     Super::Deinitialize();
 }
@@ -177,7 +244,12 @@ FString URogueMusicSubsystem::GetPlaybackDebugInfo() const
             IsValid(Component) ? *GetPathNameSafe(Component->Sound) : TEXT(""),
             IsValid(Component) && Component->IsPlaying() ? TEXT("true") : TEXT("false"), Index == ActiveChannel ? TEXT("true") : TEXT("false"));
     }
-    return FString::Printf(TEXT("{\"scene\":%d,\"sound\":\"%s\",\"channels\":[%s]}"), int32(CurrentScene), *GetPathNameSafe(CurrentSound), *Entries);
+    const UAudioComponent* UI = LastUIButtonComponent.Get();
+    return FString::Printf(TEXT("{\"scene\":%d,\"sound\":\"%s\",\"channels\":[%s],\"ui_click\":%u,\"ui_hover\":%u,\"ui_last\":{\"id\":\"%s\",\"sound\":\"%s\",\"playing\":%s,\"is_ui\":%s,\"class\":\"%s\"}}"),
+        int32(CurrentScene), *GetPathNameSafe(CurrentSound), *Entries, UIButtonPressedCount, UIButtonHoveredCount,
+        UI ? *UI->GetPathName() : TEXT(""), UI ? *GetPathNameSafe(UI->Sound) : TEXT(""),
+        UI && UI->IsPlaying() ? TEXT("true") : TEXT("false"), UI && UI->bIsUISound ? TEXT("true") : TEXT("false"),
+        UI ? *GetPathNameSafe(UI->SoundClassOverride) : TEXT(""));
 }
 
 void URogueMusicSubsystem::ApplyVolumes()

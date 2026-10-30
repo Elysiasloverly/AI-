@@ -143,7 +143,7 @@ void ARogueCharacter::PossessedBy(AController* NewController)
 	{
 		if (Mode->IsGameOver())
 		{
-			FinalizeForGameOver();
+            if (Mode->IsVictory()) FinalizeForVictory(); else FinalizeForGameOver();
 		}
 	}
 	ApplyDownedState();

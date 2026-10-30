@@ -111,7 +111,7 @@ bool URogueUpgradeTreeBuilder::BuildUpgradeTree(UWidgetBlueprint* Blueprint)
 	UTextBlock* Currency = Text(Blueprint, TEXT("IceBricksText"), TEXT("冰砖  0"), 26, Accent);
 	Currency->SetJustification(ETextJustify::Right);
 	Place(Root, Currency, FVector2D(-54.0f, 28.0f), FVector2D(330.0f, 52.0f), FAnchors(1.0f, 0.0f), FVector2D(1.0f, 0.0f));
-	UTextBlock* Subtitle = Text(Blueprint, TEXT("PageSubtitle"), TEXT("每击败一位 Boss，本局每位玩家获得 1 冰砖。解锁进度保存在自己的本地存档。"), 15, SubtleInk);
+	UTextBlock* Subtitle = Text(Blueprint, TEXT("PageSubtitle"), TEXT("每击败一位 Boss，本局每位玩家获得冰砖；数量见 DA_GameBalance 的「05.击杀奖励 → 首领冰砖」。解锁进度保存在自己的本地存档。"), 15, SubtleInk);
 	Place(Root, Subtitle, FVector2D(56.0f, 82.0f), FVector2D(1350.0f, 40.0f));
 	Place(Root, Button(Blueprint, TEXT("WeaponsTabButton"), TEXT("WeaponsTabLabel"), TEXT("武器与专属卡"), 18), FVector2D(56.0f, 131.0f), FVector2D(230.0f, 46.0f));
 	Place(Root, Button(Blueprint, TEXT("AttributesTabButton"), TEXT("AttributesTabLabel"), TEXT("基础属性"), 18), FVector2D(300.0f, 131.0f), FVector2D(200.0f, 46.0f));
@@ -138,7 +138,7 @@ bool URogueUpgradeTreeBuilder::BuildUpgradeTree(UWidgetBlueprint* Blueprint)
 	ContentSize->AddChild(Canvas);
 	UTextBlock* Status = Text(Blueprint, TEXT("StatusText"), TEXT(""), 16, Accent);
 	Place(Root, Status, FVector2D(56.0f, -78.0f), FVector2D(1500.0f, 32.0f), FAnchors(0.0f, 1.0f));
-	UTextBlock* Footer = Text(Blueprint, TEXT("FooterText"), TEXT("御札与其数量卡初始开放。护甲需要先解锁；基础属性每项最多升级 5 次。滚轮可查看上方分支。"), 13, SubtleInk);
+	UTextBlock* Footer = Text(Blueprint, TEXT("FooterText"), TEXT("寒弹及其数量卡初始开放。沿箭头向下逐步解锁；每页最多四列，右下角翻页，滚轮查看下方分支。"), 13, SubtleInk);
 	Place(Root, Footer, FVector2D(56.0f, -44.0f), FVector2D(1550.0f, 30.0f), FAnchors(0.0f, 1.0f));
 	Finish(Blueprint);
 	return true;

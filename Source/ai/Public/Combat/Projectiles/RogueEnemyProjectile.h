@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "Enemies/Data/RogueFlyingEnemySettings.h"
 #include "RogueEnemyProjectile.generated.h"
 
 class UProjectileMovementComponent;
@@ -26,7 +27,7 @@ public:
 	virtual void Tick(float DeltaSeconds) override;
 
 	/** 从对象池激活。伤害只在服务端结算；客户端表现弹体传入 0 伤害。 */
-	void ActivatePooledProjectile(AActor* InOwner, APawn* InInstigator, const FVector& SpawnLocation, const FRotator& SpawnRotation, const FVector& InDirection, float InSpeed, float InDamage, bool bInBossShot, float InLifetime = 0.0f, float InVisualScale = 1.0f, bool bInSimpleVisual = false);
+	void ActivatePooledProjectile(AActor* InOwner, APawn* InInstigator, const FVector& SpawnLocation, const FRotator& SpawnRotation, const FVector& InDirection, float InSpeed, float InDamage, bool bInBossShot, float InLifetime = 0.0f, float InVisualScale = 1.0f, bool bInSimpleVisual = false, const FRogueEnemyProjectileMotion& InMotion = FRogueEnemyProjectileMotion());
 	void DeactivateToPool();
 	bool IsAvailableInPool() const { return bPoolAvailable; }
 
@@ -46,7 +47,7 @@ public:
 
 	/** 未命中时的存活时间；调用方可用 InLifetime 覆盖。 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Pooling", meta = (DisplayName = "未命中存活时间"))
-	float PooledLifetime = 4.0f;
+	float PooledLifetime = 30.0f;
 
 	/** 本次激活的 Boss 标记；蓝图可据此换材质/特效。 */
 	UPROPERTY(BlueprintReadOnly, Category = "Rogue|Projectile")
@@ -93,6 +94,11 @@ private:
 	/** 蓝图可改碰撞球半径（组件上的 Sphere Radius）；这里记录激活前的基础值。 */
 	float BaseCollisionRadius = 22.0f;
 
+    FRogueEnemyProjectileMotion PatternMotion;
+    float PatternAge=0;
+    bool bPatternLaunched=true, bPatternReturned=false;
+    FVector PatternVelocity=FVector::ZeroVector;
+    FGuid PatternOwnerCycle;
 	float Damage = 10.0f;
 	float RemainingLifetime = 0.0f;
 	bool bResolvedImpact = false;

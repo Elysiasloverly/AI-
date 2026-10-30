@@ -1,5 +1,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
 #include "Framework/RogueGameMode.h"
+#include "Framework/RogueGameModeRules.h"
+#include "Framework/RogueGameBalanceAsset.h"
 #include "Framework/RogueGameState.h"
 #include "Framework/RogueBattleStage.h"
 #include "Player/RogueCharacter.h"
@@ -13,6 +15,7 @@
 #include "Enemies/Data/RogueEnemyArchetypes.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "GameFramework/WorldSettings.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "HAL/IConsoleManager.h"
@@ -38,6 +41,19 @@ struct FRogueBattleStageTestAccess
     }
     static bool Step(ARogueGameMode* Mode, float Delta) { return Mode->TickBattleStage(Delta); }
     static FRogueBattleStageView View(ARogueGameMode* Mode) { return Mode->StageView; }
+    static void SecondDayBoundary(ARogueGameMode* Mode)
+    { DayBoundary(Mode,85);Mode->RunState.BattleStageIndex=2; }
+    static void CycleBoundary(ARogueGameMode* Mode,int32 Index)
+    {
+        DayBoundary(Mode,Index==0?35:Index==1?50:85);
+        Mode->RunState.BattleStageIndex=Index;
+        Mode->StageSettings.CountdownSeconds=1;
+        Mode->BeginBattleStageClearing();Mode->TickBattleStage(0);Mode->PushRunStateToGameState();
+    }
+    static void Win(ARogueGameMode* Mode) { Mode->RunState.CurrentWave=100;Mode->CompleteRunIfVictoryReached(); }
+    static void Density(ARogueGameMode* M,float V) { M->StageView.EnemyCountMultiplier=V;M->StageView.EnemySpawnRateMultiplier=V; }
+    static void ResetBudget(URogueSpawnSubsystem* S,int32 W) { S->ResetWaveSpawnCounts(W); }
+    static int32 Budget(URogueSpawnSubsystem* S) { return S->WaveEnemyBudget; }
     static void Speed(ARogueGameMode* Mode, float Value) { Mode->StageView.EnemyAttackSpeedMultiplier = Value; }
     static void Progress(ARogueCharacter* Player, int32 Value)
     {
@@ -126,7 +142,7 @@ bool FRogueNightAttackSpeedTest::RunTest(const FString& Parameters)
     FFixture F; if (!F.Initialize()) { return false; }
     ARogueEnemy* Enemy = F.World->SpawnActor<ARogueEnemy>();
     Enemy->SetActorTickEnabled(false);
-    for (int32 Type = 0; Type <= static_cast<int32>(ERogueEnemyType::Ringcaster); ++Type)
+    for (int32 Type = 0; Type <= static_cast<int32>(ERogueEnemyType::StarLantern); ++Type)
     {
         for (bool Boss : {false, true})
         {
@@ -211,6 +227,71 @@ bool FRogueStageRunTransferTest::RunTest(const FString& Parameters)
     return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueSecondDayBoundaryTest,"Rogue.Gameplay.BattleStage.SecondDayAndConfiguration",RogueBattleStageTests::Flags)
+bool FRogueSecondDayBoundaryTest::RunTest(const FString& Parameters)
+{
+    RogueBattleStageTests::FFixture F;if(!F.Initialize())return false;
+    FRogueBattleStageTestAccess::SecondDayBoundary(F.Mode);
+    FRogueBattleStageTestAccess::Step(F.Mode,.1f);
+    TestEqual(TEXT("Second daytime stops at85"),F.Mode->GetCurrentWave(),85);
+    TestEqual(TEXT("Empty field begins countdown"),FRogueBattleStageTestAccess::View(F.Mode).Phase,ERogueBattleStage::Countdown);
+    TestTrue(TEXT("Third transition goes to night"),FRogueBattleStageTestAccess::View(F.Mode).bNextStageIsNight);
+    FRogueBattleStageSettings Settings;Settings.DayWaveCount=10;Settings.FirstNightEndWave=20;Settings.SecondDayEndWave=30;Settings.NormalizeTransitionWaves();
+    TestEqual(TEXT("First configurable boundary"),Settings.GetTransitionEndWave(0),10);
+    TestEqual(TEXT("Second configurable boundary"),Settings.GetTransitionEndWave(1),20);
+    TestEqual(TEXT("Third configurable boundary"),Settings.GetTransitionEndWave(2),30);
+    TestEqual(TEXT("Final night has no fourth transition"),Settings.GetTransitionEndWave(3),MAX_int32);
+    Settings.DayWaveCount=1000;Settings.FirstNightEndWave=-1;Settings.SecondDayEndWave=2;Settings.NormalizeTransitionWaves();
+    TestEqual(TEXT("Invalid first boundary clamped below victory"),Settings.DayWaveCount,97);
+    TestEqual(TEXT("Second boundary remains increasing"),Settings.FirstNightEndWave,98);
+    TestEqual(TEXT("Third boundary remains below100"),Settings.SecondDayEndWave,99);
+    return true;
+}
+
+static FAutoConsoleCommandWithWorld RogueTestStageCycle(TEXT("Rogue.Test.StageCycle"),
+    TEXT("Verify all three real multiplayer map transitions and victory with QA slots."),
+    FConsoleCommandWithWorldDelegate::CreateLambda([](UWorld* World)
+    {
+        if(!World||!World->GetAuthGameMode<ARogueGameMode>())return;
+        // Freeze the QA scene while a separate client starts; waiting must not kill the host.
+        if(auto* Spawns=World->GetSubsystem<URogueSpawnSubsystem>())Spawns->SetSpawningSuspended(true);
+        for(TActorIterator<ARogueEnemy> It(World);It;++It)It->DeactivateToPool();
+        TWeakObjectPtr<UGameInstance> Instance=World->GetGameInstance();
+        TSharedRef<int32> Phase=MakeShared<int32>(0);
+        TSharedRef<double> Start=MakeShared<double>(FPlatformTime::Seconds());
+        FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([Instance,Phase,Start](float)
+        {
+            UWorld* W=Instance.IsValid()?Instance->GetWorld():nullptr;auto* M=W?W->GetAuthGameMode<ARogueGameMode>():nullptr;
+            if(!M)return true;
+            if(FPlatformTime::Seconds()-*Start>180){UE_LOG(LogTemp,Error,TEXT("[StageCycleTest] FAIL timeout phase%d"),*Phase);return false;}
+            TArray<ARogueCharacter*> Players;
+            for(FConstPlayerControllerIterator It=W->GetPlayerControllerIterator();It;++It)
+            {
+                auto* P=It->Get()?Cast<ARogueCharacter>(It->Get()->GetPawn()):nullptr;
+                auto* S=P?P->GetPlayerState<ARoguePlayerState>():nullptr;
+                if(S&&S->IsBaseAttributesInitialized())Players.Add(P);
+            }
+            if(Players.Num()!=2)return true;
+            if(*Phase==0)
+            {
+                int32 Money=70;for(auto* P:Players){FRogueBattleStageTestAccess::Progress(P,Money);Money+=60;}
+                for(TActorIterator<ARogueEnemy> It(W);It;++It)It->DeactivateToPool();
+                FRogueBattleStageTestAccess::CycleBoundary(M,0);*Phase=1;return true;
+            }
+            const int32 ExpectedWave=*Phase==1?36:*Phase==2?51:86;
+            const float ExpectedSpeed=*Phase==2?1.f:2.f;
+            if(M->GetCurrentWave()!=ExpectedWave||M->GetEnemyAttackSpeedMultiplier()!=ExpectedSpeed)return true;
+            int32 Sum=0;bool Valid=true;
+            for(auto* P:Players){Sum+=P->GetMoney();Valid&=P->GetPlayerLevel()==P->GetMoney()/10;}
+            Valid&=Sum==200;
+            UE_LOG(LogTemp,Display,TEXT("[StageCycleTest] %s phase=%d Players=%d Wave=%d Speed=%.1f MoneySum=%d"),Valid?TEXT("PASS"):TEXT("FAIL"),*Phase,Players.Num(),M->GetCurrentWave(),M->GetEnemyAttackSpeedMultiplier(),Sum);
+            if(!Valid)return false;
+            if(*Phase==3){FRogueBattleStageTestAccess::Win(M);return false;}
+            for(TActorIterator<ARogueEnemy> It(W);It;++It)It->DeactivateToPool();
+            FRogueBattleStageTestAccess::CycleBoundary(M,*Phase);++*Phase;return true;
+        }),.1f);
+    }));
+
 // 开发配置下的真实双进程回归入口；默认不执行，也不写永久进度。
 static FAutoConsoleCommandWithWorld RogueTestStageTravel(TEXT("Rogue.Test.StageTransition"),
     TEXT("Run a two-process day/night transition test once both players are initialized."),
@@ -266,4 +347,26 @@ static FAutoConsoleCommandWithWorld RogueTestStageTravel(TEXT("Rogue.Test.StageT
             return true;
         }), .1f);
     }));
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNightDensityTest,"Rogue.Gameplay.BattleStage.NightDoublesBudgetAndRateWithoutCompounding",RogueBattleStageTests::Flags)
+bool FNightDensityTest::RunTest(const FString&)
+{
+    using namespace RogueBattleStageTests;FFixture F;if(!F.Initialize())return false;
+    auto* B=URogueGameBalanceAsset::GetDefaultGameBalance();
+    for(int W:{1,10,36,50,51,85,86,99})
+    {
+        TestEqual(TEXT("Night budget exactly doubles same-wave baseline"),RogueGameModeRules::BuildWaveEnemyCount(W,B,2),2*RogueGameModeRules::BuildWaveEnemyCount(W,B));
+        auto Day=RogueGameModeRules::BuildSpawnCadence(W,.8f,B,1);auto Night=RogueGameModeRules::BuildSpawnCadence(W,.8f,B,2);
+        TestEqual(TEXT("Same batch at half interval"),Night.NextSpawnDelay,Day.NextSpawnDelay*.5f);
+        TestEqual(TEXT("No accidental quadrupled throughput"),Night.SpawnBatchSize,Day.SpawnBatchSize);
+    }
+    auto* Spawn=F.World->GetSubsystem<URogueSpawnSubsystem>();
+    FRogueBattleStageTestAccess::ResetBudget(Spawn,36);const int32 Day=FRogueBattleStageTestAccess::Budget(Spawn);
+    FRogueBattleStageTestAccess::Density(F.Mode,2);FRogueBattleStageTestAccess::ResetBudget(Spawn,36);
+    TestEqual(TEXT("Real spawner uses stage multiplier"),FRogueBattleStageTestAccess::Budget(Spawn),Day*2);
+    FRogueBattleStageTestAccess::ResetBudget(Spawn,36);TestEqual(TEXT("Repeated reset does not stack"),FRogueBattleStageTestAccess::Budget(Spawn),Day*2);
+    FRogueBattleStageTestAccess::Density(F.Mode,1);FRogueBattleStageTestAccess::ResetBudget(Spawn,36);
+    TestEqual(TEXT("Return to day clears multiplier"),FRogueBattleStageTestAccess::Budget(Spawn),Day);
+    return true;
+}
 #endif

@@ -51,10 +51,10 @@ public:
 
 	/** 同一个服务器奖励 ID 最多记一次；成功返回包含此前已经成功领取的情况。 */
 	UFUNCTION(BlueprintCallable, Category = "升级树")
-	bool ApplyBossReward(const FGuid& RewardId);
+	bool ApplyBossReward(const FGuid& RewardId, int32 Amount = 1);
 
 	/** 奖励移交后跨地图保留，直到事务成功；不计入已保存余额。 */
-	void EnqueueBossReward(const FGuid& RewardId);
+	void EnqueueBossReward(const FGuid& RewardId, int32 Amount = 1);
 	bool FlushPendingBossRewards(float DeltaSeconds = 0.0f);
 	UFUNCTION(BlueprintPure, Category = "升级树")
 	int32 GetPendingBossRewardCount() const { return PendingBossRewards.Num(); }
@@ -84,7 +84,7 @@ private:
 	friend class FRoguePendingRewardTravelTest;
 #endif
 
-	TSet<FGuid> PendingBossRewards;
+	TMap<FGuid, int32> PendingBossRewards;
 	FTSTicker::FDelegateHandle RewardRetryHandle;
 	float LastSaveMilliseconds = 0.0f;
 

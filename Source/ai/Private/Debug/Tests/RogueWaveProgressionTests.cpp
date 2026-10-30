@@ -20,6 +20,7 @@
 #include "Misc/AutomationTest.h"
 #include "Tests/AutomationCommon.h"
 #include <limits>
+#include "HAL/IConsoleManager.h"
 
 struct FRogueWaveProgressionTestAccess
 {
@@ -45,7 +46,14 @@ struct FRogueWaveProgressionTestAccess
         Balance->BattleStage.NightWaveDuration = Duration;
         Mode->InitializeBattleStage();
     }
-    static float NightDuration(ARogueGameMode* Mode) { return Mode->StageSettings.NightWaveDuration; }
+    static void PrepareVictoryBoundary(ARogueGameMode* Mode,int32 Wave)
+    {
+        Mode->RunState.CurrentWave=Wave; Mode->RunState.BattleStageIndex=3; Mode->StageView.Phase=ERogueBattleStage::Night;
+        Mode->bDayStageMap=false;
+    }
+    static void FirstNightBoundary(ARogueGameMode* Mode)
+    { PrepareVictoryBoundary(Mode,50); Mode->RunState.BattleStageIndex=1; }
+
 };
 
 namespace RogueWaveProgressionTests
@@ -94,6 +102,13 @@ namespace RogueWaveProgressionTests
             return Player->IsAlive();
         }
         void Step(float Delta=.1f) { FRogueWaveProgressionTestAccess::Step(Mode,Delta); }
+        void FinishCurrentWave()
+        {
+            for(int I=0;I<10000&&!Spawn->HasFinishedWaveSpawning(FRogueWaveProgressionTestAccess::Run(Mode));++I)
+                if(!Spawn->SpawnEnemy(FRogueWaveProgressionTestAccess::Run(Mode),Player,Region)) break;
+            while(Find())Clear();while(Find(true))Clear(true);
+            FRogueWaveProgressionTestAccess::Run(Mode).bBossAlive=false;
+        }
         ARogueEnemy* Find(bool bBoss=false)
         {
             for(const TWeakObjectPtr<ARogueEnemy>& Weak:Tracker->GetActiveEnemies())
@@ -111,7 +126,7 @@ bool FRogueWaveBudgetRulesTest::RunTest(const FString& Parameters)
     TestEqual(TEXT("First wave budget"),RogueGameModeRules::BuildWaveEnemyCount(1,Balance),24);
     TestEqual(TEXT("Later wave budget"),RogueGameModeRules::BuildWaveEnemyCount(10,Balance),42);
     Balance->Spawn.EnemiesPerWaveLimit=30;
-    TestEqual(TEXT("Cumulative cap independent of alive cap"),RogueGameModeRules::BuildWaveEnemyCount(10,Balance),30);
+    TestEqual(TEXT("Cumulative wave cap remains effective"),RogueGameModeRules::BuildWaveEnemyCount(10,Balance),30);
     Balance->Spawn.EnemiesPerWaveLimit=0;Balance->Spawn.BaseEnemiesPerWave=MAX_int32;Balance->Spawn.EnemiesPerWaveIncrement=MAX_int32;
     TestEqual(TEXT("Large values saturate instead of wrapping"),RogueGameModeRules::BuildWaveEnemyCount(MAX_int32,Balance),MAX_int32);
     Balance->Spawn.BaseEnemiesPerWave=-1;Balance->Spawn.EnemiesPerWaveIncrement=-2;
@@ -123,18 +138,31 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueWaveClearProgressionTest,"Rogue.Gameplay.
 bool FRogueWaveClearProgressionTest::RunTest(const FString& Parameters)
 {
     RogueWaveProgressionTests::FFixture F;if(!F.Initialize())return false;
-    F.Step();TestEqual(TEXT("First enemy consumes one slot"),F.Spawn->GetSpawnedCountThisWave(),1);
-    F.Step(10000);TestEqual(TEXT("Elapsed time cannot advance an uncleared wave"),F.Mode->GetCurrentWave(),1);
-    TestEqual(TEXT("Alive cap blocks new spawns without consuming budget"),F.Spawn->GetSpawnedCountThisWave(),1);
-    F.Clear();F.Step();TestEqual(TEXT("Early empty field continues the same wave"),F.Mode->GetCurrentWave(),1);
-    TestEqual(TEXT("Second enemy consumes next slot"),F.Spawn->GetSpawnedCountThisWave(),2);
-    F.Clear();F.Step();TestEqual(TEXT("Third enemy finishes this wave's generation"),F.Spawn->GetSpawnedCountThisWave(),3);
-    F.Step(10000);TestEqual(TEXT("Last living enemy still holds wave"),F.Mode->GetCurrentWave(),1);
-    TestFalse(TEXT("Direct spawn cannot bypass the cumulative budget"),F.Spawn->SpawnEnemy(FRogueWaveProgressionTestAccess::Run(F.Mode),F.Player,F.Region));
-    F.Clear();F.Step();TestEqual(TEXT("Clearing the last enemy starts exactly next wave"),F.Mode->GetCurrentWave(),2);
-    TestEqual(TEXT("New wave resets cumulative count"),F.Spawn->GetSpawnedCountThisWave(),1);
-    TestEqual(TEXT("New wave grows its own budget"),F.Spawn->GetWaveEnemyBudget(),4);
-    TestEqual(TEXT("Shared state exposes the authoritative wave"),F.World->GetGameState<ARogueGameState>()->GetCurrentWave(),2);
+    F.Step(.001f);TestEqual(TEXT("First slot"),F.Spawn->GetSpawnedCountThisWave(),1);
+    F.Step(10000);TestEqual(TEXT("Time cannot advance uncleared wave"),F.Mode->GetCurrentWave(),1);
+    TestEqual(TEXT("Catch-up fills only this wave budget"),F.Spawn->GetSpawnedCountThisWave(),3);
+    F.Clear();F.Step();TestEqual(TEXT("Remaining survivors hold wave"),F.Mode->GetCurrentWave(),1);
+    F.FinishCurrentWave();F.Step();TestEqual(TEXT("Clear advances exactly once"),F.Mode->GetCurrentWave(),2);
+    TestEqual(TEXT("Next wave own budget"),F.Spawn->GetWaveEnemyBudget(),4);
+    return true;
+
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueNoGlobalAliveLimitTest,"Rogue.Gameplay.WaveClear.NoGlobalCapPreservesPacingAndBudget",RogueWaveProgressionTests::Flags)
+bool FRogueNoGlobalAliveLimitTest::RunTest(const FString& Parameters)
+{
+    RogueWaveProgressionTests::FFixture F; if(!F.Initialize(30,1))return false;
+    F.Balance->Spawn.BaseMaxAliveEnemies=1; F.Balance->Spawn.MaxAliveLimit=1;
+    F.Balance->Spawn.BatchRules={{1,999999,4}};
+    F.Step(.001f);
+    TestEqual(TEXT("Large old global slack no longer blocks the wave's batch size"),F.Spawn->GetSpawnedCountThisWave(),4);
+    F.Step(.001f);
+    TestEqual(TEXT("Spawn interval still prevents per-frame generation"),F.Spawn->GetSpawnedCountThisWave(),4);
+    for(int32 I=0;I<10;++I)F.Step(.1f);
+    TestEqual(TEXT("More than the old global ceiling can remain alive"),F.Tracker->GetActiveEnemyCount(),30);
+    TestEqual(TEXT("A final partial batch respects the cumulative wave budget"),F.Spawn->GetSpawnedCountThisWave(),30);
+    TestFalse(TEXT("Direct spawning also respects cumulative budget"),F.Spawn->SpawnEnemy(FRogueWaveProgressionTestAccess::Run(F.Mode),F.Player,F.Region));
+    TestEqual(TEXT("Living enemies still prevent a daytime wave advance"),F.Mode->GetCurrentWave(),1);
     return true;
 }
 
@@ -189,51 +217,113 @@ bool FRogueFinalWaveBudgetTest::RunTest(const FString& Parameters)
     TestEqual(TEXT("Rest does not inflate survival time"),F.Mode->GetRunTimeSeconds(),RestTime);
     return true;
 }
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueNightTimedWaveTest,"Rogue.Gameplay.WaveClear.NightTimerIgnoresRemainingEnemiesAndBoss",RogueWaveProgressionTests::Flags)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueNightTimedWaveTest,"Rogue.Gameplay.WaveClear.NightWaitsForBudgetSurvivorsAndBoss",RogueWaveProgressionTests::Flags)
 bool FRogueNightTimedWaveTest::RunTest(const FString& Parameters)
 {
-    RogueWaveProgressionTests::FFixture F;if(!F.Initialize(100,1))return false;
+    RogueWaveProgressionTests::FFixture F;if(!F.Initialize(3,1))return false;
     FRogueWaveProgressionTestAccess::Night(F.Mode,F.Balance,2.f);
-    if(!TestEqual(TEXT("Actual stage initialization recognizes the night world"),FRogueWaveProgressionTestAccess::Phase(F.Mode),ERogueBattleStage::Night))return false;
-    TestEqual(TEXT("Night begins after the configured day waves"),F.Mode->GetCurrentWave(),36);
-    F.Step(.25f);
-    ARogueEnemy* Survivor=F.Find();if(!TestNotNull(TEXT("Previous-wave enemy is alive"),Survivor))return false;
-    F.Step(1.5f);TestEqual(TEXT("No early time-based wave"),F.Mode->GetCurrentWave(),36);
-    F.Step(.25f);
-    TestEqual(TEXT("Time advances despite incomplete budget and living enemies"),F.Mode->GetCurrentWave(),37);
-    TestTrue(TEXT("Previous enemy remains in the field"),F.Find()==Survivor);
-    TestEqual(TEXT("Alive cap still prevents extra spawns"),F.Tracker->GetActiveEnemyCount(),1);
-    TestEqual(TEXT("Timed wave gets fresh generation quotas"),F.Spawn->GetSpawnedCountThisWave(),0);
-    TestEqual(TEXT("Clients receive the authoritative wave snapshot"),F.World->GetGameState<ARogueGameState>()->GetCurrentWave(),37);
-    F.Clear();F.Step(.1f);
-    TestEqual(TEXT("An early clear cannot accelerate a night wave"),F.Mode->GetCurrentWave(),37);
+    TestEqual(TEXT("Actual night recognized"),FRogueWaveProgressionTestAccess::Phase(F.Mode),ERogueBattleStage::Night);
+    F.Step(.1f);F.Step(1000);TestEqual(TEXT("Long time cannot advance night"),F.Mode->GetCurrentWave(),36);
     F.Spawn->SpawnBoss(FRogueWaveProgressionTestAccess::Run(F.Mode),F.Player,F.Region);
-    if(!TestNotNull(TEXT("A living Boss exists for the boundary"),F.Find(true)))return false;
-    F.Step(2.f);
-    TestEqual(TEXT("Boss does not hold timed waves"),F.Mode->GetCurrentWave(),38);
-    TestTrue(TEXT("Boss is preserved across the timed boundary"),FRogueWaveProgressionTestAccess::Run(F.Mode).bBossAlive&&F.Find(true));
+    TestNotNull(TEXT("Boss created"),F.Find(true));
+    F.Step(1000);TestEqual(TEXT("Night Boss and survivors hold wave"),F.Mode->GetCurrentWave(),36);
+    F.FinishCurrentWave();F.Step();TestEqual(TEXT("Cleared night starts exactly next wave"),F.Mode->GetCurrentWave(),37);
+    TestEqual(TEXT("Replicated snapshot follows clear"),F.World->GetGameState<ARogueGameState>()->GetCurrentWave(),37);
     return true;
+
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueNightWaveClockTest,"Rogue.Gameplay.WaveClear.NightClockOriginRemainderAndConfiguration",RogueWaveProgressionTests::Flags)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueNightWaveClockTest,"Rogue.Gameplay.WaveClear.NightIgnoresLegacyDurationAndHitches",RogueWaveProgressionTests::Flags)
 bool FRogueNightWaveClockTest::RunTest(const FString& Parameters)
 {
     RogueWaveProgressionTests::FFixture F;if(!F.Initialize())return false;
-    FRogueWaveProgressionTestAccess::Run(F.Mode).RunTimeSeconds=900000;
-    FRogueWaveProgressionTestAccess::Night(F.Mode,F.Balance,2.f);
-    TestEqual(TEXT("Variable day survival time is preserved"),F.Mode->GetRunTimeSeconds(),900000.f);
-    TestEqual(TEXT("Old run time does not jump the first night wave"),F.Mode->GetCurrentWave(),36);
-    F.Step(7.25f);TestEqual(TEXT("Hitch accounts for three completed periods"),F.Mode->GetCurrentWave(),39);
-    F.Step(.5f);TestEqual(TEXT("Partial-period remainder is retained"),F.Mode->GetCurrentWave(),39);
-    F.Step(.25f);TestEqual(TEXT("Remainder reaches the next precise boundary"),F.Mode->GetCurrentWave(),40);
-    FRogueWaveProgressionTestAccess::Night(F.Mode,F.Balance,0.f);
-    TestEqual(TEXT("Non-positive night duration clamps to one second"),FRogueWaveProgressionTestAccess::NightDuration(F.Mode),1.f);
-    F.Step(.75f);TestEqual(TEXT("A new night resets its phase clock"),F.Mode->GetCurrentWave(),36);
-    F.Step(.25f);TestEqual(TEXT("Clamped duration is effective"),F.Mode->GetCurrentWave(),37);
-    FRogueWaveProgressionTestAccess::Night(F.Mode,F.Balance,std::numeric_limits<float>::quiet_NaN());
-    TestEqual(TEXT("Invalid duration uses the normal 28-second fallback"),FRogueWaveProgressionTestAccess::NightDuration(F.Mode),28.f);
-    F.Step(27);TestEqual(TEXT("Fallback waits its full duration"),F.Mode->GetCurrentWave(),36);
-    F.Step(1);TestEqual(TEXT("Fallback advances at 28 seconds"),F.Mode->GetCurrentWave(),37);
+    FRogueWaveProgressionTestAccess::Night(F.Mode,F.Balance,.01f);F.Step(999999);
+    TestEqual(TEXT("Legacy duration cannot skip waves"),F.Mode->GetCurrentWave(),36);
+    TestFalse(TEXT("Hitch cannot grant victory"),F.Mode->IsVictory());
+    F.FinishCurrentWave();F.Step(.01f);TestEqual(TEXT("Clear still progresses normally"),F.Mode->GetCurrentWave(),37);
+    return true;
+
+}
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueWaveVictoryBoundaryTest,"Rogue.Gameplay.Victory.NightBoundaryAndTerminalCleanup",RogueWaveProgressionTests::Flags)
+bool FRogueWaveVictoryBoundaryTest::RunTest(const FString& Parameters)
+{
+    RogueWaveProgressionTests::FFixture F;if(!F.Initialize())return false;
+    FRogueWaveProgressionTestAccess::PrepareVictoryBoundary(F.Mode,99);
+    F.Step(.5f); if(!TestNotNull(TEXT("Combat exists at 99"),F.Find()))return false;
+    auto& Run=FRogueWaveProgressionTestAccess::Run(F.Mode);Run.EnemiesDefeated=17;
+    F.Step(999.f);TestEqual(TEXT("99 waits for actual clear"),F.Mode->GetCurrentWave(),99);
+    F.FinishCurrentWave();F.Step();
+    TestEqual(TEXT("Exactly 100"),F.Mode->GetCurrentWave(),100);
+    TestTrue(TEXT("Victory ends the game"),F.Mode->IsVictory()&&F.Mode->IsGameOver());
+    TestTrue(TEXT("Generation suspended"),F.Spawn->IsSpawningSuspended());
+    TestEqual(TEXT("Enemies retired without kill rewards"),F.Tracker->GetActiveEnemyCount(),0);
+    TestEqual(TEXT("Cleanup gives no fabricated kill credit"),Run.EnemiesDefeated,17);
+    TestTrue(TEXT("Living player remains alive rather than eliminated"),F.Player->IsAlive()&&!F.Player->IsEliminated());
+    const auto* State=F.World->GetGameState<ARogueGameState>();
+    TestTrue(TEXT("Client-facing result selects victory"),State->IsVictory()&&State->IsGameOver());
+    TestEqual(TEXT("Result contains final wave"),State->GetRunResult().Wave,100);
+    TestEqual(TEXT("Result contains final score"),State->GetRunResult().EnemiesDefeated,17);
+    const float EndTime=Run.RunTimeSeconds;F.Step(1000);F.Mode->EvaluateTeamWipe();
+    TestEqual(TEXT("Timer cannot continue after settlement"),Run.RunTimeSeconds,EndTime);
+    TestEqual(TEXT("No wave 101"),Run.CurrentWave,100);
+    TestTrue(TEXT("Team wipe cannot replace victory"),F.Mode->IsVictory());
     return true;
 }
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueWaveVictoryHitchTest,"Rogue.Gameplay.Victory.HitchStopsAt100",RogueWaveProgressionTests::Flags)
+bool FRogueWaveVictoryHitchTest::RunTest(const FString& Parameters)
+{
+    RogueWaveProgressionTests::FFixture F;if(!F.Initialize())return false;
+    FRogueWaveProgressionTestAccess::PrepareVictoryBoundary(F.Mode,98);F.Step(999999.f);
+    TestEqual(TEXT("Hitch does not skip 98"),F.Mode->GetCurrentWave(),98);
+    TestFalse(TEXT("Cannot win before clearing"),F.Mode->IsVictory());
+    F.FinishCurrentWave();F.Step();TestEqual(TEXT("First clear reaches 99"),F.Mode->GetCurrentWave(),99);
+    F.FinishCurrentWave();F.Step();TestTrue(TEXT("Second clear reaches victory"),F.Mode->IsVictory());
+    TestEqual(TEXT("Victory at 100"),F.Mode->GetCurrentWave(),100);return true;
+
+}
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueWaveVictoryInitialTest,"Rogue.Gameplay.Victory.EntryAlreadyAt100",RogueWaveProgressionTests::Flags)
+bool FRogueWaveVictoryInitialTest::RunTest(const FString& Parameters)
+{
+    RogueWaveProgressionTests::FFixture F;if(!F.Initialize())return false;
+    FRogueWaveProgressionTestAccess::Run(F.Mode).CurrentWave=100;
+    FRogueWaveProgressionTestAccess::FinalDay(F.Mode,100);F.Step();
+    TestTrue(TEXT("100 wins before day-stage clearing/travel"),F.Mode->IsVictory());
+    TestEqual(TEXT("No 100th wave enemies"),F.Spawn->GetSpawnedCountThisWave(),0);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueFirstNightClearTest,"Rogue.Gameplay.BattleStage.FirstNightWaitsForClear",RogueWaveProgressionTests::Flags)
+bool FRogueFirstNightClearTest::RunTest(const FString& Parameters)
+{
+    RogueWaveProgressionTests::FFixture F;if(!F.Initialize())return false;
+    FRogueWaveProgressionTestAccess::FirstNightBoundary(F.Mode);
+    F.Step(1.5f);TestEqual(TEXT("Final night wave remains during spawning"),FRogueWaveProgressionTestAccess::Phase(F.Mode),ERogueBattleStage::Night);
+    if(!TestNotNull(TEXT("Final night wave has surviving enemies"),F.Find()))return false;
+    while(!F.Spawn->HasFinishedWaveSpawning(FRogueWaveProgressionTestAccess::Run(F.Mode)))
+        if(!F.Spawn->SpawnEnemy(FRogueWaveProgressionTestAccess::Run(F.Mode),F.Player,F.Region))break;
+    F.Step(.5f);
+    TestEqual(TEXT("Stops at 50 before clearing"),F.Mode->GetCurrentWave(),50);
+    TestEqual(TEXT("Waits for survivors rather than travelling"),FRogueWaveProgressionTestAccess::Phase(F.Mode),ERogueBattleStage::Clearing);
+    TestTrue(TEXT("Every generation entry is suspended"),F.Spawn->IsSpawningSuspended());
+    const auto* State=F.World->GetGameState<ARogueGameState>();
+    TestFalse(TEXT("Destination is day"),State->GetBattleStage().bNextStageIsNight);
+    F.Step(999.f);TestEqual(TEXT("No timed advance during clearing"),F.Mode->GetCurrentWave(),50);
+    while(F.Find())F.Clear();F.Step();
+    TestEqual(TEXT("Countdown only after clearing"),FRogueWaveProgressionTestAccess::Phase(F.Mode),ERogueBattleStage::Countdown);
+    TestTrue(TEXT("Real thirty second server deadline"),FMath::IsNearlyEqual(FRogueWaveProgressionTestAccess::Deadline(F.Mode)-F.World->GetTimeSeconds(),30.,.001));
+    return true;
+}
+
+// Explicit development-only visual/network verification; never invoked by normal gameplay.
+static FAutoConsoleCommandWithWorld RogueVictoryPreview(TEXT("Rogue.Test.Victory"),
+    TEXT("In a test run, advance wave 99 across the actual victory boundary."),
+    FConsoleCommandWithWorldDelegate::CreateLambda([](UWorld* World)
+    {
+        if(auto* Mode=World?World->GetAuthGameMode<ARogueGameMode>():nullptr)
+        {
+            if(Mode->IsGameOver())return;
+            FRogueWaveProgressionTestAccess::PrepareVictoryBoundary(Mode,100);
+            FRogueWaveProgressionTestAccess::Step(Mode,2.f);
+        }
+    }));
 #endif

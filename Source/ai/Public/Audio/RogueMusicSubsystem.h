@@ -7,6 +7,8 @@
 #include "RogueMusicSubsystem.generated.h"
 
 class UAudioComponent;
+class UUserWidget;
+class USoundConcurrency;
 
 /** 每台机器独立播放，跨地图保留；仅观察复制状态，不依赖角色或 HUD 存活。 */
 UCLASS(Config=Game)
@@ -16,6 +18,9 @@ class AI_API URogueMusicSubsystem : public UGameInstanceSubsystem, public FTicka
 public:
     UFUNCTION(BlueprintPure, Category="Rogue|Audio", meta=(WorldContext="Context"))
     static URogueMusicSubsystem* GetAudioSystem(const UObject* Context);
+    /** 绑定当前控件及嵌套控件中的按钮；动态增添按钮后可再次调用，重复调用不会叠加声音。返回处理的按钮数。 */
+    UFUNCTION(BlueprintCallable, Category="Rogue|Audio|UI")
+    static int32 BindWidgetButtonSounds(UUserWidget* Widget);
     virtual void Initialize(FSubsystemCollectionBase& Collection) override;
     virtual void Deinitialize() override;
     virtual void Tick(float DeltaTime) override;
@@ -41,6 +46,11 @@ public:
     static ERogueMusicScene ResolveBattleScene(bool bGameOver, bool bBossAlive, bool bNight);
 private:
     friend struct FRogueMusicTestAccess;
+    friend struct FRogueUIButtonAudioTestAccess;
+    int32 BindButtonSounds(UUserWidget* Widget);
+    UFUNCTION() void HandleUIButtonPressed();
+    UFUNCTION() void HandleUIButtonHovered();
+    void PlayButtonSound(bool bPressed);
     void RequestScene(ERogueMusicScene Scene);
     void ApplyVolumes();
     void LoadVolumes();
@@ -50,6 +60,10 @@ private:
     UPROPERTY(Config) TSoftObjectPtr<URogueAudioConfig> MusicConfigAsset;
     UPROPERTY(Transient) TObjectPtr<URogueAudioConfig> LoadedConfig;
     UPROPERTY(Transient) TArray<TObjectPtr<UAudioComponent>> Channels;
+    UPROPERTY(Transient) TObjectPtr<USoundConcurrency> UIButtonConcurrency;
+    TWeakObjectPtr<UAudioComponent> LastUIButtonComponent;
+    uint32 UIButtonPressedCount = 0;
+    uint32 UIButtonHoveredCount = 0;
     UPROPERTY(Transient) TObjectPtr<USoundBase> CurrentSound;
     TWeakObjectPtr<UWorld> MixWorld;
     ERogueMusicScene CurrentScene = ERogueMusicScene::None;

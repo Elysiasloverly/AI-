@@ -34,7 +34,7 @@ public:
 
 	/** 只修改当前对象，便于事务提交以及不接触玩家存档的独立测试。 */
 	bool TryPurchase(const URogueUpgradeTreeDefinition* Definition, FName NodeId, FText& OutFailure);
-	bool AddBossReward(const FGuid& RewardId);
+	bool AddBossReward(const FGuid& RewardId, int32 Amount = 1);
 
 	/** v1 已付费的上层卡补齐新增的中间前置，保留余额与原升级。 */
 	void UpgradeLegacyUnlocks(const URogueUpgradeTreeDefinition* Definition);
