@@ -51,33 +51,15 @@ struct AI_API FRoguePlayerBaseStatConfig
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "机动", meta = (DisplayName = "冲刺速度"))
 	float DashSpeed = 4200.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "跳跃", meta = (DisplayName = "跳跃初速度"))
-	float JumpZVelocity = 680.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "跳跃", meta = (DisplayName = "空中控制力"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "机动", meta = (DisplayName = "空中控制力"))
 	float AirControl = 0.55f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "跳跃", meta = (DisplayName = "重力倍率"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "机动", meta = (DisplayName = "重力倍率"))
 	float GravityScale = 1.8f;
 
 	/** 下落阶段额外乘的重力倍率；>1 让落地更干脆。 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "跳跃", meta = (DisplayName = "下落重力倍率", ClampMin = "1.0", UIMin = "1.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "机动", meta = (DisplayName = "下落重力倍率", ClampMin = "1.0", UIMin = "1.0"))
 	float FallGravityMultiplier = 1.45f;
-
-	/** 提前松开跳跃键时，上升速度保留的比例；0.45 表示砍掉 55%。 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "跳跃", meta = (DisplayName = "松键跳跃衰减", ClampMin = "0.0", ClampMax = "1.0"))
-	float JumpCutMultiplier = 0.45f;
-
-	/** 落地前这段时间内按跳，会在落地瞬间自动起跳。 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "跳跃", meta = (DisplayName = "跳跃输入缓冲(秒)", ClampMin = "0.0", Units = "s"))
-	float JumpBufferSeconds = 0.12f;
-
-	/** 刚离开地面后的宽限时间，仍允许起跳一次。 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "跳跃", meta = (DisplayName = "土狼时间(秒)", ClampMin = "0.0", Units = "s"))
-	float CoyoteTimeSeconds = 0.10f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "跳跃", meta = (DisplayName = "最大跳跃次数", ClampMin = "0", UIMin = "0"))
-	int32 JumpMaxCount = 1;
 };
 
 /**
@@ -147,7 +129,7 @@ struct AI_API FRogueWeaponBonusCaps
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "武器加成上限", meta = (DisplayName = "冰符连诵加成上限(-1=不限)"))
 	float ProjectileBurst = -1.0f;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "武器加成上限", meta = (DisplayName = "火丸扩散加成上限(-1=不限)"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "武器加成上限", meta = (DisplayName = "冰焰扩散加成上限(-1=不限)"))
 	float RocketBlastRadius = -1.0f;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "武器加成上限", meta = (DisplayName = "焰心递燃加成上限(-1=不限)"))
 	float HellTowerDamageRamp = -1.0f;
@@ -157,6 +139,12 @@ struct AI_API FRogueWeaponBonusCaps
 	float TalismanPierce = -1.0f;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="武器加成上限", meta=(DisplayName="灵符重奏加成上限(-1=不限)"))
 	float TalismanRepeat = -1.0f;
+    UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="武器加成上限",meta=(DisplayName="冰刀·霜月加成上限(-1=不限)")) float FrostBladeCount=1.f;
+    UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="武器加成上限",meta=(DisplayName="霜刃延展加成上限(-1=不限)")) float FrostBladeSize=-1.f;
+    UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="武器加成上限",meta=(DisplayName="霜月出鞘加成上限(-1=不限)")) float FrostBladeWave=1.f;
+    UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="武器加成上限",meta=(DisplayName="霜月重叠加成上限(-1=不限)")) float FrostBladeWaveCount=-1.f;
+    UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="武器加成上限",meta=(DisplayName="霜月盈空加成上限(-1=不限)")) float FrostBladeWaveSize=-1.f;
+
 
 
 

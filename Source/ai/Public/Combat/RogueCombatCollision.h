@@ -12,6 +12,9 @@
  */
 namespace RogueCombatCollision
 {
+    // Object channel configured in DefaultEngine.ini. Enemy capsules ignore it; walls still block.
+    inline constexpr ECollisionChannel EnemyProjectileChannel = ECC_GameTraceChannel1;
+
 	inline void DisableNonHitCollision(AActor* Actor, const UPrimitiveComponent* HitCollision)
 	{
 		if (Actor == nullptr)

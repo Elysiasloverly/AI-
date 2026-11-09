@@ -25,11 +25,12 @@
 
 struct FRogueBattleStageTestAccess
 {
-    static void DayBoundary(ARogueGameMode* Mode, int32 Wave = 35)
+    static void DayBoundary(ARogueGameMode* Mode, int32 Wave = 20)
     {
         Mode->bDayStageMap = true;
         Mode->StageSettings = FRogueBattleStageSettings();
-        Mode->StageSettings.DayWaveCount = Wave;
+        Mode->StageSettings.WavesPerStage = Wave;
+        Mode->RunState.BattleStageIndex = 0;
         Mode->StageView = FRogueBattleStageView();
         Mode->RunState.RunTimeSeconds = 123.f;
         Mode->RunState.CurrentWave = Wave;
@@ -42,13 +43,20 @@ struct FRogueBattleStageTestAccess
     static bool Step(ARogueGameMode* Mode, float Delta) { return Mode->TickBattleStage(Delta); }
     static FRogueBattleStageView View(ARogueGameMode* Mode) { return Mode->StageView; }
     static void SecondDayBoundary(ARogueGameMode* Mode)
-    { DayBoundary(Mode,85);Mode->RunState.BattleStageIndex=2; }
+    { DayBoundary(Mode,60);Mode->StageSettings.WavesPerStage=20;Mode->RunState.BattleStageIndex=2; }
     static void CycleBoundary(ARogueGameMode* Mode,int32 Index)
     {
-        DayBoundary(Mode,Index==0?35:Index==1?50:85);
+        DayBoundary(Mode,(Index+1)*20);
+        if(const auto* Balance=URogueGameBalanceAsset::GetDefaultGameBalance())Mode->StageSettings=Balance->BattleStage;
+        Mode->StageSettings.WavesPerStage=20;
         Mode->RunState.BattleStageIndex=Index;
         Mode->StageSettings.CountdownSeconds=1;
         Mode->BeginBattleStageClearing();Mode->TickBattleStage(0);Mode->PushRunStateToGameState();
+    }
+    static void SetPeriodicStage(ARogueGameMode* Mode,int32 Index)
+    {
+        Mode->StageSettings.WavesPerStage=20;Mode->RunState.BattleStageIndex=Index;
+        Mode->StageView.Phase=Index%2==0?ERogueBattleStage::Day:ERogueBattleStage::Night;
     }
     static void Win(ARogueGameMode* Mode) { Mode->RunState.CurrentWave=100;Mode->CompleteRunIfVictoryReached(); }
     static void Density(ARogueGameMode* M,float V) { M->StageView.EnemyCountMultiplier=V;M->StageView.EnemySpawnRateMultiplier=V; }
@@ -99,7 +107,7 @@ namespace RogueBattleStageTests
     };
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueDayClearingCountdownTest, "Rogue.Gameplay.BattleStage.Wave35ClearThenThirtySeconds", RogueBattleStageTests::Flags)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueDayClearingCountdownTest, "Rogue.Gameplay.BattleStage.Wave20ClearThenThirtySeconds", RogueBattleStageTests::Flags)
 bool FRogueDayClearingCountdownTest::RunTest(const FString& Parameters)
 {
     using namespace RogueBattleStageTests;
@@ -111,7 +119,7 @@ bool FRogueDayClearingCountdownTest::RunTest(const FString& Parameters)
     F.World->GetSubsystem<URogueEnemyTrackerSubsystem>()->RegisterEnemy(Enemy);
     FRogueBattleStageTestAccess::DayBoundary(F.Mode);
     TestTrue(TEXT("Boundary takes over spawning"), FRogueBattleStageTestAccess::Step(F.Mode, .02f));
-    TestEqual(TEXT("Wave 36 cannot start in day"), F.Mode->GetCurrentWave(), 35);
+    TestEqual(TEXT("Wave 21 cannot start in day"), F.Mode->GetCurrentWave(), 20);
     TestEqual(TEXT("Wait for the living enemy"), FRogueBattleStageTestAccess::View(F.Mode).Phase, ERogueBattleStage::Clearing);
     URogueSpawnSubsystem* Spawn = F.World->GetSubsystem<URogueSpawnSubsystem>();
     TestTrue(TEXT("All spawn entry points suspended"), Spawn->IsSpawningSuspended());
@@ -131,7 +139,7 @@ bool FRogueDayClearingCountdownTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("World keeps running for UI and revivals"), F.World->GetTimeSeconds() > View.CountdownDeadline - 30.);
     FRogueBattleStageTestAccess::DayBoundary(F.Mode, 7);
     FRogueBattleStageTestAccess::Step(F.Mode, .02f);
-    TestEqual(TEXT("Configured day-ending wave replaces the default 35"), F.Mode->GetCurrentWave(), 7);
+    TestEqual(TEXT("Configured day-ending wave replaces the default 20"), F.Mode->GetCurrentWave(), 7);
     return true;
 }
 
@@ -233,23 +241,47 @@ bool FRogueSecondDayBoundaryTest::RunTest(const FString& Parameters)
     RogueBattleStageTests::FFixture F;if(!F.Initialize())return false;
     FRogueBattleStageTestAccess::SecondDayBoundary(F.Mode);
     FRogueBattleStageTestAccess::Step(F.Mode,.1f);
-    TestEqual(TEXT("Second daytime stops at85"),F.Mode->GetCurrentWave(),85);
+    TestEqual(TEXT("Second daytime stops at60"),F.Mode->GetCurrentWave(),60);
     TestEqual(TEXT("Empty field begins countdown"),FRogueBattleStageTestAccess::View(F.Mode).Phase,ERogueBattleStage::Countdown);
     TestTrue(TEXT("Third transition goes to night"),FRogueBattleStageTestAccess::View(F.Mode).bNextStageIsNight);
-    FRogueBattleStageSettings Settings;Settings.DayWaveCount=10;Settings.FirstNightEndWave=20;Settings.SecondDayEndWave=30;Settings.NormalizeTransitionWaves();
-    TestEqual(TEXT("First configurable boundary"),Settings.GetTransitionEndWave(0),10);
-    TestEqual(TEXT("Second configurable boundary"),Settings.GetTransitionEndWave(1),20);
-    TestEqual(TEXT("Third configurable boundary"),Settings.GetTransitionEndWave(2),30);
-    TestEqual(TEXT("Final night has no fourth transition"),Settings.GetTransitionEndWave(3),MAX_int32);
-    Settings.DayWaveCount=1000;Settings.FirstNightEndWave=-1;Settings.SecondDayEndWave=2;Settings.NormalizeTransitionWaves();
-    TestEqual(TEXT("Invalid first boundary clamped below victory"),Settings.DayWaveCount,97);
-    TestEqual(TEXT("Second boundary remains increasing"),Settings.FirstNightEndWave,98);
-    TestEqual(TEXT("Third boundary remains below100"),Settings.SecondDayEndWave,99);
+    FRogueBattleStageSettings Settings;
+    for (int32 Index=0;Index<4;++Index)
+    {
+        TestEqual(TEXT("Default transitions recur every twenty waves"),Settings.GetTransitionEndWave(Index),(Index+1)*20);
+    }
+    TestEqual(TEXT("Victory replaces the fifth transition"),Settings.GetTransitionEndWave(4),MAX_int32);
+    TestEqual(TEXT("Invalid negative index cannot trigger a transition"),Settings.GetTransitionEndWave(-1),MAX_int32);
+    TestEqual(TEXT("Large indices do not wrap to an early transition"),Settings.GetTransitionEndWave(MAX_int32),MAX_int32);
+    Settings.WavesPerStage=10;Settings.NormalizeTransitionWaves();
+    TestEqual(TEXT("One configurable interval determines every boundary"),Settings.GetTransitionEndWave(7),80);
+    Settings.WavesPerStage=0;Settings.NormalizeTransitionWaves();
+    TestEqual(TEXT("Nonpositive interval is clamped"),Settings.WavesPerStage,1);
+    Settings.WavesPerStage=1000;Settings.NormalizeTransitionWaves();
+    TestEqual(TEXT("Oversized interval remains below victory"),Settings.WavesPerStage,99);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRoguePeriodicFourBoundaryTest,"Rogue.Gameplay.BattleStage.FourPeriodicClearAndCountdownBoundaries",RogueBattleStageTests::Flags)
+bool FRoguePeriodicFourBoundaryTest::RunTest(const FString& Parameters)
+{
+    RogueBattleStageTests::FFixture F;if(!F.Initialize())return false;
+    for (int32 Index=0;Index<4;++Index)
+    {
+        const int32 Wave=(Index+1)*20;
+        FRogueBattleStageTestAccess::DayBoundary(F.Mode,Wave);
+        FRogueBattleStageTestAccess::SetPeriodicStage(F.Mode,Index);
+        FRogueBattleStageTestAccess::Step(F.Mode,.01f);
+        const auto View=FRogueBattleStageTestAccess::View(F.Mode);
+        TestEqual(TEXT("Boundary preserves completed wave"),F.Mode->GetCurrentWave(),Wave);
+        TestEqual(TEXT("Every cleared boundary starts countdown"),View.Phase,ERogueBattleStage::Countdown);
+        TestEqual(TEXT("Destination alternates night and day"),View.bNextStageIsNight,Index%2==0);
+        TestTrue(TEXT("All four boundaries retain thirty seconds"),FMath::IsNearlyEqual(View.CountdownDeadline-F.World->GetTimeSeconds(),30.,.001));
+    }
     return true;
 }
 
 static FAutoConsoleCommandWithWorld RogueTestStageCycle(TEXT("Rogue.Test.StageCycle"),
-    TEXT("Verify all three real multiplayer map transitions and victory with QA slots."),
+    TEXT("Verify all four real multiplayer map transitions and victory with QA slots."),
     FConsoleCommandWithWorldDelegate::CreateLambda([](UWorld* World)
     {
         if(!World||!World->GetAuthGameMode<ARogueGameMode>())return;
@@ -278,15 +310,15 @@ static FAutoConsoleCommandWithWorld RogueTestStageCycle(TEXT("Rogue.Test.StageCy
                 for(TActorIterator<ARogueEnemy> It(W);It;++It)It->DeactivateToPool();
                 FRogueBattleStageTestAccess::CycleBoundary(M,0);*Phase=1;return true;
             }
-            const int32 ExpectedWave=*Phase==1?36:*Phase==2?51:86;
-            const float ExpectedSpeed=*Phase==2?1.f:2.f;
+            const int32 ExpectedWave=*Phase*20+1;
+            const float ExpectedSpeed=1.f;
             if(M->GetCurrentWave()!=ExpectedWave||M->GetEnemyAttackSpeedMultiplier()!=ExpectedSpeed)return true;
             int32 Sum=0;bool Valid=true;
             for(auto* P:Players){Sum+=P->GetMoney();Valid&=P->GetPlayerLevel()==P->GetMoney()/10;}
             Valid&=Sum==200;
-            UE_LOG(LogTemp,Display,TEXT("[StageCycleTest] %s phase=%d Players=%d Wave=%d Speed=%.1f MoneySum=%d"),Valid?TEXT("PASS"):TEXT("FAIL"),*Phase,Players.Num(),M->GetCurrentWave(),M->GetEnemyAttackSpeedMultiplier(),Sum);
+            UE_LOG(LogTemp,Display,TEXT("[StageCycleTest] %s phase=%d Players=%d Wave=%d Speed=%.1f MoneySum=%d Map=%s"),Valid?TEXT("PASS"):TEXT("FAIL"),*Phase,Players.Num(),M->GetCurrentWave(),M->GetEnemyAttackSpeedMultiplier(),Sum,*W->GetOutermost()->GetName());
             if(!Valid)return false;
-            if(*Phase==3){FRogueBattleStageTestAccess::Win(M);return false;}
+            if(*Phase==4){FRogueBattleStageTestAccess::Win(M);return false;}
             for(TActorIterator<ARogueEnemy> It(W);It;++It)It->DeactivateToPool();
             FRogueBattleStageTestAccess::CycleBoundary(M,*Phase);++*Phase;return true;
         }),.1f);
@@ -329,9 +361,9 @@ static FAutoConsoleCommandWithWorld RogueTestStageTravel(TEXT("Rogue.Test.StageT
                 *Phase = 1;
                 UE_LOG(LogTemp, Log, TEXT("[StageTravelTest] START two initialized players, real 30 second countdown."));
             }
-            else if (*Phase == 1 && Mode->GetEnemyAttackSpeedMultiplier() == 2 && Players.Num() == 2)
+            else if (*Phase == 1 && Mode->GetCurrentWave() == 21 && Mode->GetEnemyAttackSpeedMultiplier() == 1 && Players.Num() == 2)
             {
-                bool bValid = Mode->GetCurrentWave() == 36;
+                bool bValid = Mode->GetCurrentWave() == 21;
                 int32 Sum = 0;
                 for (ARogueCharacter* P : Players)
                 {

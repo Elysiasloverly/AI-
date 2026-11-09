@@ -1,4 +1,4 @@
-using UnrealBuildTool;
+﻿using UnrealBuildTool;
 
 public class aiEditor : ModuleRules
 {
@@ -13,6 +13,7 @@ public class aiEditor : ModuleRules
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
 			"UnrealEd",
+            "EnhancedInput",
             "ai",
             "GameplayAbilities",
 			"UMG",
@@ -23,7 +24,8 @@ public class aiEditor : ModuleRules
 			"AssetRegistry",
 			"EditorScriptingUtilities",
 			"Slate",
-			"SlateCore", "Json"
+			"PropertyEditor",
+			"SlateCore", "Json", "InputCore"
 		});
 	}
 }

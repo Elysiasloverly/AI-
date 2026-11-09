@@ -176,4 +176,27 @@ bool FRogueShieldOrbitBlueprintTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueShieldOrbitPulseTest,
+    "Rogue.Gameplay.ShieldOrbit.LocalRenderDataTracksActivationAndDamage",RogueShieldOrbitTests::Flags)
+bool FRogueShieldOrbitPulseTest::RunTest(const FString&)
+{
+    using namespace RogueShieldOrbitTests;FFixture F;if(!F.Initialize(*this))return false;
+    F.Shield(60,60);F.Step(.2f);
+    const auto& Meshes=F.Orbit->GetOrbitMeshes();
+    for(UStaticMeshComponent* M:Meshes)
+    {
+        const auto& D=M->GetCustomPrimitiveData().Data;
+        TestTrue(TEXT("Local renderer receives appearance, hit and ratio channels"),D.Num()>=18);
+        if(D.Num()>=18){TestEqual(TEXT("Full shield ratio"),D[17],1.f);TestTrue(TEXT("No fabricated hit pulse on initial appearance"),D[16]<-1000.f);}
+    }
+    F.Shield(60,30);
+    for(UStaticMeshComponent* M:Meshes)
+    {
+        const auto& D=M->GetCustomPrimitiveData().Data;
+        TestEqual(TEXT("Shield damage updates the local ratio"),D[17],.5f);
+        TestTrue(TEXT("A real reduction starts a local pulse"),D[16]>=.19f);
+    }
+    F.Shield(60,0);for(UStaticMeshComponent* M:Meshes)TestFalse(TEXT("Empty shield still hides immediately"),M->IsVisible());
+    return true;
+}
 #endif

@@ -476,7 +476,7 @@ Core 层是当前工程最重要的“组织层”，它决定了项目后面是
 装载链路：
 
 1. `ARogueCharacter::InitializeWeapons()` 遍历 `DT_WeaponConfig` 的所有行
-2. 每行取 `WeaponClass`；为空时按**行顺序**回退到 `ARogueCharacter::WeaponClasses[Index]`（BP 上配置）
+2. 每行优先取 `WeaponClass`；为空时由 `RogueWeaponCatalog` 按稳定行名/数量类型解析，不按行序配对
 3. `SpawnWeaponInstance()` → `ARogueWeaponBase::InitializeWeapon()`，整个行结构被拷进武器的 `Config`
 4. 之后升级/商店只改这份 `Config`，不再回读数据表
 

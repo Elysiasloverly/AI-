@@ -1,10 +1,11 @@
 #include "Enemies/RogueEnemy.h"
+#include "Enemies/Components/RogueBossSkillComponent.h"
 #include "Enemies/Components/RogueEnemyPresentationComponent.h"
 #include "Enemies/Components/RogueEnemySupportComponent.h"
 #include "Enemies/Components/RogueEnemyStationaryHazardComponent.h"
-#include "GameFramework/CharacterMovementComponent.h"
 void ARogueEnemy::RefreshUtilityComponents()
 {
+    if (BossSkills) BossSkills->RefreshPresentation();
     if (EnemyPresentation) EnemyPresentation->RefreshRuntime();
     if (EnemySupport) EnemySupport->InitializeRuntime();
     if (StationaryHazard) StationaryHazard->InitializeRuntime();

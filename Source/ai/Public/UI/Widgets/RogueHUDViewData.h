@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "RogueHUDViewData.generated.h"
@@ -65,6 +65,7 @@ struct FRoguePlayerVitalsView
 
 	UPROPERTY(BlueprintReadOnly, Category = "Vitals")
 	int32 Level = 1;
+    UPROPERTY(BlueprintReadOnly,Category="Vitals") int32 PendingUpgradeSelections=0;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Vitals")
 	int32 Experience = 0;
@@ -78,6 +79,8 @@ struct FRoguePlayerVitalsView
 	/** 当前波数，来源于 GameState（客户端可读）。 */
 	UPROPERTY(BlueprintReadOnly, Category = "Vitals")
 	int32 CurrentWave = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category="Vitals") int32 RemainingEnemies = 0;
 
 	/** 用于 HUD 侧脏检查；浮点按容差比较。 */
 	bool Equals(const FRoguePlayerVitalsView& Other) const
@@ -99,11 +102,13 @@ struct FRoguePlayerVitalsView
 			&& FMath::IsNearlyEqual(MaxHealth, Other.MaxHealth, 0.01f)
 			&& FMath::IsNearlyEqual(CurrentArmor, Other.CurrentArmor, 0.01f)
 			&& FMath::IsNearlyEqual(MaxArmor, Other.MaxArmor, 0.01f)
+            && PendingUpgradeSelections == Other.PendingUpgradeSelections
 			&& Level == Other.Level
 			&& Experience == Other.Experience
 			&& ExperienceToNextLevel == Other.ExperienceToNextLevel
 			&& Money == Other.Money
-			&& CurrentWave == Other.CurrentWave;
+			&& CurrentWave == Other.CurrentWave
+            && RemainingEnemies == Other.RemainingEnemies;
 	}
 };
 

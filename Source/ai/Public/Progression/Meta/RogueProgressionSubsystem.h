@@ -28,6 +28,10 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "升级树")
 	FRogueProgressionChanged OnProgressionChanged;
 
+    /** Broadcast only the positive balance delta after a boss receipt is saved. */
+    DECLARE_MULTICAST_DELEGATE_OneParam(FBossRewardCommitted, int32);
+    FBossRewardCommitted OnBossRewardCommitted;
+
 	UFUNCTION(BlueprintPure, Category = "升级树")
 	FRogueProgressionSnapshot GetSnapshot() const;
 
@@ -67,6 +71,9 @@ public:
 	/** Clear purchased ranks without refunding spent currency or replaying Boss rewards. */
 	bool ResetProgressionForDebug(FText& OutError);
 	static bool ResetProgressionInSlotForDebug(const FString& Slot, int32 UserIndex,
+		const URogueUpgradeTreeDefinition* Definition, FText& OutError);
+	bool UnlockAllForDebug(FText& OutError);
+	static bool UnlockAllInSlotForDebug(const FString& Slot, int32 UserIndex,
 		const URogueUpgradeTreeDefinition* Definition, FText& OutError);
 	bool SetIceBricksForDebug(int32 NewCount, FText& OutError);
 	static bool SetIceBricksInSlotForDebug(const FString& Slot, int32 UserIndex,

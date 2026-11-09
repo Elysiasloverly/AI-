@@ -1,52 +1,23 @@
 #include "Player/RogueCharacter.h"
+#include "AbilitySystem/GameplayEffects/RogueAttributeUpgradeEffect.h"
+#include "Engine/DataTable.h"
+#include "GameFramework/PlayerController.h"
+#include "Kismet/GameplayStatics.h"
+#include "Engine/World.h"
 #include "AbilitySystem/RogueAttributeSet.h"
-#include "Debug/RogueSelfTest.h"
 
-#include "Combat/Weapons/RogueWeaponBase.h"
-#include "Combat/Weapons/RogueWeapon_Projectile.h"
-#include "Combat/Weapons/RogueWeapon_Scythe.h"
-#include "Combat/Weapons/RogueWeapon_Rocket.h"
-#include "Combat/Weapons/RogueWeapon_Laser.h"
-#include "Combat/Weapons/RogueWeapon_HellTower.h"
-#include "Combat/Weapons/RogueWeapon_Mortar.h"
-#include "Combat/Projectiles/RogueMortarProjectile.h"
-#include "Combat/Projectiles/RogueRocketProjectile.h"
-#include "Enemies/RogueEnemy.h"
-#include "Framework/RogueGameMode.h"
-#include "Framework/RogueGameState.h"
 #include "Player/RoguePlayerBalanceAsset.h"
 #include "Player/RoguePlayerState.h"
 #include "Progression/Meta/RogueUpgradeTreeDefinition.h"
-#include "GameFramework/GameStateBase.h"
 #include "AbilitySystem/RogueAbilitySystemComponent.h"
-#include "AbilitySystem/RogueAbilitySystemLibrary.h"
-#include "AbilitySystem/Abilities/RogueWeaponAbility.h"
 #include "AbilitySystem/GameplayEffects/RogueStateEffects.h"
-#include "AbilitySystem/Abilities/RogueEnemyAttackAbility.h"
-#include "Combat/Targeting/RogueEnemyTrackerSubsystem.h"
-#include "AbilitySystem/GameplayEffects/RogueAttributeUpgradeEffect.h"
 #include "AbilitySystem/RogueGameplayTags.h"
-#include "World/RogueShopTerminal.h"
-#include "UI/RogueHUD.h"
-#include "Combat/Visuals/RogueImpactEffect.h"
 #include "Combat/Visuals/RogueCombatFeedback.h"
 #include "Components/CapsuleComponent.h"
-#include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/InputComponent.h"
 // Enhanced Input：绑定与必需资产校验见 RogueCharacter.Input.cpp；缺失时不绑定本角色动作。
-#include "EnhancedInputComponent.h"
-#include "EnhancedInputSubsystems.h"
-#include "InputAction.h"
-#include "InputActionValue.h"
-#include "InputMappingContext.h"
-#include "Engine/DataTable.h"
 #include "GameFramework/CharacterMovementComponent.h"
-#include "GameFramework/Controller.h"
-#include "GameFramework/PlayerController.h"
-#include "GameFramework/SpringArmComponent.h"
-#include "Kismet/GameplayStatics.h"
-#include "Net/UnrealNetwork.h"
 #include "UObject/SoftObjectPath.h"
 
 namespace
@@ -440,8 +411,8 @@ void ARogueCharacter::InitializeGASAttributes()
 	AttributeSet->SetAttackSpeedBonus(InitialBonuses.AttackSpeed + PermanentBonus(ERogueMetaStat::AttackSpeed));
 	AttributeSet->SetAttackRangeBonus(InitialBonuses.AttackRange);
 	AttributeSet->SetProjectileSpeedBonus(InitialBonuses.ProjectileSpeed);
-	// 常规开局只有一张寒弹；编辑器调试开关可让 InitializeWeapons 改用武器表基础数量。
-	// 永久解锁只让卡片入池，不直接装备；旧平衡资产的初始数量和专属加成不再跳过这条规则。
+	// 寒弹初始自带，冰刀按永久解锁自动装备；编辑器调试开关可改用武器表基础数量。
+	// 冰刀永久解锁后自动装备；其余非初始武器仍需在本局获取，不跳过专属卡权限。
 	AttributeSet->SetProjectileCountBonus(0.0f);
 	AttributeSet->SetScytheCountBonus(0.0f);
 	AttributeSet->SetRocketCountBonus(0.0f);
@@ -458,6 +429,12 @@ void ARogueCharacter::InitializeGASAttributes()
 	AttributeSet->SetTalismanCountBonus(0.0f);
 	AttributeSet->SetTalismanPierceBonus(0.0f);
 	AttributeSet->SetTalismanRepeatBonus(0.0f);
+    AttributeSet->SetFrostBladeCountBonus(Tree->IsWeaponUnlocked(Profile,ERogueUpgradeType::FrostBladeCount)?1.f:0.f);
+    AttributeSet->SetFrostBladeSizeBonus(0);
+    AttributeSet->SetFrostBladeWaveBonus(0);
+    AttributeSet->SetFrostBladeWaveCountBonus(0);
+    AttributeSet->SetFrostBladeWaveSizeBonus(0);
+
 
 
 	RefreshWeaponBonusSnapshotFromAttributes();
@@ -538,21 +515,14 @@ void ARogueCharacter::ApplyBalanceAsset()
 	}
 	// DashMinCooldown 不再在这里赋值：它是 MinDashCooldown 属性的镜像
 	//（冲刺冷却的下限现在由属性集在 PreAttributeChange 里执行，见 URogueAttributeSet）。
-	JumpZVelocity = BaseStats.JumpZVelocity;
 	AirControl = BaseStats.AirControl;
 	GravityScale = BaseStats.GravityScale;
 	FallGravityMultiplier = FMath::Max(1.0f, BaseStats.FallGravityMultiplier);
-	JumpCutMultiplier = FMath::Clamp(BaseStats.JumpCutMultiplier, 0.0f, 1.0f);
-	JumpBufferSeconds = FMath::Max(0.0f, BaseStats.JumpBufferSeconds);
-	CoyoteTimeSeconds = FMath::Max(0.0f, BaseStats.CoyoteTimeSeconds);
-	JumpMaxCountConfig = BaseStats.JumpMaxCount;
-	GetCharacterMovement()->JumpZVelocity = JumpZVelocity;
 	GetCharacterMovement()->AirControl = AirControl;
 	GetCharacterMovement()->GravityScale = GravityScale;
-	JumpMaxCount = FMath::Max(0, JumpMaxCountConfig);
 
 	// 属性类字段不再在这里赋值。
-	// 它们的唯一真相源是 GAS 属性集，由 InitializeGASAttributes()（PossessedBy 时）
+	// 它们的唯一真相源是 GAS 属性集，由 InitializeGASAttributes() 在本局档案就绪后一次性写入
 	// 从 URoguePlayerBalanceAsset 与本玩家永久成长快照灌入，之后由局内升级 GE 修改，
 	// 最后经 SyncAttributeMirrors() 每帧缓存回运行时字段。
 	//

@@ -9,12 +9,13 @@ UENUM(BlueprintType)
 enum class ERogueWeaponUpgradeSource : uint8
 {
 	Scythe    UMETA(DisplayName = "银刃"),
-	Rocket    UMETA(DisplayName = "焰符·火丸"),
+	Rocket    UMETA(DisplayName = "冰焰·陨星"),
 	Laser     UMETA(DisplayName = "星符·流光"),
 	HellTower UMETA(DisplayName = "焰符·灼光"),
 	Mortar    UMETA(DisplayName = "冰符·霜玉"),
 	Projectile UMETA(DisplayName = "冰符·寒弹"),
-	Talisman UMETA(DisplayName="灵符·归心")
+	Talisman UMETA(DisplayName="灵符·归心"),
+    FrostBlade UMETA(DisplayName="冰刀·霜月")
 };
 
 USTRUCT(BlueprintType)

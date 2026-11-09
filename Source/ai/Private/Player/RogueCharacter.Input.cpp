@@ -1,51 +1,25 @@
-#include "Player/RogueCharacter.h"
-#include "AbilitySystem/RogueAttributeSet.h"
-#include "Debug/RogueSelfTest.h"
+﻿#include "Player/RogueCharacter.h"
+#include "EnhancedInputSubsystems.h"
+#include "Engine/DataTable.h"
+#include "Kismet/GameplayStatics.h"
+#include "Engine/World.h"
 
-#include "Combat/Weapons/RogueWeaponBase.h"
-#include "Combat/Weapons/RogueWeapon_Projectile.h"
-#include "Combat/Weapons/RogueWeapon_Scythe.h"
-#include "Combat/Weapons/RogueWeapon_Rocket.h"
-#include "Combat/Weapons/RogueWeapon_Laser.h"
-#include "Combat/Weapons/RogueWeapon_HellTower.h"
-#include "Combat/Weapons/RogueWeapon_Mortar.h"
-#include "Combat/Projectiles/RogueMortarProjectile.h"
-#include "Combat/Projectiles/RogueRocketProjectile.h"
-#include "Enemies/RogueEnemy.h"
-#include "Framework/RogueGameMode.h"
-#include "Framework/RogueGameState.h"
-#include "Player/RoguePlayerBalanceAsset.h"
 #include "Player/RoguePlayerState.h"
-#include "GameFramework/GameStateBase.h"
 #include "AbilitySystem/RogueAbilitySystemComponent.h"
-#include "AbilitySystem/RogueAbilitySystemLibrary.h"
-#include "AbilitySystem/Abilities/RogueWeaponAbility.h"
-#include "AbilitySystem/GameplayEffects/RogueStateEffects.h"
-#include "AbilitySystem/Abilities/RogueEnemyAttackAbility.h"
-#include "Combat/Targeting/RogueEnemyTrackerSubsystem.h"
-#include "AbilitySystem/GameplayEffects/RogueAttributeUpgradeEffect.h"
 #include "AbilitySystem/RogueGameplayTags.h"
-#include "World/RogueShopTerminal.h"
 #include "UI/RogueHUD.h"
-#include "Combat/Visuals/RogueImpactEffect.h"
 #include "Camera/CameraComponent.h"
-#include "Components/CapsuleComponent.h"
 #include "Components/InputComponent.h"
 // Enhanced Input（UE5 标准输入）。资产清单见 Docs/Enhanced-Input-Migration.md；
 // 所需资产缺失时 SetupEnhancedInput 会记录错误并返回，便于定位输入配置问题。
 #include "EnhancedInputComponent.h"
-#include "EnhancedInputSubsystems.h"
 #include "InputAction.h"
 #include "InputActionValue.h"
 #include "InputMappingContext.h"
-#include "Engine/DataTable.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Controller.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
-#include "Kismet/GameplayStatics.h"
-#include "Net/UnrealNetwork.h"
-#include "UObject/SoftObjectPath.h"
 
 namespace
 {
@@ -95,9 +69,9 @@ void ARogueCharacter::SetupEnhancedInput(UInputComponent* PlayerInputComponent)
 	UInputAction* LookAsset = ResolveInputAsset(this->LookAction, DefaultInputActionFolder, TEXT("IA_Look"));
 	UInputAction* ZoomAsset = ResolveInputAsset(this->ZoomAction, DefaultInputActionFolder, TEXT("IA_Zoom"));
 	UInputAction* DashAsset = ResolveInputAsset(this->DashAction, DefaultInputActionFolder, TEXT("IA_Dash"));
-	UInputAction* JumpAsset = ResolveInputAsset(this->JumpAction, DefaultInputActionFolder, TEXT("IA_Jump"));
 	UInputAction* InteractAsset = ResolveInputAsset(this->InteractAction, DefaultInputActionFolder, TEXT("IA_Interact"));
 	UInputAction* PauseMenuAsset = ResolveInputAsset(this->TogglePauseMenuAction, DefaultInputActionFolder, TEXT("IA_TogglePauseMenu"));
+    UInputAction* OpenUpgradeAsset=ResolveInputAsset(this->OpenUpgradeSelectionAction,DefaultInputActionFolder,TEXT("IA_Choice"));
 	UInputAction* Upgrade1Asset = ResolveInputAsset(this->ChooseUpgrade1Action, DefaultInputActionFolder, TEXT("IA_ChooseUpgrade1"));
 	UInputAction* Upgrade2Asset = ResolveInputAsset(this->ChooseUpgrade2Action, DefaultInputActionFolder, TEXT("IA_ChooseUpgrade2"));
 	UInputAction* Upgrade3Asset = ResolveInputAsset(this->ChooseUpgrade3Action, DefaultInputActionFolder, TEXT("IA_ChooseUpgrade3"));
@@ -109,9 +83,9 @@ void ARogueCharacter::SetupEnhancedInput(UInputComponent* PlayerInputComponent)
 	if (LookAsset == nullptr)      { MissingAssets.Add(TEXT("IA_Look")); }
 	if (ZoomAsset == nullptr)      { MissingAssets.Add(TEXT("IA_Zoom")); }
 	if (DashAsset == nullptr)      { MissingAssets.Add(TEXT("IA_Dash")); }
-	if (JumpAsset == nullptr)      { MissingAssets.Add(TEXT("IA_Jump")); }
 	if (InteractAsset == nullptr)  { MissingAssets.Add(TEXT("IA_Interact")); }
 	if (PauseMenuAsset == nullptr) { MissingAssets.Add(TEXT("IA_TogglePauseMenu")); }
+    if (OpenUpgradeAsset == nullptr) { MissingAssets.Add(TEXT("IA_Choice")); }
 	if (Upgrade1Asset == nullptr)  { MissingAssets.Add(TEXT("IA_ChooseUpgrade1")); }
 	if (Upgrade2Asset == nullptr)  { MissingAssets.Add(TEXT("IA_ChooseUpgrade2")); }
 	if (Upgrade3Asset == nullptr)  { MissingAssets.Add(TEXT("IA_ChooseUpgrade3")); }
@@ -144,19 +118,23 @@ void ARogueCharacter::SetupEnhancedInput(UInputComponent* PlayerInputComponent)
 	EnhancedInput->BindAction(LookAsset,      ETriggerEvent::Triggered, this, &ARogueCharacter::HandleLookInput);
 	EnhancedInput->BindAction(ZoomAsset,      ETriggerEvent::Triggered, this, &ARogueCharacter::HandleZoomInput);
 	EnhancedInput->BindAction(DashAsset,      ETriggerEvent::Started,   this, &ARogueCharacter::HandleDashInput);
-	// 跳跃要成对绑定：按下起跳、松开截断（对应 legacy 的 IE_Pressed / IE_Released）
-	EnhancedInput->BindAction(JumpAsset,      ETriggerEvent::Started,   this, &ARogueCharacter::HandleJumpStarted);
-	EnhancedInput->BindAction(JumpAsset,      ETriggerEvent::Completed, this, &ARogueCharacter::HandleJumpStopped);
 	EnhancedInput->BindAction(InteractAsset,  ETriggerEvent::Started,   this, &ARogueCharacter::Interact);
 	EnhancedInput->BindAction(PauseMenuAsset, ETriggerEvent::Started,   this, &ARogueCharacter::TogglePauseMenu);
+    EnhancedInput->BindAction(OpenUpgradeAsset,ETriggerEvent::Started,this,&ARogueCharacter::ToggleUpgradeSelection);
 	EnhancedInput->BindAction(Upgrade1Asset,  ETriggerEvent::Started,   this, &ARogueCharacter::ChooseUpgradeOne);
 	EnhancedInput->BindAction(Upgrade2Asset,  ETriggerEvent::Started,   this, &ARogueCharacter::ChooseUpgradeTwo);
 	EnhancedInput->BindAction(Upgrade3Asset,  ETriggerEvent::Started,   this, &ARogueCharacter::ChooseUpgradeThree);
 
 	// 记录映射条数以发现空上下文；非零数量不能证明具体按键、修饰器或动作类型配置正确。
-	// 默认资产预期共 17 条，若调整按键需同时核对实际映射。
 	UE_LOG(LogTemp, Log, TEXT("[Rogue][Input] Enhanced Input 已启用：IMC=%s（%d 条按键映射），动作 10/10 就绪"),
 		*MappingContext->GetName(), MappingContext->GetMappings().Num());
+}
+
+void ARogueCharacter::ToggleUpgradeSelection()
+{
+    if(!IsAlive())return;
+    if(const auto* PC=GetController<APlayerController>())
+        if(auto* HUD=PC->GetHUD<ARogueHUD>())HUD->HandleUpgradeSelectionKey();
 }
 
 void ARogueCharacter::HandleMoveInput(const FInputActionValue& Value)
@@ -207,16 +185,6 @@ void ARogueCharacter::HandleDashInput()
 	// 这里尝试按标签激活已存在的能力；列表尚未复制时不会缓存或重放本次输入。
 	// （Dash() 自己会再判一次死亡 / 暂停，所以这里不必重复判断。）
 	Dash();
-}
-
-void ARogueCharacter::HandleJumpStarted()
-{
-	StartJump();
-}
-
-void ARogueCharacter::HandleJumpStopped()
-{
-	StopJump();
 }
 
 // ---- 角色移动 / 摄像机 / 冲刺 / 护甲 / 恢复 ----
@@ -320,48 +288,8 @@ void ARogueCharacter::ZoomCamera(float Value)
 
 void ARogueCharacter::TogglePauseMenu()
 {
-	if (!IsAlive())
-	{
-		return;
-	}
-
-	// 守卫改用本地 PlayerState 读"是否正在选卡/在商店"——这两个状态是每玩家的、且已复制到客户端。
-	// 原来用 GetAuthGameMode()：客户端返回 nullptr → 守卫整个被跳过 →
-	// 客户端玩家能在选升级卡的时候打开暂停菜单（服务端玩家不会）。
-	if (ARoguePlayerState* RoguePlayerState = GetPlayerState<ARoguePlayerState>())
-	{
-		if (RoguePlayerState->IsAwaitingUpgradeChoice() || RoguePlayerState->IsShopOpen())
-		{
-			return;
-		}
-	}
-
-	APlayerController* PlayerController = Cast<APlayerController>(GetController());
-	if (PlayerController == nullptr)
-	{
-		return;
-	}
-
-	ARogueHUD* RogueHUD = Cast<ARogueHUD>(PlayerController->GetHUD());
-	if (!IsValid(RogueHUD))
-	{
-		return;
-	}
-
-	if (RogueHUD->IsPauseMenuOpen())
-	{
-		RogueHUD->ClosePauseMenu();
-		SetUpgradeSelectionInput(false);
-	}
-	else
-	{
-		RogueHUD->OpenPauseMenu();
-		SetUpgradeSelectionInput(true);
-	}
-
-	// Esc 仅切换本机菜单和输入，不主动暂停世界。服务器暂停会影响整局推进，
-	// 但 SetGamePaused 是否成功还受 GameMode、暂停权限及控制器状态约束，
-	// 客户端本地调用也不等于服务器一定暂停。
+    if (const auto* PC = Cast<APlayerController>(GetController()))
+        if (auto* HUD = Cast<ARogueHUD>(PC->GetHUD())) HUD->HandlePauseMenuKey();
 }
 
 void ARogueCharacter::Interact()
@@ -422,7 +350,7 @@ void ARogueCharacter::Dash()
 	}
 }
 
-void ARogueCharacter::UpdateJumpFeel(float DeltaSeconds)
+void ARogueCharacter::UpdateFallingGravity()
 {
 	UCharacterMovementComponent* Movement = GetCharacterMovement();
 	if (Movement == nullptr)
@@ -430,84 +358,13 @@ void ARogueCharacter::UpdateJumpFeel(float DeltaSeconds)
 		return;
 	}
 
-	// 土狼时间：刚离开地面仍保留一次起跳机会。
-	if (Movement->IsMovingOnGround())
-	{
-		CoyoteTimeRemaining = FMath::Max(0.0f, CoyoteTimeSeconds);
-		bJumpedSinceGrounded = false;
-	}
-	else if (CoyoteTimeRemaining > 0.0f)
-	{
-		CoyoteTimeRemaining = FMath::Max(0.0f, CoyoteTimeRemaining - DeltaSeconds);
-	}
-
-	// 跳跃输入缓冲：落地/恢复可跳时消费。
-	if (JumpBufferRemaining > 0.0f)
-	{
-		JumpBufferRemaining = FMath::Max(0.0f, JumpBufferRemaining - DeltaSeconds);
-		if (IsAlive() && !bDashActive && CanJump())
-		{
-			JumpBufferRemaining = 0.0f;
-			CoyoteTimeRemaining = 0.0f;
-			bJumpedSinceGrounded = true;
-			Jump();
-		}
-	}
-
-	// 下落阶段额外加一份重力：上升慢、下落快，落地不拖沓。
+	// 角色走下台阶或离开平台时，加快落地。
 	const bool bShouldFallFast = Movement->IsFalling() && Movement->Velocity.Z < 0.0f && !bDashActive;
 	const float DesiredGravity = GravityScale * (bShouldFallFast ? FMath::Max(1.0f, FallGravityMultiplier) : 1.0f);
 	if (!FMath::IsNearlyEqual(Movement->GravityScale, DesiredGravity, 0.001f))
 	{
 		Movement->GravityScale = DesiredGravity;
 	}
-}
-
-void ARogueCharacter::StartJump()
-{
-	UWorld* World = GetWorld();
-	if (!IsAlive() || bDashActive || World == nullptr || World->IsPaused() || JumpMaxCount <= 0)
-	{
-		return;
-	}
-
-	if (CanJump())
-	{
-		JumpBufferRemaining = 0.0f;
-		CoyoteTimeRemaining = 0.0f;
-		bJumpedSinceGrounded = true;
-		Jump();
-		return;
-	}
-
-	// 土狼跳：已经离地但在宽限时间内，且本次离地后还没跳过。
-	UCharacterMovementComponent* Movement = GetCharacterMovement();
-	if (Movement != nullptr && Movement->IsFalling() && !bJumpedSinceGrounded
-		&& CoyoteTimeRemaining > 0.0f && JumpCurrentCount == 0)
-	{
-		CoyoteTimeRemaining = 0.0f;
-		bJumpedSinceGrounded = true;
-		JumpCurrentCount = 1;
-		LaunchCharacter(FVector(0.0f, 0.0f, JumpZVelocity), false, true);
-		return;
-	}
-
-	// 空中按跳：记一个短缓冲，落地后自动起跳。
-	JumpBufferRemaining = JumpBufferSeconds;
-}
-
-void ARogueCharacter::StopJump()
-{
-	// 可变跳跃高度：上升中提前松键就砍掉一部分垂直速度。
-	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
-	{
-		if (Movement->IsFalling() && Movement->Velocity.Z > 0.0f)
-		{
-			Movement->Velocity.Z *= FMath::Clamp(JumpCutMultiplier, 0.0f, 1.0f);
-		}
-	}
-
-	StopJumping();
 }
 
 void ARogueCharacter::HandleDash(float DeltaSeconds)

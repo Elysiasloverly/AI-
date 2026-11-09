@@ -7,6 +7,7 @@
 #include "Shared/RogueTypes.h"
 #include "Audio/RogueAttackAudioSettings.h"
 #include "Combat/Visuals/RogueCombatAccentEffect.h"
+#include "Combat/Weapons/RogueWeaponCombatSettings.h"
 #include "RogueWeaponBase.generated.h"
 
 class ARogueCharacter;
@@ -18,6 +19,8 @@ class ARogueRocketProjectile;
 class ARogueLaserBeam;
 class ARogueOrbitingBlade;
 class ARogueReturningTalisman;
+class ARogueFrostBlade;
+class ARogueFrostSwordWave;
 class URogueAttributeSet;
 class URogueWeaponAbility;
 struct FRogueCombatPoolPrewarmClasses;
@@ -36,7 +39,7 @@ struct AI_API FRogueWeaponTableRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "通用", meta = (DisplayName = "武器名称"))
 	FString DisplayName;
 
-	/** 武器逻辑类；留空时按数量升级类型匹配角色 WeaponClasses，不依赖行顺序 */
+	/** 武器逻辑类；显式配置优先。留空时由 RogueWeaponCatalog 按稳定行名/数量类型解析，不依赖行序。 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "通用", meta = (DisplayName = "武器类"))
 	TSubclassOf<ARogueWeaponBase> WeaponClass;
 
@@ -56,12 +59,7 @@ struct AI_API FRogueWeaponTableRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "通用", meta = (DisplayName = "索敌范围"))
 	float Range = 1600.0f;
 
-	// 仅用于一次性迁移旧数据；运行时统一读取 DA_AudioConfig，不再显示于武器配置。
-	UPROPERTY(meta=(DeprecatedProperty, DeprecationMessage="请在 DA_AudioConfig 配置武器音效"))
-	FRogueAttackAudioSettings AttackAudio;
 
-    UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="开火特效",meta=(DisplayName="开火闪光与碎光"))
-    FRogueCombatAccentSettings FireAccent;
 
 	/** 对应的"数量升级"枚举类型 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "升级", meta = (DisplayName = "数量升级类型"))
@@ -91,7 +89,7 @@ struct AI_API FRogueWeaponTableRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "上限", meta = (DisplayName = "弹速上限(-1=不限)"))
 	float MaxProjectileSpeed = -1.0f;
 
-	/** 激光折射次数上限（**-1 = 不限制**，默认）。 */
+	/** 星符·流光折射次数上限（**-1 = 不限制**，默认）。 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "上限", meta = (DisplayName = "折射上限(-1=不限)"))
 	int32 MaxRefractionCount = -1;
 
@@ -101,7 +99,7 @@ struct AI_API FRogueWeaponTableRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "冰符·寒弹连发", meta = (DisplayName = "连发次数上限(含首发，-1=不限)"))
 	int32 MaxProjectileBurstCount = -1;
 
-	// ---- 弹道随机化（弹体 & 火箭通用） ----
+	// ---- 弹道随机化（弹体 & 冰焰·陨星通用） ----
 
 	/** 是否启用弹道随机平面偏转 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "弹道随机", meta = (DisplayName = "启用弹道偏转"))
@@ -130,112 +128,144 @@ struct AI_API FRogueWeaponTableRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "公式", meta = (DisplayName = "折射伤害倍率"))
 	float RefractionDamageScale = 0.5f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "公式", meta = (DisplayName = "火箭索敌额外范围"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "公式", meta = (DisplayName = "冰焰·陨星索敌额外范围"))
 	float RocketSeekRangeBonus = 700.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "公式", meta = (DisplayName = "火箭爆炸半径范围加成倍率"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "公式", meta = (DisplayName = "冰焰·陨星爆炸半径范围加成倍率"))
 	float RocketExplosionRadiusRangeBonusScale = 0.25f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "公式", meta = (DisplayName = "迫击炮爆炸半径范围加成倍率"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "公式", meta = (DisplayName = "冰符·霜玉爆炸半径范围加成倍率"))
 	float MortarExplosionRadiusRangeBonusScale = 0.35f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "公式", meta = (DisplayName = "地狱塔范围加成倍率"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "公式", meta = (DisplayName = "焰符·灼光范围加成倍率"))
 	float HellTowerRangeBonusScale = 0.70f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "公式", meta = (DisplayName = "地狱塔光束寿命补偿"))
+	UPROPERTY()
 	float BeamLifetimePadding = 0.03f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "公式", meta = (DisplayName = "多重射击角度步长"))
 	float SpreadStepDegrees = 9.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "公式", meta = (DisplayName = "地狱塔基础伤害加成倍率"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "公式", meta = (DisplayName = "焰符·灼光基础伤害加成倍率"))
 	float BaseDamageBonusScale = 0.125f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "公式", meta = (DisplayName = "地狱塔每跳伤害加成倍率"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "公式", meta = (DisplayName = "焰符·灼光每跳伤害加成倍率"))
 	float DamageRampBonusScale = 0.0625f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "公式", meta = (DisplayName = "地狱塔伤害间隔缩减倍率"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "公式", meta = (DisplayName = "焰符·灼光伤害间隔缩减倍率"))
 	float DamageTickIntervalReductionScale = 0.08f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="弹体战斗", meta=(DisplayName="命中与存活"))
+    FRogueProjectileCombatSettings ProjectileCombat = FRogueProjectileCombatSettings();
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="公式", meta=(DisplayName="弹速加成倍率"))
+    float ProjectileSpeedBonusScale = 1.f;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="银刃", meta=(DisplayName="刀片命中半径", ClampMin="1", Units="cm"))
+    float BladeHitRadius = 46.f;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="银刃", meta=(DisplayName="同一敌人伤害间隔", ClampMin="0.01", Units="s"))
+    float BladeHitCooldown = .35f;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="银刃", meta=(DisplayName="攻速转刀片转速倍率"))
+    float BladeRotationBonusScale = 280.f;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="银刃", meta=(DisplayName="范围转刀片轨道倍率"))
+    float BladeOrbitRangeBonusScale = .12f;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="冰符·霜玉", meta=(DisplayName="冰符·霜玉弹道"))
+    FRogueMortarFlightSettings MortarFlight = FRogueMortarFlightSettings();
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="灵符·归心", meta=(DisplayName="归心符战斗"))
+    FRogueTalismanCombatSettings TalismanCombat = FRogueTalismanCombatSettings();
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="焰符·灼光", meta=(DisplayName="伤害跳最短间隔", ClampMin="0.01", Units="s"))
+    float HellTowerMinTickInterval = .03f;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="焰符·灼光", meta=(DisplayName="最低起跳伤害", ClampMin="0"))
+    float HellTowerMinDamage = 1.f;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="星符·流光", meta=(DisplayName="折射伤害停止阈值", ClampMin="0"))
+    float LaserRefractionMinDamage = 1.f;
 
 	// ---- 弹体武器专属 ----
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "普通子弹", meta = (DisplayName = "弹体类"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "冰符·寒弹", meta = (DisplayName = "弹体类"))
 	TSubclassOf<ARogueProjectile> ProjectileClass;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "普通子弹", meta = (DisplayName = "弹体速度"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "冰符·寒弹", meta = (DisplayName = "弹体速度"))
 	float ProjectileSpeed = 1800.0f;
 
-	// ---- 迫击炮武器专属 ----
+	// ---- 冰符·霜玉武器专属 ----
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "迫击炮", meta = (DisplayName = "迫击炮弹体类"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "冰符·霜玉", meta = (DisplayName = "冰符·霜玉弹体类"))
 	TSubclassOf<ARogueMortarProjectile> MortarProjectileClass;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "迫击炮", meta = (DisplayName = "爆炸半径"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "冰符·霜玉", meta = (DisplayName = "爆炸半径"))
 	float MortarExplosionRadius = 470.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "迫击炮", meta = (DisplayName = "发射速度"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "冰符·霜玉", meta = (DisplayName = "发射速度"))
 	float MortarLaunchSpeed = 760.0f;
 
-	// ---- 镰刀武器专属 ----
+	// ---- 银刃武器专属 ----
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "镰刀", meta = (DisplayName = "刀片类"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "银刃", meta = (DisplayName = "刀片类"))
 	TSubclassOf<ARogueOrbitingBlade> BladeClass;
 
 	/** 刀片轨道的基础半径。实际接触范围还取决于刀片/敌人的碰撞形状。
 	 *  已保存的数据表行会覆盖这里的结构体默认值；调参时需检查实际行值。 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "镰刀", meta = (DisplayName = "环绕半径"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "银刃", meta = (DisplayName = "环绕半径"))
 	float OrbitRadius = 120.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "镰刀", meta = (DisplayName = "旋转速度"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "银刃", meta = (DisplayName = "旋转速度"))
 	float RotationSpeed = 130.0f;
 
-	/** 环绕半径、转速、飞行速度、网格缩放与拖尾在此弹体蓝图中配置。 */
+	/** 弹体蓝图只设置环绕外观、模型和拖尾；战斗数值在本行“归心符战斗”中设置。 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="灵符·归心", meta=(DisplayName="归心符弹体蓝图"))
 	TSubclassOf<ARogueReturningTalisman> TalismanClass;
+    UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="冰刀·霜月",meta=(DisplayName="冰刀模型蓝图")) TSubclassOf<ARogueFrostBlade> FrostBladeClass;
+    UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="冰刀·霜月",meta=(DisplayName="剑气蓝图")) TSubclassOf<ARogueFrostSwordWave> FrostWaveClass;
+    UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="冰刀·霜月",meta=(DisplayName="冰刀战斗参数")) FRogueFrostBladeCombatSettings FrostBladeCombat;
 
-	// ---- 火箭武器专属 ----
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "火箭", meta = (DisplayName = "火箭类"))
+	// ---- 冰焰·陨星专属（内部行名沿用 Rocket，兼容现有存档和资产引用）----
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="冰焰·陨星", meta=(DisplayName="天降弹道"))
+    FRogueRocketFallSettings RocketFall;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="冰焰·陨星", meta=(DisplayName="落地蓝焰"))
+    FRogueIceFlameCombatSettings IceFlame;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "冰焰·陨星", meta = (DisplayName = "冰焰球蓝图"))
 	TSubclassOf<ARogueRocketProjectile> RocketClass;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "火箭", meta = (DisplayName = "爆炸半径"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "冰焰·陨星", meta = (DisplayName = "爆炸半径"))
 	float ExplosionRadius = 280.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "火箭", meta = (DisplayName = "火箭速度"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "冰焰·陨星", meta = (DisplayName = "下坠速度"))
 	float RocketSpeed = 900.0f;
 
-	// ---- 激光武器专属 ----
+	// ---- 星符·流光武器专属 ----
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "光束", meta = (DisplayName = "光束蓝图类", ToolTip = "激光与地狱塔可分别指定光束蓝图；留空使用原生默认光束。"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "光束共用", meta = (DisplayName = "光束蓝图类", ToolTip = "星符·流光与焰符·灼光可分别指定光束蓝图；留空使用原生默认光束。"))
 	TSubclassOf<ARogueLaserBeam> BeamClass;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "激光", meta = (DisplayName = "折射次数"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "星符·流光", meta = (DisplayName = "折射次数"))
 	int32 RefractionCount = 0;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "激光", meta = (DisplayName = "折射范围"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "星符·流光", meta = (DisplayName = "折射范围"))
 	float RefractionRange = 950.0f;
 
-	// ---- 地狱塔武器专属 ----
+	// ---- 焰符·灼光武器专属 ----
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "地狱塔", meta = (DisplayName = "基础伤害(塔)"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "焰符·灼光", meta = (DisplayName = "每跳基础伤害"))
 	float BaseDamage = 1.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "地狱塔", meta = (DisplayName = "每跳伤害递增"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "焰符·灼光", meta = (DisplayName = "每跳伤害递增"))
 	float DamageRampPerTick = 0.5f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "地狱塔", meta = (DisplayName = "伤害跳间隔"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "焰符·灼光", meta = (DisplayName = "伤害跳间隔"))
 	float DamageTickInterval = 0.10f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "地狱塔", meta = (DisplayName = "光束刷新间隔"))
+	UPROPERTY()
 	float BeamRefreshInterval = 0.16f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "地狱塔", meta = (DisplayName = "更新间隔"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "焰符·灼光", meta = (DisplayName = "更新间隔"))
 	float UpdateInterval = 0.05f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "地狱塔", meta = (DisplayName = "高负载更新间隔"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "焰符·灼光", meta = (DisplayName = "高负载更新间隔"))
 	float HeavyCombatUpdateInterval = 0.08f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "地狱塔", meta = (DisplayName = "高负载光束刷新惩罚"))
+	UPROPERTY()
 	float HeavyCombatBeamRefreshPenalty = 0.05f;
 
 	/** 收集此武器可能用到的对象池类，避免 GameMode 直接知道每种武器字段。 */
@@ -319,6 +349,7 @@ public:
 	 * 默认空实现 —— 事件型武器各自重写（见 NeedsCosmeticTick 的说明）。
 	 */
 	virtual void PlayCosmeticFire(const FRogueWeaponCosmeticFire& Fire);
+    virtual void UpdateCosmeticLock(const FRogueWeaponCosmeticFire& Fire) {}
 
 	/**
 	 * 本武器在"既不权威、也不是本人"的机器上是否仍需要 tick。
@@ -366,7 +397,7 @@ public:
 	float GetEffectiveProjectileSpeed(float BaseSpeed) const;
 
 	/** 弹速加成系数：默认全额（1.0），火箭 0.75、迫击炮 0.5。 */
-	virtual float GetProjectileSpeedBonusScale() const { return 1.0f; }
+	virtual float GetProjectileSpeedBonusScale() const { return Config.ProjectileSpeedBonusScale; }
 
 	/** 决定读取哪一项数量加成；现有子类显式返回各自类型，基类用 Config.CountUpgradeType。 */
 	virtual ERogueUpgradeType GetCountUpgradeType() const { return Config.CountUpgradeType; }
@@ -407,10 +438,16 @@ protected:
 	bool IsHeavyCombat() const;
 
 	/** 生成激光 Beam（通用辅助） */
-	void SpawnLaserBeam(const FVector& Start, const FVector& End, bool bInfernoStyle = false, bool bImpactEffect = true, float Lifetime = 0.10f, bool bPlayAttackSound = false);
+	void SpawnLaserBeam(const FVector& Start, const FVector& End, bool bInfernoStyle = false, bool bImpactEffect = true, float Lifetime = -1.f, bool bPlayAttackSound = false, const FRogueBeamLockCosmetic& Lock = FRogueBeamLockCosmetic());
 
 	/** 光束类武器（Laser / HellTower）共用的表现回放实现，子类 PlayCosmeticFire 直接转调它 */
 	void PlayCosmeticBeam(const FRogueWeaponCosmeticFire& Fire);
+
+    const ARogueLaserBeam* GetBeamVisualDefaults() const;
+
+    ARogueEnemy* SelectDistributedTarget(const TArray<ARogueEnemy*>& Candidates,
+        const TArray<ARogueEnemy*>& VolleyTargets = {}) const;
+    void ReserveProjectileTarget(AActor* Projectile, ARogueEnemy* Enemy) const;
 
 	/** 武器配置数据 */
 	FRogueWeaponTableRow Config;
@@ -420,6 +457,7 @@ protected:
 	TSubclassOf<URogueWeaponAbility> FireAbilityClass;
 
 private:
+    const FRogueCombatAccentSettings& GetFireAccentSettings() const;
 	FRogueAttackAudioState AttackAudioState;
     double LastFireAccentTime=-1.e30;
 	UPROPERTY()

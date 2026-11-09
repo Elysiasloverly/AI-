@@ -17,7 +17,7 @@ namespace RogueGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Dash);
 
 	/** 武器自动攻击（被动型技能）。
-	 *  六把武器都是 tick 驱动自动开火，没有"按下激活"这个动作，所以做成被动技能：
+	 *  离散开火由 Ability/Task 循环调度，持续实体另由角色 Tick 维护；不需要玩家逐次按键。
 	 *  用这个 Tag 标识"它属于自动攻击"，后续按武器族挂子 Tag。 */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_WeaponAutoAttack);
 
@@ -32,6 +32,7 @@ namespace RogueGameplayTags
 	/** 致死信号/死亡阻塞标签。玩家是否 Alive/Downed/Eliminated 以 LifeState 为准。
 	 * 本标签自身不会清理升级；清理策略由生命周期流程决定。 */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Dead);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_BossDamageInversion);
 
 	/** 冲刺中。用来在冲刺期间阻塞其它移动类技能。 */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Dashing);
@@ -68,7 +69,7 @@ namespace RogueGameplayTags
 	//  SetByCaller 数值（Data）—— 让同一个 GE 资产承载不同数值
 	// ===========================================================
 
-	/** 伤害量。所有伤害 GE 都用它取量，这样一份 GE 资产能被六把武器复用。 */
+	/** 伤害量。通用伤害结算使用同一 SetByCaller 键，伤害大小由各攻击入口计算。 */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Damage);
 
 	/** 状态持续秒数，当前复活无敌效果用此 SetByCaller 键；永久升级不读取它。 */

@@ -1,4 +1,4 @@
-#if WITH_DEV_AUTOMATION_TESTS
+﻿#if WITH_DEV_AUTOMATION_TESTS
 #include "UI/Widgets/RogueBarAnimation.h"
 #include "UI/Widgets/RogueVitalsWidgetBase.h"
 #include "UI/Widgets/RogueBossHealthBarWidgetBase.h"
@@ -98,6 +98,32 @@ bool FRogueActualVitalsAnimationTest::RunTest(const FString& Parameters)
     TestEqual(TEXT("Revival resets display without a stale trail"),FRogueUIPresentationTestAccess::Health(Widget),.5f);
     View.MaxHealth=200;View.HealthPercent=.25f;Widget->UpdateVitals(View);
     TestEqual(TEXT("Changed health capacity resets ratio"),FRogueUIPresentationTestAccess::Health(Widget),.25f);
+    return true;
+}
+
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueRemainingEnemySnapshotTest,"Rogue.UI.Presentation.RemainingEnemiesAndPoolLifecycle",RogueUIPresentationTests::Flags)
+bool FRogueRemainingEnemySnapshotTest::RunTest(const FString&)
+{
+    RogueUIPresentationTests::FFixture F; if (!F.Initialize()) return false;
+    auto* State=F.World->GetGameState<ARogueGameState>();
+    if (!TestNotNull(TEXT("Shared game state exists"),State)) return false;
+    TArray<ARogueEnemy*> Enemies;
+    for (int32 Index=0;Index<6;++Index) Enemies.Add(F.Enemy(false));
+    State->RefreshEnemyLocatorView();
+    TestEqual(TEXT("Count includes all six live enemies"),State->GetEnemyLocatorView().Remaining,6);
+    TestEqual(TEXT("Crowded waves carry no locator positions"),State->GetEnemyLocatorView().Locations.Num(),0);
+    Enemies[0]->DeactivateToPool(); State->RefreshEnemyLocatorView();
+    TestEqual(TEXT("Pooled actors leave the count"),State->GetEnemyLocatorView().Remaining,5);
+    TestEqual(TEXT("Last five enemies provide locations for every client"),State->GetEnemyLocatorView().Locations.Num(),5);
+    for (int32 Index=1;Index<6;++Index) Enemies[Index]->DeactivateToPool();
+    State->RefreshEnemyLocatorView();
+    TestEqual(TEXT("Cleared wave has zero remaining"),State->GetEnemyLocatorView().Remaining,0);
+    TestTrue(TEXT("No stale position survives the last death"),State->GetEnemyLocatorView().Locations.IsEmpty());
+    F.Enemy(true); State->RefreshEnemyLocatorView();
+    TestEqual(TEXT("Bosses count as a remaining enemy"),State->GetEnemyLocatorView().Remaining,1);
+    State->SetRunStateSnapshot(1,0,0,true,true); State->RefreshEnemyLocatorView();
+    TestEqual(TEXT("Game over clears locators"),State->GetEnemyLocatorView().Remaining,0);
     return true;
 }
 

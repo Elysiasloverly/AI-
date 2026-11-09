@@ -4,6 +4,7 @@
 #include "AbilitySystem/Abilities/RogueWeaponAbility.h"
 #include "Player/RogueCharacter.h"
 #include "Enemies/RogueEnemy.h"
+#include "Enemies/Data/RogueEnemyArchetypes.h"
 #include "Combat/Pooling/RogueCombatPoolSubsystem.h"
 #include "Combat/Projectiles/RogueProjectile.h"
 
@@ -40,16 +41,12 @@ void ARogueWeapon_Projectile::FireAtTarget(AActor* TargetActor)
 	}
 
 	const FVector AimOrigin = OwnerChar->GetActorLocation() + FVector(0.0f, 0.0f, 25.0f);
-	FVector Direction = TargetActor->GetActorLocation() - AimOrigin;
-	Direction.Z = 0.0f;
-	if (!Direction.Normalize())
-	{
-		Direction = OwnerChar->GetActorForwardVector().GetSafeNormal2D();
-		if (Direction.IsNearlyZero())
-		{
-			Direction = FVector::ForwardVector;
-		}
-	}
+    TArray<ARogueEnemy*> Candidates;
+    CollectEnemiesInRange(GetEffectiveRange(),Candidates);
+    if (auto* Preferred=Cast<ARogueEnemy>(TargetActor))
+    { Candidates.Remove(Preferred); Candidates.Insert(Preferred,0); }
+    TArray<ARogueEnemy*> VolleyTargets;
+    TMap<ARogueEnemy*,int32> TargetShotCounts;
 
 	const float SpreadStepDegrees = Config.SpreadStepDegrees;
 	const int32 EffectiveCount = GetEffectiveProjectileCount();
@@ -59,8 +56,16 @@ void ARogueWeapon_Projectile::FireAtTarget(AActor* TargetActor)
 	bool bAudioTagged = false;
 	for (int32 Index = 0; Index < EffectiveCount; ++Index)
 	{
-		const float SpreadOffset = GetSpreadOffsetDegrees(Index, SpreadStepDegrees);
-		FVector ShotDirection = Direction.RotateAngleAxis(SpreadOffset, FVector::UpVector).GetSafeNormal();
+        ARogueEnemy* ShotTarget=SelectDistributedTarget(Candidates,VolleyTargets);
+        if (!ShotTarget) { break; }
+        const FVector ToTarget = ShotTarget->GetActorLocation() - AimOrigin;
+        const bool bFlyingTarget = RogueEnemyArchetypes::IsFlyingType(ShotTarget->GetEnemyType());
+        // 飞行怪的碰撞胶囊在空中，按实际高度瞄准；地面寒弹仍平射。
+        FVector Direction = bFlyingTarget ? ToTarget.GetSafeNormal() : ToTarget.GetSafeNormal2D();
+        if (Direction.IsNearlyZero()) { Direction=OwnerChar->GetActorForwardVector().GetSafeNormal2D(); }
+        if (Direction.IsNearlyZero()) { Direction=FVector::ForwardVector; }
+        const float SpreadOffset=GetSpreadOffsetDegrees(TargetShotCounts.FindOrAdd(ShotTarget)++,SpreadStepDegrees);
+        FVector ShotDirection=Direction.RotateAngleAxis(SpreadOffset,FVector::UpVector).GetSafeNormal();
 
 		// 弹道随机平面偏转
 		if (Config.bEnableTrajectoryDeviation && Config.TrajectoryDeviationMaxAngle > 0.0f)
@@ -78,7 +83,10 @@ void ARogueWeapon_Projectile::FireAtTarget(AActor* TargetActor)
 			FinalSpeed = FMath::Max(FinalSpeed, 0.0f);
 		}
 
-		const FVector SpawnLocation = AimOrigin + ShotDirection * 100.0f;
+		// 飞行怪贴近玩家或就在头顶时，出弹点不能越过目标。
+		constexpr double MuzzleOffset = 100.0;
+		const double LaunchOffset = bFlyingTarget ? FMath::Min(MuzzleOffset, ToTarget.Size() * 0.5) : MuzzleOffset;
+		const FVector SpawnLocation = AimOrigin + ShotDirection * LaunchOffset;
 
 		UClass* ProjectileToSpawn = Config.ProjectileClass ? Config.ProjectileClass.Get() : ARogueProjectile::StaticClass();
 		ARogueProjectile* Projectile = Pools != nullptr
@@ -86,7 +94,9 @@ void ARogueWeapon_Projectile::FireAtTarget(AActor* TargetActor)
 			: GetWorld()->SpawnActor<ARogueProjectile>(ProjectileToSpawn, SpawnLocation, ShotDirection.Rotation());
 		if (Projectile != nullptr)
 		{
-			Projectile->ActivatePooledProjectile(OwnerChar, OwnerChar, SpawnLocation, ShotDirection.Rotation(), ShotDirection, FinalSpeed, GetEffectiveDamage());
+            ReserveProjectileTarget(Projectile,ShotTarget);
+            VolleyTargets.Add(ShotTarget);
+			Projectile->ActivatePooledProjectile(OwnerChar, OwnerChar, SpawnLocation, ShotDirection.Rotation(), ShotDirection, FinalSpeed, GetEffectiveDamage(), Config.ProjectileCombat);
 
 			// 权威那一发已经生成，再把"画出来需要什么"广播给队友。
 			// 必须**逐发**广播：偏转角度和弹速随机都是每一发单独掷的，
@@ -137,7 +147,7 @@ void ARogueWeapon_Projectile::PlayCosmeticFire(const FRogueWeaponCosmeticFire& F
 	}
 
 	Projectile->ActivatePooledProjectile(
-		OwnerChar, OwnerChar, Fire.Start, Fire.Direction.Rotation(), Fire.Direction, Fire.Speed, /*InDamage=*/0.0f);
+		OwnerChar, OwnerChar, Fire.Start, Fire.Direction.Rotation(), Fire.Direction, Fire.Speed, /*InDamage=*/0.0f, Config.ProjectileCombat);
 }
 
 float ARogueWeapon_Projectile::GetSpreadOffsetDegrees(int32 ShotIndex, float StepDegrees)

@@ -2,11 +2,13 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Combat/Visuals/RogueCombatAccentEffect.h"
 #include "RogueShieldOrbitComponent.generated.h"
 
 class ARogueCharacter;
 class UStaticMesh;
 class UStaticMeshComponent;
+class UMaterialInterface;
 
 /** 护盾存在且当前值大于零时显示三个环绕模型；只负责表现，不参与碰撞和伤害。 */
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent, DisplayName = "护盾环绕组件"))
@@ -16,6 +18,8 @@ class AI_API URogueShieldOrbitComponent : public UActorComponent
 
 public:
 	URogueShieldOrbitComponent();
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="护盾|特效", meta=(DisplayName="护盾晶片破碎"))
+    FRogueCombatAccentSettings ShieldBreak;
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 	virtual void Activate(bool bReset = false) override;
 	virtual void Deactivate() override;
@@ -26,6 +30,9 @@ public:
 	/** 不指定默认模型；使用所选静态网格自带的材质。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "护盾环绕", meta = (DisplayName = "护盾静态网格体"))
 	TObjectPtr<UStaticMesh> ShieldMesh;
+    /** Optional cosmetic slots; an empty array preserves the selected mesh's materials. */
+    UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="护盾环绕",meta=(DisplayName="护盾表现材质（按槽位）"))
+    TArray<TObjectPtr<UMaterialInterface>> ShieldMaterialOverrides;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "护盾环绕", meta = (DisplayName = "环绕半径", ClampMin = "0", Units = "cm"))
 	float OrbitRadius = 110.0f;
@@ -66,4 +73,5 @@ private:
 	TWeakObjectPtr<ARogueCharacter> Character;
 	double OrbitAngleDegrees = 0.0;
 	bool bShieldVisible = false;
+    float AppearanceStartTime=0.f,DamagePulseTime=-10000.f,LastArmor=-1.f;
 };

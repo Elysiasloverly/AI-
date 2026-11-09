@@ -26,6 +26,11 @@ namespace
 		Option.Type = Type;
 		switch (Type)
 		{
+        case ERogueUpgradeType::FrostBladeCount:Option.Title=TEXT("冰刀·霜月");Option.Description=TEXT("升级树解锁后，每局自动装备唯一一把冰刀·霜月；悬于身后，自动横斩近处敌人后归位。此获取项不再进入选卡或商店。");Option.Magnitude=1;break;
+        case ERogueUpgradeType::FrostBladeSize:Option.Title=TEXT("霜刃延展");Option.Description=TEXT("冰刀尺寸增加基础值的20%；横斩范围和伤害随尺寸提高，基础攻击加成也参与尺寸放大。");Option.Magnitude=0.2;break;
+        case ERogueUpgradeType::FrostBladeWave:Option.Title=TEXT("霜月出鞘");Option.Description=TEXT("冰刀横斩时向前放出一道低伤害的浅弯月剑气；穿透敌人，碰地图或30秒后消失。");Option.Magnitude=1;break;
+        case ERogueUpgradeType::FrostBladeWaveCount:Option.Title=TEXT("霜月重叠");Option.Description=TEXT("每次横斩额外发出1道剑气，向前呈小角度扇形散开。");Option.Magnitude=1;break;
+        case ERogueUpgradeType::FrostBladeWaveSize:Option.Title=TEXT("霜月盈空");Option.Description=TEXT("剑气外观和命中范围增加基础尺寸的20%，不改变伤害与寿命。");Option.Magnitude=0.2;break;
 		case ERogueUpgradeType::TalismanCount:
 			Option.Title=TEXT("归心符阵"); Option.Description=TEXT("获得灵符·归心；已持有时，增加 1 张环绕灵符，独立出击并返回。"); Option.Magnitude=1; break;
 		case ERogueUpgradeType::TalismanPierce:
@@ -38,8 +43,8 @@ namespace
 			Option.Magnitude = 1.0f;
 			break;
 		case ERogueUpgradeType::RocketBlastRadius:
-			Option.Title = TEXT("火丸扩散");
-			Option.Description = TEXT("焰符·火丸爆炸半径 +90 厘米，扩大爆裂弹的伤害覆盖范围。");
+			Option.Title = TEXT("冰焰扩散");
+			Option.Description = TEXT("冰焰球爆炸半径 +90 厘米，同时增大球体、焰尾与地面蓝焰的影响范围。");
 			Option.Magnitude = 90.0f;
 			break;
 		case ERogueUpgradeType::HellTowerDamageRamp:

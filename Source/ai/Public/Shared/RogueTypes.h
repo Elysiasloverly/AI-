@@ -20,7 +20,7 @@ enum class ERogueUpgradeType : uint8
 	ArmorCapacity     UMETA(DisplayName = "护甲上限"),
 	ExperienceGain    UMETA(DisplayName = "经验获取"),
 	ScytheCount       UMETA(DisplayName = "银刃数量"),
-	RocketCount       UMETA(DisplayName = "焰符·火丸数量"),
+	RocketCount       UMETA(DisplayName = "冰焰·陨星数量"),
 	LaserCount        UMETA(DisplayName = "星符·流光数量"),
 	HellTowerCount    UMETA(DisplayName = "焰符·灼光数量"),
 	LaserRefraction   UMETA(DisplayName = "星尘折射"),
@@ -29,11 +29,16 @@ enum class ERogueUpgradeType : uint8
 	ScytheSize        UMETA(DisplayName = "银刃巨化"),
 	ScytheLifesteal   UMETA(DisplayName = "红雾吸血"),
 	ProjectileBurst UMETA(DisplayName = "冰符连诵"),
-	RocketBlastRadius UMETA(DisplayName = "火丸扩散"),
+	RocketBlastRadius UMETA(DisplayName = "冰焰扩散"),
 	HellTowerDamageRamp UMETA(DisplayName = "焰心递燃"),
 	TalismanCount UMETA(DisplayName = "灵符·归心数量"),
 	TalismanPierce UMETA(DisplayName = "灵符贯阵"),
-	TalismanRepeat UMETA(DisplayName = "灵符重奏")
+	TalismanRepeat UMETA(DisplayName = "灵符重奏"),
+    FrostBladeCount UMETA(DisplayName="冰刀·霜月"),
+    FrostBladeSize UMETA(DisplayName="霜刃延展"),
+    FrostBladeWave UMETA(DisplayName="霜月出鞘"),
+    FrostBladeWaveCount UMETA(DisplayName="霜月重叠"),
+    FrostBladeWaveSize UMETA(DisplayName="霜月盈空")
 };
 
 UENUM(BlueprintType)
@@ -120,6 +125,12 @@ struct FRogueWeaponBonusValues
 	UPROPERTY() float TalismanCount = 0.0f;
 	UPROPERTY() float TalismanPierce = 0.0f;
 	UPROPERTY() float TalismanRepeat = 0.0f;
+    UPROPERTY() float FrostBladeCount=0;
+    UPROPERTY() float FrostBladeSize=0;
+    UPROPERTY() float FrostBladeWave=0;
+    UPROPERTY() float FrostBladeWaveCount=0;
+    UPROPERTY() float FrostBladeWaveSize=0;
+
 
 	/** 对武器加成做近似相等比较；用于跳过角色侧快照赋值，不等同于网络系统逐字段脏检测。 */
 	bool Equals(const FRogueWeaponBonusValues& Other) const
@@ -142,7 +153,12 @@ struct FRogueWeaponBonusValues
 			&& FMath::IsNearlyEqual(HellTowerDamageRamp, Other.HellTowerDamageRamp)
 			&& FMath::IsNearlyEqual(TalismanCount, Other.TalismanCount)
 			&& FMath::IsNearlyEqual(TalismanPierce, Other.TalismanPierce)
-			&& FMath::IsNearlyEqual(TalismanRepeat, Other.TalismanRepeat);
+			&& FMath::IsNearlyEqual(TalismanRepeat, Other.TalismanRepeat)
+            && FMath::IsNearlyEqual(FrostBladeCount,Other.FrostBladeCount)
+            && FMath::IsNearlyEqual(FrostBladeSize,Other.FrostBladeSize)
+            && FMath::IsNearlyEqual(FrostBladeWave,Other.FrostBladeWave)
+            && FMath::IsNearlyEqual(FrostBladeWaveCount,Other.FrostBladeWaveCount)
+            && FMath::IsNearlyEqual(FrostBladeWaveSize,Other.FrostBladeWaveSize);
 	}
 };
 
@@ -197,6 +213,22 @@ template<> struct TStructOpsTypeTraits<FRogueUpgradeOption> : TStructOpsTypeTrai
  *  拥有者可在本机产生开火反馈，服务器独立判定伤害并向其他相关客户端发送表现。
  *  两端的时机/目标未由该结构强制统一，不能据此保证完整预测确认或弹道严格一致。
  */
+class AActor;
+class UPackageMap;
+
+/** Optional lock identity, embedded in the existing cosmetic batch. Ordinary fire costs one presence bit. */
+USTRUCT()
+struct AI_API FRogueBeamLockCosmetic
+{
+    GENERATED_BODY()
+    UPROPERTY() TObjectPtr<AActor> Target=nullptr;
+    UPROPERTY() uint32 Generation=0;
+    UPROPERTY() float LockedSeconds=0;
+    bool NetSerialize(FArchive& Ar,UPackageMap* Map,bool& bOutSuccess);
+};
+template<> struct TStructOpsTypeTraits<FRogueBeamLockCosmetic>:TStructOpsTypeTraitsBase2<FRogueBeamLockCosmetic>
+{enum{WithNetSerializer=true};};
+
 USTRUCT(BlueprintType)
 struct FRogueWeaponCosmeticFire
 {
@@ -224,6 +256,10 @@ struct FRogueWeaponCosmeticFire
 	UPROPERTY(BlueprintReadWrite)
 	float Param = 0.0f;
 
+    /** 相对蓝图原始尺寸的外观倍率；服务器计算后同步，避免客户端升级快照尚未到达时大小不一致。 */
+    UPROPERTY(BlueprintReadWrite)
+    float ProjectileVisualScale = 1.f;
+
 	/** 风格位：大弹体 / 炼狱光束 这类"看起来不一样"的开关 */
 	UPROPERTY(BlueprintReadWrite)
 	bool bAlternateStyle = false;
@@ -233,6 +269,7 @@ struct FRogueWeaponCosmeticFire
 	bool bPlayAttackSound = false;
     /** 同轮仅播一次开火闪光；与音效启用、音量和素材独立。 */
     UPROPERTY(BlueprintReadWrite) bool bPlayFireAccent=false;
+    UPROPERTY() FRogueBeamLockCosmetic Lock;
 };
 
 /** 表现批次中的一条武器索引与开火载荷。

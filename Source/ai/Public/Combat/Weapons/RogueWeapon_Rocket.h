@@ -26,13 +26,13 @@ public:
 
 	// ---- 生效数值：火箭的换算系数与主武器不同----
 
-	/** 攻速：`max(0.55, 冷却 − 加成×2.5)` —— 系数 2.5、下限 0.55 都与主武器不同。 */
+	/** 冷却、攻速换算系数和最低间隔都读取当前武器表行。 */
 	virtual float GetEffectiveCooldown() const override;
 
 	/** 弹速只吃 75% 的弹速加成。 */
-	virtual float GetProjectileSpeedBonusScale() const override { return 0.75f; }
+	virtual float GetProjectileSpeedBonusScale() const override { return Config.ProjectileSpeedBonusScale; }
 
-	/** 爆炸半径：基础半径 + 范围加成×0.25（旧实现对 ExplosionRadius 也是这么加的）。 */
+	/** 爆炸半径 = 表内基础半径 + 通用范围加成×表内系数 + 冰焰扩散加成。 */
 	float GetExplosionRadius() const;
 
 private:

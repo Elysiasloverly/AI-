@@ -1,4 +1,4 @@
-#if WITH_DEV_AUTOMATION_TESTS
+﻿#if WITH_DEV_AUTOMATION_TESTS
 
 #include "AbilitySystemComponent.h"
 #include "Enemies/Data/RogueEnemyAssetPaths.h"
@@ -141,7 +141,9 @@ bool FRogueBossUpgradeIsolationTest::RunTest(const FString& Parameters)
     const int32 BeforeLevel = F.Players[0]->GetPlayerLevel();
     F.Players[0]->AddExperience(F.Players[0]->GetExperienceToNextLevel());
     TestTrue(TEXT("XP really levels the player"), F.Players[0]->GetPlayerLevel() > BeforeLevel);
-    TestTrue(TEXT("XP really opens a selection"), F.States[0]->IsAwaitingUpgradeChoice());
+    TestFalse(TEXT("XP banks rewards without forcing a menu"),F.States[0]->IsAwaitingUpgradeChoice());
+    F.States[0]->Server_ToggleUpgradeSelection();
+    TestTrue(TEXT("Explicit input opens the earned selection"),F.States[0]->IsAwaitingUpgradeChoice());
     auto CheckBosses = [&]()
     {
         for (int32 Index = 0; Index < Bosses.Num(); ++Index)
@@ -167,6 +169,96 @@ bool FRogueBossUpgradeIsolationTest::RunTest(const FString& Parameters)
         F.Players[1]->GetRogueAttributeSet()->GetAttackPowerBonus(), OtherPlayerPower);
     AddInfo(FString::Printf(TEXT("Checked XP plus %d saved card definitions x3 against %d Blueprint boss variants."),
         F.Definitions->GetRowMap().Num(), Bosses.Num()));
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueMenuDamageProtectionTest,
+    "Rogue.Gameplay.PlayerMenus.ShopAndUpgradeRemainVulnerable", RogueBossUpgradeTests::Flags)
+bool FRogueMenuDamageProtectionTest::RunTest(const FString&)
+{
+    using namespace RogueBossUpgradeTests;
+    FFixture F;
+    if (!F.Initialize(*this, 2)) { return false; }
+    auto* Player = F.Players[0];
+    auto* State = F.States[0];
+    auto* Source = F.World->SpawnActor<AActor>();
+    auto* ASC = Player->GetAbilitySystemComponent();
+    ASC->SetNumericAttributeBase(URogueAttributeSet::GetMaxArmorAttribute(), 10.f);
+    ASC->SetNumericAttributeBase(URogueAttributeSet::GetArmorAttribute(), 5.f);
+    const auto* Attributes = Player->GetRogueAttributeSet();
+    const float InitialHealth = Attributes->GetHealth();
+    const float InitialArmor = Attributes->GetArmor();
+    if (!TestEqual(TEXT("The protected player starts with armor"), InitialArmor, 5.f)) { return false; }
+
+    F.Mode->TryOpenShop(Player);
+    if (!TestTrue(TEXT("The server actually opens the shop"), State->IsShopOpen())) { return false; }
+    float Applied = -1.f;
+    TestTrue(TEXT("Enemy projectile damage still applies while shopping"),RogueAbilitySystem::ApplyDamageToTarget(
+        Source,Player,7.f,RogueGameplayTags::Damage_Source_Projectile,&Applied));
+    TestTrue(TEXT("Shopping damage reports the real amount"),Applied>0.f);
+    TestTrue(TEXT("Shopping can consume armor"),Attributes->GetArmor()<InitialArmor);
+    TestTrue(TEXT("Shopping can consume health after armor"),Attributes->GetHealth()<InitialHealth);
+    TestTrue(TEXT("Shopping hits delay armor regeneration normally"),ASC->HasMatchingGameplayTag(RogueGameplayTags::State_RecentlyDamaged));
+    TestTrue(TEXT("A teammate without a menu remains vulnerable"), RogueAbilitySystem::ApplyDamageToTarget(
+        Source, F.Players[1], 1.f, RogueGameplayTags::Damage_Source_Projectile));
+
+    F.Mode->StartUpgradeSelection(Player);
+    F.Mode->StartUpgradeSelection(Player);
+    F.Mode->CloseShop(Player);
+    State->Server_ToggleUpgradeSelection();
+    for (int32 Choice = 0; Choice < 2; ++Choice)
+    {
+        if (!TestTrue(TEXT("The requested upgrade menu is active"), State->IsAwaitingUpgradeChoice())) { return false; }
+        TestTrue(TEXT("Contact damage still applies throughout queued choices"), RogueAbilitySystem::ApplyDamageToTarget(
+            Source, Player, 7.f, RogueGameplayTags::Damage_Source_Contact));
+        const auto& Pending = State->GetPendingUpgrades();
+        if (!TestTrue(TEXT("There is an upgrade to select"), !Pending.IsEmpty())) { return false; }
+        State->Server_RequestUpgradeSelection(0, Pending[0].SelectionId);
+    }
+    TestFalse(TEXT("Submitting the last upgrade closes its menu"), State->IsAwaitingUpgradeChoice());
+    TestTrue(TEXT("The next damage applies immediately after the menus close"), RogueAbilitySystem::ApplyDamageToTarget(
+        Source, Player, 1.f, RogueGameplayTags::Damage_Source_Area, &Applied));
+    TestTrue(TEXT("The next hit removes armor or health"), Applied > 0.f);
+    return true;
+}
+
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRoguePauseMenuDamageProtectionTest,
+    "Rogue.Gameplay.PlayerMenus.PauseDamageAndOwnership", RogueBossUpgradeTests::Flags)
+bool FRoguePauseMenuDamageProtectionTest::RunTest(const FString&)
+{
+    using namespace RogueBossUpgradeTests;
+    FFixture F; if (!F.Initialize(*this,2)) return false;
+    auto* Player=F.Players[0]; auto* State=F.States[0];
+    auto* Source=F.World->SpawnActor<AActor>();
+    auto* ASC=Player->GetAbilitySystemComponent();
+    ASC->SetNumericAttributeBase(URogueAttributeSet::GetMaxArmorAttribute(),10.f);
+    ASC->SetNumericAttributeBase(URogueAttributeSet::GetArmorAttribute(),5.f);
+    const float Health=Player->GetCurrentHealth();
+    State->Server_SetPauseMenuOpen(true);
+    TestTrue(TEXT("Owning player opens server menu protection"),State->IsPauseMenuOpen());
+    float Applied=-1;
+    const FGameplayTag Tags[] = {RogueGameplayTags::Damage_Source_Projectile,RogueGameplayTags::Damage_Source_Contact,RogueGameplayTags::Damage_Source_Area};
+    for (const auto& Tag : Tags)
+        TestFalse(TEXT("Pause/settings blocks all shared damage paths"),RogueAbilitySystem::ApplyDamageToTarget(Source,Player,7.f,Tag,&Applied));
+    TestEqual(TEXT("Blocked damage reports zero"),Applied,0.f);
+    TestEqual(TEXT("Health stays intact"),Player->GetCurrentHealth(),Health);
+    TestEqual(TEXT("Armor stays intact"),ASC->GetSet<URogueAttributeSet>()->GetArmor(),5.f);
+    TestFalse(TEXT("Blocked hits do not delay armor regeneration"),ASC->HasMatchingGameplayTag(RogueGameplayTags::State_RecentlyDamaged));
+    TestTrue(TEXT("Teammate remains vulnerable"),RogueAbilitySystem::ApplyDamageToTarget(Source,F.Players[1],1.f,RogueGameplayTags::Damage_Source_Area));
+    F.Mode->StartUpgradeSelection(Player);
+    TestFalse(TEXT("A reward earned while paused does not force another menu"),State->IsAwaitingUpgradeChoice());
+    State->Server_SetPauseMenuOpen(false);
+    State->Server_ToggleUpgradeSelection();
+    TestTrue(TEXT("A selection opened after pause remains vulnerable"),RogueAbilitySystem::ApplyDamageToTarget(Source,Player,1.f,RogueGameplayTags::Damage_Source_Area));
+    State->CloseUpgradeSelection();
+    TestTrue(TEXT("Damage resumes after the last menu closes"),RogueAbilitySystem::ApplyDamageToTarget(Source,Player,1.f,RogueGameplayTags::Damage_Source_Area));
+    State->Server_SetPauseMenuOpen(true);
+    auto* PC=Player->GetController();
+    PC->UnPossess();
+    TestFalse(TEXT("Unpossessing clears protection"),State->IsPauseMenuOpen());
+    State->Server_SetPauseMenuOpen(true);
+    TestFalse(TEXT("Cannot acquire protection without a live pawn"),State->IsPauseMenuOpen());
     return true;
 }
 
@@ -214,7 +306,7 @@ bool FRogueBossUpgradeContinuousDamageTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueBossDeathRewardOrderTest,
-    "Rogue.Gameplay.BossUpgrade.DeathItselfOpensRewardSelection", RogueBossUpgradeTests::Flags)
+    "Rogue.Gameplay.BossUpgrade.DeathBanksRewardUntilRequested", RogueBossUpgradeTests::Flags)
 bool FRogueBossDeathRewardOrderTest::RunTest(const FString& Parameters)
 {
     using namespace RogueBossUpgradeTests;
@@ -229,7 +321,10 @@ bool FRogueBossDeathRewardOrderTest::RunTest(const FString& Parameters)
     TestFalse(TEXT("Reward has not opened inside the damage call"), F.States[0]->IsAwaitingUpgradeChoice());
     F.Step(.02f);
     TestTrue(TEXT("Deferred boss death finishes"), Boss->IsDead());
-    TestTrue(TEXT("Boss death opens the bonus card selection"), F.States[0]->IsAwaitingUpgradeChoice());
+    TestFalse(TEXT("Boss death does not interrupt combat with a menu"),F.States[0]->IsAwaitingUpgradeChoice());
+    TestTrue(TEXT("Boss bonus selections are banked"),F.States[0]->GetPendingUpgradeCount()>0);
+    F.States[0]->Server_ToggleUpgradeSelection();
+    TestTrue(TEXT("The boss reward opens when requested"),F.States[0]->IsAwaitingUpgradeChoice());
     TestEqual(TEXT("No XP level-up was necessary to show that selection"), F.Players[0]->GetPlayerLevel(), Level);
     return true;
 }

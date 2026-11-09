@@ -8,6 +8,28 @@ class UMaterialInterface;
 class UMaterialInstanceDynamic;
 class UStaticMeshComponent;
 
+/** Cosmetic identity only; no damage, range or status-effect semantics. */
+UENUM(BlueprintType)
+enum class ERogueWeaponImpactStyle : uint8
+{
+    Default UMETA(DisplayName="通用"),
+    Frost UMETA(DisplayName="冰晶碎裂"),
+    Ember UMETA(DisplayName="冰焰绽开"),
+    Glacier UMETA(DisplayName="冰球霜环"),
+    Silver UMETA(DisplayName="银刃弧光"),
+    Ofuda UMETA(DisplayName="符纸散墨"),
+    FrostBlade UMETA(DisplayName="霜月斩痕")
+};
+
+UENUM(BlueprintType)
+enum class ERogueAccentMotionProfile : uint8
+{
+    Legacy UMETA(DisplayName="原有节奏"),
+    Cast UMETA(DisplayName="施法起势"),
+    Strike UMETA(DisplayName="命中碎裂"),
+    Burst UMETA(DisplayName="爆裂扩散")
+};
+
 /** 仅描述本地外观，不参与攻击、伤害、音效或存档。 */
 USTRUCT(BlueprintType)
 struct AI_API FRogueCombatAccentSettings
@@ -35,6 +57,10 @@ public:
     void Deactivate();
     bool IsAvailableInPool() const { return bAvailable; }
     UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="特效",meta=(DisplayName="闪光材质")) TObjectPtr<UMaterialInterface> AccentMaterial;
+    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="特效|节奏",meta=(DisplayName="运动节奏")) ERogueAccentMotionProfile MotionProfile=ERogueAccentMotionProfile::Legacy;
+    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="特效|节奏",meta=(DisplayName="亮核尺寸",ClampMin=".2",ClampMax="3")) float CoreSizeMultiplier=1;
+    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="特效|节奏",meta=(DisplayName="扩散环尺寸",ClampMin=".2",ClampMax="3")) float RingSizeMultiplier=1;
+    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="特效|节奏",meta=(DisplayName="碎片飞散距离",ClampMin=".2",ClampMax="3")) float ShardDistanceMultiplier=1;
     UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="特效") TObjectPtr<UStaticMeshComponent> Core;
     UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="特效") TObjectPtr<UStaticMeshComponent> Ring;
 private:
@@ -46,5 +72,6 @@ private:
     FVector FlightDirection=FVector::ForwardVector;
     FVector2D ShardDirections[6];
     float Age=0;
+    float VisualSeed=0;
     bool bAvailable=true,bHit=false;
 };

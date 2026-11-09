@@ -1,7 +1,9 @@
 #include "Combat/Projectiles/RogueProjectile.h"
 #include "Combat/RogueCombatCollision.h"
+#include "Combat/Targeting/RogueEnemyTrackerSubsystem.h"
 
 #include "Combat/Visuals/RogueImpactEffect.h"
+#include "Combat/Pooling/RogueCombatPoolSubsystem.h"
 #include "Enemies/RogueEnemy.h"
 #include "AbilitySystem/RogueAbilitySystemLibrary.h"
 #include "AbilitySystem/RogueGameplayTags.h"
@@ -15,7 +17,7 @@ ARogueProjectile::ARogueProjectile()
 	PrimaryActorTick.TickInterval = 0.03f;
 
 	Collision = CreateDefaultSubobject<USphereComponent>(TEXT("Collision"));
-	Collision->InitSphereRadius(CollisionRadius);
+	Collision->InitSphereRadius(16.f);
 	Collision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 	Collision->SetCollisionObjectType(ECC_WorldDynamic);
 	Collision->SetCollisionResponseToAllChannels(ECR_Ignore);
@@ -47,7 +49,7 @@ void ARogueProjectile::BeginPlay()
 	DeactivateToPool();
 }
 
-void ARogueProjectile::ActivatePooledProjectile(AActor* InOwner, APawn* InInstigator, const FVector& SpawnLocation, const FRotator& SpawnRotation, const FVector& InDirection, float InSpeed, float InDamage)
+void ARogueProjectile::ActivatePooledProjectile(AActor* InOwner, APawn* InInstigator, const FVector& SpawnLocation, const FRotator& SpawnRotation, const FVector& InDirection, float InSpeed, float InDamage, const FRogueProjectileCombatSettings& Combat)
 {
 	TravelDirection = InDirection.GetSafeNormal();
 	Speed = InSpeed;
@@ -60,9 +62,12 @@ void ARogueProjectile::ActivatePooledProjectile(AActor* InOwner, APawn* InInstig
 	SetActorTickEnabled(true);
 	bPoolAvailable = false;
 	bResolvedImpact = false;
-	RemainingLifetime = PooledLifetime;
+	RemainingLifetime = FMath::Max(.01f, Combat.Lifetime);
+    Collision->SetSphereRadius(FMath::Max(1.f, Combat.CollisionRadius), false);
 	Collision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 	Collision->SetGenerateOverlapEvents(true);
+	// 贴脸发射可能在开启碰撞时已经命中并回池，不能再启动移动组件。
+	if (bPoolAvailable) { return; }
 	Collision->ClearMoveIgnoreActors();
 
 	if (AActor* OwnerActor = GetOwner())
@@ -92,6 +97,8 @@ void ARogueProjectile::ActivatePooledProjectile(AActor* InOwner, APawn* InInstig
 
 void ARogueProjectile::DeactivateToPool()
 {
+    if (auto* Tracker = GetWorld() ? GetWorld()->GetSubsystem<URogueEnemyTrackerSubsystem>() : nullptr)
+    { Tracker->ReleaseWeaponTarget(this); }
 	bPoolAvailable = true;
 	bResolvedImpact = true;
 
@@ -156,12 +163,12 @@ void ARogueProjectile::HandleOverlap(UPrimitiveComponent* OverlappedComponent, A
 	{
 		ImpactLocation = FVector(SweepResult.ImpactPoint);
 	}
-	if (World != nullptr)
+	if (World != nullptr && HitVisualStyle==ERogueWeaponImpactStyle::Default)
 	{
 		ARogueImpactEffect::SpawnImpactEffect(World, ImpactLocation, SweepResult.ImpactNormal.Rotation(), ERogueImpactVisualStyle::Spark, VisualConfig.ImpactEffectScale, VisualConfig.ImpactEffectLifetime, this);
 	}
 	// 走统一的 GAS 伤害入口（内部会构建 Damage GE Spec 并施加到目标的 ASC）
-	RogueAbilitySystem::ApplyDamageToTarget(DamageCauser, Enemy, Damage, RogueGameplayTags::Damage_Source_Projectile);
+	RogueAbilitySystem::ApplyDamageToTarget(DamageCauser, Enemy, Damage, RogueGameplayTags::Damage_Source_Projectile,nullptr,uint8(HitVisualStyle));
 	DeactivateToPool();
 }
 
@@ -181,7 +188,9 @@ void ARogueProjectile::HandleProjectileStop(const FHitResult& ImpactResult)
 	}
 	if (World != nullptr)
 	{
-		ARogueImpactEffect::SpawnImpactEffect(World, ImpactLocation, ImpactResult.ImpactNormal.Rotation(), ERogueImpactVisualStyle::Spark, VisualConfig.StopImpactEffectScale, VisualConfig.StopImpactEffectLifetime, this);
+        if(WallImpactAccent.EffectClass)
+        {if(auto* Pool=World->GetSubsystem<URogueCombatPoolSubsystem>())Pool->PlayCombatAccent(WallImpactAccent,ImpactLocation,TravelDirection,true);}
+        else ARogueImpactEffect::SpawnImpactEffect(World, ImpactLocation, ImpactResult.ImpactNormal.Rotation(), ERogueImpactVisualStyle::Spark, VisualConfig.StopImpactEffectScale, VisualConfig.StopImpactEffectLifetime, this);
 	}
 	DeactivateToPool();
 }

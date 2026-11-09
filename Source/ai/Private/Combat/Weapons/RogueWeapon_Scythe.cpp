@@ -41,6 +41,7 @@ void ARogueWeapon_Scythe::WeaponTick(float /*DeltaSeconds*/)
 	if (bHasBlades && (!bAudioOrbitActive || bCompletedTurn))
     {
         PlayAttackAudio(GetOwnerLocation());
+        if(auto* Player=GetOwnerCharacter())Player->NotifyOwnedWeaponAttack(GetCountUpgradeType());
         FRogueWeaponCosmeticFire Fire;Fire.Start=GetOwnerLocation()+FVector(0,0,25);Fire.bPlayFireAccent=true;PlayFireAccent(Fire);
     }
 	bAudioOrbitActive = bHasBlades;
@@ -67,14 +68,14 @@ float ARogueWeapon_Scythe::GetEffectiveRotationSpeed() const
 {
 	const FRogueWeaponBonusValues& Bonuses = GetWeaponBonusValues();
 	const float Bonus = Bonuses.AttackSpeed;
-	return GetConfig().RotationSpeed + Bonus * 280.0f;
+	return GetConfig().RotationSpeed + Bonus * Config.BladeRotationBonusScale;
 }
 
 float ARogueWeapon_Scythe::GetEffectiveOrbitRadius() const
 {
 	const FRogueWeaponBonusValues& Bonuses = GetWeaponBonusValues();
 	const float Bonus = Bonuses.AttackRange;
-	return GetConfig().OrbitRadius + Bonus * 0.12f;
+	return GetConfig().OrbitRadius + Bonus * Config.BladeOrbitRangeBonusScale;
 }
 
 float ARogueWeapon_Scythe::GetEffectiveSizeMultiplier() const
@@ -141,7 +142,7 @@ void ARogueWeapon_Scythe::SyncOrbitingBlades()
 	{
 		if (IsValid(OrbitingBlades[Index]))
 		{
-			OrbitingBlades[Index]->ConfigureBlade(OwnerChar, Index, OrbitingBlades.Num(), GetEffectiveOrbitRadius(), GetEffectiveRotationSpeed(), GetEffectiveDamage(), SharedOrbitAngle, GetEffectiveSizeMultiplier());
+			OrbitingBlades[Index]->ConfigureBlade(OwnerChar, Index, OrbitingBlades.Num(), GetEffectiveOrbitRadius(), GetEffectiveRotationSpeed(), GetEffectiveDamage(), SharedOrbitAngle, GetEffectiveSizeMultiplier(), Config.BladeHitRadius, Config.BladeHitCooldown);
 		}
 	}
 }

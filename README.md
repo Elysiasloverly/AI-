@@ -6,6 +6,10 @@
 
 > 运行时单 C++ 模块 `ai` + 编辑器工具模块 `aiEditor` · 玩法动作与数值由 **GameplayAbilitySystem（GAS）** 驱动 · 服务端权威 · 源码按玩法职责组织
 
+## 当前维护文档（2026-11-09）
+
+[维护与扩展指南](Docs/Maintenance-Extension-Guide.md) 汇总修改入口与当前规则；[主动选卡](Docs/Manual-Upgrade-Selection.md)、[状态栏与冲刺圆弧](Docs/Centered-Vitals-Polish.md)、[就近刷新点](Docs/Fixed-Ranged-Spawn-Points.md)、[敌人绕障](Docs/Enemy-Obstacle-Movement.md) 记录近期实现。数值以实际加载资产为准，保存值快照与 C++ 默认值已分开说明。
+
 ---
 
 ## 技术栈
@@ -73,7 +77,7 @@
 
 注释与当前行为的核验依据、预测和伤害来源等实现边界见 [注释事实核验](Docs/Comment-Verification.md)。历史改造文档中的日志与性能数字不等于本轮已复测结论。
 
-**数值只有一个真相源**：`URogueAttributeSet`（30 个属性）。角色上的 `MaxHealth` / `MoveSpeed` 等是不可编辑的只读缓存。
+**数值只有一个真相源**：`URogueAttributeSet`（基础属性、伤害元属性与武器加成）。角色上的 `MaxHealth` / `MoveSpeed` 等是不可编辑的只读缓存。
 
 **主要玩法动作由 GameplayAbility 驱动**：
 
@@ -86,7 +90,7 @@
 
 **其余 GAS 构件**：
 
-- **GameplayEffect**：伤害、22 种升级、死亡 / 刚受伤 / 三种冷却 / 复活无敌；濒死 GE 为 Infinite，承载由 `LifeState` 同步的标签与表现，复活时机由服务端定时器决定
+- **GameplayEffect**：伤害、33 种升级、死亡 / 刚受伤 / 三种冷却 / 复活无敌；濒死 GE 为 Infinite，承载由 `LifeState` 同步的标签与表现，复活时机由服务端定时器决定
 - **Periodic GE**：生命与护甲的自然回复 —— `Period`（0.25s 周期）+ `AttributeBased` 修饰器量级（每次结算重读属性，升级自动生效）+ `TargetTagRequirements` 组件的 `OngoingTagRequirements`（`State.Dead` / `State.RecentlyDamaged` 期间自动暂停，条件消失后自动恢复）
 - **Infinite GE Stacking**：每种升级对应一个 GE 子类，固定目标属性；`AggregateByTarget` 按目标叠层，`SetByCaller(Data.Magnitude)` 提供单次数值，层数上限为 0（不限）。最大生命 / 护甲上限变化后的补量由角色属性变化委托处理
 - **AbilitySet**：玩家默认技能与敌人攻击支持 `URogueAbilitySet` 数据驱动授予，缺少配置时保留原有回退路径。武器能力由各武器的 `GetFireAbilityClass()` 提供，在角色侧幂等授予；能力授予与基础属性 / 常驻 GE 初始化分别管理
@@ -105,19 +109,19 @@
 
 ### 战斗
 
-- **6 种武器族**：御札、八卦炉、阴阳玉、极限火花、御柱、银刃
+- **8 种武器族**：冰符·寒弹、银刃、冰焰·陨星、星符·流光、焰符·灼光、冰符·霜玉、灵符·归心、冰刀·霜月
 - 每种武器有独立的升级换算系数（例如攻速加成在八卦炉上 ×2.5、银刃转速 +280）
-- **22 种升级类型**，通过 DataAsset / DataTable 驱动默认数值
+- **33 种升级类型**，通过 DataAsset / DataTable 驱动默认数值
 
 ### 敌人
 
 - **统一运行时类 + 原型模式**：所有敌人共用 `ARogueEnemy`，差异由原型组合 + 数据表配置驱动，无蓝图子类爆炸
 - **18种敌人**：13种地面攻击者、月蝶/风镰/星灯3种低空攻击者，以及青叶灵/祈愿妖精2种治疗者；Boss视觉提示、治疗效果与固定敌人法阵伤害见配置文档
-- **6 种移动模型** + **3 种射击模式**（单发 / 散射 / 整圈弹幕）；地藏使用整圈弹幕
+- **6 种基础移动模型**，射击还包括飞行交织、折返风刃、星阵合围与天坠弹；地藏使用整圈弹幕
 
 ### 成长
 
-- 升级抽卡（代码默认规则 + DataAsset 资产覆盖双驱动）
+- 升级先累计次数，按 Q 主动打开选卡；Q / Esc 收起并保留原卡，确认才消费一次。商店与选卡正常承伤。
 - 商店经济（同类型购买永久翻倍、手动刷新价格翻倍、自动补货）
 - 波次动态刷怪与 Boss 战奖励
 
@@ -144,7 +148,7 @@
 
 ```bash
 # 服务端
-UnrealEditor.exe Baka.uproject /Game/Map/Battle_Night?listen -game -nullrhi -log \
+UnrealEditor.exe Baka.uproject /Game/Map/Night/Battle_Forest_Night?listen -game -nullrhi -log \
   -ExecCmds="Rogue.SelfTest.WeaponUpgradeChain 1"
 
 # 性能压测（200 敌人）
@@ -162,13 +166,14 @@ UnrealEditor.exe Baka.uproject <map> -game -nullrhi -log \
 |---|---|
 | **类文件在哪里 / 新类放哪里** | [Class-Organization.md](Docs/Class-Organization.md) — 目录职责、文件索引、实现拆分与蓝图兼容约定 |
 | **美术资产与玩法配置放在哪** | [Content-Organization.md](Docs/Content-Organization.md)、[Data-Configuration.md](Docs/Data-Configuration.md) — 美术主目录与 `/Game/Data/` 的 7 个配置资产 |
+| **美术风格与外观效果怎么调** | [Art-Direction.md](Docs/Art-Direction.md)、[护盾与环绕武器](Docs/Art-Player-Orbit-2026-11-03.md) |
 | **现在是什么结构** | [Project-Structure.md](Docs/Project-Structure.md) — 当前目录、运行时对象关系、数据流时序图、池化契约、联机分工 |
 | **濒死 / 复活 / 团灭如何同步** | [Player-LifeCycle.md](Docs/Player-LifeCycle.md) — 生命周期真值、幽灵碰撞、默认 10 秒定时器（资产可配）、两个界面与验证用例 |
 | **GAS 是怎么迁过来的** | [GAS-Main-Architecture-Plan.md](Docs/GAS-Main-Architecture-Plan.md) — 分阶段改造过程、验证数据、踩坑记录 |
 | **各系统职责与协作** | [System-Architecture-Overview.md](Docs/System-Architecture-Overview.md) |
 | **要加武器/卡牌/敌人** | [Maintenance-Extension-Guide.md](Docs/Maintenance-Extension-Guide.md) |
 | **中文名和代码英文名怎么对应** | [Content-Naming.md](Docs/Content-Naming.md) — 显示名 ↔ 枚举 ↔ 表行键，改名要动的 6 个位置 |
-| **血条 / 护甲条 / 经验条怎么改** | [HUD-Vitals-And-Enemy-Bars.md](Docs/HUD-Vitals-And-Enemy-Bars.md) — WBP 基类、生成脚本与数据流 |
+| **状态栏 / 等级 / 冲刺圆弧怎么改** | [Centered-Vitals-Polish.md](Docs/Centered-Vitals-Polish.md)、[HUD-Vitals-And-Enemy-Bars.md](Docs/HUD-Vitals-And-Enemy-Bars.md) — 当前绑定、WBP 修改入口与数据流 |
 | **受伤泛红与镜头震动怎么调** | [Damage-Feedback.md](Docs/Damage-Feedback.md) — 掉血检测、`FlashRoot` 结构、震动参数与替换方式 |
 | **开始菜单怎么做 / 怎么改样式** | [Main-Menu.md](Docs/Main-Menu.md) — 独立主菜单 map、`WBP_MainMenu` / `WBP_Tutorial`、按钮行为与打包注意 |
 | **敌方弹幕怎么换外观** | [Enemy-Projectile-Blueprints.md](Docs/Enemy-Projectile-Blueprints.md) — `BP_EnemyProjectile`、每敌人覆盖与池化 |
@@ -198,6 +203,7 @@ https://www.bilibili.com/video/BV1mbQGBkE1v
 
 ## 昼夜流程与玩家教程（2026-10-30）
 
-- [白昼、黑夜与百波通关](Docs/Battle-Day-Night.md)：35 / 50 / 85 三次切图，进入第 100 波通关。
+- [Boss 符卡](Docs/Boss-Spellcards.md)：九种招式、昼夜抽取、血条图标与数据表设置。
+- [白昼、黑夜与百波通关](Docs/Battle-Day-Night.md)：每 20 波交替昼夜，20 / 40 / 60 / 80 四次切图，打完第 100 波的终局 Boss 和场上敌人后通关。
 - [神社调查手帖](Docs/Player-Guide.md)：与 WBP 教程同步的六章玩家指南。
 - [教程维护说明](Docs/Tutorial-Maintenance.md)：事实核对、WBP 结构与更新方式。

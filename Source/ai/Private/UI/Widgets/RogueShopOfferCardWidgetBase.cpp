@@ -47,8 +47,11 @@ void URogueShopOfferCardWidgetBase::RequestPurchaseOffer()
 
 void URogueShopOfferCardWidgetBase::ApplyManagedOfferView(const FRogueShopOfferViewData& InViewData)
 {
+    ApplyCardIcon(InViewData.IconType);
+    RogueMenuWidgetHelpers::SetCardSeal(this, InViewData.bPurchased ? 2.f : (InViewData.bAffordable ? 1.f : 0.f));
 	RogueMenuWidgetHelpers::SetManagedText(Text_Title, InViewData.TitleText);
 	RogueMenuWidgetHelpers::SetManagedText(Text_Desc, InViewData.DescriptionText);
+    if (UButton* Button = GetMotionButton()) Button->SetToolTipText(InViewData.DescriptionText);
 	RogueMenuWidgetHelpers::SetManagedText(Text_Cost, InViewData.CostText);
 
 	if (Border_Card != nullptr)

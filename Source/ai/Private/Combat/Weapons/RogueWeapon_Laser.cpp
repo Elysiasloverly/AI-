@@ -1,5 +1,7 @@
 // 激光武器 —— 激光爆发 + 折射链逻辑
 #include "Combat/Weapons/RogueWeapon_Laser.h"
+#include "Combat/Visuals/RogueLaserBeam.h"
+#include "Combat/Targeting/RogueEnemyTrackerSubsystem.h"
 #include "AbilitySystem/Abilities/RogueWeaponAbility.h"
 #include "AbilitySystem/RogueAttributeSet.h"
 
@@ -64,31 +66,40 @@ void ARogueWeapon_Laser::FireLaserBurst(const TArray<ARogueEnemy*>& Enemies)
 	const int32 HalfCount = EffectiveCount / 2;
 	const float BeamSpacing = 34.0f;
 
+    // 先分配所有主光束，再分配折射段，避免前一束的折射抢占下一束的空闲目标。
+    TArray<ARogueEnemy*> PrimaryTargets;
+    for (int32 Index=0;Index<EffectiveCount;++Index)
+    {
+        if (ARogueEnemy* Enemy=SelectDistributedTarget(Enemies,PrimaryTargets)) { PrimaryTargets.Add(Enemy); }
+        else { break; }
+    }
+    TArray<ARogueEnemy*> VolleyTargets=PrimaryTargets;
 	bool bAudioTagged = false;
-	for (int32 LaserIndex = 0; LaserIndex < EffectiveCount; ++LaserIndex)
+	for (int32 LaserIndex = 0; LaserIndex < PrimaryTargets.Num(); ++LaserIndex)
 	{
-		if (!Enemies.IsValidIndex(LaserIndex % Enemies.Num()) || !IsValid(Enemies[LaserIndex % Enemies.Num()]))
-		{
-			continue;
-		}
-
-		ARogueEnemy* TargetEnemy = Enemies[LaserIndex % Enemies.Num()];
+        ARogueEnemy* TargetEnemy=PrimaryTargets[LaserIndex];
+        if (!IsValid(TargetEnemy) || TargetEnemy->IsDead() || TargetEnemy->IsAvailableInPool())
+        {
+            TargetEnemy=SelectDistributedTarget(Enemies,VolleyTargets);
+            if (!TargetEnemy) { continue; }
+            VolleyTargets.Add(TargetEnemy);
+        }
 		const float OffsetIndex = static_cast<float>(LaserIndex - HalfCount);
 		const float LateralOffset = EffectiveCount % 2 == 0 ? (OffsetIndex + 0.5f) * BeamSpacing : OffsetIndex * BeamSpacing;
 		const FVector BeamOrigin = BeamOriginBase + LateralDirection * LateralOffset;
 		const FVector TargetLocation = TargetEnemy->GetActorLocation() + FVector(0.0f, 0.0f, 40.0f);
 		RogueAbilitySystem::ApplyDamageToTarget(OwnerChar, TargetEnemy, GetEffectiveDamage(), RogueGameplayTags::Damage_Source_Beam);
-		SpawnLaserBeam(BeamOrigin, TargetLocation, false, true, .10f, !bAudioTagged);
+		SpawnLaserBeam(BeamOrigin, TargetLocation, false, true, -1.f, !bAudioTagged);
 		bAudioTagged = true;
 
 		if (GetEffectiveRefractionCount() > 0)
 		{
-			FireLaserRefractionChain(TargetEnemy, TargetLocation, GetEffectiveDamage() * GetConfig().RefractionDamageScale);
+			FireLaserRefractionChain(TargetEnemy, TargetLocation, GetEffectiveDamage() * GetConfig().RefractionDamageScale, VolleyTargets);
 		}
 	}
 }
 
-void ARogueWeapon_Laser::FireLaserRefractionChain(ARogueEnemy* InitialTarget, const FVector& InitialImpactLocation, float InitialDamage)
+void ARogueWeapon_Laser::FireLaserRefractionChain(ARogueEnemy* InitialTarget, const FVector& InitialImpactLocation, float InitialDamage, TArray<ARogueEnemy*>& VolleyTargets)
 {
 	ARogueCharacter* OwnerChar = GetOwnerCharacter();
 	if (!IsValid(InitialTarget) || GetEffectiveRefractionCount() <= 0 || InitialDamage <= 0.0f || OwnerChar == nullptr)
@@ -105,12 +116,16 @@ void ARogueWeapon_Laser::FireLaserRefractionChain(ARogueEnemy* InitialTarget, co
 
 	for (int32 RefractionIndex = 0; RefractionIndex < GetEffectiveRefractionCount(); ++RefractionIndex)
 	{
-		if (!IsValid(CurrentTarget) || CurrentDamage <= 1.0f)
+		if (!IsValid(CurrentTarget) || CurrentDamage <= FMath::Max(0.f, Config.LaserRefractionMinDamage))
 		{
 			break;
 		}
 
-		ARogueEnemy* NextTarget = FindNearestEnemyExcluding(CurrentTarget->GetActorLocation(), HitEnemies, GetEffectiveRefractionRange());
+        auto* Tracker=GetWorld()->GetSubsystem<URogueEnemyTrackerSubsystem>();
+        TArray<ARogueEnemy*> Candidates;
+        if (Tracker) { Tracker->CollectEnemiesInRange(CurrentTarget->GetActorLocation(),GetEffectiveRefractionRange(),Candidates); }
+        Candidates.RemoveAll([&HitEnemies](ARogueEnemy* Enemy){return HitEnemies.Contains(Enemy);});
+        ARogueEnemy* NextTarget=SelectDistributedTarget(Candidates,VolleyTargets);
 		if (!IsValid(NextTarget))
 		{
 			break;
@@ -122,6 +137,7 @@ void ARogueWeapon_Laser::FireLaserRefractionChain(ARogueEnemy* InitialTarget, co
 		SpawnLaserBeam(CurrentStartLocation, NextImpactLocation);
 
 		HitEnemies.Add(NextTarget);
+        VolleyTargets.Add(NextTarget);
 		CurrentTarget = NextTarget;
 		CurrentStartLocation = NextImpactLocation;
 	}

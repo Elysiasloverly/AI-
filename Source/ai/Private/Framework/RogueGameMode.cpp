@@ -1,4 +1,4 @@
-#include "Framework/RogueGameMode.h"
+﻿#include "Framework/RogueGameMode.h"
 #include "Debug/RogueSelfTest.h"
 #include "AbilitySystem/RogueGameplayTags.h"
 #include "AbilitySystem/RogueAbilitySystemLibrary.h"
@@ -128,7 +128,11 @@ void ARogueGameMode::FindLevelGameplayActors()
     {
         UE_LOG(LogTemp, Warning, TEXT("[RogueSpawn] Expected one Enemy Spawn Region in the map, found %d. Automatic spawning is disabled."), Count);
     }
-    // 场景、商店和玩家出生点均由关卡配置；不再生成竞技场/商店、覆盖灯光或强制传送玩家。
+    // 复用关卡里摆好的商店蓝图及缩放，运行时只决定它的落点。
+    for (TActorIterator<ARogueShopTerminal> It(GetWorld()); It; ++It)
+    {
+        if (IsValid(*It)) { LevelShopTerminal = *It; break; }
+    }
     CachedCharacter = Cast<ARogueCharacter>(UGameplayStatics::GetPlayerCharacter(this, 0));
 }
 
@@ -306,7 +310,7 @@ void ARogueGameMode::Tick(float DeltaSeconds)
 	TickPawnOwnershipRepair();
 	PushShopStateToPlayers();
 
-	// 从各玩家属性集读取 13 项加成，写入各自角色快照；近似相等时跳过赋值。
+	// 从各玩家属性集读取 武器加成，写入各自角色快照；近似相等时跳过赋值。
 	// 此接口统一武器输入，但不取代属性复制，也不保证与其他 Actor 的状态同时到达。
 	PushWeaponBonusSnapshots();
 
@@ -361,6 +365,7 @@ void ARogueGameMode::PushRunStateToGameState()
 		RunState.bGameOver,
 		RunState.bBossAlive, RunState.bVictory);
 	RogueGameState->RefreshBossHealthView();
+	RogueGameState->RefreshEnemyLocatorView();
 }
 
 void ARogueGameMode::PushWeaponBonusSnapshots()
@@ -385,24 +390,35 @@ void ARogueGameMode::CollectAlivePlayers(TArray<ARogueCharacter*, TInlineAllocat
 
 void ARogueGameMode::TickRunSystems(float DeltaSeconds)
 {
-    if (RunState.bGameOver || CompleteRunIfVictoryReached()) return;
+    if (RunState.bGameOver) return;
     // 存活时间独立于波次；清场战斗计时，休整与切图期间不计时。
     if (StageView.Phase != ERogueBattleStage::Countdown && StageView.Phase != ERogueBattleStage::Travelling)
         RunState.RunTimeSeconds += DeltaSeconds;
-	if (TickBattleStage(DeltaSeconds)) { return; }
+    TickWaveShop();
+    if (RunState.CurrentWave < VictoryWave && TickBattleStage(DeltaSeconds)) { return; }
 
-	// 生成调度 —— 委托给 SpawnSubsystem
-	if (URogueSpawnSubsystem* SpawnSubsystem = GetWorld()->GetSubsystem<URogueSpawnSubsystem>())
-	{
-        if (SpawnSubsystem->IsWaveComplete(RunState))
+    if (URogueSpawnSubsystem* SpawnSubsystem = GetWorld()->GetSubsystem<URogueSpawnSubsystem>())
+    {
+        float SpawnDelta = DeltaSeconds;
+        if (WaveIntermissionRemaining > 0.f)
         {
+            WaveIntermissionRemaining = FMath::Max(0.f, WaveIntermissionRemaining - DeltaSeconds);
+            if (WaveIntermissionRemaining > KINDA_SMALL_NUMBER) { return; }
+            WaveIntermissionRemaining = 0.f;
             ++RunState.CurrentWave;
             RunState.SpawnTimer = 0.f;
-            UE_LOG(LogTemp, Log, TEXT("[RogueWave] Cleared; starting wave %d."), RunState.CurrentWave);
+            SpawnDelta = 0.f; // 休整帧的时间不能累积成下一波的补刷。
+            UE_LOG(LogTemp, Log, TEXT("[RogueWave] Intermission complete; starting wave %d."), RunState.CurrentWave);
         }
-        if (CompleteRunIfVictoryReached()) return;
-		SpawnSubsystem->TickSpawning(DeltaSeconds, RunState, GetSpawnReferenceCharacter(), LevelSpawnRegion.Get());
-	}
+        else if (SpawnSubsystem->IsWaveComplete(RunState))
+        {
+            if (CompleteRunIfVictoryReached()) { return; }
+            WaveIntermissionRemaining = 3.f;
+            QueueWaveShopDrop();
+            return;
+        }
+        SpawnSubsystem->TickSpawning(SpawnDelta, RunState, GetSpawnReferenceCharacter(), LevelSpawnRegion.Get());
+    }
 }
 
 void ARogueGameMode::TickPawnOwnershipRepair()

@@ -28,8 +28,8 @@ void ARogueGameMode::InitializeBattleStage()
     StageSettings.NightEnemyCountMultiplier=FMath::IsFinite(StageSettings.NightEnemyCountMultiplier)?FMath::Clamp(StageSettings.NightEnemyCountMultiplier,1.f,10.f):2.f;
     StageSettings.NightSpawnRateMultiplier=FMath::IsFinite(StageSettings.NightSpawnRateMultiplier)?FMath::Clamp(StageSettings.NightSpawnRateMultiplier,1.f,10.f):2.f;
     const FString Map = CurrentMapPackage(this);
-    bDayStageMap = Map == StageSettings.DayMap.ToSoftObjectPath().GetLongPackageName();
-    const bool bNight = Map == StageSettings.NightMap.ToSoftObjectPath().GetLongPackageName();
+    bDayStageMap = StageSettings.ContainsMap(Map,false);
+    const bool bNight = StageSettings.ContainsMap(Map,true);
     StageView.Phase = bNight ? ERogueBattleStage::Night : ERogueBattleStage::Day;
     StageView.EnemyAttackSpeedMultiplier = 1.f;
     StageView.EnemyCountMultiplier = bNight ? StageSettings.NightEnemyCountMultiplier : 1.f;
@@ -43,7 +43,7 @@ void ARogueGameMode::InitializeBattleStage()
     // 直接打开黑夜地图也从白天结束后的波次开始；正常入口始终进入白天。
     if (bNight && !bContinuingStageRun)
     {
-        RunState.CurrentWave = StageSettings.DayWaveCount + 1;
+        RunState.CurrentWave = StageSettings.GetTransitionEndWave(0) + 1;
         RunState.BattleStageIndex = 1;
     }
     PushRunStateToGameState();
@@ -68,6 +68,7 @@ bool ARogueGameMode::TickBattleStage(float DeltaSeconds)
         {
             StageView.Phase = ERogueBattleStage::Countdown;
             StageView.CountdownDeadline = GetWorld()->GetTimeSeconds() + StageSettings.CountdownSeconds;
+            QueueWaveShopDrop();
             UE_LOG(LogTemp, Log, TEXT("[RogueStage] Wave cleared; stage countdown %.2f seconds."), StageSettings.CountdownSeconds);
         }
     }
@@ -94,7 +95,7 @@ void ARogueGameMode::TravelToNextBattleStage()
 {
     if (!HasAuthority() || RunState.bGameOver || StageView.Phase != ERogueBattleStage::Countdown) { return; }
     NextTravelAttemptTime = GetWorld()->GetTimeSeconds() + 5.;
-    const FString Destination = (StageView.bNextStageIsNight?StageSettings.NightMap:StageSettings.DayMap).ToSoftObjectPath().GetLongPackageName();
+    const FString Destination = StageSettings.ChooseMap(StageView.bNextStageIsNight,CurrentMapPackage(this));
     if (Destination.IsEmpty() || Destination == CurrentMapPackage(this) || !FPackageName::DoesPackageExist(Destination))
     {
         UE_LOG(LogTemp, Error, TEXT("[RogueStage] Next battle map is invalid: %s. Correct DA_GameBalance to retry."), *Destination);

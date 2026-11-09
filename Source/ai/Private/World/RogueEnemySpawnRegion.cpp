@@ -71,6 +71,8 @@ bool ARogueEnemySpawnRegion::CollectValidOutline(TArray<FVector2D>& OutVertices)
         if (!FMath::IsFinite(Point.X) || !FMath::IsFinite(Point.Y)) { return false; }
         OutVertices.Add(FVector2D(Point.X,Point.Y));
     }
+    if(bHasValidatedOutline&&OutVertices==LastValidatedOutline)return bLastOutlineValid;
+    LastValidatedOutline=OutVertices;bHasValidatedOutline=true;bLastOutlineValid=false;
     const int32 Count=OutVertices.Num();
     double TwiceArea=0;
     for (int32 I=0; I<Count; ++I)
@@ -84,11 +86,26 @@ bool ARogueEnemySpawnRegion::CollectValidOutline(TArray<FVector2D>& OutVertices)
             if (EdgesIntersect(A,B,OutVertices[J],OutVertices[(J+1)%Count])) { return false; }
         }
     }
-    return FMath::Abs(TwiceArea)>0.01;
+    bLastOutlineValid=FMath::Abs(TwiceArea)>0.01;
+    return bLastOutlineValid;
 }
 
 bool ARogueEnemySpawnRegion::IsInsideSpawnOutline(const FVector& Point,float CapsuleRadius) const
 {
+    const FVector2D Position(Point.X,Point.Y);
+    for(const auto& Hole:ExcludedAreas)
+    {
+        if(Hole.Points.Num()<3)continue;
+        bool Inside=false;
+        for(int32 I=0,J=Hole.Points.Num()-1;I<Hole.Points.Num();J=I++)
+        {
+            const auto A=Hole.Points[J],B=Hole.Points[I],Edge=B-A;
+            const double T=Edge.SizeSquared()>0?FMath::Clamp(FVector2D::DotProduct(Position-A,Edge)/Edge.SizeSquared(),0.,1.):0.;
+            if(FVector2D::DistSquared(Position,A+T*Edge)<FMath::Square(FMath::Max(0.f,CapsuleRadius)+EdgePadding))return false;
+            if((A.Y>Position.Y)!=(B.Y>Position.Y)&&Position.X<(B.X-A.X)*(Position.Y-A.Y)/(B.Y-A.Y)+A.X)Inside=!Inside;
+        }
+        if(Inside)return false;
+    }
     if (!bUseSpawnOutline) { return true; }
     TArray<FVector2D> Vertices;
     if (!CollectValidOutline(Vertices)) { return false; }

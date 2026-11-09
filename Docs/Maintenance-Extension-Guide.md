@@ -1,948 +1,249 @@
 # 维护与扩展指南
 
-> **当前类文件目录**见 [Class-Organization.md](Class-Organization.md)，运行时关系与数据流见 [Project-Structure.md](Project-Structure.md)。本文的路径与接口已按当前源码更新（2026-10），新增类的落点按玩法职责目录；不要再新建 `Core/`、`Subsystems/` 这类通用目录。
+更新：2026-11-09。工程入口为 `Baka.uproject`，内部模块保留 `ai` / `aiEditor` 名称。
 
-## 1. 文档目标
+本文用于判断“需求改在哪里、相关内容怎样同步、改完验证什么”。本轮对照当前源码、保存的数据资产和状态栏 WBP 更新；表中的保存值与 C++ 默认值分开说明。关卡世界设置、GameMode 蓝图或显式资产引用存在覆盖时，以运行时实际加载的配置为准。
 
-这份文档是给后续维护者和扩展者用的工程手册，核心目标有两件事：
+## 1. 先找到修改入口
 
-1. 让你快速判断“一个新需求应该改哪一层”。
-2. 尽量避免把新逻辑继续堆进 `GameMode`、`Character`、`HUD` 这种本来就容易变胖的类里。
+| 要修改的内容 | 首选入口 | 进一步说明 |
+|---|---|---|
+| 每波总量、生成速度、奖励、商店价格 | `/Game/Data/Core/DA_GameBalance` | [游戏平衡配置](Game-Balance-Configuration.md) |
+| 昼夜间隔、黑夜数量和近战占比、随机地图池 | 同一资产的 `BattleStage` | [昼夜流程](Battle-Day-Night.md) |
+| 玩家基础属性、冲刺、复活、武器初始加成与上限 | `/Game/Data/Player/DA_PlayerBalance` | [玩家配置](Player-Balance-Configuration.md) |
+| 武器伤害、速度、范围、数量、生命周期等战斗参数 | `/Game/Data/Weapons/DT_WeaponConfig` | [武器配置](Weapon-Configuration.md) |
+| 升级卡标题、介绍、单次加成 | `/Game/Data/Upgrades/DA_UpgradeDefinitions` → `DT_UpgradeDefinitions` | [升级树与卡池](UpgradeTreeGuide.md) |
+| 基础卡池、武器专属卡条件 | `/Game/Data/Upgrades/DA_UpgradeRules`、`RogueUpgradeSystemRules.cpp` | [主动选卡](Manual-Upgrade-Selection.md) |
+| 永久解锁、前置卡、基础属性树、冰砖调试 | `/Game/Data/Progression/DA_UpgradeTree` | [升级树](UpgradeTreeGuide.md) |
+| 敌人基础行为、攻击参数、治疗、胶囊与外观档案 | `/Game/Data/Enemies/DT_EnemyArchetypes` | [敌人表](Enemy-Archetype-Table.md) |
+| Boss 招式的蓄力、持续时间、施法间隔与表现 | `/Game/Data/Enemies/DT_BossSkills`、敌人 BP 的 Boss 技能组件 | [Boss 符卡](Boss-Spellcards.md)、[技能插槽](Boss-Skill-Slots.md) |
+| 不规则刷怪边界、禁刷区、空气墙、地面碰撞 | `/Game/Map/Day`、`/Game/Map/Night` 中的关卡 | [地图制作](Map-Authoring.md) |
+| 固定刷新点与远程怪距离 | `BP_RangedSpawnPoint`、所属刷怪区域 | [就近固定点](Fixed-Ranged-Spawn-Points.md) |
+| 敌人绕障、卡住恢复与规划开销 | `RogueEnemyObstacleMovementComponent` | [绕障说明](Enemy-Obstacle-Movement.md) |
+| 状态栏、升级提示、角色旁冲刺圆弧 | `/Game/UMG/HUD/WBP_PlayerVitals` | [状态栏维护](Centered-Vitals-Polish.md) |
+| 武器/升级图标、叠加数字、攻击跳动 | 右下角收藏栏 WBP 与 `RogueOwnedItemsWidget` | [收藏栏](Owned-Items-HUD.md) |
+| 武器、敌人、按钮音效与背景音乐 | `/Game/Data/Audio/DA_AudioConfig`、`RogueMusicSubsystem` | [音频配置](Attack-Audio-And-Music.md) |
+| 游戏内教程文字 | `SourceArt/UI/tutorial_chapters.json`，同步 WBP 与 Markdown | [教程维护](Tutorial-Maintenance.md) |
 
-这份项目已经做过一轮结构整理，目前整体思路是：
+## 2. 保持这些职责边界
 
-- **流程调度放在 Framework**
-- **玩家战斗放在 Player**
-- **敌人行为和视觉拆到 Enemies**
-- **短命战斗对象拆到 Combat**
-- **地图、掉落、商店场景物放在 World**
-- **界面和交互绘制放在 UI**
-- **适合调参的内容尽量走 Data Asset**
-- **运行时状态、对象池、追踪器、流程控制继续放代码**
+- **数值与出现规则进配置**：武器战斗值进武器表，玩家属性进玩家资产，波次与经济进游戏平衡资产。
+- **外观进 BP / WBP**：模型、材质、外观缩放、拖尾、界面字体和留白在相应蓝图调整。会改变伤害或碰撞范围的参数仍属于战斗配置。
+- **权威结算在服务器**：伤害、购买、抽卡消费、波次推进和切图由服务器确认。HUD 发请求并读取本地玩家状态。
+- **GAS 属性是一份数值真相**：角色缓存和武器快照用于读取、复制及表现，不要再维护第二套升级结果。
+- **运行状态不写回配置资产**：冷却、锁定目标、临时卡组、购买涨价和对象池状态属于本局运行态。
+- **高频对象沿用池化契约**：激活时完整初始化，回池时清理旧目标、定时器、命中记录和表现。不要只关可见性。
 
----
+当前目录与类落点见 [Class-Organization.md](Class-Organization.md)，系统关系见 [Project-Architecture.md](Project-Architecture.md)。不要再新建通用的 `Core/`、`Subsystems/` 目录来收纳不同玩法职责。
 
-## 2. 目录约定
+## 3. 当前运行规则：维护时不要恢复旧行为
 
-当前源码按玩法职责分层，`Public/` 与 `Private/` 的目录一一对应。
+### 3.1 升级由 Q 主动打开
 
-### `Framework/`
+升级与 Boss 额外选卡奖励先累计次数，不强制弹出界面。只有实际打开菜单才生成当前卡组；确认选择后消耗一次，剩余次数继续进入下一组。Q 或 Esc 可以收起，重开仍是原卡片，不能靠开关菜单免费重抽。
 
-整局调度、规则与配置：
+调用链：
 
-- `RogueGameMode.*`（实现拆到 `RogueGameMode.Players.cpp` / `RogueGameMode.Progression.cpp`）
-- `RogueGameState.*`
-- `RogueGameModeRules.*`
-- `RogueGameModeConfig.h`
-- `RogueGameBalanceAsset.*`
+```text
+IA_Choice（Q）
+  → Character::ToggleUpgradeSelection
+  → HUD::HandleUpgradeSelectionKey
+  → PlayerState::Server_ToggleUpgradeSelection
+  → GameMode::ToggleUpgradeSelectionForPlayer
+```
 
-### `AbilitySystem/`
+| PlayerState 状态 | 含义 |
+|---|---|
+| `QueuedUpgradeSelections` | 尚未生成卡组的奖励次数，仅复制给所属玩家 |
+| `PendingUpgrades` | 已生成但尚未消费的一组卡，收起后保留 |
+| `bAwaitingUpgradeChoice` | 当前是否正在显示选卡；不是“有奖励可选” |
+| `GetPendingUpgradeCount()` | 队列次数 + 当前卡组占用的一次奖励 |
 
-GAS 基础设施、能力、效果与表现：
+维护约定：
 
-- `RogueAbilitySystemComponent.*` / `RogueAbilitySystemLibrary.*`
-- `RogueAttributeSet.*` / `RogueAttributeMacros.h`
-- `RogueAbilitySet.*` / `RogueGameplayTags.*`
-- `Abilities/`：冲刺、武器开火、敌人攻击
-- `Tasks/`：冲刺位移、开火心跳、攻击心跳
-- `GameplayEffects/`：伤害、22 个升级 GE、状态 GE（死亡 / 刚受伤 / 冷却 / 无敌 / 濒死）
-- `Cues/`：命中与濒死表现
+- 暂时收起使用 `SuspendUpgradeSelection()`；`CloseUpgradeSelection()` 会清空当前卡组，不能当作普通收起入口。
+- 重开同一组卡会更新 `SelectionId`。旧点击、重复点击、隐藏卡片和过期报价仍需服务端校验。
+- 空卡池不能先扣掉奖励。商店、暂停界面与选卡不能叠开。
+- 濒死会收起界面；还有队友存活时保留未消费奖励。切图保留卡组和次数，抵达新地图不自动弹出；整局结束或新开一局清空。
+- 只累计次数不切输入模式。输入资产和绑定见 [Enhanced-Input-Migration.md](Enhanced-Input-Migration.md)。
 
-### `Combat/`
+代码入口：`Source/ai/Private/Framework/RogueGameMode.Progression.cpp`、`Source/ai/Private/Player/RoguePlayerState.cpp`、`Source/ai/Private/UI/RogueHUD.Menus.cpp`、`Source/ai/Private/UI/RogueHUD.Input.cpp`。
 
-- `Weapons/`：`RogueWeaponBase` + 6 个武器子类，以及行结构 `FRogueWeaponTableRow`
-- `Projectiles/`：冰符·寒弹、焰符·火丸、冰符·霜玉、敌方弹体、环绕刀片
-- `Visuals/`：光束、命中特效、伤害飘字
-- `Pooling/`：`RogueCombatPools` 与 `URogueCombatPoolSubsystem`
-- `Targeting/`：敌人注册表、空间哈希与候选查询
+### 3.2 菜单与伤害保护
 
-### `Progression/`
+伤害统一进入 `RogueAbilitySystem::ApplyDamageToTarget`，不要让弹体或新技能绕过这个入口直接改生命值。
 
-- `Upgrades/`：`RogueUpgradeSystem`、`RogueUpgradeSystemRules`、定义与规则资产
-- `Shop/`：`FRogueShopSystem`（每个 PlayerState 一份运行态）
-- `RogueRewardTypes.h`
+| 状态 | 当前伤害行为 |
+|---|---|
+| 商店打开 | 正常承伤，世界继续运行 |
+| 升级选卡打开 / 仍有未使用次数 | 正常承伤 |
+| 暂停 / 设置菜单打开 | 保留该玩家独立的伤害保护；世界不暂停 |
+| 正在冲刺 | `State.Dashing` 期间保护，冷却中不因此免伤 |
+| 复活保护 | 按复活配置授予的无敌状态保护 |
+| 濒死、淘汰或整局结束 | 按生命周期与结算状态拦截伤害 |
 
-### `Player/`
+入口为 `Source/ai/Private/AbilitySystem/RogueAbilitySystemLibrary.cpp`。联机下必须验证房主和加入者各自的状态，不能只改本地 WBP 的显示来实现保护。
 
-- `RogueCharacter.*`（实现拆到 `.GAS` / `.Input` / `.Weapons` / `.Progression` / `.LifeCycle`）
-- `RoguePlayerState.*`（ASC 宿主）、`RoguePlayerController.*`
-- `RoguePlayerLifeState.h`、`RoguePlayerQuery.*`
-- `RoguePlayerBalanceAsset.*`、`RogueCharacterVisualComponent.*`
-- `RogueFloatingComponent.*`、`RogueTurnSmoothingComponent.*`
+### 3.3 波次、切图和落地商店
 
-### `Enemies/`
+- 白天和黑夜都等本波名额生成完毕，并清空敌人与 Boss 后推进；普通波间隔为 3 秒。
+- 当前保存的昼夜间隔为 20 波：20 / 40 / 60 / 80 波清场后，各倒计时 30 秒，全体切入下一阶段随机地图。
+- Boss 当前每 10 波出现。第 100 波仍生成完整敌人与终局 Boss，清完后胜利；不是刚进入第 100 波就结算。
+- 每波清场后排队让商店从天而降。监听服优先以房主为落点参考；场上终端与每名玩家的商品运行态分开管理。
+- 商店关闭后，服务器等待仍打开的个人商店全部关闭，再让终端蓄力离场；不要由单个客户端自行隐藏全场终端。
+- 商店模型已在 `BP_RogueShopTerminal` 的视觉组件中缩小为原来的一半，提示锚点同步降低；交互盒和地图 Actor 缩放保留。后续改外观大小请调整模型组件，避免一起缩小交互距离。
 
-- `RogueEnemy.*`
-- `Data/`：`RogueEnemyArchetypes`、`RogueEnemyDataTable`
-- `Spawning/`：`RogueSpawnSubsystem`
+入口为 `RogueGameMode.cpp` 的 `TickRunSystems`、`RogueGameMode.BattleStage.cpp`、`RogueGameMode.WaveShop.cpp` 和 `World/RogueShopTerminal`。切图承接见 `RoguePlayerState.StageTravel.cpp`。
 
-### `World/`
+### 3.4 刷怪位置与绕障
 
-- `RogueArena`、`RogueExperiencePickup`、`RogueShopTerminal`、`RogueEnemySpawnRegion`、`RogueSceneSubsystem`
+固定点是候选入口，不代表每波启用全图点位。当前优先轮换参考玩家附近最近的三个可用点，太远或受阻时回退到附近合法地面；明确禁用全部所属点位的配置仍受尊重。固定炮台类使用更近的出生圈。
 
-### `UI/`
+出生还需通过不规则轮廓、禁刷区、地面、完整胶囊空间、敌人间距和所有存活玩家的安全距离检查。失败不消耗本波名额；不要用直接设坐标绕过这些检查。
 
-- `RogueHUD.*`
-- `Widgets/`：8 个独立 UMG 基类与共享视图数据
+敌人移动由服务器选择意图，再交给绕障组件。地面单位优先尝试可用 NavMesh，必要时走有预算的局部 A*；飞行单位按实际飞行胶囊绕障。刷怪区域不是导航数据。修改建筑碰撞、楼梯、窄门或地图尺寸后，需要重新检查通路。
 
-### `Shared/`
+## 4. 状态栏与冲刺圆弧怎样维护
 
-- `RogueTypes.h`：升级 / 敌人枚举、奖励与表现载荷
+当前外观以保存的 `WBP_PlayerVitals` 为准，设计尺寸 620×144，暗色圆角、底部居中。运行时不重建控件树。
 
-### `Debug/`
+| 控件 / 设置 | 用途与修改方式 |
+|---|---|
+| `VitalsPanel` / `VitalsFrame` | 整体尺寸、锚点、底部距离、底色和圆角 |
+| `LevelBadge` → `LevelBadgeContent` | 等级框内的共同居中容器；标题与数字使用垂直布局，不再各自摆 Canvas 坐标 |
+| `LevelCaption` / `LevelText` | “等级”标题和等级数字；在共同容器内调整字号、居中与间距 |
+| `HealthText` / `HealthValueText` | 名称与当前/最大生命分开，数值由 C++ 即时更新 |
+| `ArmorText` / `ArmorValueText` / `ArmorUnavailableText` | 护甲名称、数值与“暂无护甲”状态 |
+| `ExperienceText` / `ExperienceValueText` / `ExperienceBar` | 底部经验读数与细条 |
+| `HealthChangeText` / `ArmorChangeText` / `ExperienceChangeText` | 短暂变化数字；保留独立区域，避免压住常驻值 |
+| `PendingUpgradeHintText` | 状态栏上方淡蓝色提示；有待选次数时呼吸，用完或濒死时隐藏 |
+| 类默认值 → 升级提示 | 呼吸周期、最低透明度；C++ 默认 1.8 秒、0.35，可在 WBP 覆盖 |
+| `PlayerDashRing` | 角色右侧圆弧的半径、弧度、粗细与冷却颜色；充满后隐藏 |
+| 类默认值 → 角色旁冲刺条 | 屏幕偏移、世界高度偏移 |
 
-- `RogueSelfTest.*`、`RogueGameMode.SelfTest.cpp`、`RogueCharacter.SelfTest.cpp`
-- `Tests/`：自动化用例与夹具
+等级下方的 `Q / 待选次数` 已删除。原生类保留部分可选旧绑定用于兼容自定义 WBP，不表示当前资产还应补回它们。
 
-> 武器参数不在这里：行结构在 `Source/ai/Public/Combat/Weapons/RogueWeaponBase.h`（`FRogueWeaponTableRow`），数据在 `Content/Data/Weapons/DT_WeaponConfig`。
+圆弧由 `URogueDashRingWidget` 绘制，读取现有 GAS 冲刺冷却；仅在有实际剩余时间的充能期间显示，满条、不可用和濒死时隐藏。位置由本地玩家投影并换算 DPI，每帧跟随摄像机；它不创建体力、不参与碰撞、不接收点击。不要在它的 Canvas 位置里硬填角色坐标。
 
----
+日常修改直接编辑 WBP。`RefineCompactVitals` 是明确执行才写入资产的排版工具，会覆盖其管理区域的人工样式；`UsePlayerSideDashRing` 是旧分区迁移工具，`AddPendingUpgradeCounter` 会重建已取消的等级下方计数，均不应作为日常刷新操作。
+
+默认验证入口是 `Tools/UI/manage_ui.py`：不带重建参数时只在内存编译检查并写报告。`-RogueUIRebuild` 恢复的是基础占位布局，不会恢复当前精修样式。详见 [UI 工具说明](../Tools/UI/README.md) 与 [状态栏维护](Centered-Vitals-Polish.md)。
+
+## 5. 添加或调整武器
+
+当前稳定目录登记八种武器：
 
-## 3. 先记住的扩展原则
-
-### 3.1 什么时候该改 Data Asset
-
-以下内容适合资产化：
-
-- 数值
-- 文案
-- 出现规则
-- 波次权重
-- 商店基础价格
-- 玩家基础属性
-- 武器基础参数
-
-当前已经支持资产化或半资产化的内容：
-
-- `URogueGameBalanceAsset`
-- `URoguePlayerBalanceAsset`
-- `URogueUpgradeDefinitionAsset`
-- `URogueUpgradeRuleAsset`
-
-### 3.2 什么时候不要硬做资产化
-
-以下内容继续放代码更合适：
-
-- 对象池
-- 运行时状态
-- 战斗 Tick 流程
-- 空间哈希与敌人查询
-- HUD 点击命令流
-- 伤害结算
-- 投射物生命周期
-
-原因很简单：这些东西不是“内容数据”，而是“执行机制”。
-
-### 3.3 优先改哪一层
-
-如果你拿到一个新需求，先按下面判断：
-
-1. **只是调数值**  
-   优先改 Data Asset。
-
-2. **只是新增升级文案或升级数值**  
-   优先改升级定义资产，必要时补规则。
-
-3. **只是加一个敌人变体，行为模式现有逻辑能表达**  
-   先改敌人枚举、原型、视觉资源、波次权重和数值表。
-
-4. **只是加一个新武器，但本质还是“自动攻击 + 短命战斗对象”**  
-   先沿现有武器模板扩。
-
-5. **是新的运行机制**  
-   才进入 `Character`、`Enemy`、`GameMode` 主流程。
-
----
-
-### 3.4 武器玩法参数和表现参数怎么分
-
-这是后续最容易重新写乱的一条边界，所以单独拿出来说。
-
-当前项目里，武器相关参数应该分成两类：
-
-#### A. 玩法参数
-
-这些值决定“武器怎么玩”，应该放在：
-
-- `DT_WeaponConfig`（每把武器一行，行结构 `FRogueWeaponTableRow`）
-- `URoguePlayerBalanceAsset`（**只放玩家自身属性**：生命/护甲/移速/冲刺/跳跃，以及 13 项开局武器加成与 14 项上限；不含武器基础参数）
-- 必要时再配合升级 GE 与 `URogueAttributeSet`
-
-典型例子：
-
-- `Damage`
-- `Cooldown / Interval`
-- `Range`
-- `Count`
-- `RefractionCount`
-- `ExplosionRadius`
-- `ProjectileSpeed`
-- `DamageTickInterval`
-
-判断标准很简单：
-
-- 会影响平衡
-- 会影响伤害曲线
-- 会影响构筑路线
-- 会被升级卡修改
-- 会被玩家平衡资产覆盖
-
-这种值不要塞进 `Projectile.cpp`、`RocketProjectile.cpp`、`LaserBeam.cpp` 的实现常量里。
-
-#### B. 表现参数
-
-这些值决定“武器看起来是什么样”，应该放在对应表现类自己的头文件配置里。
-
-当前已经按这个思路整理过的类包括：
-
-- `RogueProjectile`
-- `RogueEnemyProjectile`
-- `RogueRocketProjectile`
-- `RogueLaserBeam`
-- `RogueOrbitingBlade`
-- `RogueImpactEffect`
-
-典型例子：
-
-- Mesh 缩放
-- Glow 缩放
-- Ring 尺寸
-- 拖尾长度
-- 灯光强度和范围
-- 脉冲速度和脉冲幅度
-- 命中特效缩放
-- 最短生命周期
-- 简化模式下的显示尺寸
-
-判断标准也很直接：
-
-- 改了不会影响平衡
-- 只是视觉阅读性变化
-- 只是某个 Actor 自己的显示细节
-- 不该让升级系统或玩家数值层来关心
-
-#### C. 为什么要这么分
-
-如果混在一起，后面会出几种很常见的问题：
-
-1. 调手感时找不到值到底在哪一层
-2. 改视觉结果把玩法平衡一起带偏
-3. `Character` 和 `Projectile` 同时持有相似概念，边界越来越糊
-4. 同类武器很难形成统一扩展规范
-
-#### D. 当前项目里的真实例子
-
-##### 星符·流光
-
-- 星符·流光武器玩法参数放在 `DT_WeaponConfig` 的 `Laser` 行（行结构 `FRogueWeaponTableRow`）
-- 星符·流光 Beam 的视觉厚度、环大小、最短显示时间放在 `ARogueLaserBeam`
-
-##### 冰符·寒弹
-
-- 冰符·寒弹速度、伤害、数量是玩法参数
-- 冰符·寒弹外层 glow、ring 尺寸、trail 脉冲是表现参数
-
-##### 焰符·火丸
-
-- 焰符·火丸伤害、爆炸半径、速度是玩法参数
-- 焰符·火丸尾焰、光晕、尾迹、灯光脉冲是表现参数
-
-#### E. 什么时候可以不分这么细
-
-只有一种情况可以不严格拆：
-
-- 这个对象是一次性的纯视觉 Actor，本身根本没有玩法地位
-
-例如某些只负责展示的瞬时 UI 或极轻的环境效果。
-
-但只要它是“武器的一部分”，而且后面可能继续做平衡、升级或配置化，就最好一开始就按这条边界分。
-
----
-
-## 4. 如何添加一个新武器
-
-这一节是最重要的，因为“新武器”通常会横跨多个系统。
-
-当前武器族如下（6 族，均以 `ARogueWeaponBase` 子类实现）：
-
-- 冰符·寒弹：`Projectile`
-- 银刃：`Scythe`
-- 焰符·火丸：`Rocket`
-- 星符·流光：`Laser`
-- 焰符·灼光：`HellTower`
-- 冰符·霜玉：`Mortar`
-
-它们共同特点是：
-
-- 武器参数由 `DT_WeaponConfig` 的行数据定义（行结构 `FRogueWeaponTableRow`，声明在 `Combat/Weapons/RogueWeaponBase.h`）
-- 开火由 `URogueWeaponAbility` 子类驱动，武器只回答"这一发是什么"
-- 升级入口由 `ERogueUpgradeType`、升级规则、升级定义与升级 GE 共同驱动
-
----
-
-### 4.1 先决定：这是“现有武器族扩展”，还是“新武器族”
-
-#### 情况 A：只是给现有武器加一个分支能力
-
-例子：
-
-- 星符·流光增加“穿透”
-- 焰符·火丸增加“多段爆炸”
-- 焰符·灼光增加“锁定时间越久越快”
-
-这种情况通常不需要新武器族，只需要：
-
-1. 新增 `ERogueUpgradeType`
-2. 新增升级定义
-3. 新增升级出现规则
-4. 在 `ARogueCharacter::ApplyUpgrade()` 里处理效果
-5. 在该武器对应的运行逻辑里消耗这个新参数
-
-#### 情况 B：这是一个全新的武器族
-
-例子：
-
-- 追踪雷球
-- 扇形喷火
-- 召唤无人机
-- 连锁闪电塔
-
-这种情况建议按下面完整路径走。
-
----
-
-### 4.2 新武器族扩展清单
-
-#### 第一步：定义武器配置结构
-
-武器配置**不是新建一个结构体**，而是往已有的行结构里加字段，再在数据表里加一行。
-
-文件：
-
-- `Source/ai/Public/Combat/Weapons/RogueWeaponBase.h` —— 行结构 `FRogueWeaponTableRow`
-- `Content/Data/Weapons/DT_WeaponConfig` —— 每把武器一行的数据
-
-做法：
-
-1. 在 `FRogueWeaponTableRow` 里新增这把武器专属的 `UPROPERTY`（按现有惯例用 `Category = "武器名"` + 中文 `DisplayName`）。
-2. 在 `DT_WeaponConfig` 里**新增一行**（行名用武器族语义名，现有：`Projectile` / `Rocket` / `Mortar` / `Laser` / `HellTower` / `Scythe`）。
-3. 填这一行的 `WeaponClass`（留空则回退到 `ARogueCharacter::WeaponClasses[Index]`，**按行顺序**对应，所以新增行要同步在 BP 上补数组元素）。
-
-例如这类字段：
-
-- `Count`
-- `Cooldown`
-- `Damage`
-- `Range`
-- `ProjectileClass`
-- `ExplosionRadius`
-- `TickInterval`
-
-建议：
-
-- 把“可调数值”都放这里
-- 不要把运行时状态放这里
-- 不要把单纯的表现参数也塞进来
-
-运行时状态留在**武器或能力**里，不要塞回 `Character`，例如：
-
-- 开火计时与冷却（能力 + 冷却 GE）
-- 焰符·灼光的锁定目标、伤害层数与 Beam 刷新累积器（`ARogueWeapon_HellTower`）
-- 银刃的公共环绕角度与刀片增删（`ARogueWeapon_Scythe`）
-
-`ARogueCharacter` 只保留武器实例数组、加成快照和跨武器查询入口。
-
-表现参数则应该放到对应武器 Actor 自己的头文件里，例如：
-
-- `FRogueProjectileVisualConfig`
-- `FRogueRocketVisualConfig`
-- `FRogueLaserBeamVisualStyle`
-- `FRogueOrbitingBladeVisualConfig`
-
-敌人弹体是例外：`ARogueEnemyProjectile` 只保留碰撞/移动/伤害，外观全部由弹体 BP 的组件决定，没有 C++ VisualState。
-
----
-
-#### 第二步：决定数值放在哪一层
-
-- 武器的基础伤害、间隔、范围、数量、弹体等**玩法参数**只放在 `DT_WeaponConfig`，武器类直接读 `Config`。
-- 玩家自身的生命、护甲、移速、冲刺、复活与 13 项开局武器加成放在 `DA_PlayerBalance`。
-- 升级产生的加成写进玩家 ASC 的 14 个加成属性（其中 13 项进入武器快照，吸血比例单独读取属性集），武器读"表基础值 + 加成 × 本武器系数"。不要把升级结果再写回武器配置或 `Character` 的缓存字段。
-
-原则：
-
-- **武器数值只有一个配置源：`DT_WeaponConfig`**
-- **玩家数值只有一个真相源：`URogueAttributeSet`**
-
----
-
-#### 第三步：决定武器表现形态
-
-你需要先判断它属于哪一类：
-
-1. **飞行弹体型**
-   - 参考：`ARogueProjectile`
-   - 参考：`ARogueRocketProjectile`
-
-2. **瞬发 Beam 型**
-   - 参考：`ARogueLaserBeam`
-
-3. **持续环绕/附着型**
-   - 参考：`ARogueOrbitingBlade`
-
-4. **持续表现型（没有"某一发"事件）**
-   - 参考：`ARogueWeapon_Scythe`（轨道由武器自己维护）
-   - 参考：`ARogueWeapon_HellTower`（锁定与伤害节拍在武器内部）
-
-如果是高频、短命、数量多的对象，建议**一开始就做进对象池**。
-
-同时建议一开始就把“表现参数”收成独立配置，不要等 `cpp` 里写死常量越来越多之后再返工。
-
----
-
-#### 第四步：新增战斗 Actor（如需要）
-
-文件位置建议：
-
-- `Source/ai/Public/Combat`
-- `Source/ai/Private/Combat`
-
-如果是玩家武器，一般放在 `Combat`。
-
-建议接口风格和现有对象池一致：
-
-- `ActivatePooledXxx(...)`
-- `DeactivateToPool()`
-- `IsAvailableInPool()`
-
-这样才能直接接入 `URogueCombatPoolSubsystem`。
-
-如果你不确定怎么写，直接照着以下对象的接口风格抄：
-
-- `RogueProjectile`
-- `RogueRocketProjectile`
-- `RogueLaserBeam`
-- `RogueOrbitingBlade`
-
----
-
-### 4.3 是否需要接入对象池
-
-推荐标准：
-
-#### 强烈建议池化
-
-- 高频生成
-- 生命周期短
-- 同屏数量多
-- 命中就销毁
-
-例如：
-
-- 冰符·寒弹
-- 焰符·火丸
-- 命中特效
-- 星符·流光 Beam
-
-#### 可以不池化
-
-- 同屏数量少
-- 生命周期长
-- 每局创建次数很低
-
-例如：
-
-- 极少量召唤物
-- 单个大范围持续技能
-
-如果决定池化，需要改：
-
-1. `FRoguePoolSettings` 与预热类列表
-2. `URogueCombatPoolSubsystem` 的 `AcquireXxx()` / 回收接口
-3. 该 Actor 的激活/回池逻辑
-
----
-
-### 4.4 把武器接入开火能力
-
-文件：
-
-- `Source/ai/Public/AbilitySystem/Abilities/RogueWeaponAbility.h`
-- `Source/ai/Private/Combat/Weapons/RogueWeaponBase.cpp`
-
-开火不再由 `ARogueCharacter::Tick` 里的计时器驱动，而是：
-
-1. 武器构造时指定 `FireAbilityClass`（由 `GetFireAbilityClass()` 返回）。
-2. `ARogueCharacter::EnsureWeaponAbilities()` 每帧幂等地授予并激活能力（客户端能力列表复制会晚到）。
-3. `URogueWeaponAbility` 通过 `URogueAbilityTask_WeaponFireLoop` 每帧执行 `RunFireLoopStep()`：
-   `CanFireNow()` → `CollectFireTargets()` → `FireAtTargets()` → 按 `GetAbilityCooldown()` 提交冷却 GE。
-4. 只有持续型表现武器（银刃轨道）保留 `WeaponTick` / `NeedsCosmeticTick()`；事件型武器的表现通过 `Multicast_WeaponCosmetics` 合批发送。
-
-新增武器族时，在 `RogueWeaponAbility.h` 里加一个子类并实现 `GetDrivenWeaponClass()` 即可；不要在 `Character` 里新增 `HandleXxx(DeltaSeconds)` 计时器。
-
----
-
-### 4.5 把武器接入升级系统
-
-如果你希望它能通过升级解锁或强化，需要改以下几层：
-
-#### A. 新增升级类型
-
-文件：
-
-- `Source/ai/Public/Shared/RogueTypes.h`
-
-通常要新增至少一项：
-
-- `XxxCount`：负责解锁/数量增加
-
-如果还有专属能力，再继续加：
-
-- `XxxRange`
-- `XxxPierce`
-- `XxxBounce`
-- `XxxDuration`
-
-#### B. 新增升级定义
-
-文件：
-
-- 数据：`Content/Data/Upgrades/DA_UpgradeDefinitions` → `DT_UpgradeDefinitions`（行结构 `FRogueUpgradeDefinitionRow`）
-- 代码兜底：`Source/ai/Private/Progression/Upgrades/RogueUpgradeSystem.cpp` 的 `MakeDefaultUpgradeOption()`
-
-你至少要提供：
-
-- `Title`
-- `Description`
-- `Magnitude`
-
-#### C. 新增升级出现规则
-
-文件：
-
-- 代码默认：`Source/ai/Private/Progression/Upgrades/RogueUpgradeSystemRules.cpp`
-- 资产覆盖：`Content/Data/Upgrades/DA_UpgradeRules`
-
-如果武器是“未持有时解锁，已持有时继续加数量”，建议保持现有模式：
-
-- `XxxCount` 同时承担“解锁”和“数量 +1”
-
-#### D. 在 GAS 里落地
-
-文件：
-
-- `Source/ai/Private/Player/RogueCharacter.Progression.cpp`（`ApplyUpgrade`）
-- `Source/ai/Private/Player/RogueCharacter.GAS.cpp`（`ApplyUpgradeEffectViaGAS`）
-- `Source/ai/Private/AbilitySystem/GameplayEffects/RogueAttributeUpgradeEffect.cpp`（`RogueUpgradeEffectMap::GetEffectClass`）
-
-属性类与武器加成类升级都走 Infinite GE：枚举在 `GetEffectClass()` 里映射到具体 GE 子类，`ApplyUpgradeEffectViaGAS()` 用 `Data.Magnitude` 施加并叠层。武器不再通过 Multicast 重放升级结果。
-
-边界：
-
-- `RogueUpgradeSystem` 只负责发牌，不解释效果
-- `ApplyUpgrade()` 负责分流与联动（如护甲上限提升后立即开始回复）
-- `URogueAttributeSet` 持有唯一数值真相源
-
-> 历史：这里原来是 `FRogueUpgradeEffectApplier`，但它只是 `ApplyUpgrade` 的一行转发，
-> 而且转发回来还要用 `friend` 访问角色私有成员（互相调用成环）。已合并进角色。
-
----
-
-### 4.6 把武器接入 HUD
-
-如果需要在 HUD 显示数量、层数、弹药或状态，需要改：
-
-- `Source/ai/Private/UI/RogueHUD.cpp`
-
-原则：
-
-- HUD 只读角色状态，不自己算玩法逻辑
-- 角色提供 getter，HUD 只负责显示
-
-如果武器是复杂状态，例如：
-
-- 当前锁定数
-- 当前充能层
-- 当前持续时间
-
-建议给 `ARogueCharacter` 补 getter，而不是让 HUD 直接读内部字段。
-
----
-
-### 4.7 新武器最小改动路径
-
-如果你想最省事地加一把新武器，推荐顺序是：
-
-1. `Combat/Weapons/RogueWeaponBase.h` 的 `FRogueWeaponTableRow` 里加专属字段
-2. `DT_WeaponConfig` 加一行并填好数值与 `WeaponClass`（留空则同步 BP 上的 `WeaponClasses` 数组）
-3. 新建 `Combat/Weapons/XxxWeapon` 子类，构造里设 `FireAbilityClass`
-4. `AbilitySystem/Abilities/RogueWeaponAbility.h` 加开火子类并实现 `GetDrivenWeaponClass()`
-5. `Shared/RogueTypes.h` 增加升级类型
-6. `Progression/Upgrades/RogueUpgradeSystemRules.cpp` 增加出现规则，`DA_UpgradeDefinitions` 增加定义
-7. `AbilitySystem/GameplayEffects/RogueAttributeUpgradeEffect.cpp` 的 `GetEffectClass()` 增加映射
-8. `UI/RogueHUD.cpp` 增加显示
-9. 如有必要，把它接进 `URogueCombatPoolSubsystem` 的预热类
-
----
-
-### 4.8 新武器完成后的验证清单
-
-最少验证这些：
-
-1. 开局不崩
-2. 解锁卡能刷出来
-3. 购买后能真正启用
-4. 专属升级不会在未解锁前提前出现
-5. 同类武器数量升级只影响该武器
-6. 对象池复用后不会残留状态
-7. 玩家死亡、重开一局后状态能正确重置
-8. 商店能正确出售这类卡牌
-9. HUD 数值能正确变化
-10. 中后期高压场景不会爆性能
-
----
-
-## 5. 如何添加一个技能卡
-
-这里的“技能卡”指升级卡、商店卡、奖励卡，本质都走同一套 `FRogueUpgradeOption`。
-
-### 5.1 最小流程
-
-#### 第一步：新增枚举
-
-文件：
-
-- `Source/ai/Public/Shared/RogueTypes.h`
-
-新增一个 `ERogueUpgradeType`。
-
-#### 第二步：新增定义
-
-文件：
-
-- 数据：`Content/Data/Upgrades/DA_UpgradeDefinitions` → `DT_UpgradeDefinitions`（行结构 `FRogueUpgradeDefinitionRow`）
-- 代码兜底：`Source/ai/Private/Progression/Upgrades/RogueUpgradeSystem.cpp` 的 `MakeDefaultUpgradeOption()`
-
-在定义资产/数据表里按 `Type` 加一行，填 `Title`、`Description`、`Magnitude`。只有当类型在表里缺失也需要可读文案时，才需要改代码兜底。
-
-#### 第三步：新增出现规则
-
-文件：
-
-- 代码默认：`Source/ai/Private/Progression/Upgrades/RogueUpgradeSystemRules.cpp`
-- 资产覆盖：`Content/Data/Upgrades/DA_UpgradeRules`
-
-基础通用卡进 `BaseUpgradeTypes`（或资产的同名字段）；武器专属卡进 `WeaponUpgradeRules` / `AppendDefaultWeaponRules`。带前置条件的卡（如银刃巨化要求实际银刃数 > 0）在 `BuildUpgradePool()` 里处理。
-
-#### 第四步：让它真正生效
-
-文件：
-
-- `Source/ai/Private/Player/RogueCharacter.Progression.cpp`
-- `Source/ai/Private/AbilitySystem/GameplayEffects/RogueAttributeUpgradeEffect.cpp`
-
-在 `ApplyUpgrade()` 里分流，并在 `RogueUpgradeEffectMap::GetEffectClass()` 里补枚举映射；漏掉映射会打 Warning，表现是"卡牌能抽到但没效果"。
-
----
-
-### 5.2 什么时候只改资产就够了
-
-如果升级类型已经存在，你只是想调整：
-
-- 标题
-- 描述
-- 数值
-
-那优先改：
-
-- `URogueUpgradeDefinitionAsset`
-
-如果只是想改“哪些卡默认会出、哪些武器解锁卡会出”，优先改：
-
-- `URogueUpgradeRuleAsset`
-
----
-
-### 5.3 技能卡常见错误
-
-1. **只加定义，不加效果**
-2. **只加效果，不加出现规则**
-3. **专属卡在未解锁前就进池**
-4. **HUD/商店文字还在显示旧描述**
-5. **Magnitude 改了，但逻辑里没有按这个 Magnitude 生效**
-
----
-
-## 6. 如何添加一个敌人
-
-敌人系统已经被刻意整理成“原型 + 视觉 + 单类运行时”的结构，所以加敌人通常不需要新建一套完整类。
-
-当前推荐做法是：
-
-- **尽量复用 `ARogueEnemy`**
-- 通过枚举、原型和视觉资源来扩新敌型
-
----
-
-### 6.1 最低成本加一个敌人
-
-如果你的新敌人能被现有行为模型表达，步骤如下：
-
-#### 第一步：增加敌人类型枚举
-
-文件：
-
-- `Source/ai/Public/Shared/RogueTypes.h`
-
-新增一个 `ERogueEnemyType`。
-
-#### 第二步：增加行为原型
-
-文件：
-
-- `Source/ai/Public/Enemies/Data/RogueEnemyArchetypes.h`
-- `Source/ai/Private/Enemies/Data/RogueEnemyArchetypes.cpp`
-
-这里决定：
-
-- 移动模型
-- 射击模式
-- 各种距离参数
-- 视觉 key
-
-如果它能用现有模型表达，例如：
-
-- 直冲：`Direct`
-- 冲锋：`BurstCharge`
-- 环绕：`Orbit`
-- 远程拉扯：`RangedKite`
-- 之字追击：`ZigZagChase`
-- 站桩：`Stationary`
-
-那只需要补参数，不需要动 `ARogueEnemy` 主逻辑。
-
-#### 第三步：配置视觉
-
-在 `/Game/Data/Enemies/DT_EnemyArchetypes` 的行里填 `Visual` / `BossVisual`
-（`VisualKey`、`MeshScale`、`MeshLocation`、`MeshRotation`、`CapsuleRadius`、`CapsuleHalfHeight`、`bUseBossMaterialOverride`）。
-
-C++ 侧由 `ARogueEnemy::ApplyEnemyStyle()` 应用，并通过 `OnApplyVisualStyle()`（BlueprintNativeEvent）
-交给敌人 BP 换网格/材质；`VisualKey` 在 C++ 里只写不读，真正的 Mesh/Material 映射在蓝图里。
-
-#### 第四步：增加数值和平衡
-
-文件：
-
-- 默认兜底：`Source/ai/Private/Framework/RogueGameModeRules.cpp`
-- 资产化入口：`URogueGameBalanceAsset`
-
-你要补：
-
-- 波次权重
-- 血量倍率
-- 速度倍率
-- 伤害倍率
-- 经验奖励修正
-- Boss 倍率
-
-#### 第五步：确认出生路径可选到它
-
-`RogueGameMode` 不需要专门为每种怪写分支，它只会：
-
-1. 选 `ERogueEnemyType`
-2. 用 `RogueGameModeRules` 构造 `FRogueEnemyProfile`
-3. 交给 `ARogueEnemy::InitializeEnemy()`
-
-所以只要前几层补齐，出生链通常就能通。
-
----
-
-### 6.2 什么时候需要改 `ARogueEnemy`
-
-只有这两类情况才建议动：
-
-#### A. 需要新的移动模型
-
-例如：
-
-- 瞬移
-- 分段突进
-- 保持扇形角度压迫
-- 召唤型站桩敌人
-
-做法：
-
-1. 在 `ERogueEnemyMovementModel` 里加类型
-2. 在 `GetMovementDirection()` 里补分支
-3. 在 `RogueEnemyArchetypes` 里提供参数
-
-#### B. 需要新的射击模式
-
-例如：
-
-- 五连射
-- 螺旋弹幕
-- 分裂弹
-- 充能炮
-
-做法：
-
-1. 在 `ERogueEnemyShotPattern` 里加类型（现有 `None` / `Single` / `Spread3` / `RadialRing`）
-2. 在 `DecideRangedAttack()` / `ExecuteRangedAttack()` 里补决策与发射，整圈弹幕走 `SpawnBulletRing()`
-3. 在原型里补所需参数；伤害仍经 `RogueAbilitySystem::ApplyDamageToTarget` 结算
-
----
-
-### 6.3 不推荐的做法
-
-#### 不推荐一上来就新建一个完整敌人子类
-
-原因：
-
-- 会重复已有的血量、受伤、接触伤害、池化、注册表逻辑
-- 会增加对象池和追踪器复杂度
-- 会让敌人扩展方式变得不统一
-
-只有当某个敌人和现有敌人类的生命周期完全不同，才考虑单开类。
-
----
-
-## 7. 商店、掉落、经济怎么扩
-
-当前商店相关责任如下：
-
-- `FRogueShopSystem`：每个 `PlayerState` 一份的服务端运行态（库存、价格、刷新、购买）
-- `ARoguePlayerState`：复制给拥有者的报价镜像与 `Server_Request*` 入口
-- `ARogueShopTerminal`：场景中的交互终端（外观与接近检测）
-- `ARogueHUD`：商店界面绘制和点击
-- `ARogueGameMode`：服务端规则推进、打开/关闭与快照推送
-- `RogueGameModeRules` / `URogueGameBalanceAsset`：基础商店数值
-
-### 7.1 当前价格规则
-
-现在商店已经是两套价格曲线：
-
-1. **卡牌价格按升级类型永久翻倍**
-2. **手动刷新价格在当前补货周期内翻倍，下一个自动补货周期重置**
-
-所以如果你后面要继续改商店，不要直接去 HUD 写死价格，优先改：
-
-- `RogueShopSystem`
-- `RogueGameModeRules`
-- `URogueGameBalanceAsset`
-
----
-
-## 8. 哪些地方最需要小心
-
-### 8.1 `RogueCharacter` 仍然是扩展热点
-
-虽然已经解耦过一轮，但它仍然掌握：
-
-- 输入
-- 移动
-- 冲刺
-- 玩家属性镜像
-- 武器生成、能力授予与加成快照刷新
-
-所以你加新武器时，最容易把这里重新变胖。
-
-建议：
-
-- 能抽到独立类的逻辑就抽
-- 能进配置结构的参数就进配置
-- 能进升级 GE 的升级逻辑就不要写回角色本体
-
-### 8.2 `HUD` 容易变成逻辑层
-
-当前 HUD 负责：
-
-- 画 HUD
-- 画商店
-- 画升级卡
-- 处理点击命令
-
-建议：
-
-- HUD 只发“动作”
-- 玩法判定尽量继续放在 `GameMode` / `ShopSystem`
-
-### 8.3 高压短命对象一律优先考虑池化
-
-当前已经池化的核心对象包括：
-
-- 敌人
-- 冰符·寒弹
-- 敌方弹幕
-- 焰符·火丸
-- 星符·流光 Beam
-- 命中特效
-- 经验球
-- 银刃
-
-如果你再加一个高频短命对象，不池化通常很快就会重新把中后期性能打回去。
-
----
-
-## 9. 推荐的扩展流程
-
-以后你接到一个新需求，推荐按这个顺序走：
-
-1. 先判断它是“新内容”还是“新机制”
-2. 能在 Data Asset 解决的先不改主流程代码
-3. 先确定归属目录，不要边写边想放哪
-4. 先补配置和枚举，再补运行逻辑
-5. 高频对象优先做池化
-6. 最后再补 HUD、商店、表现
-7. 每做完一层就编译一次
-
----
-
-## 10. 快速索引
-
-### 添加武器最常改的文件
-
-- `Source/ai/Public/Combat/Weapons/RogueWeaponBase.h`（行结构 `FRogueWeaponTableRow`）
-- `Content/Data/Weapons/DT_WeaponConfig`（数据行）
-- `Source/ai/Public/AbilitySystem/Abilities/RogueWeaponAbility.h`（开火能力子类）
-- `Source/ai/Public/Shared/RogueTypes.h`
-- `Source/ai/Private/Progression/Upgrades/RogueUpgradeSystemRules.cpp`
-- `Source/ai/Private/AbilitySystem/GameplayEffects/RogueAttributeUpgradeEffect.cpp`（加成 GE 映射）
-- `Source/ai/Private/Player/RogueCharacter.Weapons.cpp`（武器生成与能力授予）
-- `Source/ai/Public/Combat/*.h`
-- `Source/ai/Private/Combat/*.cpp`
-- `Source/ai/Public/Combat/Pooling/RogueCombatPools.h`
-- `Source/ai/Private/Combat/Pooling/RogueCombatPools.cpp`
-
-### 添加技能卡最常改的文件
-
-- `Source/ai/Public/Shared/RogueTypes.h`
-- `Source/ai/Private/Progression/Upgrades/RogueUpgradeSystemRules.cpp`
-- `Source/ai/Private/AbilitySystem/GameplayEffects/RogueAttributeUpgradeEffect.cpp`
-- `Source/ai/Private/Player/RogueCharacter.Progression.cpp`
-- `Content/Data/Upgrades/DA_UpgradeDefinitions` / `DT_UpgradeDefinitions`
-- `Source/ai/Public/Progression/Upgrades/RogueUpgradeDefinitionAsset.h`
-- `Source/ai/Public/Progression/Upgrades/RogueUpgradeRuleAsset.h`
-
-### 添加敌人最常改的文件
-
-- `Source/ai/Public/Shared/RogueTypes.h`
-- `Source/ai/Public/Enemies/Data/RogueEnemyArchetypes.h`
-- `Source/ai/Private/Enemies/Data/RogueEnemyArchetypes.cpp`
-- `Source/ai/Public/Framework/RogueGameBalanceAsset.h`
-- `Source/ai/Private/Framework/RogueGameModeRules.cpp`
-- `Content/Data/Enemies/DT_EnemyArchetypes`
-- `Source/ai/Public/Enemies/RogueEnemy.h`
-- `Source/ai/Private/Enemies/RogueEnemy.cpp`
-
----
-
-## 11. 最后的建议
-
-后续扩展时，尽量保持这三条：
-
-1. **内容数据进资产**
-2. **运行机制进代码**
-3. **新功能优先挂在已有模块边界上，而不是重新把核心类变成大杂烩**
-
-如果你遵守这三条，这个项目后面继续加武器、敌人、商店机制、掉落机制，维护成本都会比较可控。
+| 表行名 / 稳定身份 | 显示名 | 武器类后缀 |
+|---|---|---|
+| `Projectile` | 冰符·寒弹 | `RogueWeapon_Projectile` |
+| `Scythe` | 银刃 | `RogueWeapon_Scythe` |
+| `Rocket` | 冰焰·陨星 | `RogueWeapon_Rocket` |
+| `Laser` | 星符·流光 | `RogueWeapon_Laser` |
+| `HellTower` | 焰符·灼光 | `RogueWeapon_HellTower` |
+| `Mortar` | 冰符·霜玉 | `RogueWeapon_Mortar` |
+| `Talisman` | 灵符·归心 | `RogueWeapon_Talisman` |
+| `FrostBlade` | 冰刀·霜月 | `RogueWeapon_FrostBlade` |
+
+新武器按下列顺序接线：
+
+1. **登记身份与配置**：在 `RogueWeaponCatalog` 登记稳定身份；`DT_WeaponConfig` 加行并指定 `WeaponClass`。行结构是 `FRogueWeaponTableRow`，声明在 `Source/ai/Public/Combat/Weapons/RogueWeaponBase.h`。不要依赖表行顺序或修改已发布枚举数值。
+2. **实现武器与开火能力**：放入 `Combat/Weapons`；构造里设置开火能力，能力通过 `GetDrivenWeaponClass()` 指定武器类。沿用 `RunFireLoopStep()`、冷却 GE 与表现同步，不在 Character 新增另一套开火计时器。
+3. **确定参数归属**：伤害、间隔、索敌、弹速、穿刺、爆炸和生效范围进入武器表；模型、材质、拖尾和外观偏移进入对应 BP。升级会改变碰撞范围时，视觉与伤害范围应使用同一有效倍率。
+4. **接入升级效果**：新增枚举、定义、GE 映射和必要属性。`RogueUpgradeEffectMap::GetEffectClass()` 漏映射会出现“卡能抽到但无效果”。普通属性升级优先沿用已有 GE，不为一项加成复制完整流程。
+5. **接入两层前置**：永久升级树决定个人允许的武器/卡；本局持有武器等条件由卡池规则继续过滤。冰刀解锁后开局自带，不套用一般数量卡获取方式。
+6. **同步配套内容**：图标、收藏栏分类、音频事件、升级树文案、局内卡片、商店介绍和教程。数量卡与武器图标的合并规则见 [收藏栏](Owned-Items-HUD.md)。
+7. **处理高频对象生命周期**：需要池化时接入预热/获取/回收；激活和回收都清掉上次命中、目标与定时器。少量常驻武器实体不必为了形式强行池化。
+
+武器基础值与升级结果不要混写：武器读取表基础值与 GAS 加成的换算结果，不能把局内加成写回表。初始数量调试、各武器上限与外观缩放例外见 [武器配置](Weapon-Configuration.md)、[冰刀说明](Frost-Moon-Blade.md)。
+
+## 6. 新增升级卡与永久节点
+
+一次完整接线包含：
+
+1. `Shared/RogueTypes.h` 中的升级类型。
+2. `DA_UpgradeDefinitions / DT_UpgradeDefinitions` 的标题、介绍、加成值与次数规则；已有类型只改文案/数值时优先改资产。
+3. `DA_UpgradeRules` 与 `RogueUpgradeSystemRules` 的局内出现规则。
+4. `RogueAttributeUpgradeEffect.cpp` 的 GE 映射，以及必要的 AttributeSet 属性、上限与武器读取。
+5. `DA_UpgradeTree` 的永久节点、前置节点和价格；沿用玩家自己的本地存档快照，不把房主进度复制成全队进度。
+6. 对应图标、说明、商店与收藏栏展示。
+
+不要通过每次开关选卡重抽来处理前置变化；由服务端校验当前卡、选中类型和凭据。商店购买还需校验当前报价 ID 与价格。修改定义表不会自动替换已生成的那组卡或旧报价。
+
+详细前置、调试冰砖与重置存档的区别见 [UpgradeTreeGuide.md](UpgradeTreeGuide.md)。
+
+## 7. 新增敌人、治疗或 Boss 招式
+
+- 普通变体优先复用 `ARogueEnemy`，在 `ERogueEnemyType`、原型/数据表、视觉和波次权重中接线；不要复制整套受击、死亡、注册与回池逻辑。
+- 移动意图在 `RogueEnemy.Movement.cpp`，绕障在 `RogueEnemyObstacleMovementComponent`。治疗者移动与施法由 Support 组件协作；固定怪和 Boss 蓄力仍保持不移动。
+- 当前移动模型有 Direct、BurstCharge、Orbit、RangedKite、ZigZagChase、Stationary；射击模式还包括飞行交织、折返风刃、星阵和天坠弹，不能按早期的“三种射击模式”扩写分支。
+- Boss 专属招式使用 `RogueBossSkillComponent` 的插槽与能力类，参数在 `DT_BossSkills`。关注蓄力、持续阶段、施法间隔、中断、对象池复用及剩余技能次数；不要把每次施法轮数与整局使用次数混为一谈。
+- 新招式同时补图标、Boss 血条下方状态、红圈预警、地面残留淡出、教程和客户端表现；伤害仍走统一入口。
+- 飞行高度、治疗范围、法阵伤害范围和 Boss 大胶囊需一起验证。模型看起来能过，不代表胶囊能通过。
+
+细节见 [敌人原型表](Enemy-Archetype-Table.md)、[敌人目录](Enemy-Blueprint-Folders.md)、[Boss 插槽](Boss-Skill-Slots.md)、[Boss 符卡](Boss-Spellcards.md)。
+
+## 8. 当前保存配置快照
+
+以下为 2026-11-09 从资产读取的值，供维护文案时核对。它们不等同于源码默认值，也不替代关卡实际引用检查。
+
+| 配置 | 保存值 |
+|---|---|
+| 白天/黑夜地图池 | 各 5 张 |
+| 昼夜切换间隔 / 倒计时 | 20 波 / 30 秒 |
+| Boss 间隔 / 额外选卡 / 每人冰砖 | 10 波 / 3 次 / 3 块 |
+| 第一波普通怪 / 每波增量 / 每波总量封顶 | 45 / 5 / 0（不限）；类型限制仍单独生效 |
+| 基础生成间隔 / 目标半径 / 最小玩家距离 | 0.8 秒 / 2800 cm / 1200 cm；运行时还受节奏规则和落点检查影响 |
+| 黑夜数量 / 生成速度倍率 | 3 / 2 |
+| 黑夜近战比例 / 近战移速 / 近战伤害倍率 | 90% / 1.8 / 2 |
+| 商店商品数 / 基础价 / 刷新基础价 / 自动刷新 | 6 / 24 / 16 / 60 秒 |
+| 濒死等待 / 复活生命比例 / 保护 | 10 秒 / 50% / 1.5 秒 |
+
+全场同时存活上限已经移除，各敌人类型限制保留。`EnemiesPerWaveLimit` 限制本波累计生成总量，不是同时存活数量。
+
+## 9. 文件落点与常用入口
+
+| 目录 | 职责 |
+|---|---|
+| `Framework` | GameMode / GameState、波次、昼夜、胜负、奖励归属与商店调度 |
+| `AbilitySystem` | ASC、AttributeSet、能力、Task、GE、Tag 与 Cue |
+| `Combat` | Weapons、Projectiles、Visuals、Pooling、Targeting |
+| `Progression` | Meta 永久成长、Upgrades 局内卡池、Shop 经济运行态 |
+| `Player` | Character 拆分实现、PlayerState、输入、生命周期与玩家表现 |
+| `Enemies` | 敌人运行时、Data、Components、Spawning |
+| `World` | 商店终端、经验球、刷怪区域、固定点、场景与边界 |
+| `Networking` | 局域网/IP、房间与准备、旅行与失败恢复 |
+| `Audio` | 音效/BGM 配置与音乐子系统 |
+| `UI` | HUD 拆分实现、WBP 基类、视图数据与圆弧控件 |
+| `Source/aiEditor` | 编辑器制作、迁移、保存验证与临时预览，不进入游戏运行模块 |
+
+`RogueHUD.CombatFeedback.cpp` 组装玩家 View；`RogueVitalsWidgetBase.cpp` 更新文本、血条与提示，`RogueDashRingWidget.cpp` 绘制圆弧。各文件都位于 `Source/ai/Private/UI` 对应目录。
+
+## 10. 改完怎样验证
+
+| 改动类型 | 合适的验证 |
+|---|---|
+| Markdown、说明文字 | 核对源码/资产、相对链接、JSON/WBP/玩家指南的一致性；无需重编 C++ |
+| WBP 样式与间距 | 备份 → 编译该 WBP → 保存 → 实际窗口检查；无护甲、三位等级、大数值和小窗口都要看 |
+| 数据资产数值 | 确认关卡/BP 引用与覆盖，检查新局及下一次生成/抽卡的实际值 |
+| C++ 实现或反射接口 | 编译正在使用的配置，执行相关定向测试；模块或资产被编辑器占用时，先保存再关闭后更新 |
+| 联机状态/输入/旅行 | 分别验证房主和加入者，确认自己的界面、奖励、伤害和状态恢复，避免只验证房主 |
+| 性能改动 | 固定场景、负载、配置和采样窗口，记录前后数据；无头测试与寻路到达率不能代替真实战斗帧耗时 |
+
+Development Editor 用于日常编辑；DebugGame Editor 用于相应调试启动。只有需要交付对应配置时才补编另一套，不默认每次都编两套。
+
+相关测试筛选前缀：`Rogue.UI.ManualUpgrade`、`Rogue.Gameplay.ManualUpgrade`、`Rogue.UI.VitalsFeedback`、`Rogue.UI.DashHUD`、`Rogue.Gameplay.PlayerMenus`。改变哪条规则就先验证相应集合；已通过且没有新增影响时，不重复跑整个项目。
+
+## 11. 常见故障先查什么
+
+| 现象 | 先检查 |
+|---|---|
+| 升级没弹出 | 当前为主动选卡；看上方次数并按 Q，再查 IA_Choice 与拥有者 PlayerState |
+| 收起后奖励没了 | 是否误用 CloseUpgradeSelection / ResetUpgradeState；是否确实新开一局或团灭 |
+| 切图回来强制弹出选卡 | 是否把有奖励误当作界面打开；检查 StageTravel 的 bAwaitingUpgradeChoice |
+| 商店/选卡又免伤了 | 统一伤害入口是否错误加入菜单条件；同时检查独立暂停保护与无敌标签 |
+| 等级文字偏移 | LevelBadgeContent 的水平/垂直居中、标题/数字槽位及父容器，不只看字体 Justification |
+| 冲刺圆弧偏离角色 | 本地拥有者、投影/DPI、屏幕偏移；不要额外给它动画位移或固定 Canvas 位置 |
+| 改样式后又变回占位 | 是否运行了初始化/重建脚本，或未关闭的编辑器把内存旧资产再次保存 |
+| 远程怪散在全图 | 固定点所属区域、距离筛选、就近回退与禁用规则 |
+| 敌人卡建筑或穿进地形 | 出生检查、真实胶囊、场景碰撞、NavMesh/局部路线与实际移动入口；不要只扩大到达距离 |
+| 卡有文案却无效果 | GE 映射、Magnitude、属性上限、武器读取与当前使用的定义资产 |

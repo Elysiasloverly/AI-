@@ -7,11 +7,11 @@
 | `Framework` | 战斗 GameMode、HUD |
 | `Player` | 玩家 Character 蓝图 |
 | `Enemy/<敌人类型>` | 敌人本体、自己的弹体与专属效果放在同一文件夹；`AI` 放控制器，`Common` 放基类与通用标记 |
-| `Projectiles` | 玩家冰符·寒弹、银刃、焰符·火丸、星符·流光、焰符·灼光和冰符·霜玉弹体 |
+| `Projectiles` | 玩家冰符·寒弹、银刃、冰焰·陨星、星符·流光、焰符·灼光和冰符·霜玉弹体 |
 | `World` | 可拖入关卡的商店终端、正式经验球 |
 | `MainMenu` | 主菜单场景中的角色展示 Actor |
 | `Development/Experiments` | `NewBlueprint`、`TestPickup` 等实验内容；继续保留供查看 |
-| `Development/Legacy` | 已不参与当前地图的旧 `BP_RogueArena` |
+| `Development/Legacy` | 旧 `BP_RogueArena` 已于 2026-11-05 备份移出项目，当前不再保留该资产 |
 
 常用入口：
 

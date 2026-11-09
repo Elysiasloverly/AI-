@@ -1,236 +1,80 @@
 #include "Player/RogueCharacter.h"
+#include "Kismet/GameplayStatics.h"
+#include "Engine/World.h"
 #include "HAL/IConsoleManager.h"
 #include "AbilitySystem/RogueAttributeSet.h"
-#include "Debug/RogueSelfTest.h"
 
 #include "Combat/Weapons/RogueWeaponBase.h"
+#include "Combat/Weapons/RogueWeaponCatalog.h"
 #include "Combat/Weapons/RogueWeapon_Projectile.h"
 #include "Combat/Weapons/RogueWeapon_Scythe.h"
 #include "Combat/Weapons/RogueWeapon_Rocket.h"
 #include "Combat/Weapons/RogueWeapon_Laser.h"
 #include "Combat/Weapons/RogueWeapon_HellTower.h"
 #include "Combat/Weapons/RogueWeapon_Mortar.h"
-#include "Combat/Projectiles/RogueMortarProjectile.h"
-#include "Combat/Projectiles/RogueRocketProjectile.h"
-#include "Enemies/RogueEnemy.h"
-#include "Framework/RogueGameMode.h"
-#include "Framework/RogueGameState.h"
 #include "Player/RoguePlayerBalanceAsset.h"
 #include "Player/RoguePlayerState.h"
-#include "GameFramework/GameStateBase.h"
 #include "AbilitySystem/RogueAbilitySystemComponent.h"
-#include "AbilitySystem/RogueAbilitySystemLibrary.h"
 #include "AbilitySystem/Abilities/RogueWeaponAbility.h"
-#include "AbilitySystem/GameplayEffects/RogueStateEffects.h"
-#include "AbilitySystem/Abilities/RogueEnemyAttackAbility.h"
-#include "Combat/Targeting/RogueEnemyTrackerSubsystem.h"
-#include "AbilitySystem/GameplayEffects/RogueAttributeUpgradeEffect.h"
 #include "AbilitySystem/RogueGameplayTags.h"
-#include "World/RogueShopTerminal.h"
 #include "UI/RogueHUD.h"
-#include "Combat/Visuals/RogueImpactEffect.h"
-#include "Camera/CameraComponent.h"
-#include "Components/CapsuleComponent.h"
 #include "Components/InputComponent.h"
 // Enhanced Input：绑定与必需资产校验见 RogueCharacter.Input.cpp；缺失时不绑定本角色动作。
-#include "EnhancedInputComponent.h"
-#include "EnhancedInputSubsystems.h"
-#include "InputAction.h"
-#include "InputActionValue.h"
-#include "InputMappingContext.h"
 #include "Engine/DataTable.h"
-#include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Controller.h"
 #include "GameFramework/PlayerController.h"
-#include "GameFramework/SpringArmComponent.h"
-#include "Kismet/GameplayStatics.h"
-#include "Net/UnrealNetwork.h"
-#include "UObject/SoftObjectPath.h"
 
-namespace
-{
-	const FName MortarWeaponRowName(TEXT("Mortar"));
-	FRogueWeaponTableRow BuildDefaultMortarWeaponConfig(TSubclassOf<ARogueRocketProjectile> MortarProjectileClass)
-	{
-		FRogueWeaponTableRow Row;
-		if (MortarProjectileClass == nullptr)
-		{
-			MortarProjectileClass = ARogueMortarProjectile::StaticClass();
-		}
-
-		Row.DisplayName = TEXT("冰符·霜玉");
-		Row.WeaponClass = ARogueWeapon_Mortar::StaticClass();
-		Row.Count = 0;
-		Row.Damage = 12.0f;
-		Row.Cooldown = 2.35f;
-		Row.Range = 2600.0f;
-		Row.CountUpgradeType = ERogueUpgradeType::MortarCount;
-		Row.MortarProjectileClass = Cast<UClass>(MortarProjectileClass.Get());
-		Row.MortarExplosionRadius = 470.0f;
-		Row.MortarLaunchSpeed = 760.0f;
-		Row.RocketClass = MortarProjectileClass;
-		Row.ExplosionRadius = 470.0f;
-		Row.RocketSpeed = 760.0f;
-		Row.bEnableTrajectoryDeviation = true;
-		Row.TrajectoryDeviationMaxAngle = 2.0f;
-		Row.bEnableSpeedRandomization = false;
-		Row.SpeedRandomizationRatio = 0.0f;
-		return Row;
-	}
-
-}
-
+// 武器表是生成入口：每行创建一个武器逻辑 Actor；持有数量由本局进度/调试开关决定。
+// 表内显式类优先，空类仅按稳定身份解析；不再按行序或额外数组补建武器。
 void ARogueCharacter::InitializeWeapons()
 {
-	// 通知、接管和 BeginPlay 的先后不固定，但一个 Pawn 只创建一组武器 Actor。
-	if (Weapons.Num() > 0)
-	{
+	// 每个 Pawn 只创建一组武器；客户端重建相同身份，伤害仍由服务器负责。
+	if (!Weapons.IsEmpty() || !WeaponDataTable)
 		return;
-	}
-	if (WeaponDataTable == nullptr)
-	{
-		return;
-	}
-
-    bool bUseTableStartingCounts=false;
+	bool bUseTableStartingCounts = false;
 #if WITH_EDITOR
-    bUseTableStartingCounts=LoadedPlayerBalanceAsset && LoadedPlayerBalanceAsset->bEditorUseWeaponTableStartingCounts;
+	bUseTableStartingCounts =
+		LoadedPlayerBalanceAsset && LoadedPlayerBalanceAsset->bEditorUseWeaponTableStartingCounts;
 #endif
-
-    auto SpawnWeaponInstance = [this,bUseTableStartingCounts](TSubclassOf<ARogueWeaponBase> WeaponClass, const FRogueWeaponTableRow& Config)
+	TSet<ERogueUpgradeType> CreatedTypes;
+	for (FName RowName : WeaponDataTable->GetRowNames())
 	{
-		if (WeaponClass == nullptr)
+		const auto *Row = WeaponDataTable->FindRow<FRogueWeaponTableRow>(RowName, TEXT("InitializeWeapons"));
+		if (!Row)
+			continue;
+		auto Class = RogueWeaponCatalog::ResolveClass(RowName, *Row);
+		if (!Class)
 		{
-			return static_cast<ARogueWeaponBase*>(nullptr);
-		}
-
-		FActorSpawnParameters SpawnParams;
-		SpawnParams.Owner = this;
-		SpawnParams.Instigator = this;
-
-		ARogueWeaponBase* Weapon = GetWorld()->SpawnActor<ARogueWeaponBase>(WeaponClass, GetActorLocation(), FRotator::ZeroRotator, SpawnParams);
-		if (Weapon != nullptr)
-		{
-			Weapon->InitializeWeapon(this, Config);
-            // 常规开局只带一张寒弹；编辑器可显式按武器表数量直接测试，且不写永久存档。
-            // 调试只替换基础数量，GAS 数量升级和最终 MaxCount 仍按原公式叠加/钳制。
-            Weapon->GetConfig().Count=bUseTableStartingCounts ? FMath::Max(0,Config.Count)
-                :(Weapon->GetCountUpgradeType()==ERogueUpgradeType::ProjectileCount ? 1 : 0);
-			Weapons.Add(Weapon);
-		}
-		return Weapon;
-	};
-
-	auto FindRowByCountUpgradeType = [this](ERogueUpgradeType CountUpgradeType, FName PreferredRowName, FRogueWeaponTableRow& OutRow) -> bool
-	{
-		if (WeaponDataTable == nullptr)
-		{
-			return false;
-		}
-
-		if (!PreferredRowName.IsNone())
-		{
-			if (const FRogueWeaponTableRow* PreferredRow = WeaponDataTable->FindRow<FRogueWeaponTableRow>(PreferredRowName, TEXT("FindRowByCountUpgradeType")))
-			{
-				OutRow = *PreferredRow;
-				return true;
-			}
-		}
-
-		const TArray<FName> TableRowNames = WeaponDataTable->GetRowNames();
-		for (const FName RowName : TableRowNames)
-		{
-			if (const FRogueWeaponTableRow* Row = WeaponDataTable->FindRow<FRogueWeaponTableRow>(RowName, TEXT("FindRowByCountUpgradeType")))
-			{
-				if (Row->CountUpgradeType == CountUpgradeType)
-				{
-					OutRow = *Row;
-					return true;
-				}
-			}
-		}
-
-		return false;
-	};
-
-	bool bHasMortarWeapon = false;
-	const TArray<FName> RowNames = WeaponDataTable->GetRowNames();
-	for (int32 Index = 0; Index < RowNames.Num(); ++Index)
-	{
-		const FRogueWeaponTableRow* Row = WeaponDataTable->FindRow<FRogueWeaponTableRow>(RowNames[Index], TEXT("InitializeWeapons"));
-		if (Row == nullptr)
-		{
+			UE_LOG(LogTemp, Warning, TEXT("[Weapons] Row %s has no valid weapon class"), *RowName.ToString());
 			continue;
 		}
-
-		TSubclassOf<ARogueWeaponBase> WeaponClass = Row->WeaponClass;
-		if (WeaponClass == nullptr)
-		{
-			// 兼容旧表中未填写的类及默认未改的类型字段；历史行 ID 是稳定键，绝不依赖行位置。
-            static const TMap<FName, ERogueUpgradeType> LegacyTypes={
-                {TEXT("Projectile"),ERogueUpgradeType::ProjectileCount},{TEXT("Scythe"),ERogueUpgradeType::ScytheCount},
-                {TEXT("Rocket"),ERogueUpgradeType::RocketCount},{TEXT("Laser"),ERogueUpgradeType::LaserCount},
-                {TEXT("HellTower"),ERogueUpgradeType::HellTowerCount},{TEXT("Mortar"),ERogueUpgradeType::MortarCount}};
-            const auto* LegacyType=LegacyTypes.Find(RowNames[Index]);
-            const ERogueUpgradeType Type=LegacyType?*LegacyType:Row->CountUpgradeType;
-			for (TSubclassOf<ARogueWeaponBase> Candidate : WeaponClasses)
+		FRogueWeaponTableRow Config = *Row;
+		// 旧表的类型字段可能仍是默认值。已知原生武器由实际类确定身份，绝不按行位置配对。
+		for (const auto &Descriptor : RogueWeaponCatalog::GetAll())
+			if (Class->IsChildOf(Descriptor.NativeClass()))
 			{
-				const ARogueWeaponBase* Defaults = Candidate ? Candidate->GetDefaultObject<ARogueWeaponBase>() : nullptr;
-				if (Defaults && Defaults->GetCountUpgradeType() == Type)
-				{
-					WeaponClass = Candidate;
-					break;
-				}
+				Config.CountUpgradeType = Descriptor.QuantityType;
+				break;
 			}
-		}
-
-		if (WeaponClass == nullptr)
+		if (CreatedTypes.Contains(Config.CountUpgradeType))
 		{
+			UE_LOG(LogTemp, Warning, TEXT("[Weapons] Ignoring duplicate weapon row %s"), *RowName.ToString());
 			continue;
 		}
-
-		ARogueWeaponBase* Weapon = SpawnWeaponInstance(WeaponClass, *Row);
-		bHasMortarWeapon = bHasMortarWeapon || Cast<ARogueWeapon_Mortar>(Weapon) != nullptr || Row->CountUpgradeType == ERogueUpgradeType::MortarCount;
-	}
-
-	if (!bHasMortarWeapon)
-	{
-		FRogueWeaponTableRow MortarConfig;
-		if (!FindRowByCountUpgradeType(ERogueUpgradeType::MortarCount, MortarWeaponRowName, MortarConfig))
-		{
-			MortarConfig = BuildDefaultMortarWeaponConfig(DefaultMortarProjectileClass);
-		}
-
-		TSubclassOf<ARogueWeaponBase> MortarWeaponClass = DefaultMortarWeaponClass;
-		if (MortarWeaponClass == nullptr)
-		{
-			MortarWeaponClass = ARogueWeapon_Mortar::StaticClass();
-		}
-
-		if (MortarConfig.RocketClass == nullptr)
-		{
-			TSubclassOf<ARogueRocketProjectile> MortarProjectileClass = DefaultMortarProjectileClass;
-			if (MortarProjectileClass == nullptr)
-			{
-				MortarProjectileClass = ARogueMortarProjectile::StaticClass();
-			}
-			MortarConfig.RocketClass = MortarProjectileClass;
-		}
-
-		if (MortarConfig.MortarProjectileClass == nullptr)
-		{
-			MortarConfig.MortarProjectileClass = Cast<UClass>(MortarConfig.RocketClass.Get());
-		}
-		if (MortarConfig.MortarExplosionRadius <= 0.0f)
-		{
-			MortarConfig.MortarExplosionRadius = MortarConfig.ExplosionRadius;
-		}
-		if (MortarConfig.MortarLaunchSpeed <= 0.0f)
-		{
-			MortarConfig.MortarLaunchSpeed = MortarConfig.RocketSpeed;
-		}
-
-		SpawnWeaponInstance(MortarWeaponClass, MortarConfig);
+		FActorSpawnParameters Params;
+		Params.Owner = this;
+		Params.Instigator = this;
+		auto *Weapon = GetWorld()->SpawnActor<ARogueWeaponBase>(Class, GetActorLocation(),
+																FRotator::ZeroRotator, Params);
+		if (!Weapon)
+			continue;
+		Weapon->InitializeWeapon(this, Config);
+		// 寒弹初始自带；已解锁冰刀的数量由 GAS 初始化提供。编辑器可按表数量测试。
+		Weapon->GetConfig().Count =
+			bUseTableStartingCounts ? FMath::Max(0, Config.Count)
+									: (Config.CountUpgradeType == ERogueUpgradeType::ProjectileCount ? 1 : 0);
+		Weapons.Add(Weapon);
+		CreatedTypes.Add(Config.CountUpgradeType);
 	}
 }
 
@@ -239,7 +83,7 @@ void ARogueCharacter::TickWeapons(float DeltaSeconds)
 	// 常规离散开火由 GA/Task 驱动；NeedsCosmeticTick 武器在此维护持续实体。
 	// 镰刀在各端维护环绕表现；归心符只在服务端创建实体，再复制给所有客户端。
 	// 因此整个函数不能概括为无伤害的纯表现路径。
-	for (ARogueWeaponBase* Weapon : Weapons)
+	for (ARogueWeaponBase *Weapon : Weapons)
 	{
 		if (IsValid(Weapon) && Weapon->NeedsCosmeticTick())
 		{
@@ -263,14 +107,14 @@ void ARogueCharacter::EnsureWeaponAbilities()
 	// 档案握手前不在服务端授予/激活开火能力，避免按空属性打一轮后再补永久基值。
 	if (IsAuthoritySide())
 	{
-		const ARoguePlayerState* State = GetPlayerState<ARoguePlayerState>();
+		const ARoguePlayerState *State = GetPlayerState<ARoguePlayerState>();
 		if (State == nullptr || !State->IsProgressionReady() || !State->IsBaseAttributesInitialized())
 		{
 			return;
 		}
 	}
 
-	URogueAbilitySystemComponent* ASC = GetRogueAbilitySystemComponent();
+	URogueAbilitySystemComponent *ASC = GetRogueAbilitySystemComponent();
 	if (ASC == nullptr)
 	{
 		// ASC 还没就位（PlayerState 复制中）。下一帧再来。
@@ -288,7 +132,8 @@ void ARogueCharacter::EnsureWeaponAbilities()
 		return;
 	}
 
-	const FGameplayTagContainer AutoAttackTag = FGameplayTagContainer(RogueGameplayTags::Ability_WeaponAutoAttack);
+	const FGameplayTagContainer AutoAttackTag =
+		FGameplayTagContainer(RogueGameplayTags::Ability_WeaponAutoAttack);
 
 	// ---- ① 授予：只在权威端，且幂等 ----
 	//
@@ -296,7 +141,7 @@ void ARogueCharacter::EnsureWeaponAbilities()
 	// 当前复活保留同 Pawn/ASC；查重并不负责替换 Pawn 后的能力 SourceObject 或武器引用更新。
 	if (bAuthority)
 	{
-		for (const ARogueWeaponBase* Weapon : Weapons)
+		for (const ARogueWeaponBase *Weapon : Weapons)
 		{
 			if (!IsValid(Weapon))
 			{
@@ -311,7 +156,7 @@ void ARogueCharacter::EnsureWeaponAbilities()
 			}
 
 			bool bAlreadyGranted = false;
-			for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
+			for (const FGameplayAbilitySpec &Spec : ASC->GetActivatableAbilities())
 			{
 				if (Spec.Ability != nullptr && Spec.Ability->GetClass() == AbilityClass.Get())
 				{
@@ -322,7 +167,8 @@ void ARogueCharacter::EnsureWeaponAbilities()
 
 			if (!bAlreadyGranted)
 			{
-				ASC->GiveAbility(FGameplayAbilitySpec(AbilityClass, /*Level=*/1, /*InputID=*/INDEX_NONE, /*SourceObject=*/this));
+				ASC->GiveAbility(FGameplayAbilitySpec(AbilityClass, /*Level=*/1, /*InputID=*/INDEX_NONE,
+													  /*SourceObject=*/this));
 			}
 		}
 	}
@@ -330,9 +176,10 @@ void ARogueCharacter::EnsureWeaponAbilities()
 	// ---- ② 是否已经全部在跑 ----
 	bool bAnyInactive = false;
 	int32 WeaponAbilityCount = 0;
-	for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
+	for (const FGameplayAbilitySpec &Spec : ASC->GetActivatableAbilities())
 	{
-		if (Spec.Ability == nullptr || !Spec.Ability->GetAssetTags().HasTag(RogueGameplayTags::Ability_WeaponAutoAttack))
+		if (Spec.Ability == nullptr ||
+			!Spec.Ability->GetAssetTags().HasTag(RogueGameplayTags::Ability_WeaponAutoAttack))
 		{
 			continue;
 		}
@@ -366,7 +213,7 @@ void ARogueCharacter::EnsureWeaponAbilities()
 	// 具体拒绝行为取决于能力实例和重触发条件，不能认定任何服务端提前激活都必然失败。
 	// 初始化、所有权或激活失败可能让能力迟迟未运行；五秒后服务端尝试兜底，
 	// 这不是对 Reliable RPC 单次丢包的补偿，也不保证所有失败状态都能恢复。
-	const UWorld* World = GetWorld();
+	const UWorld *World = GetWorld();
 	const float NowSeconds = World != nullptr ? World->GetTimeSeconds() : 0.0f;
 	if (WeaponAbilityWaitStartTime < 0.0f)
 	{
@@ -379,13 +226,15 @@ void ARogueCharacter::EnsureWeaponAbilities()
 		if (ASC->TryActivateAbilitiesByTag(AutoAttackTag))
 		{
 			UE_LOG(LogTemp, Warning,
-				TEXT("[武器技能] 玩家 %s 的客户端在 5 秒内没有激活武器能力，服务端已接管激活（本人端将失去本地预测）"),
-				*GetName());
+				   TEXT("[武器技能] 玩家 %s 的客户端在 5 "
+						"秒内没有激活武器能力，服务端已接管激活（本人端将失去本地预测）"),
+				   *GetName());
 		}
 	}
 }
 
-void ARogueCharacter::BroadcastWeaponCosmetic(const ARogueWeaponBase* Weapon, const FRogueWeaponCosmeticFire& Fire)
+void ARogueCharacter::BroadcastWeaponCosmetic(const ARogueWeaponBase *Weapon,
+											  const FRogueWeaponCosmeticFire &Fire)
 {
 	// 仅在非客户端世界排队；此处按执行环境限定服务端表现广播。
 	// HasAuthority 是 Actor Role 检查，本地控制不等于 Authority；
@@ -401,8 +250,10 @@ void ARogueCharacter::BroadcastWeaponCosmetic(const ARogueWeaponBase* Weapon, co
 		return;
 	}
 
+	if (Fire.bPlayFireAccent)
+		NotifyOwnedWeaponAttack(Weapon->GetCountUpgradeType());
 	// 只入队不发送：本帧所有武器（含一次齐射的多发）会在 TickWeapons 末尾合成一条 RPC。
-	FRogueWeaponCosmeticBatchEntry& Entry = PendingWeaponCosmetics.AddDefaulted_GetRef();
+	FRogueWeaponCosmeticBatchEntry &Entry = PendingWeaponCosmetics.AddDefaulted_GetRef();
 	Entry.WeaponIndex = WeaponIndex;
 	Entry.Fire = Fire;
 }
@@ -421,11 +272,15 @@ void ARogueCharacter::FlushWeaponCosmetics()
 	PendingWeaponCosmetics.Reset();
 }
 
-void ARogueCharacter::Multicast_WeaponCosmetics_Implementation(const TArray<FRogueWeaponCosmeticBatchEntry>& Fires)
+void ARogueCharacter::Multicast_WeaponCosmetics_Implementation(
+	const TArray<FRogueWeaponCosmeticBatchEntry> &Fires)
 {
 #if !UE_BUILD_SHIPPING
-	if (const auto* Debug = IConsoleManager::Get().FindConsoleVariable(TEXT("Rogue.Audio.Debug")); Debug && Debug->GetInt())
-		UE_LOG(LogTemp, Display, TEXT("[AttackAudio] WeaponRPC Player=%s Alive=%d AuthoritySide=%d Local=%d Entries=%d"), *GetName(), IsAlive(), IsAuthoritySide(), IsLocallyControlled(), Fires.Num());
+	if (const auto *Debug = IConsoleManager::Get().FindConsoleVariable(TEXT("Rogue.Audio.Debug"));
+		Debug && Debug->GetInt())
+		UE_LOG(LogTemp, Display,
+			   TEXT("[AttackAudio] WeaponRPC Player=%s Alive=%d AuthoritySide=%d Local=%d Entries=%d"),
+			   *GetName(), IsAlive(), IsAuthoritySide(), IsLocallyControlled(), Fires.Num());
 #endif
 	if (!IsAlive())
 	{
@@ -439,19 +294,28 @@ void ARogueCharacter::Multicast_WeaponCosmetics_Implementation(const TArray<FRog
 		return;
 	}
 
-	for (const FRogueWeaponCosmeticBatchEntry& Entry : Fires)
+	for (const FRogueWeaponCosmeticBatchEntry &Entry : Fires)
 	{
 		if (!Weapons.IsValidIndex(Entry.WeaponIndex))
 		{
 			continue;
 		}
 
-		if (ARogueWeaponBase* Weapon = Weapons[Entry.WeaponIndex])
+		if (ARogueWeaponBase *Weapon = Weapons[Entry.WeaponIndex])
 		{
 			// 音效统一回放服务器确认的这一轮，包含所属客户端；本地预测不另播一份。
-			if (Entry.Fire.bPlayAttackSound) { Weapon->PlayAttackAudio(Entry.Fire.Start); }
-            Weapon->PlayFireAccent(Entry.Fire);
-			if (!IsLocallyControlled()) { Weapon->PlayCosmeticFire(Entry.Fire); }
+			if (Entry.Fire.bPlayAttackSound)
+			{
+				Weapon->PlayAttackAudio(Entry.Fire.Start);
+			}
+			Weapon->PlayFireAccent(Entry.Fire);
+			Weapon->UpdateCosmeticLock(Entry.Fire);
+			if (Entry.Fire.bPlayFireAccent)
+				NotifyOwnedWeaponAttack(Weapon->GetCountUpgradeType());
+			if (!IsLocallyControlled())
+			{
+				Weapon->PlayCosmeticFire(Entry.Fire);
+			}
 		}
 	}
 }
@@ -465,91 +329,91 @@ void ARogueCharacter::Multicast_WeaponCosmetics_Implementation(const TArray<FRog
 
 float ARogueCharacter::GetAttackDamage() const
 {
-	const ARogueWeapon_Projectile* PW = FindWeapon<ARogueWeapon_Projectile>();
+	const ARogueWeapon_Projectile *PW = FindWeapon<ARogueWeapon_Projectile>();
 	return PW != nullptr ? PW->GetEffectiveDamage() : 0.0f;
 }
 
 float ARogueCharacter::GetAttackInterval() const
 {
-	const ARogueWeapon_Projectile* PW = FindWeapon<ARogueWeapon_Projectile>();
+	const ARogueWeapon_Projectile *PW = FindWeapon<ARogueWeapon_Projectile>();
 	return PW != nullptr ? PW->GetInterval() : 1.0f;
 }
 
 int32 ARogueCharacter::GetProjectileCount() const
 {
-	const ARogueWeapon_Projectile* PW = FindWeapon<ARogueWeapon_Projectile>();
+	const ARogueWeapon_Projectile *PW = FindWeapon<ARogueWeapon_Projectile>();
 	return PW != nullptr ? PW->GetCount() : 1;
 }
 
 int32 ARogueCharacter::GetEffectiveProjectileCount() const
 {
-	const ARogueWeapon_Projectile* PW = FindWeapon<ARogueWeapon_Projectile>();
+	const ARogueWeapon_Projectile *PW = FindWeapon<ARogueWeapon_Projectile>();
 	return PW != nullptr ? PW->GetEffectiveProjectileCount() : 1;
 }
 
 int32 ARogueCharacter::GetScytheCount() const
 {
-	const ARogueWeapon_Scythe* SW = FindWeapon<ARogueWeapon_Scythe>();
+	const ARogueWeapon_Scythe *SW = FindWeapon<ARogueWeapon_Scythe>();
 	return SW != nullptr ? SW->GetCount() : 0;
 }
 
 int32 ARogueCharacter::GetEffectiveScytheCount() const
 {
-	const ARogueWeapon_Scythe* SW = FindWeapon<ARogueWeapon_Scythe>();
+	const ARogueWeapon_Scythe *SW = FindWeapon<ARogueWeapon_Scythe>();
 	return SW != nullptr ? SW->GetEffectiveCount() : 0;
 }
 
 int32 ARogueCharacter::GetRocketLauncherCount() const
 {
-	const ARogueWeapon_Rocket* RW = FindWeapon<ARogueWeapon_Rocket>();
+	const ARogueWeapon_Rocket *RW = FindWeapon<ARogueWeapon_Rocket>();
 	return RW != nullptr ? RW->GetCount() : 0;
 }
 
 int32 ARogueCharacter::GetEffectiveRocketLauncherCount() const
 {
-	const ARogueWeapon_Rocket* RW = FindWeapon<ARogueWeapon_Rocket>();
+	const ARogueWeapon_Rocket *RW = FindWeapon<ARogueWeapon_Rocket>();
 	return RW != nullptr ? RW->GetEffectiveCount() : 0;
 }
 
 int32 ARogueCharacter::GetLaserCannonCount() const
 {
-	const ARogueWeapon_Laser* LW = FindWeapon<ARogueWeapon_Laser>();
+	const ARogueWeapon_Laser *LW = FindWeapon<ARogueWeapon_Laser>();
 	return LW != nullptr ? LW->GetCount() : 0;
 }
 
 int32 ARogueCharacter::GetEffectiveLaserCannonCount() const
 {
-	const ARogueWeapon_Laser* LW = FindWeapon<ARogueWeapon_Laser>();
+	const ARogueWeapon_Laser *LW = FindWeapon<ARogueWeapon_Laser>();
 	return LW != nullptr ? LW->GetEffectiveCount() : 0;
 }
 
 int32 ARogueCharacter::GetHellTowerCount() const
 {
-	const ARogueWeapon_HellTower* HW = FindWeapon<ARogueWeapon_HellTower>();
+	const ARogueWeapon_HellTower *HW = FindWeapon<ARogueWeapon_HellTower>();
 	return HW != nullptr ? HW->GetCount() : 0;
 }
 
 int32 ARogueCharacter::GetEffectiveHellTowerCount() const
 {
-	const ARogueWeapon_HellTower* HW = FindWeapon<ARogueWeapon_HellTower>();
+	const ARogueWeapon_HellTower *HW = FindWeapon<ARogueWeapon_HellTower>();
 	return HW != nullptr ? HW->GetEffectiveCount() : 0;
 }
 
 int32 ARogueCharacter::GetMortarCount() const
 {
-	const ARogueWeapon_Mortar* MW = FindWeapon<ARogueWeapon_Mortar>();
+	const ARogueWeapon_Mortar *MW = FindWeapon<ARogueWeapon_Mortar>();
 	return MW != nullptr ? MW->GetCount() : 0;
 }
 
 int32 ARogueCharacter::GetEffectiveMortarCount() const
 {
-	const ARogueWeapon_Mortar* MW = FindWeapon<ARogueWeapon_Mortar>();
+	const ARogueWeapon_Mortar *MW = FindWeapon<ARogueWeapon_Mortar>();
 	return MW != nullptr ? MW->GetEffectiveCount() : 0;
 }
 
 int32 ARogueCharacter::GetLaserRefractionCount() const
 {
-	const ARogueWeapon_Laser* LW = FindWeapon<ARogueWeapon_Laser>();
+	const ARogueWeapon_Laser *LW = FindWeapon<ARogueWeapon_Laser>();
 	return LW != nullptr ? LW->GetRefractionCount() : 0;
 }
 
@@ -560,7 +424,7 @@ void ARogueCharacter::RefreshWeaponBonusSnapshotFromAttributes()
 		return;
 	}
 
-	const URogueAttributeSet* AttributeSet = GetRogueAttributeSet();
+	const URogueAttributeSet *AttributeSet = GetRogueAttributeSet();
 	if (AttributeSet == nullptr)
 	{
 		return;
@@ -586,12 +450,16 @@ void ARogueCharacter::RefreshWeaponBonusSnapshotFromAttributes()
 	Values.TalismanCount = AttributeSet->GetTalismanCountBonus();
 	Values.TalismanPierce = AttributeSet->GetTalismanPierceBonus();
 	Values.TalismanRepeat = AttributeSet->GetTalismanRepeatBonus();
-
+	Values.FrostBladeCount = AttributeSet->GetFrostBladeCountBonus();
+	Values.FrostBladeSize = AttributeSet->GetFrostBladeSizeBonus();
+	Values.FrostBladeWave = AttributeSet->GetFrostBladeWaveBonus();
+	Values.FrostBladeWaveCount = AttributeSet->GetFrostBladeWaveCountBonus();
+	Values.FrostBladeWaveSize = AttributeSet->GetFrostBladeWaveSizeBonus();
 
 	ApplyWeaponBonusSnapshot(Values);
 }
 
-void ARogueCharacter::ApplyWeaponBonusSnapshot(const FRogueWeaponBonusValues& InValues)
+void ARogueCharacter::ApplyWeaponBonusSnapshot(const FRogueWeaponBonusValues &InValues)
 {
 	// 权威字段：只有服务端能写（客户端写会被下一次复制覆盖）
 	if (!IsAuthoritySide())
@@ -606,4 +474,13 @@ void ARogueCharacter::ApplyWeaponBonusSnapshot(const FRogueWeaponBonusValues& In
 	}
 
 	WeaponBonusSnapshot = InValues;
+}
+
+void ARogueCharacter::NotifyOwnedWeaponAttack(ERogueUpgradeType Type)
+{
+	if (!IsLocallyControlled())
+		return;
+	if (auto *PC = Cast<APlayerController>(GetController()))
+		if (auto *HUD = PC->GetHUD<ARogueHUD>())
+			HUD->NotifyWeaponAttack(Type);
 }

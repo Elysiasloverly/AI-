@@ -709,7 +709,6 @@ struct AI_API FRogueRingcasterSpecialParams
 	{
 		BulletRing.ProjectileCount = 16;
 		BulletRing.ProjectileSpeed = 760.0f;
-		BulletRing.ProjectileLifetime = 30.0f;
 		BulletRing.ProjectileScale = 0.32f;
 		BulletRing.DamageMultiplier = 0.28f;
 		BulletRing.HeightAboveGround = 50.0f;

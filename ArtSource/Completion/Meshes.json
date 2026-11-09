@@ -1,0 +1,27 @@
+[
+  {
+    "name": "SM_ForestSpiritGarden",
+    "vertices": 225,
+    "triangles": 368
+  },
+  {
+    "name": "SM_ShrineVotiveLantern",
+    "vertices": 284,
+    "triangles": 260
+  },
+  {
+    "name": "SM_IceShoreCrystalReeds",
+    "vertices": 114,
+    "triangles": 186
+  },
+  {
+    "name": "SM_BambooPrayerCluster",
+    "vertices": 372,
+    "triangles": 492
+  },
+  {
+    "name": "SM_ClockGardenRelic",
+    "vertices": 362,
+    "triangles": 212
+  }
+]

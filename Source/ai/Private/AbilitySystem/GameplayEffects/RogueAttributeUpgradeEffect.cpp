@@ -127,6 +127,17 @@ URogueUpgradeEffect_TalismanPierce::URogueUpgradeEffect_TalismanPierce()
 URogueUpgradeEffect_TalismanRepeat::URogueUpgradeEffect_TalismanRepeat()
 { ConfigureUpgrade(URogueAttributeSet::GetTalismanRepeatBonusAttribute()); }
 
+URogueUpgradeEffect_FrostBladeCount::URogueUpgradeEffect_FrostBladeCount()
+{ConfigureUpgrade(URogueAttributeSet::GetFrostBladeCountBonusAttribute());}
+URogueUpgradeEffect_FrostBladeSize::URogueUpgradeEffect_FrostBladeSize()
+{ConfigureUpgrade(URogueAttributeSet::GetFrostBladeSizeBonusAttribute());}
+URogueUpgradeEffect_FrostBladeWave::URogueUpgradeEffect_FrostBladeWave()
+{ConfigureUpgrade(URogueAttributeSet::GetFrostBladeWaveBonusAttribute());}
+URogueUpgradeEffect_FrostBladeWaveCount::URogueUpgradeEffect_FrostBladeWaveCount()
+{ConfigureUpgrade(URogueAttributeSet::GetFrostBladeWaveCountBonusAttribute());}
+URogueUpgradeEffect_FrostBladeWaveSize::URogueUpgradeEffect_FrostBladeWaveSize()
+{ConfigureUpgrade(URogueAttributeSet::GetFrostBladeWaveSizeBonusAttribute());}
+
 TSubclassOf<UGameplayEffect> RogueUpgradeEffectMap::GetEffectClass(ERogueUpgradeType UpgradeType)
 {
 	switch (UpgradeType)
@@ -157,6 +168,12 @@ TSubclassOf<UGameplayEffect> RogueUpgradeEffectMap::GetEffectClass(ERogueUpgrade
 	case ERogueUpgradeType::TalismanCount: return URogueUpgradeEffect_TalismanCount::StaticClass();
 	case ERogueUpgradeType::TalismanPierce: return URogueUpgradeEffect_TalismanPierce::StaticClass();
 	case ERogueUpgradeType::TalismanRepeat: return URogueUpgradeEffect_TalismanRepeat::StaticClass();
+    case ERogueUpgradeType::FrostBladeCount:return URogueUpgradeEffect_FrostBladeCount::StaticClass();
+    case ERogueUpgradeType::FrostBladeSize:return URogueUpgradeEffect_FrostBladeSize::StaticClass();
+    case ERogueUpgradeType::FrostBladeWave:return URogueUpgradeEffect_FrostBladeWave::StaticClass();
+    case ERogueUpgradeType::FrostBladeWaveCount:return URogueUpgradeEffect_FrostBladeWaveCount::StaticClass();
+    case ERogueUpgradeType::FrostBladeWaveSize:return URogueUpgradeEffect_FrostBladeWaveSize::StaticClass();
+
 	case ERogueUpgradeType::ProjectileBurst: return URogueUpgradeEffect_ProjectileBurst::StaticClass();
 	case ERogueUpgradeType::RocketBlastRadius: return URogueUpgradeEffect_RocketBlastRadius::StaticClass();
 	case ERogueUpgradeType::HellTowerDamageRamp: return URogueUpgradeEffect_HellTowerDamageRamp::StaticClass();

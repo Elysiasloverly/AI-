@@ -1,0 +1,7 @@
+{
+  "tool": "image_gen.imagegen",
+  "date": "2026-11-04",
+  "prompt": "Use case: stylized-concept. Asset type: production background texture for a Touhou-inspired cozy shrine fantasy game's 3D main-menu backdrop. Create one landscape 16:9 illustration, completely opaque. Pale warm ivory Japanese washi paper with very subtle fibers; atmospheric delicate sumi-e ink and softly painted gouache. The leftmost 42 percent is almost empty ivory negative space for menu UI. A faraway small vermilion torii at the right-center recedes into pale blue-gray mountain mist, faint stone path and a quiet crescent moon high on the right. A sparse elegant branch with pink cherry blossoms descends from upper right edge; a few drifting petals, two tiny gold light specks. The lower third dissolves softly into uninterrupted pale ivory to blend with a 3D floor. Restrained indigo, faded vermilion, muted blush and antique gold accents; low contrast because an existing bright cyan chibi character will stand in front on the right. Beautiful layered depth, restrained, hand-painted, airy, polished. No characters, no logo, no text, no lettering, no labels, no UI, no icons, no ornate frame, no busy bullet patterns, no watermark, no dark vignette, no photorealism. Edge-to-edge painting, no border.",
+  "usage": "Menu backdrop; no external character artwork",
+  "source": "exec-69a670ff-05bd-45c7-af31-44998b111253.png"
+}

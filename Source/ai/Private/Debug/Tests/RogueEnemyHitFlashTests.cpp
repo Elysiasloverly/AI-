@@ -8,6 +8,8 @@
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "UObject/UnrealType.h"
 #include "Enemies/RogueEnemy.h"
 #include "Framework/RogueGameMode.h"
 #include "GameFramework/WorldSettings.h"
@@ -21,6 +23,7 @@
 
 struct FRogueEnemyHitFlashTestAccess
 {
+    static void ReceiveActive(ARogueEnemy* E,bool Value) { E->bReplicatedActive=Value; E->ApplyReplicatedActiveState(); }
 	static void SetMaterial(ARogueEnemy* E, UMaterialInterface* M) { E->HitFlashMaterial = M; }
 	static UMaterialInterface* Material(const ARogueEnemy* E) { return E->HitFlashMaterial; }
 	static FRogueEnemyHitFeedback Snapshot(const ARogueEnemy* E) { return E->HitFeedback; }
@@ -181,5 +184,25 @@ bool FRogueEnemyBaseFlashInheritanceTest::RunTest(const FString& Parameters)
 		TestTrue(*FString::Printf(TEXT("%s inherits shared hit material"),Name),FRogueEnemyHitFlashTestAccess::Material(Class->GetDefaultObject<ARogueEnemy>())==Material);
 	}
 	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueEnemyProxyPoolMovementTickTest,
+    "Rogue.Gameplay.EnemyHitFlash.ProxyPoolStateSuspendsAndResumesMovement", RogueEnemyHitFlashTests::Flags)
+bool FRogueEnemyProxyPoolMovementTickTest::RunTest(const FString& Parameters)
+{
+    using namespace RogueEnemyHitFlashTests;FFixture F;if(!F.Initialize())return false;
+    auto* E=F.Enemy();auto* M=E->GetCharacterMovement();
+    auto* Role=FindFProperty<FByteProperty>(AActor::StaticClass(),TEXT("Role"));
+    if(!TestNotNull(TEXT("Role available to simulated replication fixture"),Role))return false;
+    Role->SetPropertyValue_InContainer(E,ROLE_SimulatedProxy);
+    TestFalse(TEXT("Fixture exercises client branch"),E->HasAuthority());
+    FRogueEnemyHitFlashTestAccess::ReceiveActive(E,false);FRogueEnemyHitFlashTestAccess::ReceiveActive(E,false);
+    TestFalse(TEXT("Inactive replicated proxies have no movement tick"),M->IsComponentTickEnabled());
+    FRogueEnemyHitFlashTestAccess::ReceiveActive(E,true);
+    TestTrue(TEXT("Relevance/pool activation resumes proxy smoothing movement tick"),M->IsComponentTickEnabled());
+    FRogueEnemyHitFlashTestAccess::ReceiveActive(E,false);
+    TestFalse(TEXT("Second generation sleeps again"),M->IsComponentTickEnabled());
+    Role->SetPropertyValue_InContainer(E,ROLE_Authority);
+    return true;
 }
 #endif

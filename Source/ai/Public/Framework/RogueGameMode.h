@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Progression/Shop/RogueShopSystem.h"
@@ -40,7 +40,9 @@ public:
 	virtual void HandleSeamlessTravelPlayer(AController*& C) override;
 
 	void HandleEnemyKilled(ARogueEnemy* Enemy, AActor* Killer);
+    /** 升级只登记一次待选奖励，由玩家主动打开选择。 */
 	void StartUpgradeSelection(ARogueCharacter* Character);
+    void ToggleUpgradeSelectionForPlayer(ARoguePlayerState* PlayerState);
 
 	/** 服务端：某个玩家选定了升级卡（由 ARoguePlayerState::Server_RequestUpgradeSelection 调用） */
 	void HandlePlayerUpgradeSelected(ARoguePlayerState* PlayerState, const FRogueUpgradeOption& SelectedUpgrade);
@@ -131,6 +133,7 @@ private:
 	void TickPawnOwnershipRepair();
 	/** 双进程生命周期自检；开启时接管本局调度，避免刷怪干扰真实死亡/计时/复制。 */
 	bool RunPlayerLifeCycleSelfTest();
+#if WITH_DEV_AUTOMATION_TESTS
 	int32 LifeCycleSelfTestPhase = 0;
 	double LifeCycleSelfTestStartTime = -1.0;
 	double LifeCycleSelfTestPhaseTime = 0.0;
@@ -139,6 +142,7 @@ private:
 	TArray<TWeakObjectPtr<APlayerController>> LifeCycleSelfTestControllers;
 	TMap<TWeakObjectPtr<UPrimitiveComponent>, uint8> LifeCycleSelfTestCollisionSnapshot;
 	bool bLifeCycleSelfTestActorCollision = true;
+#endif
 
 	void FindLevelGameplayActors();
 	void ConfigureRuntimeAssets();
@@ -152,7 +156,7 @@ private:
 
 	/** 收集存活角色；内联容量为 4，超过时容器仍可扩容，不构成联机人数限制。 */
 	void CollectAlivePlayers(TArray<ARogueCharacter*, TInlineAllocator<4>>& OutPlayers) const;
-	/** 将各玩家 AttributeSet 的 13 项加成写入其 Character 快照，由武器统一读取。
+	/** 将各玩家 AttributeSet 的 武器加成写入其 Character 快照，由武器统一读取。
 	 *  属性本身也参与复制；这层提供角色侧输入接口与近似相等脏检查，不证明 ASC 属性未同步。
 	 *  快照与 AttributeSet 属于不同复制路径，客户端不能假设二者同帧到达。 */
 	void PushWeaponBonusSnapshots();
@@ -169,10 +173,14 @@ private:
 	void ProbeShockPillarBarrage(ARogueCharacter* Target);
 
 	/** 三个攻击路径探针是否已经跑过（自检完成时只跑一次）。 */
+#if WITH_DEV_AUTOMATION_TESTS
 	bool bSelfTestProbesDone = false;
+#endif
 
 	/** 压测敌人是否已经刷过（与阶段机无关：压测用单进程跑，不需要等客户端）。 */
+#if WITH_DEV_AUTOMATION_TESTS
 	bool bSelfTestStressSpawned = false;
+#endif
 
 	/** 对目标施加致命伤害以观察濒死/复活；团灭和真实连接另由生命周期自检覆盖。 */
 	void ProbeDeathAndRevive(ARogueCharacter* Target);
@@ -181,10 +189,12 @@ private:
 	void ProbeEnemyStress(ARogueCharacter* Target, int32 Count);
 
 	/** 武器升级自检阶段（0未启动，1–4执行中，5完成）；时间点与日志以实现为准。 */
+#if WITH_DEV_AUTOMATION_TESTS
 	int32 SelfTestPhase = 0;
 
 	/** 当前阶段开始时的世界时间（用于阶段之间的等待） */
 	float SelfTestPhaseTime = 0.0f;
+#endif
 
 
 	/** 离给定位置最近的存活玩家；一个都没有时返回 nullptr。 */
@@ -192,6 +202,13 @@ private:
 
 	void AdvanceShopAutoRefresh(float DeltaSeconds, bool bWorldPaused);
 	void TickRunSystems(float DeltaSeconds);
+	void QueueWaveShopDrop();
+	void TickWaveShop();
+	ARogueCharacter* FindWaveShopAnchor() const;
+	float WaveIntermissionRemaining = 0.0f;
+	double NextShopDropAttempt = 0.0;
+	bool bWaveShopDropPending = false;
+	bool bWaveShopWasOpened = false;
     bool CompleteRunIfVictoryReached();
     void RetireCombatActors();
     friend struct FRogueBattleStageTestAccess;
@@ -207,6 +224,7 @@ private:
     double NextTravelAttemptTime = 0;
 public:
     float GetEnemyAttackSpeedMultiplier() const { return StageView.EnemyAttackSpeedMultiplier; }
+    bool IsNightBattleStage() const { return StageView.Phase == ERogueBattleStage::Night; }
     float GetEnemyCountMultiplier() const { return StageView.EnemyCountMultiplier; }
     float GetEnemySpawnRateMultiplier() const { return StageView.EnemySpawnRateMultiplier; }
 private:
@@ -280,4 +298,5 @@ private:
 	TWeakObjectPtr<ARogueCharacter> CachedCharacter;
 	/** 关卡中唯一的刷怪区域；缺少或重复时停止自动刷怪。 */
 	TWeakObjectPtr<ARogueEnemySpawnRegion> LevelSpawnRegion;
+	TWeakObjectPtr<ARogueShopTerminal> LevelShopTerminal;
 };

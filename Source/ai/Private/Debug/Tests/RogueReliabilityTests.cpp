@@ -95,7 +95,10 @@ bool FRoguePendingRewardTravelTest::RunTest(const FString& Parameters)
 	Meta->bSaveWritable = true;
 	Meta->SaveSlot.Reset(); // Deterministic storage rejection, no access to real player save.
 	const FGuid Reward = FGuid::NewGuid();
+    TArray<int32> Confirmed;
+    Meta->OnBossRewardCommitted.AddLambda([&Confirmed](int32 Amount) { Confirmed.Add(Amount); });
 	Meta->EnqueueBossReward(Reward);
+    TestTrue(TEXT("Failed writes produce no reward presentation"), Confirmed.IsEmpty());
 	TestEqual(TEXT("Uncommitted balance stays unchanged"), Meta->GetIceBricks(), 0);
 	TestEqual(TEXT("Reward remains pending"), Meta->GetPendingBossRewardCount(), 1);
 	{
@@ -111,6 +114,7 @@ bool FRoguePendingRewardTravelTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Committed reward removed"), Meta->GetPendingBossRewardCount(), 0);
 	Meta->EnqueueBossReward(Reward);
 	TestEqual(TEXT("Repeated receipt remains idempotent"), Meta->GetIceBricks(), 1);
+    TestTrue(TEXT("Recovery broadcasts the saved delta exactly once"), Confirmed == TArray<int32>{1});
 	Meta->Deinitialize();
 	return true;
 }

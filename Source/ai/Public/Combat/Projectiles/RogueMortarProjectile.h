@@ -25,7 +25,9 @@ public:
 		const FVector& InTargetLocation,
 		float InDamage,
 		float InExplosionRadius,
-		float InLaunchSpeed);
+		float InLaunchSpeed,
+        const FRogueProjectileCombatSettings& Combat = FRogueProjectileCombatSettings(18.f),
+        const FRogueMortarFlightSettings& Flight = FRogueMortarFlightSettings());
 
 protected:
 	virtual void BeginPlay() override;
@@ -36,19 +38,19 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UStaticMeshComponent> LandingIndicatorMesh;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Mortar")
+	UPROPERTY()
 	float MortarArcParam = 0.74f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Mortar")
+	UPROPERTY()
 	float MortarGravityScale = 1.0f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Mortar")
+	UPROPERTY()
 	float MinimumLaunchSpeed = 680.0f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Mortar")
+	UPROPERTY()
 	float MinimumFlightTime = 0.65f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Mortar")
+	UPROPERTY()
 	float MaximumFlightTime = 2.8f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Mortar")

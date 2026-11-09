@@ -27,9 +27,14 @@ class URogueMainMenuWidgetBase;
 class URogueTutorialWidgetBase;
 class URogueUpgradeTreeWidgetBase;
 class URogueNightTransitionWidgetBase;
+class URogueBattlePresentationWidget;
+class URogueOwnedItemsWidget;
 class URogueBossHealthBarWidgetBase;
+class URogueKillFeedbackWidgetBase;
 class UCameraShakeBase;
 class URogueEnemyTrackerSubsystem;
+class IInputProcessor;
+class FRoguePauseInputProcessor;
 
 enum class ERoguePauseMenuPage : uint8
 {
@@ -47,6 +52,9 @@ struct FRogueDamageNumber
 	FLinearColor Color = FLinearColor::White;
 	FVector2D CachedScreenPosition = FVector2D::ZeroVector;
 	bool bScreenPositionValid = false;
+    float HorizontalDrift=0;
+    bool bHealing=false,bBoss=false;
+    FVector2D CachedTextSize=FVector2D::ZeroVector;
 
 	/** 生成飘字时缓存文本，避免逐帧重复格式化；投影、位置更新和绘制仍按各自路径执行。 */
 	FString CachedText;
@@ -58,6 +66,9 @@ struct FRogueCachedEnemyHealthBar
 	bool bBoss = false;
 };
 
+/** 本地视图调度器：只读复制状态，将点击请求交给角色/控制器；不结算伤害或商店价格。
+ * 同一类实现分在 RogueHUD.cpp、.MainMenu、.Menus、.Settings、.CombatFeedback、.KillFeedback。
+ */
 UCLASS(Config = Game)
 class AI_API ARogueHUD : public AHUD
 {
@@ -72,6 +83,12 @@ public:
 	void AddDamageNumber(const FVector& WorldLocation, float Damage, bool bIsBossDamage);
 	/** 玩家和敌人回血飘字：与伤害飘字共用同一条绘制管线，绿色 + 号，生命周期略长。 */
 	void AddHealingNumber(const FVector& WorldLocation, float Amount);
+    void NotifyEnemyDefeated(int32 Count,bool bBoss);
+    void NotifyWeaponAttack(ERogueUpgradeType Type);
+    URogueOwnedItemsWidget* GetOwnedItemsWidget() const { return OwnedItemsWidget.Get(); }
+	/** 本机 Esc 入口，UMG 按钮有焦点时也能关闭菜单。 */
+	bool HandlePauseMenuKey();
+    bool HandleUpgradeSelectionKey();
 	void OpenPauseMenu();
 	void ClosePauseMenu();
 	void RequestSelectOfferFromShop(int32 OfferIndex, const FGuid& QuoteId = FGuid(), int32 QuotedCost = INDEX_NONE);
@@ -98,7 +115,7 @@ public:
 	void SetMainMenuMode(bool bEnabled);
 	bool IsMainMenuMode() const { return bMainMenuMode; }
 
-	/** 单人游戏：打开配置的关卡（默认 /Game/Map/Battle_Day）。 */
+	/** 单人游戏：打开配置的关卡（优先使用 DA_GameBalance 中的白天随机地图池）。 */
 	void StartSinglePlayerGame();
 	/** 主菜单里的“设置”：复用游戏内设置面板。 */
 	void OpenMainMenuSettings();
@@ -116,8 +133,17 @@ public:
 	void QuitToDesktop();
 
 	bool IsPauseMenuOpen() const { return PauseMenuPage != ERoguePauseMenuPage::None; }
+    bool IsCoveringBattleFeedback() const;
 
 private:
+    friend class FRoguePauseInputProcessor;
+    TSharedPtr<IInputProcessor> PauseInputProcessor;
+    void RegisterPauseInput();
+    void UnregisterPauseInput();
+    bool HasBattleInputFocus() const;
+    void DrawRemainingEnemyLocations();
+    UPROPERTY(Transient) TObjectPtr<URogueKillFeedbackWidgetBase> KillFeedbackWidget;
+    UPROPERTY(EditDefaultsOnly,Config,Category="UI|击杀反馈") FString KillFeedbackWidgetClassPath=TEXT("/Game/UMG/HUD/WBP_KillFeedback.WBP_KillFeedback_C");
     friend struct FRogueEnemyHealingTestAccess;
 	friend struct FRogueReliabilityTestAccess;
 	uint64 MenuRefreshCount = 0;
@@ -176,7 +202,7 @@ private:
     void UpdateVictoryWidget();
 
 	/** 每帧按本地复制状态推导输入模式：
-	 *  暂停菜单 / 商店 / 待选升级卡 / 濒死 → 显示光标 + GameAndUI；团灭 → UIOnly。
+	 *  暂停菜单 / 商店 / 正在打开的升级选卡 / 濒死 → 显示光标 + GameAndUI；团灭 → UIOnly。
 	 *  必须在本地机器上推导：服务端改 SetInputMode 只会改它自己那份 PlayerController，
 	 *  对真正需要切光标的客户端一点用都没有（这就是"鼠标还在转视角、点不了卡片"的原因）。 */
 	void UpdateInteractionInputMode(const ARogueCharacter* PlayerCharacter);
@@ -195,6 +221,7 @@ private:
 	FString GetFrameRateLimitLabel() const;
 
 	TArray<FRogueDamageNumber> DamageNumbers;
+    uint32 NumberVisualSequence=0;
 	TArray<FRogueCachedEnemyHealthBar> CachedEnemyHealthBars;
 	TArray<FIntPoint> ResolutionOptions;
 	TArray<float> FrameRateLimitOptions;
@@ -231,6 +258,10 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Rogue UI|Widgets")
 	TSubclassOf<URoguePauseMenuWidgetBase> PauseMenuWidgetClass;
+    /** 保存的蓝图引用为 None 时仍可加载菜单；路径也可由项目配置覆盖。 */
+    UPROPERTY(EditDefaultsOnly, Config, Category="Rogue UI|Widgets")
+    TSoftClassPtr<URoguePauseMenuWidgetBase> PauseMenuWidgetClassPath = TSoftClassPtr<URoguePauseMenuWidgetBase>(
+        FSoftObjectPath(TEXT("/Game/UMG/Menus/InGame/WBP_PauseMenu.WBP_PauseMenu_C")));
 
 	UPROPERTY(Transient)
 	TObjectPtr<URoguePauseMenuWidgetBase> PauseMenuWidget = nullptr;
@@ -361,8 +392,13 @@ private:
 
 	/** 单人游戏要打开的关卡。换关卡只改 ini，不用改代码。 */
 	UPROPERTY(EditDefaultsOnly, Config, Category = "Rogue UI|MainMenu")
-	FString SinglePlayerMapPath = TEXT("/Game/Map/Battle_Day");
+	FString SinglePlayerMapPath = TEXT("/Game/Map/Day/Battle_Forest_Day");
 
+    UPROPERTY(EditDefaultsOnly, Config, Category="Rogue UI|Widgets") TSoftClassPtr<URogueBattlePresentationWidget> BattlePresentationWidgetClassPath;
+    UPROPERTY(Transient) TObjectPtr<URogueBattlePresentationWidget> BattlePresentationWidget;
+    UPROPERTY(EditDefaultsOnly,Config,Category="Rogue UI|Widgets") TSoftClassPtr<URogueOwnedItemsWidget> OwnedItemsWidgetClassPath;
+    UPROPERTY(Transient) TObjectPtr<URogueOwnedItemsWidget> OwnedItemsWidget;
+    float OwnedItemsRefreshAge=1;
     UPROPERTY(EditDefaultsOnly, Config, Category="Rogue UI|Widgets")
     TSoftClassPtr<URogueNightTransitionWidgetBase> NightTransitionWidgetClassPath;
     UPROPERTY(Transient) TObjectPtr<URogueNightTransitionWidgetBase> NightTransitionWidget;

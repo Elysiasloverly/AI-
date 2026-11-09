@@ -34,7 +34,7 @@ def card_text(t,r):
   'PickupRadius':f'经验球吸取半径 +{n} 厘米，从更远处吸收经验。',
   'Recovery':f'每秒额外回复 {n} 点生命，提高持续作战能力。',
   'AttackRange':'扩大武器索敌范围，并按各武器倍率提高银刃环绕半径、爆炸半径与激光折射距离。',
-  'ProjectileSpeed':'提高寒弹、火丸与霜玉的飞行速度，各武器按自身倍率生效。',
+  'ProjectileSpeed':'提高寒弹、冰焰球与霜玉的飞行速度，各武器按自身倍率生效。',
   'Armor':f'伤害减免提高 {p} 个百分点，受减伤上限限制。',
   'ExperienceGain':f'经验获取倍率增加 {p} 个百分点，相同经验球带来更多经验。',
   'ProjectileCount':f'每轮灵弹弹幕增加 {n} 枚寒弹；连发轮数由冰符连诵提升。',
@@ -42,13 +42,13 @@ def card_text(t,r):
   'TalismanPierce':f'每张灵符单次出击可穿刺的不同敌人数 +{n}；默认命中 1 名后返回。',
   'TalismanRepeat':f'每张灵符单次出击对每名敌人的穿刺次数 +{n}；每次造成完整伤害。',
   'ScytheCount':f'获得银刃；已持有时，增加 {n} 把环绕刀刃。',
-  'RocketCount':f'获得焰符·火丸；已持有时，每轮齐射增加 {n} 发爆裂火球。',
+  'RocketCount':f'首次获得冰焰·陨星，从高空召唤冰焰球斜坠爆炸，地面蓝焰减速并持续造成少量伤害；已持有时，每轮额外召唤 {n} 颗。',
   'LaserCount':f'获得星符·流光；已持有时，每轮增加 {n} 束蓝白激光。',
   'HellTowerCount':f'获得焰符·灼光；已持有时，可同时锁定的不同敌人增加 {n} 名。',
   'MortarCount':f'获得冰符·霜玉；已持有时，每轮增加 {n} 枚抛射冰球。',
   'LaserRefraction':f'每束流光的折射次数 +{n}；命中后可跳向附近敌人，折射段按武器配置的倍率结算伤害。',
   'MortarBlastRadius':f'霜玉爆炸半径 +{n} 厘米，扩大落点周围的伤害区域。',
-  'RocketBlastRadius':f'火丸爆炸半径 +{n} 厘米，扩大火球命中后的伤害覆盖。',
+  'RocketBlastRadius':f'冰焰球爆炸半径 +{n} 厘米，同时增大球体、焰尾与地面蓝焰的影响范围。',
   'HellTowerDamageRamp':f'灼光每跳伤害递增值 +{n}；连续锁定同一目标越久，伤害增长越快。',
   'ScytheSize':f'银刃外观和伤害范围增加基础尺寸的 {p}%；环绕距离不变。',
   'ProjectileBurst':f'寒弹每轮攻击额外连射 {n} 次，每次发出完整弹幕；首次选取从单发变为 {num(1+m)} 连发。'
@@ -128,14 +128,14 @@ try:
  assert unreal.DataTableFunctionLibrary.fill_data_table_from_json_string(upgrades,json.dumps(urows,ensure_ascii=False));save(upgrades)
  assert no_text(table('/Game/Data/Upgrades/DT_UpgradeDefinitions')[1],{'Title','Description'})==ub,'Upgrade magnitudes or limits changed'
  tree=unreal.load_asset('/Game/Data/Progression/DA_UpgradeTree');assert tree
- nodes=tree.get_editor_property('nodes');node_guards={}
+ nodes=list(tree.get_editor_property('nodes'));node_guards={}
  guard_fields=['node_id','cost','max_rank','prerequisites','kind','upgrade_type','stat','bonus_per_rank','tree_position','initially_unlocked']
  for index,n in enumerate(nodes):
   node_guards[str(n.get_editor_property('node_id'))]=node_rules(n)
   ident=str(n.get_editor_property('node_id'));t=key(n.get_editor_property('upgrade_type'))
   if ident.startswith('Weapon.') and ident[7:] in CAT['weapons']:
    info=CAT['weapons'][ident[7:]];n.set_editor_property('title',unreal.Text(info['name']))
-   n.set_editor_property('description',unreal.Text(info['description']+('\n初始武器，开局自带。' if ident=='Weapon.Projectile' else '\n永久解锁后加入本局获取卡池；在战斗中抽到才获得武器。')))
+   n.set_editor_property('description',unreal.Text(info['description']+('\n初始武器，开局自带。' if ident=='Weapon.Projectile' else '\n永久解锁后每局开场自动装备，无需抽取获取卡。' if ident=='Weapon.FrostBlade' else '\n永久解锁后加入本局获取卡池；在战斗中抽到才获得武器。')))
   elif ident.startswith('Card.') and t in cards:
    c=cards[t];n.set_editor_property('title',unreal.Text(c['Title']))
    n.set_editor_property('description',unreal.Text(('初始开放。' if n.get_editor_property('initially_unlocked') else '开放「'+c['Title']+'」升级卡。')+'本局选中后：'+c['Description']))
@@ -153,7 +153,7 @@ try:
   assert unreal.RogueWidgetBuilder.update_text_block(tutorial,widget,translated(text))
  save(tutorial)
  audio=unreal.load_asset('/Game/Data/Audio/DA_AudioConfig');assert audio
- entries=audio.get_editor_property('weapons');audio_guards=[]
+ entries=list(audio.get_editor_property('weapons'));audio_guards=[]
  for e in entries:
   audio_guards.append((str(e.get_editor_property('weapon_class')),e.get_editor_property('attack_audio').export_text()))
   e.set_editor_property('weapon_name',translated(e.get_editor_property('weapon_name')))

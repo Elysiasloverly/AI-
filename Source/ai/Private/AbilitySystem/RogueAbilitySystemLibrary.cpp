@@ -1,4 +1,4 @@
-#include "AbilitySystem/RogueAbilitySystemLibrary.h"
+﻿#include "AbilitySystem/RogueAbilitySystemLibrary.h"
 
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
@@ -9,11 +9,12 @@
 #include "GameFramework/Pawn.h"
 #include "GameplayEffect.h"
 #include "Player/RogueCharacter.h"
+#include "Player/RoguePlayerState.h"
 #include "Enemies/RogueEnemy.h"
 #include "Framework/RogueGameMode.h"
 #include "Engine/World.h"
 
-bool RogueAbilitySystem::ApplyDamageToTarget(AActor* SourceActor, AActor* TargetActor, float DamageAmount, FGameplayTag SourceTag, float* OutDamageDealt)
+bool RogueAbilitySystem::ApplyDamageToTarget(AActor* SourceActor, AActor* TargetActor, float DamageAmount, FGameplayTag SourceTag, float* OutDamageDealt, uint8 HitVisualStyle)
 {
 	if (OutDamageDealt != nullptr)
 	{
@@ -58,6 +59,13 @@ bool RogueAbilitySystem::ApplyDamageToTarget(AActor* SourceActor, AActor* Target
 	{
 		return false;
 	}
+	// 暂停/设置菜单的保护独立保留；商店与升级选卡不提供免伤。
+	ARoguePlayerState* PlayerState = TargetCharacter ? TargetCharacter->GetPlayerState<ARoguePlayerState>() : nullptr;
+	if (PlayerState && PlayerState->IsPauseMenuOpen())
+	{
+		return false;
+	}
+
 	const URogueAttributeSet* TargetAttributes = TargetASC->GetSet<URogueAttributeSet>();
 	// 出池开启碰撞与写入新档案之间，旧生命可能仍为0；不能在这段窗口排死亡。
 	if (TargetEnemy != nullptr && (TargetAttributes == nullptr || TargetAttributes->GetHealth() <= 0.0f))
@@ -65,11 +73,12 @@ bool RogueAbilitySystem::ApplyDamageToTarget(AActor* SourceActor, AActor* Target
 		return false;
 	}
 
-	// 死亡、濒死、无敌提前拒绝，避免创建不需要的 Spec。
+	// 死亡、濒死、复活保护和正在冲刺都在创建伤害 Spec 前拦截。
 	// GE 标签要求在 UE 5.5 可用 TargetTagRequirements 组件配置；这里保留显式业务检查。
 	if (TargetASC->HasMatchingGameplayTag(RogueGameplayTags::State_Dead)
 		|| TargetASC->HasMatchingGameplayTag(RogueGameplayTags::State_Downed)
-		|| TargetASC->HasMatchingGameplayTag(RogueGameplayTags::State_Invulnerable))
+		|| TargetASC->HasMatchingGameplayTag(RogueGameplayTags::State_Invulnerable)
+		|| (TargetCharacter && TargetASC->HasMatchingGameplayTag(RogueGameplayTags::State_Dashing)))
 	{
 		return false;
 	}
@@ -92,6 +101,8 @@ bool RogueAbilitySystem::ApplyDamageToTarget(AActor* SourceActor, AActor* Target
 	}
 
 	SpecHandle.Data->SetSetByCallerMagnitude(RogueGameplayTags::Data_Damage, DamageAmount);
+    if(HitVisualStyle>0&&HitVisualStyle<=6)
+        SpecHandle.Data->SetSetByCallerMagnitude(FName(TEXT("Visual.WeaponImpactStyle")),float(HitVisualStyle));
 
 	// 通过访问器添加动态资产标签；它们描述此次 Spec，不等于授予目标的状态标签。
 	if (SourceTag.IsValid())

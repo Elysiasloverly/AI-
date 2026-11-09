@@ -14,6 +14,17 @@ public class ai : ModuleRules
 
 		// EngineCameras：提供 ULegacyCameraShake（受伤镜头震动的参数化基类）。
 		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore", "EngineCameras", "OnlineSubsystemUtils", "Networking", "Sockets" });
+		PrivateDependencyModuleNames.Add("NavigationSystem");
+
+		// Ship the embedded UI font licenses alongside the packaged game.
+		RuntimeDependencies.Add("$(ProjectDir)/ArtSource/Typography/OFL-NotoSansSC.txt", StagedFileType.NonUFS);
+		RuntimeDependencies.Add("$(ProjectDir)/ArtSource/Typography/OFL-NotoSerifSC.txt", StagedFileType.NonUFS);
+
+		// Development captures observe shader / pipeline readiness without blocking compilation.
+		if (Target.Configuration != UnrealTargetConfiguration.Shipping)
+		{
+			PrivateDependencyModuleNames.AddRange(new string[] { "RenderCore", "RHI" });
+		}
 		
 		// Uncomment if you are using online features
 		// PrivateDependencyModuleNames.Add("OnlineSubsystem");

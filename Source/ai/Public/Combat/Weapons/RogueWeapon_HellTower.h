@@ -28,6 +28,7 @@ public:
 	virtual ERogueUpgradeType GetCountUpgradeType() const override { return ERogueUpgradeType::HellTowerCount; }
 	/** 收到表现广播后在客户端补画地狱塔光束，不结算权威伤害。 */
 	virtual void PlayCosmeticFire(const FRogueWeaponCosmeticFire& Fire) override;
+    virtual void UpdateCosmeticLock(const FRogueWeaponCosmeticFire& Fire) override;
 
 	// ---- 生效数值：地狱塔的换算系数与其它武器都不同----
 	// 各倍率读取本武器DT配置；伤害跳间隔最低0.03秒。
@@ -45,11 +46,14 @@ public:
 	virtual float GetEffectiveRange() const override;
 
 private:
+    void ReleaseLock(ARogueEnemy* Target);
+    void ReleaseAllLocks();
 	TArray<TWeakObjectPtr<ARogueEnemy>> HellTowerTargets;
 	// 同一Actor可在两次武器采样间回池再生；锁定必须属于同一次生成。
 	TArray<FGuid> HellTowerTargetSpawnIds;
 	TArray<float> HellTowerCurrentDamages;
 	TArray<float> HellTowerDamageTickTimers;
 	TArray<float> HellTowerBeamTimers;
+    TArray<float> HellTowerLockAges;
 	float UpdateAccumulator = 0.0f;
 };

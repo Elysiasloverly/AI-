@@ -43,6 +43,8 @@ public:
     URogueEnemySupportComponent();
     void InitializeRuntime();
     FVector CalculateSupportMovement(float DeltaSeconds);
+    bool GetDesiredMovementDestination(FVector& Out) const
+    { if(!bHasMovementDestination)return false;Out=MovementDestination;return true; }
     UFUNCTION(BlueprintPure,Category="Enemy|Healing") ARogueEnemy* GetMovementTarget() const { return MovementTarget.Get(); }
     UPROPERTY(EditDefaultsOnly,BlueprintReadWrite,Category="治疗移动",meta=(DisplayName="治疗者移动设置")) FRogueHealerMovementSettings Movement;
     void ResetForPool();
@@ -50,6 +52,7 @@ public:
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out) const override;
     virtual void EndPlay(const EEndPlayReason::Type Reason) override;
     UFUNCTION(BlueprintPure,Category="Enemy|Healing") ARogueEnemy* GetHealingTarget() const { return Link.Target; }
+    const ARogueEnemy* GetActiveHealingLinkTarget() const;
     UFUNCTION(BlueprintCallable,Category="Enemy|Healing") float HealTarget(ARogueEnemy* Target,float Amount);
     UPROPERTY(EditDefaultsOnly,BlueprintReadWrite,Category="治疗表现",meta=(DisplayName="绿色治疗范围蓝图"))
     TSubclassOf<ARogueEnemyEffectVisual> HealingCircleClass;
@@ -70,6 +73,8 @@ private:
     float SearchRemaining=0,SteeringRemaining=0;
     FVector CachedMoveDirection=FVector::ZeroVector;
     bool bWasRetreating=false;
+    bool bHasMovementDestination=false;
+    FVector MovementDestination=FVector::ZeroVector;
     void UpdateVisuals();
     void SetTarget(ARogueEnemy* Target);
     ARogueEnemyEffectVisual* EnsureVisual(TObjectPtr<ARogueEnemyEffectVisual>& V,TSubclassOf<ARogueEnemyEffectVisual> C);

@@ -2,6 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "Combat/Weapons/RogueWeaponCombatSettings.h"
+#include "Combat/Visuals/RogueCombatAccentEffect.h"
 #include "RogueOrbitingBlade.generated.h"
 
 class USphereComponent;
@@ -14,7 +16,7 @@ struct AI_API FRogueOrbitingBladeVisualConfig
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditDefaultsOnly, Category = "Visual")
+	UPROPERTY()
 	float CollisionRadius = 46.0f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Visual")
@@ -56,7 +58,7 @@ struct AI_API FRogueOrbitingBladeVisualConfig
 	UPROPERTY(EditDefaultsOnly, Category = "Visual")
 	float ImpactEffectLifetime = 0.14f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Combat")
+	UPROPERTY()
 	float HitCooldown = 0.35f;
 };
 
@@ -66,6 +68,11 @@ class AI_API ARogueOrbitingBlade : public AActor
 	GENERATED_BODY()
 
 public:
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="外观|开火特效", meta=(DisplayName="开火闪光与碎光"))
+    FRogueCombatAccentSettings FireAccent;
+    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="外观|命中特效",meta=(DisplayName="命中特效风格"))
+    ERogueWeaponImpactStyle HitVisualStyle=ERogueWeaponImpactStyle::Default;
+
 	ARogueOrbitingBlade();
 
 	virtual void Tick(float DeltaSeconds) override;
@@ -73,7 +80,7 @@ public:
 	void ActivatePooledBlade(AActor* InOwnerActor);
 	void DeactivateToPool();
 	bool IsAvailableInPool() const { return bPoolAvailable; }
-	void ConfigureBlade(AActor* InOwnerActor, int32 InBladeIndex, int32 InBladeCount, float InOrbitRadius, float InRotationSpeed, float InDamage, float InSharedOrbitAngle, float InSizeMultiplier = 1.0f);
+	void ConfigureBlade(AActor* InOwnerActor, int32 InBladeIndex, int32 InBladeCount, float InOrbitRadius, float InRotationSpeed, float InDamage, float InSharedOrbitAngle, float InSizeMultiplier = 1.0f, float InHitRadius = 46.f, float InHitCooldown = .35f);
 
 protected:
 	virtual void BeginPlay() override;
@@ -124,6 +131,7 @@ private:
 	// BeginPlay 缓存蓝图组件的实际基础尺寸；升级乘此基准，池复用恢复此基准。
 	FVector BaseMeshScale = FVector(0.75f, 0.14f, 1.1f);
 	float BaseCollisionRadius = 46.0f;
+    float HitCooldown = .35f;
 	float SizeMultiplier = 1.0f;
 	bool bVisualsSimplified = false;
 	bool bPoolAvailable = true;

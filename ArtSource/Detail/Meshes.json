@@ -1,0 +1,12 @@
+[
+  {
+    "name": "SM_SpiritCrystal",
+    "vertices": 8,
+    "triangles": 12
+  },
+  {
+    "name": "SM_BossSealCrest",
+    "vertices": 80,
+    "triangles": 132
+  }
+]

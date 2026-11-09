@@ -197,18 +197,20 @@ bool FRogueAttackDamageReadoutAuditTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueNightBudgetTimingAuditTest,
-    "Rogue.Gameplay.NumericAudit.NightBudgetFitsTimedWaves", RogueNumericAuditTests::Flags)
+    "Rogue.Gameplay.NumericAudit.NightBudgetHasFiniteSpawnCadence", RogueNumericAuditTests::Flags)
 bool FRogueNightBudgetTimingAuditTest::RunTest(const FString& Parameters)
 {
     const auto* Asset = URogueGameBalanceAsset::GetDefaultGameBalance();
     if (!TestNotNull(TEXT("Current formal balance"), Asset)) { return false; }
-    const float Duration = Asset->BattleStage.NightWaveDuration;
-    for (int32 Wave = Asset->BattleStage.DayWaveCount + 1; Wave <= 150; ++Wave)
+    for (int32 Wave = Asset->BattleStage.GetTransitionEndWave(0) + 1; Wave <= 150; ++Wave)
     {
         const int32 Budget = RogueGameModeRules::BuildWaveEnemyCount(Wave, Asset);
         const auto Cadence = RogueGameModeRules::BuildSpawnCadence(Wave, Asset->Spawn.SpawnInterval, Asset);
         for (int32 FPS : {20, 30, 60, 120})
         {
+            // 昼夜均清场切波：验证有限名额能按合法节奏刷完，不引入不存在的时间窗口。
+            const float Duration = (FMath::DivideAndRoundUp(Budget, Cadence.SpawnBatchSize) + 1)
+                * (Cadence.NextSpawnDelay + 1.0f / FPS);
             float Timer = 0; float LastSpawn = 0; int32 Spawned = 0;
             const float Delta = 1.0f / FPS;
             // 与TickSpawning相同的一帧一批、重置间隔模型；假设落点有效且类型名额可用。
@@ -221,8 +223,8 @@ bool FRogueNightBudgetTimingAuditTest::RunTest(const FString& Parameters)
                     Timer = Cadence.NextSpawnDelay; LastSpawn = (Frame + 1) * Delta;
                 }
             }
-            if (!TestEqual(TEXT("Night budget fits the timed window at target frame rates"), Spawned, Budget)) { return false; }
-            if (!TestTrue(TEXT("Night pacing retains at least one second of spawn slack"), LastSpawn <= Duration - 1.0f)) { return false; }
+            if (!TestEqual(TEXT("Finite budget eventually spawns at target frame rates"), Spawned, Budget)) { return false; }
+            if (!TestTrue(TEXT("All spawn attempts finish within the calculated schedule"), LastSpawn <= Duration)) { return false; }
         }
     }
     return true;

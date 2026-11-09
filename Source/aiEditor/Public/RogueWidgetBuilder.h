@@ -69,8 +69,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Rogue|Editor")
 	static FString GetTextBlockText(UWidgetBlueprint* Blueprint, FName WidgetName);
 
-	/** 项目统一字体：DroidSansMono 为主 + DroidSansFallback 回退（中文）。
-	 *  资产位于 /Game/UMG/Fonts/F_DroidMono_CJK，不存在时创建。 */
+	/** 项目统一字体：优先读取 /Game/UMG/Fonts/F_BakaUI。
+	 *  缺失时才创建 DroidSansMono + DroidSansFallback 中文回退字体。 */
 	UFUNCTION(BlueprintCallable, Category = "Rogue|Editor")
 	static class UFont* GetOrCreateProjectFont();
 

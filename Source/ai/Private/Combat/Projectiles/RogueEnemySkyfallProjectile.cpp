@@ -1,4 +1,5 @@
 #include "Combat/Projectiles/RogueEnemySkyfallProjectile.h"
+#include "Combat/Visuals/RogueGroundEffectFade.h"
 
 #include "AbilitySystem/RogueAbilitySystemLibrary.h"
 #include "AbilitySystem/RogueGameplayTags.h"
@@ -8,6 +9,7 @@
 #include "Components/DecalComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Enemies/RogueEnemy.h"
 #include "Engine/World.h"
 #include "Engine/OverlapResult.h"
@@ -76,6 +78,25 @@ void ARogueEnemySkyfallProjectile::InitializeAttack(ARogueEnemy* Source,const FV
     UE_LOG(LogTemp,Log,TEXT("[Skyfall] Summoned Ground=%s Warning=%.2f Fall=%.2f"),*Ground.ToCompactString(),State.Settings.WarningSeconds,State.Settings.FallSeconds);
 }
 
+void ARogueEnemySkyfallProjectile::SetActorHiddenInGame(bool bNewHidden)
+{
+    // bHidden 可先于触地快照复制；在真正隐藏之前截取落点，兼容这两种到达顺序。
+    if (bNewHidden && !IsHidden()) RetireWarning();
+    Super::SetActorHiddenInGame(bNewHidden);
+}
+void ARogueEnemySkyfallProjectile::RetireWarning()
+{
+    if (!State.bActive) return;
+    TArray<USceneComponent*> Components;
+    for (auto* Decal:TInlineComponentArray<UDecalComponent*>(this))
+        if (Decal->ComponentHasTag(TEXT("Rogue.SkyfallWarning"))) Components.Add(Decal);
+    ARogueGroundEffectFade::CaptureComponents(GetWorld(),Components);
+}
+void ARogueEnemySkyfallProjectile::EndPlay(const EEndPlayReason::Type Reason)
+{
+    if (Reason==EEndPlayReason::Destroyed) RetireWarning();
+    Super::EndPlay(Reason);
+}
 void ARogueEnemySkyfallProjectile::UpdateVisuals()
 {
     const bool bShow=State.bActive&&!State.bImpacted;
@@ -83,12 +104,22 @@ void ARogueEnemySkyfallProjectile::UpdateVisuals()
     for (auto* Decal:TInlineComponentArray<UDecalComponent*>(this))
     {
         if (!Decal->ComponentHasTag(TEXT("Rogue.SkyfallWarning"))) continue;
-        // 红圈脱离下落根节点，留在锁定落点；不设置淡出时间，直到收到权威触地或销毁。
+        // 红圈留在锁定落点；收到权威触地或取消后，由本地残影完成淡出。
         Decal->SetUsingAbsoluteLocation(true); Decal->SetUsingAbsoluteRotation(true);
         Decal->SetUsingAbsoluteScale(true); Decal->SetWorldScale3D(FVector::OneVector);
         Decal->SetWorldLocation(FVector(State.Ground)+FVector(0,0,8)); Decal->SetWorldRotation(FRotator(-90,0,0));
         Decal->DecalSize=FVector(200,State.Settings.ImpactRadius,State.Settings.ImpactRadius);
         Decal->MarkRenderStateDirty(); Decal->SetVisibility(bShow);
+        if(bShow && GetNetMode()!=NM_DedicatedServer)
+        {
+            auto* MID=Cast<UMaterialInstanceDynamic>(Decal->GetDecalMaterial());
+            if(!MID)MID=Decal->CreateDynamicMaterialInstance();
+            if(MID)
+            {
+                MID->SetScalarParameterValue(TEXT("WarningStartTime"),GetWorld()->GetTimeSeconds()-GetAttackAge());
+                MID->SetScalarParameterValue(TEXT("WarningDuration"),State.Settings.WarningSeconds+State.Settings.FallSeconds);
+            }
+        }
     }
 }
 

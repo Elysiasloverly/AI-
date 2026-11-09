@@ -7,33 +7,56 @@
 
 ## 武器
 
-| 显示名 | 表行键（`DT_WeaponConfig.Name`） | 武器类 | 弹体 / 表现类 |
-|---|---|---|---|
-| 御札 | `Projectile` | `ARogueWeapon_Projectile` | `ARogueProjectile` |
-| 银刃 | `Scythe` | `ARogueWeapon_Scythe` | `ARogueOrbitingBlade` |
-| 八卦炉 | `Rocket` | `ARogueWeapon_Rocket` | `ARogueRocketProjectile` |
-| 极限火花 | `Laser` | `ARogueWeapon_Laser` | `ARogueLaserBeam` |
-| 御柱 | `HellTower` | `ARogueWeapon_HellTower` | `ARogueLaserBeam`（`BP_RogueHellTowerBeam`） |
-| 阴阳玉 | `Mortar` | `ARogueWeapon_Mortar` | `ARogueMortarProjectile` |
+以下显示名直接核对当前武器表；英文行键保持稳定。
+
+| 当前显示名 | 武器表行键 | 数量或获取类型 |
+|---|---|---|
+| 冰符·寒弹 | `Projectile` | `ProjectileCount` |
+| 银刃 | `Scythe` | `ScytheCount` |
+| 冰焰·陨星 | `Rocket` | `RocketCount` |
+| 星符·流光 | `Laser` | `LaserCount` |
+| 焰符·灼光 | `HellTower` | `HellTowerCount` |
+| 冰符·霜玉 | `Mortar` | `MortarCount` |
+| 灵符·归心 | `Talisman` | `TalismanCount` |
+| 冰刀·霜月 | `FrostBlade` | `FrostBladeCount` |
 
 ## 升级卡
 
-表行键就是 `ERogueUpgradeType` 的枚举名，写在 `DT_UpgradeDefinitions.Type`。
-
-| 显示名 | 枚举 | 显示名 | 枚举 |
-|---|---|---|---|
-| 蓬莱之药 | `MaxHealth` | 妖怪退治 | `ExperienceGain` |
-| 天狗疾风 | `MoveSpeed` | 银刃乱舞 | `ScytheCount` |
-| 结界护壁 | `ArmorCapacity` | 八卦炉·改 | `RocketCount` |
-| 隙间跳跃 | `DashCooldown` | 双重魔炮 | `LaserCount` |
-| 灵力增幅 | `AttackPower` | 御柱林立 | `HellTowerCount` |
-| 咏唱加速 | `AttackSpeed` | 星尘折射 | `LaserRefraction` |
-| 赛钱箱 | `PickupRadius` | 阴阳玉连投 | `MortarCount` |
-| 月之药 | `Recovery` | 阴阳玉·扩散 | `MortarBlastRadius` |
-| 远隔操纵 | `AttackRange` | 银刃巨化 | `ScytheSize` |
-| 流星弹 | `ProjectileSpeed` | 红雾吸血 | `ScytheLifesteal` |
-| 弹幕增殖 | `ProjectileCount` | | |
-| 弹幕偏转 | `Armor` | | |
+| 当前显示名 | 稳定枚举 / 表类型 |
+|---|---|
+| 长命祈愿 | `MaxHealth` |
+| 天狗疾风 | `MoveSpeed` |
+| 结界护壁 | `ArmorCapacity` |
+| 隙间步法 | `DashCooldown` |
+| 灵力增幅 | `AttackPower` |
+| 咏唱加速 | `AttackSpeed` |
+| 引灵之印 | `PickupRadius` |
+| 月露回生 | `Recovery` |
+| 远隔操纵 | `AttackRange` |
+| 流星加护 | `ProjectileSpeed` |
+| 寒弹增殖 | `ProjectileCount` |
+| 弹幕护身 | `Armor` |
+| 妖怪退治 | `ExperienceGain` |
+| 银刃环阵 | `ScytheCount` |
+| 陨星齐落 | `RocketCount` |
+| 流光齐射 | `LaserCount` |
+| 灼光分流 | `HellTowerCount` |
+| 星尘折射 | `LaserRefraction` |
+| 霜玉连投 | `MortarCount` |
+| 霜玉扩散 | `MortarBlastRadius` |
+| 银刃巨化 | `ScytheSize` |
+| 红雾吸血 | `ScytheLifesteal` |
+| 冰符连诵 | `ProjectileBurst` |
+| 冰焰扩散 | `RocketBlastRadius` |
+| 焰心递燃 | `HellTowerDamageRamp` |
+| 归心符阵 | `TalismanCount` |
+| 灵符贯阵 | `TalismanPierce` |
+| 灵符重奏 | `TalismanRepeat` |
+| 冰刀·霜月 | `FrostBladeCount` |
+| 霜刃延展 | `FrostBladeSize` |
+| 霜月出鞘 | `FrostBladeWave` |
+| 霜月重叠 | `FrostBladeWaveCount` |
+| 霜月盈空 | `FrostBladeWaveSize` |
 
 ## 敌人
 

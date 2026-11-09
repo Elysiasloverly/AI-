@@ -7,7 +7,7 @@
 | 蓝图 | 模型缩放规则 |
 |---|---|
 | BP_RogueProjectile | 保留 Mesh、GlowMesh、RingMesh、TrailMesh 的组件缩放；飞行、高负载切换和池复用不再重写大小。 |
-| BP_RogueRocketProjectile | 模型、粒子等蓝图组件继续使用自身缩放，C++ 不改弹体模型大小。 |
+| BP_RogueRocketProjectile | 蓝图组件决定冰焰球的基础尺寸；陨星运行时乘以实际爆炸半径 / DT 基础半径，回池恢复。命中球单独读取 DT，霜玉不套用此成长。 |
 | BP_RogueMortarProjectile | 飞行模型使用蓝图缩放；地面落点圆环仍跟随爆炸范围，属于伤害范围提示。 |
 | BP_RogueOrbitingBlade | 未升级时使用蓝图 Mesh 的基础尺寸；银刃大小升级在该尺寸上乘算，并同步放大伤害碰撞球。回池后恢复基础尺寸。 |
 | BP_RogueLaserBeam / BP_RogueHellTowerBeam | 保留光束长度、粗细和样式的现有规则。 |

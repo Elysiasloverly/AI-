@@ -56,7 +56,7 @@ public:
 	static bool ValidateAddress(const FString& Input, FString& Output);
 	static FString CleanName(const FString& Input);
 	UPROPERTY(Config, EditDefaultsOnly, Category="房间") FString LobbyMap = TEXT("/Game/Map/MainMenu");
-	UPROPERTY(Config, EditDefaultsOnly, Category="房间") FString BattleMap = TEXT("/Game/Map/Battle_Day");
+	UPROPERTY(Config, EditDefaultsOnly, Category="房间") FString BattleMap = TEXT("/Game/Map/Day/Battle_Forest_Day");
 	UPROPERTY(Config, EditDefaultsOnly, Category="房间") TSoftClassPtr<URogueMultiplayerWidgetBase> ChoiceWidgetClass;
 	UPROPERTY(Config, EditDefaultsOnly, Category="房间") TSoftClassPtr<URogueMultiplayerWidgetBase> BrowserWidgetClass;
 	UPROPERTY(Config, EditDefaultsOnly, Category="房间") TSoftClassPtr<URogueMultiplayerWidgetBase> LobbyWidgetClass;

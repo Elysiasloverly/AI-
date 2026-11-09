@@ -1,17 +1,18 @@
 #include "Player/RogueCharacter.h"
+#include "GameFramework/GameStateBase.h"
+#include "AbilitySystem/GameplayEffects/RogueStateEffects.h"
 
 #include "AbilitySystem/RogueAbilitySystemComponent.h"
 #include "AbilitySystem/RogueAttributeSet.h"
-#include "AbilitySystem/GameplayEffects/RogueStateEffects.h"
 #include "AbilitySystem/RogueGameplayTags.h"
 #include "Combat/Weapons/RogueWeaponBase.h"
+#include "Combat/Visuals/RogueRevivalBurst.h"
+#include "Components/CapsuleComponent.h"
 #include "Components/PrimitiveComponent.h"
 #include "Engine/World.h"
 #include "Framework/RogueGameMode.h"
-#include "Framework/RogueGameState.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
-#include "Net/UnrealNetwork.h"
 #include "Player/RoguePlayerState.h"
 #include "Player/RoguePlayerBalanceAsset.h"
 #include "PhysicsEngine/BodyInstance.h"
@@ -88,6 +89,13 @@ float ARogueCharacter::GetReviveSecondsRemaining() const
 		: 0.0f;
 }
 
+float ARogueCharacter::GetReviveWaitDuration() const
+{
+	const float Duration = LoadedPlayerBalanceAsset ? LoadedPlayerBalanceAsset->Revival.DownedDuration
+		: RoguePlayerLifeCycle::DownedDurationSeconds;
+	return FMath::IsFinite(Duration) ? FMath::Max(.01f, Duration) : RoguePlayerLifeCycle::DownedDurationSeconds;
+}
+
 bool ARogueCharacter::IsRevivePending() const
 {
 	return IsDowned() && LifeState.ReviveServerTime > 0.0f;
@@ -117,10 +125,7 @@ void ARogueCharacter::Die()
 	World->GetTimerManager().ClearTimer(PendingDeathTimerHandle);
 	bPendingDeath = false;
 	LifeState.Phase = ERoguePlayerLifePhase::Downed;
-	const FRoguePlayerRevivalConfig Revival = LoadedPlayerBalanceAsset
-		? LoadedPlayerBalanceAsset->Revival : FRoguePlayerRevivalConfig();
-	const float WaitSeconds = FMath::IsFinite(Revival.DownedDuration)
-		? FMath::Max(0.01f, Revival.DownedDuration) : RoguePlayerLifeCycle::DownedDurationSeconds;
+	const float WaitSeconds = GetReviveWaitDuration();
 	LifeState.ReviveServerTime = World->GetTimeSeconds() + WaitSeconds;
 	RemoveInvulnerableEffect();
 	ApplyLifeStateEffects();
@@ -216,7 +221,23 @@ void ARogueCharacter::Revive()
 	}
 	SyncAttributeMirrors();
 	ForceNetUpdate();
+	if (RevivalBurstClass)
+	{
+		// Send the destination after teleporting. Clients can render it before movement replication arrives.
+		const FVector Ground = GetActorLocation() - FVector(0.f, 0.f, GetCapsuleComponent()->GetScaledCapsuleHalfHeight() - 6.f);
+		Multicast_ShowRevivalBurst(Ground);
+	}
 	UE_LOG(LogTemp, Log, TEXT("[RogueLife] %s 已复活：碰撞/移动恢复，等待界面由 Alive 快照收起"), *GetName());
+}
+
+void ARogueCharacter::Multicast_ShowRevivalBurst_Implementation(FVector_NetQuantize GroundLocation)
+{
+	UWorld* World = GetWorld();
+	if (!World || World->GetNetMode() == NM_DedicatedServer || !RevivalBurstClass) return;
+	FActorSpawnParameters Params;
+	Params.Owner = this;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	World->SpawnActor<ARogueRevivalBurst>(RevivalBurstClass, GroundLocation, FRotator::ZeroRotator, Params);
 }
 
 void ARogueCharacter::FinalizeForVictory()

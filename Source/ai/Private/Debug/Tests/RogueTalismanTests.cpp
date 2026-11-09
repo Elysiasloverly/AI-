@@ -3,9 +3,19 @@
 #include "AbilitySystem/RogueAttributeSet.h"
 #include "Combat/Projectiles/RogueReturningTalisman.h"
 #include "Combat/Weapons/RogueWeapon_Talisman.h"
+#include "Combat/Weapons/RogueWeapon_Projectile.h"
+#include "Combat/Weapons/RogueWeapon_Laser.h"
+#include "Combat/Weapons/RogueWeapon_HellTower.h"
+#include "Combat/Projectiles/RogueProjectile.h"
+#include "Combat/Projectiles/RogueRocketProjectile.h"
+#include "Combat/Projectiles/RogueOrbitingBlade.h"
+#include "GameFramework/ProjectileMovementComponent.h"
+#include "Components/SphereComponent.h"
+
 #include "Combat/Targeting/RogueEnemyTrackerSubsystem.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SplineMeshComponent.h"
+#include "Materials/Material.h"
 #include "Enemies/RogueEnemy.h"
 #include "Engine/DataTable.h"
 #include "Engine/World.h"
@@ -226,5 +236,221 @@ bool FRogueTalismanFacingTrailTest::RunTest(const FString& Parameters)
         Returned=true;break;
     }
     TestTrue(TEXT("Return phase was exercised"),Returned);C->Destroy();return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueTableTalismanSettingsTest,"Rogue.Gameplay.WeaponConfiguration.TalismanFlightBudgetAndBlueprintVisuals",RogueTalismanTests::Flags)
+bool FRogueTableTalismanSettingsTest::RunTest(const FString&)
+{
+    using namespace RogueTalismanTests;FFixture F;if(!F.Initialize())return false;
+    F.Enemy(FVector(1000,0,200));auto* Weapon=F.Player->FindWeapon<ARogueWeapon_Talisman>();
+    auto& Row=Weapon->GetConfig();Row.Count=1;Row.TalismanCombat.FlightSpeed=250;Row.TalismanCombat.ReturnSpeed=350;
+    Row.TalismanCombat.HitRadius=51;Row.TalismanCombat.BaseTargetCount=2;Row.TalismanCombat.BaseHitsPerTarget=3;
+    Row.TalismanCombat.MaxSortieSeconds=2;Row.TalismanCombat.MaxReturnSeconds=.5f;
+    Weapon->WeaponTick(.01f);ARogueReturningTalisman* Charm=nullptr;
+    for(TActorIterator<ARogueReturningTalisman> It(F.World);It;++It)if(It->GetOwner()==F.Player){Charm=*It;break;}
+    if(!TestNotNull(TEXT("Weapon spawns its configured projectile"),Charm))return false;
+    const FVector Start=Charm->GetActorLocation();Charm->Tick(.1f);
+    TestTrue(TEXT("Real sortie moves 25cm at table speed 250cm/s"),FMath::IsNearlyEqual(FVector::Distance(Start,Charm->GetActorLocation()),25.f,.01f));
+    TestEqual(TEXT("Return speed comes from row"),Charm->ReturnSpeed,350.f);
+    TestEqual(TEXT("Sweep radius comes from row"),Charm->HitRadius,51.f);
+    TestEqual(TEXT("Base target budget comes from row"),Weapon->GetEffectiveTargetCount(),2);
+    TestEqual(TEXT("Base repeat budget comes from row"),Weapon->GetEffectiveHitsPerTarget(),3);
+    const FVector Scale(.4f,.3f,1.2f);Charm->Mesh->SetRelativeScale3D(Scale);Charm->OrbitRadius=95;
+    Charm->FlightSpeed=9000;Weapon->WeaponTick(.01f);
+    TestEqual(TEXT("Hidden legacy blueprint values cannot override row"),Charm->FlightSpeed,250.f);
+    TestTrue(TEXT("Blueprint mesh scale survives combat reconfiguration"),Charm->Mesh->GetRelativeScale3D().Equals(Scale));
+    TestEqual(TEXT("Orbit presentation stays blueprint controlled"),Charm->OrbitRadius,95.f);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueTableProjectileSettingsTest,"Rogue.Gameplay.WeaponConfiguration.RealWeaponsApplyHitRadiusLifetimeAndMortarArc",RogueTalismanTests::Flags)
+bool FRogueTableProjectileSettingsTest::RunTest(const FString&)
+{
+    using namespace RogueTalismanTests;FFixture F;if(!F.Initialize())return false;
+    auto* Enemy=F.Enemy(FVector(1000,0,200));
+    const auto* Table=LoadObject<UDataTable>(nullptr,TEXT("/Game/Data/Weapons/DT_WeaponConfig.DT_WeaponConfig"));
+    if(!TestNotNull(TEXT("Saved weapon table loads"),Table))return false;
+    for(FName Id:{FName(TEXT("Projectile")),FName(TEXT("Rocket")),FName(TEXT("Mortar"))})
+    {
+        const auto* Saved=Table->FindRow<FRogueWeaponTableRow>(Id,TEXT("Config test"));if(!Saved)return false;
+        FRogueWeaponTableRow Row=*Saved;Row.Count=1;Row.Damage=0;Row.bEnableSpeedRandomization=false;
+        Row.ProjectileCombat.CollisionRadius=77;Row.ProjectileCombat.Lifetime=.3f;
+        Row.MortarFlight.GravityScale=1.8f;Row.MortarFlight.MinimumFlightTime=1.1f;Row.MortarFlight.MaximumFlightTime=1.1f;
+        auto* Weapon=F.World->SpawnActor<ARogueWeaponBase>(Row.WeaponClass);Weapon->InitializeWeapon(F.Player,Row);
+        TArray<ARogueEnemy*> Targets{Enemy};Weapon->FireAtTargets(Targets);
+        AActor* Projectile=nullptr;
+        if(Id==TEXT("Projectile"))
+        {for(TActorIterator<ARogueProjectile> It(F.World);It;++It)if(!It->IsAvailableInPool()){Projectile=*It;break;}}
+        else
+        {for(TActorIterator<ARogueRocketProjectile> It(F.World);It;++It)if(!It->IsAvailableInPool()){Projectile=*It;break;}}
+        if(!TestNotNull(TEXT("Actual weapon fires"),Projectile))return false;
+        const auto* Sphere=Projectile->FindComponentByClass<USphereComponent>();
+        TestEqual(TEXT("Weapon passes DT hit radius to actual projectile"),Sphere->GetUnscaledSphereRadius(),77.f);
+        if(Id==TEXT("Mortar"))
+        {
+            const auto* Move=Projectile->FindComponentByClass<UProjectileMovementComponent>();
+            TestEqual(TEXT("Mortar gravity comes from DT"),Move->ProjectileGravityScale,1.8f);
+            const float ExpectedZ=(Enemy->GetActorLocation().Z+18.f-Projectile->GetActorLocation().Z)/1.1f+.5f*FMath::Abs(F.World->GetGravityZ()*1.8f)*1.1f;
+            TestTrue(TEXT("Mortar flight-time settings change actual launch arc"),FMath::IsNearlyEqual(Move->Velocity.Z,ExpectedZ,.1f));
+        }
+        Projectile->Tick(.31f);
+        TestTrue(TEXT("Weapon DT lifetime retires live projectile"),Cast<ARogueProjectile>(Projectile)?Cast<ARogueProjectile>(Projectile)->IsAvailableInPool():Cast<ARogueRocketProjectile>(Projectile)->IsAvailableInPool());
+        // 旧实例再次出池必须采用新行参数，不能记住首次激活配置。
+        Row.ProjectileCombat.CollisionRadius=33;Row.ProjectileCombat.Lifetime=2;
+        Weapon->InitializeWeapon(F.Player,Row);Weapon->FireAtTargets(Targets);
+        TestEqual(TEXT("Pooled reuse resets radius from DT"),Sphere->GetUnscaledSphereRadius(),33.f);
+        Projectile->Tick(.31f);
+        TestFalse(TEXT("Pooled reuse resets lifetime from DT"),Cast<ARogueProjectile>(Projectile)?Cast<ARogueProjectile>(Projectile)->IsAvailableInPool():Cast<ARogueRocketProjectile>(Projectile)->IsAvailableInPool());
+        if(auto* P=Cast<ARogueProjectile>(Projectile))P->DeactivateToPool();else Cast<ARogueRocketProjectile>(Projectile)->DeactivateToPool();
+        Weapon->Destroy();
+    }
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueTableBladeSettingsTest,"Rogue.Gameplay.WeaponConfiguration.BladeRadiusGrowthAndDamageInterval",RogueTalismanTests::Flags)
+bool FRogueTableBladeSettingsTest::RunTest(const FString&)
+{
+    using namespace RogueTalismanTests;FFixture F;if(!F.Initialize())return false;
+    auto* B=F.World->SpawnActor<ARogueOrbitingBlade>();B->ActivatePooledBlade(F.Player);
+    B->ConfigureBlade(F.Player,0,1,200,0,10,0,1.5f,80,.8f);
+    auto* Sphere=B->FindComponentByClass<USphereComponent>();TestEqual(TEXT("DT radius scales with giant-blade upgrade"),Sphere->GetUnscaledSphereRadius(),120.f);
+    auto* E=F.Enemy(B->GetActorLocation());E->SetActorEnableCollision(true);Sphere->UpdateOverlaps();
+    B->Tick(.01f);TestEqual(TEXT("Initial contact applies one hit"),E->GetCurrentHealth(),990.f);
+    B->Tick(.4f);TestEqual(TEXT("DT cooldown prevents old 0.35s cadence"),E->GetCurrentHealth(),990.f);
+    B->Tick(.41f);TestEqual(TEXT("DT cooldown expires at 0.8s"),E->GetCurrentHealth(),980.f);
+    B->DeactivateToPool();B->ActivatePooledBlade(F.Player);B->ConfigureBlade(F.Player,0,1,200,0,0,0,1.f,32,.2f);
+    TestEqual(TEXT("Reused blade receives replacement DT radius"),Sphere->GetUnscaledSphereRadius(),32.f);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueTargetReservationsTest,"Rogue.Gameplay.WeaponTargeting.ScopeBalancedFallbackAndPoolCycle",RogueTalismanTests::Flags)
+bool FRogueTargetReservationsTest::RunTest(const FString&)
+{
+    using namespace RogueTalismanTests;FFixture F;if(!F.Initialize())return false;
+    auto* T=F.World->GetSubsystem<URogueEnemyTrackerSubsystem>();
+    auto* A=F.Enemy(FVector(500,0,200));auto* B=F.Enemy(FVector(800,0,200));
+    auto* W=F.World->SpawnActor<AActor>();auto* OtherWeapon=F.World->SpawnActor<AActor>();
+    auto* P=F.World->SpawnActor<AActor>();auto* Q=F.World->SpawnActor<AActor>();auto* R=F.World->SpawnActor<AActor>();
+    TArray<ARogueEnemy*> Candidates{A,B};
+    TestTrue(TEXT("Equal load preserves nearest/preferred order"),T->SelectWeaponTarget(W,Candidates)==A);
+    T->ReserveWeaponTarget(W,P,A);
+    TestTrue(TEXT("Next same-weapon projectile picks an idle target"),T->SelectWeaponTarget(W,Candidates)==B);
+    TestTrue(TEXT("Other weapon/player has independent assignments"),T->SelectWeaponTarget(OtherWeapon,Candidates)==A);
+    T->ReserveWeaponTarget(W,Q,B);T->ReserveWeaponTarget(W,R,A);
+    TestTrue(TEXT("No idle enemy falls back to least assigned enemy"),T->SelectWeaponTarget(W,Candidates)==B);
+    TestTrue(TEXT("A returning selector excludes its own reservation"),T->SelectWeaponTarget(W,Candidates,Q)==B);
+    T->ReleaseWeaponTarget(Q);TestTrue(TEXT("Pool return releases reservation"),T->GetWeaponTarget(Q)==nullptr);
+    A->DeactivateToPool();A->ActivatePooledEnemy(nullptr,FVector(500,0,200),FRotator::ZeroRotator);
+    FRogueEnemyProfile Profile;Profile.Health=1000;A->InitializeEnemy(Profile);
+    TestTrue(TEXT("Actor reuse never inherits old-life targeting load"),T->SelectWeaponTarget(W,Candidates)==A);
+    TestTrue(TEXT("Old cycle query is invalid"),T->GetWeaponTarget(P)==nullptr);
+    T->ReserveWeaponTarget(W,P,A);P->Destroy();
+    TestTrue(TEXT("Destroyed projectile does not retain its load"),T->SelectWeaponTarget(W,Candidates)==A);
+    T->ReserveWeaponTarget(W,Q,B);T->ReleaseWeaponTargets(W);
+    TestTrue(TEXT("Owner cleanup releases all its reservations"),T->GetWeaponTarget(Q)==nullptr);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueMissileDistributionTest,"Rogue.Gameplay.WeaponTargeting.RealProjectileRocketMortarVolleysAndRelease",RogueTalismanTests::Flags)
+bool FRogueMissileDistributionTest::RunTest(const FString&)
+{
+    using namespace RogueTalismanTests;FFixture F;if(!F.Initialize())return false;
+    auto* Tracker=F.World->GetSubsystem<URogueEnemyTrackerSubsystem>();TArray<ARogueEnemy*> Targets;
+    for(int I=0;I<4;++I)Targets.Add(F.Enemy(FVector(1500+I*250,I*300,200)));
+    auto* Table=LoadObject<UDataTable>(nullptr,TEXT("/Game/Data/Weapons/DT_WeaponConfig.DT_WeaponConfig"));
+    if(!TestNotNull(TEXT("Saved table loads"),Table))return false;
+    for(FName Id:{FName(TEXT("Projectile")),FName(TEXT("Rocket")),FName(TEXT("Mortar"))})
+    {
+        const auto* Saved=Table->FindRow<FRogueWeaponTableRow>(Id,TEXT("Targeting test"));if(!Saved)return false;
+        FRogueWeaponTableRow Row=*Saved;Row.Count=2;Row.Damage=0;Row.Range=5000;Row.bEnableTrajectoryDeviation=false;Row.bEnableSpeedRandomization=false;
+        auto* Weapon=F.World->SpawnActor<ARogueWeaponBase>(Row.WeaponClass);Weapon->InitializeWeapon(F.Player,Row);
+        Weapon->FireAtTargets(Targets);Weapon->FireAtTargets(Targets);
+        TSet<ARogueEnemy*> Assigned;TArray<AActor*> Projectiles;
+        for(TActorIterator<ARogueProjectile> It(F.World);It;++It)
+            if(auto* Target=Tracker->GetWeaponTarget(*It)){Assigned.Add(Target);Projectiles.Add(*It);}
+        for(TActorIterator<ARogueRocketProjectile> It(F.World);It;++It)
+            if(auto* Target=Tracker->GetWeaponTarget(*It)){Assigned.Add(Target);Projectiles.Add(*It);}
+        TestEqual(FString::Printf(TEXT("%s fires four actual projectiles across two volleys"),*Id.ToString()),Projectiles.Num(),4);
+        TestEqual(FString::Printf(TEXT("%s considers previous volley and covers four different targets"),*Id.ToString()),Assigned.Num(),4);
+        for(AActor* Projectile:Projectiles)
+        {
+            if(auto* P=Cast<ARogueProjectile>(Projectile))P->DeactivateToPool();else Cast<ARogueRocketProjectile>(Projectile)->DeactivateToPool();
+            TestTrue(TEXT("Real deactivation releases target assignment"),Tracker->GetWeaponTarget(Projectile)==nullptr);
+        }
+        Weapon->Destroy();
+    }
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueTalismanDistributionTest,"Rogue.Gameplay.WeaponTargeting.ThreeTalismansSeparateTargetsAndReleaseOnReturn",RogueTalismanTests::Flags)
+bool FRogueTalismanDistributionTest::RunTest(const FString&)
+{
+    using namespace RogueTalismanTests;FFixture F;if(!F.Initialize())return false;
+    F.Enemy(FVector(2200,0,200));F.Enemy(FVector(2600,400,200));F.Enemy(FVector(3000,-500,200));
+    auto* Weapon=F.Player->FindWeapon<ARogueWeapon_Talisman>();Weapon->GetConfig().Count=3;Weapon->GetConfig().Range=4000;
+    Weapon->WeaponTick(.01f);F.World->Tick(LEVELTICK_All,.3f);Weapon->WeaponTick(.01f);
+    TArray<ARogueReturningTalisman*> Charms;TSet<ARogueEnemy*> Targets;
+    auto* Tracker=F.World->GetSubsystem<URogueEnemyTrackerSubsystem>();
+    for(TActorIterator<ARogueReturningTalisman> It(F.World);It;++It)
+    {
+        if(It->GetOwner()!=F.Player)continue;
+        Charms.Add(*It);if(auto* Target=It->GetCurrentTarget())Targets.Add(Target);
+        TestTrue(TEXT("In-flight talisman registers its actual selected target"),Tracker->GetWeaponTarget(*It)==It->GetCurrentTarget());
+    }
+    TestEqual(TEXT("Three live talismans"),Charms.Num(),3);TestEqual(TEXT("No nearest-enemy pileup"),Targets.Num(),3);
+    for(auto* Charm:Charms)
+    {
+        // 每张只给一次预算；手动推进到返航，预约必须在归位前释放。
+        for(int I=0;I<500 && Charm->GetFlightPhase()==ERogueTalismanPhase::Striking;++I)Charm->Tick(.02f);
+        TestTrue(TEXT("Return/orbit releases attack target immediately"),Tracker->GetWeaponTarget(Charm)==nullptr);
+    }
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueLaserDistributionTest,"Rogue.Gameplay.WeaponTargeting.LaserRefractionsPreferTargetsOutsideOtherBeams",RogueTalismanTests::Flags)
+bool FRogueLaserDistributionTest::RunTest(const FString&)
+{
+    using namespace RogueTalismanTests;FFixture F;if(!F.Initialize())return false;
+    TArray<ARogueEnemy*> Targets;for(int I=0;I<4;++I)Targets.Add(F.Enemy(FVector(700+I*200,0,200)));
+    auto* Weapon=F.World->SpawnActor<ARogueWeapon_Laser>();FRogueWeaponTableRow Row;Row.Count=2;Row.Damage=10;Row.RefractionCount=1;Row.RefractionRange=2000;Row.CountUpgradeType=ERogueUpgradeType::LaserCount;
+    Weapon->InitializeWeapon(F.Player,Row);Weapon->FireAtTargets(Targets);
+    for(auto* Target:Targets)TestTrue(TEXT("Two main beams and two refractions cover four enemies"),Target->GetCurrentHealth()<1000);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueTowerDistributionTest,"Rogue.Gameplay.WeaponTargeting.TowerFallbackKeepsRampThenSeparatesNewEnemy",RogueTalismanTests::Flags)
+bool FRogueTowerDistributionTest::RunTest(const FString&)
+{
+    using namespace RogueTalismanTests;FFixture F;if(!F.Initialize())return false;
+    auto* Enemy=F.Enemy(FVector(600,0,200));auto* Weapon=F.World->SpawnActor<ARogueWeapon_HellTower>();
+    FRogueWeaponTableRow Row;Row.Count=2;Row.BaseDamage=1;Row.DamageRampPerTick=1;Row.DamageTickInterval=.1f;
+    Row.UpdateInterval=.05f;Row.HeavyCombatUpdateInterval=.05f;Row.CountUpgradeType=ERogueUpgradeType::HellTowerCount;
+    Weapon->InitializeWeapon(F.Player,Row);Weapon->WeaponTick(.1f);
+    const float First=1000-Enemy->GetCurrentHealth();TestEqual(TEXT("Only one enemy permits both towers to fire"),First,2.f);
+    const float Previous=Enemy->GetCurrentHealth();Weapon->WeaponTick(.1f);
+    TestTrue(TEXT("Sharing does not restart growing damage every update"),Previous-Enemy->GetCurrentHealth()>First);
+    auto* NewEnemy=F.Enemy(FVector(800,300,200));Weapon->WeaponTick(.1f);
+    TestTrue(TEXT("New enemy attracts the previously duplicated lock"),NewEnemy->GetCurrentHealth()<1000);
+    return true;
+}
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueTalismanStandbyPresentationTest,"Rogue.Gameplay.Talisman.StandbyMaterialRestoresFlightAndTrailFadesAfterReturn",RogueTalismanTests::Flags)
+bool FRogueTalismanStandbyPresentationTest::RunTest(const FString&)
+{
+    using namespace RogueTalismanTests;FFixture F;if(!F.Initialize())return false;
+    F.Enemy(FVector(650,0,200));F.World->GetSubsystem<URogueEnemyTrackerSubsystem>()->Tick(1.f);
+    auto* Class=LoadClass<ARogueReturningTalisman>(nullptr,TEXT("/Game/BP/Projectiles/BP_RogueReturningTalisman.BP_RogueReturningTalisman_C"));
+    auto* C=F.World->SpawnActor<ARogueReturningTalisman>(Class);auto* Original=C->Mesh->GetMaterial(0);
+    auto* Standby=NewObject<UMaterial>(F.World);C->OrbitMaterials={Standby};C->Configure(F.Player,0,1,10,2000,30,1,1);C->Tick(0);
+    TestTrue(TEXT("Waiting paper can use a separate cosmetic material"),C->Mesh->GetMaterial(0)==Standby);
+    if(!TestTrue(TEXT("Flight starts against a real target"),C->TryLaunch()))return false;C->Tick(.01f);
+    TestTrue(TEXT("Launch restores the authored component material"),C->Mesh->GetMaterial(0)==Original);
+    for(int I=0;I<600&&C->GetFlightPhase()!=ERogueTalismanPhase::Orbiting;++I)C->Tick(.01f);
+    TestTrue(TEXT("The paper returns to its orbit"),C->GetFlightPhase()==ERogueTalismanPhase::Orbiting);
+    TestTrue(TEXT("Return reapplies the waiting material"),C->Mesh->GetMaterial(0)==Standby);
+    TArray<USplineMeshComponent*> Segments;C->GetComponents(Segments);
+    TestTrue(TEXT("Old flight segments survive arrival for a natural tail"),Segments.ContainsByPredicate([](auto* S){return S->IsVisible();}));
+    for(int I=0;I<120;++I)C->Tick(.01f);
+    TestFalse(TEXT("Residual segments disappear within their original lifetime"),Segments.ContainsByPredicate([](auto* S){return S->IsVisible();}));
+    C->Destroy();return true;
 }
 #endif

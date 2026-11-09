@@ -1,4 +1,5 @@
 #include "Combat/Targeting/RogueEnemyTracker.h"
+#include "Debug/RoguePerfStats.h"
 
 #include "Enemies/RogueEnemy.h"
 #include "World/RogueExperiencePickup.h"
@@ -44,6 +45,8 @@ void FRogueEnemyTracker::RegisterEnemy(ARogueEnemy* Enemy)
 	}
 
 	ActiveEnemies.Add(Enemy);
+    // 出生 / 回池会改变可索敌集合；下一次查询即刷新，不能继续使用旧出生周期的格子。
+    EnemySpatialHashRefreshTimer = 0.0f;
 	++ActiveEnemyCount;
 }
 
@@ -142,6 +145,7 @@ ARogueEnemy* FRogueEnemyTracker::FindNearestEnemyInRange(const FVector& Origin, 
 
 void FRogueEnemyTracker::CollectEnemiesInRange(const FVector& Origin, float Range, TArray<ARogueEnemy*>& OutEnemies, int32 MaxResults, bool bSortByDistance, const FRogueRuntimePerformanceSettings& Settings)
 {
+    CSV_SCOPED_TIMING_STAT(RoguePerf, EnemyRangeQuery);
 	EnsureEnemySpatialHashUpToDate(Settings);
 	OutEnemies.Reset();
 

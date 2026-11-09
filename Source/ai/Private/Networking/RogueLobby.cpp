@@ -1,4 +1,5 @@
 #include "Networking/RogueLobby.h"
+#include "Framework/RogueBattleStage.h"
 #include "Networking/RogueRoomSubsystem.h"
 #include "GameFramework/GameSession.h"
 #include "GameFramework/HUD.h"
@@ -139,7 +140,8 @@ bool ARogueLobbyGameMode::TryStartGame(APlayerController* Requester)
 	Lobby->bStarting=true; Lobby->ForceNetUpdate();
 	// Clear the lobby's ?game override, but keep this player hosting the battle.
 	// PIE must also enable net.AllowPIESeamlessTravel (DefaultEngine.ini) to retain clients.
-	FURL BattleURL(nullptr,*Rooms->BattleMap,TRAVEL_Absolute);
+	const FString ChosenMap=RogueBattleMaps::ChooseInitialDay(Rooms->BattleMap);
+	FURL BattleURL(nullptr,*ChosenMap,TRAVEL_Absolute);
 	BattleURL.AddOption(TEXT("listen"));
 	UE_LOG(LogTemp,Log,TEXT("[RogueLobby] Starting battle with %d players: %s (WorldType=%d)"),GetNumPlayers(),*BattleURL.ToString(),static_cast<int32>(GetWorld()->WorldType));
 	if (!GetWorld()->ServerTravel(BattleURL.ToString(),true)) { Lobby->bStarting=false; return false; }

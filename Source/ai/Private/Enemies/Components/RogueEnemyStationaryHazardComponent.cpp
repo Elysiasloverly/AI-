@@ -1,4 +1,5 @@
 #include "Enemies/Components/RogueEnemyStationaryHazardComponent.h"
+#include "Combat/Visuals/RogueGroundEffectFade.h"
 #include "Enemies/RogueEnemy.h"
 #include "Player/RogueCharacter.h"
 #include "Player/RoguePlayerQuery.h"
@@ -13,11 +14,22 @@ URogueEnemyStationaryHazardComponent::URogueEnemyStationaryHazardComponent()
 void URogueEnemyStationaryHazardComponent::InitializeRuntime()
 {
     Timer=0;auto* E=Cast<ARogueEnemy>(GetOwner());
+    if (E && !E->IsAvailableInPool() && !E->IsHidden()) bVisualsRetired=false;
     SetComponentTickEnabled(E&&E->HasAuthority()&&bEnabled&&!E->IsAvailableInPool()
         &&E->GetMovementModel()==ERogueEnemyMovementModel::Stationary);
 }
 void URogueEnemyStationaryHazardComponent::ResetForPool()
-{ Timer=0;SetComponentTickEnabled(false); }
+{
+    if (!bVisualsRetired)
+    {
+        bVisualsRetired=true;
+        TArray<USceneComponent*,TInlineAllocator<4>> Layers;
+        for (auto* Mesh:TInlineComponentArray<UStaticMeshComponent*>(GetOwner()))
+            if (Mesh->ComponentHasTag(AreaMeshTag)) Layers.Add(Mesh);
+        ARogueGroundEffectFade::CaptureComponents(GetWorld(),Layers);
+    }
+    Timer=0;SetComponentTickEnabled(false);
+}
 UStaticMeshComponent* URogueEnemyStationaryHazardComponent::GetAreaMesh() const
 {
     for (auto* Mesh:TInlineComponentArray<UStaticMeshComponent*>(GetOwner()))
@@ -47,6 +59,7 @@ void URogueEnemyStationaryHazardComponent::TickComponent(float D,ELevelTick T,FA
     if (!E||!E->HasAuthority()||E->IsDead()||E->IsAvailableInPool()||!bEnabled
         ||E->GetMovementModel()!=ERogueEnemyMovementModel::Stationary||!E->GetRogueAttributeSet()||E->GetRogueAttributeSet()->GetHealth()<=0)
     { ResetForPool();return; }
+    if (E->AreNormalAttacksSuppressed()) return;
     Timer-=D;if (Timer>0) return;
     Timer=FMath::Max(.2f,Interval)/E->GetAttackSpeedMultiplier();
     const float Damage=E->GetContactDamage()*FMath::Max(0.f,DamageMultiplier);

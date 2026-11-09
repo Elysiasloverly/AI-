@@ -33,6 +33,7 @@ class AI_API ARogueEnemySkyfallProjectile : public AActor
 public:
     ARogueEnemySkyfallProjectile();
     virtual void Tick(float DeltaSeconds) override;
+    virtual void SetActorHiddenInGame(bool bNewHidden) override;
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
     void InitializeAttack(ARogueEnemy* Source, const FVector& Launch, const FVector& Ground,
@@ -45,6 +46,8 @@ public:
 
 protected:
     virtual void BeginPlay() override;
+    virtual void EndPlay(const EEndPlayReason::Type Reason) override;
+    void RetireWarning();
     /** 蓝图可额外播放粒子或动画。伤害与子弹只由原生服务端路径生成。 */
     UFUNCTION(BlueprintImplementableEvent, Category="天坠弹") void OnSkyfallImpact(FVector Location);
 

@@ -18,7 +18,7 @@ GameplayEffect 放 `AbilitySystem/GameplayEffects/`；战斗视觉表现放 `Com
 | `AbilitySystem/Tasks/` | 冲刺位移、武器开火心跳 |
 | `AbilitySystem/GameplayEffects/` | `RogueDamageEffect`、`RogueAttributeUpgradeEffect`、`RogueStateEffects`：伤害、升级、冷却、回复、倒地与无敌 GE |
 | `AbilitySystem/Cues/` | `RogueGameplayCue_Impact`、`RogueGameplayCue_Downed`：命中及状态表现 |
-| `Combat/Weapons/` | `RogueWeaponBase`、六个 `RogueWeapon_*`，配置表行及一发攻击的具体实现 |
+| `Combat/Weapons/` | `RogueWeaponCatalog`、`RogueWeaponBase`、八个 `RogueWeapon_*`，配置表行及一发攻击的具体实现 |
 | `Combat/Projectiles/` | `RogueProjectile`、`RogueRocketProjectile`、`RogueMortarProjectile`、`RogueEnemyProjectile`、`RogueOrbitingBlade`：有飞行/位移、碰撞与命中结算的攻击实体 |
 | `Combat/Visuals/` | `RogueLaserBeam`、`RogueImpactEffect`、`RogueCombatFeedback`：光束、命中特效与伤害飘字，不负责伤害数值结算 |
 | `Combat/Pooling/` | `RogueCombatPools`、`RogueCombatPoolSubsystem`：池容器、预热和获取入口 |
@@ -30,12 +30,12 @@ GameplayEffect 放 `AbilitySystem/GameplayEffects/`；战斗视觉表现放 `Com
 | `Enemies/` | `RogueEnemy`：统一敌人运行时、移动和攻击决策 |
 | `Enemies/Data/` | `RogueEnemyArchetypes`、`RogueEnemyDataTable` |
 | `Enemies/Spawning/` | `RogueSpawnSubsystem`：刷怪、出生位置、波次预算 |
-| `World/` | `RogueArena`、`RogueExperiencePickup`、`RogueShopTerminal`、`RogueSceneSubsystem` |
+| `World/` | `RogueEnemySpawnRegion`、`RogueArenaBoundary`、`RogueExperiencePickup`、`RogueShopTerminal`、`RogueSceneSubsystem` |
 | `UI/` | `RogueHUD`、`RogueMainMenuHUD`：界面调度与原生绘制；主菜单模式复用设置面板 |
-| `UI/Widgets/` | 十三个独立 UMG 基类：8 个菜单类 + 玩家状态条 + 敌人血条 + 受伤泛红层 + 主菜单 + 教程；共享视图数据及聚合 include |
+| `UI/Widgets/` | 各 WBP 对应的菜单、状态、战斗反馈与升级树基类；共享视图数据 |
 | `Shared/` | `RogueTypes.h`：跨玩法域的枚举、复制载荷与结构体 |
-| `Debug/` | `RogueSelfTest`、两个 `.SelfTest.cpp`：开关、链路诊断及攻击/压测探针 |
-| `Source/aiEditor/` | 仅编辑器的工具模块：`RogueWidgetBuilder`（UMG 占位资产生成），不参与游戏打包 |
+| `Debug/` | `RogueSelfTest`、`.SelfTest.cpp`、自动化测试与实机探针：开关、链路诊断及攻击/压测探针 |
+| `Source/aiEditor/` | 仅编辑器的工具模块：UI/Authoring、UI/LegacyThemes、AssetSetup、Preview、Support；不参与正式游戏构建 |
 
 `Subsystem` 表示 UE 管理生命周期的机制。找对象池去 `Combat/Pooling/`，找刷怪去 `Enemies/Spawning/`，不再集中放进通用 `Subsystems/` 目录。`Core/` 原来混放的类也已归入上述业务目录。
 
@@ -56,6 +56,14 @@ GameplayEffect 放 `AbilitySystem/GameplayEffects/`；战斗视觉表现放 `Com
 | `Framework/RogueGameMode.Progression.cpp` | 击杀归属、金币/经验/Boss 奖励、抽卡队列、商店请求与镜像推送 |
 | `Framework/RogueGameMode.Players.cpp` | 存活玩家查询、复活兜底、归属恢复、登录、暂停及重开 |
 | `Debug/RogueGameMode.SelfTest.cpp` | 升级链路阶段机、接触攻击、地藏弹幕、死亡复活和敌人压测探针 |
+| `UI/RogueHUD.cpp` | 生命周期、状态刷新与战斗 HUD 调度 |
+| `UI/RogueHUD.Menus.cpp` | 商店/选卡、暂停、死亡/复活/胜利菜单与输入模式 |
+| `UI/RogueHUD.Settings.cpp` | 音量、画质、分辨率、窗口模式与帧率设置 |
+| `UI/RogueHUD.CombatFeedback.cpp` | 状态条、受伤反馈、血条缓存与 Canvas 飘字 |
+| `Enemies/RogueEnemy.cpp` | Actor 生命周期、复制激活状态、Tick 与行为调度 |
+| `Enemies/RogueEnemy.LifeCycle.cpp` | 出池、属性同步、死亡校验、结算和回收 |
+| `Enemies/RogueEnemy.Combat.cpp` | 服务端攻击决策与执行入口、各端多播表现 |
+| `Enemies/RogueEnemy.Movement.cpp` | 目标查询、方向计算、原型走位与绕障入口 |
 
 读完整流程时，从主文件里的调度入口沿方法名跳转到对应实现。新增同类方法时，声明放回原类头，实现放到对应文件。改变类职责或引入新组件应作为单独的架构改动。
 

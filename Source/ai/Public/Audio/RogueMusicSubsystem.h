@@ -41,6 +41,8 @@ public:
     /** 更换整份音乐配置；不改数据资产及玩家音量。 */
     UFUNCTION(BlueprintCallable, Category="Rogue|Audio") void SetMusicConfig(URogueAudioConfig* Config);
     USoundClass* GetEffectsClass() const;
+    /** Local presentation only; routed through effects volume, with a bounded voice budget. */
+    void PlayDefeatFeedback(int32 Streak,bool bBoss);
     URogueAudioConfig* GetAudioConfig() const { return LoadedConfig ? LoadedConfig.Get() : MusicConfigAsset.LoadSynchronous(); }
 
     static ERogueMusicScene ResolveBattleScene(bool bGameOver, bool bBossAlive, bool bNight);
@@ -61,6 +63,8 @@ private:
     UPROPERTY(Transient) TObjectPtr<URogueAudioConfig> LoadedConfig;
     UPROPERTY(Transient) TArray<TObjectPtr<UAudioComponent>> Channels;
     UPROPERTY(Transient) TObjectPtr<USoundConcurrency> UIButtonConcurrency;
+    UPROPERTY(Transient) TObjectPtr<USoundConcurrency> DefeatConcurrency;
+    double LastDefeatSoundTime=-1000;
     TWeakObjectPtr<UAudioComponent> LastUIButtonComponent;
     uint32 UIButtonPressedCount = 0;
     uint32 UIButtonHoveredCount = 0;

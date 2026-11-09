@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/GameStateBase.h"
@@ -6,6 +6,8 @@
 #include "Framework/RogueBattleStage.h"
 #include "Framework/RogueBossHealthView.h"
 #include "Framework/RogueRunResult.h"
+#include "Framework/RogueDefeatVisualEvent.h"
+#include "Framework/RogueEnemyLocatorView.h"
 #include "RogueGameState.generated.h"
 
 /**
@@ -20,6 +22,9 @@ class AI_API ARogueGameState : public AGameStateBase
 
 public:
 	ARogueGameState();
+    /** Server snapshots deaths and batches cosmetic delivery; no rewards are calculated here. */
+    void QueueDefeatFeedback(const FRogueDefeatVisualEvent& Event);
+    UFUNCTION(NetMulticast,Unreliable) void MulticastDefeatFeedback(const TArray<FRogueDefeatVisualEvent>& Events);
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
@@ -63,7 +68,17 @@ public:
     UFUNCTION(BlueprintPure, Category="Rogue|Boss")
     const FRogueBossHealthView& GetBossHealthView() const { return BossHealthView; }
     void RefreshBossHealthView();
+    void RefreshEnemyLocatorView();
+    UFUNCTION(BlueprintPure, Category="Rogue|Run")
+    const FRogueEnemyLocatorView& GetEnemyLocatorView() const { return EnemyLocatorView; }
 private:
+    void FlushDefeatFeedback();
+    UPROPERTY(Transient) TArray<FRogueDefeatVisualEvent> PendingDefeats;
+    FTimerHandle DefeatFlushTimer;
+    bool bDefeatFlushScheduled=false;
+    float LastEnemyLocatorTime=-1.f;
+    int32 LastEnemyTrackerCount=-1;
+    UPROPERTY(Replicated) FRogueEnemyLocatorView EnemyLocatorView;
     UPROPERTY(Replicated) FRogueBossHealthView BossHealthView;
     UPROPERTY(Replicated) FRogueBattleStageView BattleStage;
 	UPROPERTY(Replicated) int32 CurrentWave = 0;

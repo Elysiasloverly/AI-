@@ -21,6 +21,8 @@ public:
 
 	void SetOwningRogueHUD(ARogueHUD* InOwningHUD);
 	void UpdateShopView(const FRogueShopViewData& InViewData);
+    const UWidget* GetOfferCard(int32 Index) const
+    { return ManagedOfferCardWidgets.IsValidIndex(Index) ? ManagedOfferCardWidgets[Index].Get() : nullptr; }
 
 	UFUNCTION(BlueprintCallable, Category = "Rogue|Shop")
 	void UpdateAutoRefreshText(const FText& InAutoRefreshText);

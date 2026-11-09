@@ -1,0 +1,11 @@
+float3 p = P - Origin;
+float age = max(0, T - CastTime);
+float cast = exp(-age * 9) * step(-.05, T - CastTime);
+float phase = (p.z + .33 * p.x + .19 * p.y) * .058 - T * (1.45 + cast);
+float band = pow(saturate(.5 + .5 * sin(phase)), 10);
+float crest = pow(saturate(cos(atan2(p.y, p.x) * 6 + p.z * .035)), 8);
+float rim = saturate(Edge);
+float warmth = saturate(.67 * rim + .39 * band + cast * (.34 + crest * .31));
+float3 color = lerp(Lacquer.rgb, Gold.rgb, warmth) * (.64 + 1.46 * rim + .39 * band + .55 * cast);
+float alpha = saturate((.13 + .47 * rim + .17 * band + cast * (.09 + .18 * crest)) * Strength);
+return float4(color, alpha);

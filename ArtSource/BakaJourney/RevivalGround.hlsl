@@ -1,0 +1,13 @@
+float2 p = (UV - .5) * 2;
+float r = length(p);
+float a = atan2(p.y, p.x);
+float fade = smoothstep(0, .09, Progress) * (1 - smoothstep(.62, 1, Progress));
+float inwards = lerp(.78, .38, smoothstep(0, .52, Progress));
+float wave = lerp(.40, .92, smoothstep(.40, .85, Progress));
+float gather = (1 - smoothstep(.014, .054, abs(r - inwards))) * (.34 + .66 * pow(saturate(cos(a * 12 + Progress * 7)), 5));
+float releaseGate = smoothstep(.43, .57, Progress);
+float release = (1 - smoothstep(.017, .060, abs(r - wave))) * releaseGate;
+float rim = (1 - smoothstep(.006, .025, abs(r - wave))) * releaseGate;
+float snow = pow(saturate(cos(a * 6)), 10) * smoothstep(.06, .14, r) * (1 - smoothstep(.36, .53, r));
+float3 tint = lerp(float3(.24, .88, 1.25), float3(.96, 1.28, 1.42), saturate(rim + snow * .75));
+return float4(tint, max(snow * .8, max(release, gather)) * fade);

@@ -1,4 +1,4 @@
-#include "UI/Widgets/RogueUpgradeTreeWidgetBase.h"
+﻿#include "UI/Widgets/RogueUpgradeTreeWidgetBase.h"
 #include "Audio/RogueMusicSubsystem.h"
 #include "Framework/RogueGameBalanceAsset.h"
 #include "UI/Widgets/RogueUpgradeTreeLayout.h"
@@ -131,6 +131,24 @@ void URogueUpgradeTreeWidgetBase::RefreshTree()
 
 		FRogueUpgradeTreeNodeViewData Data;
 		Data.NodeId = Node->NodeId;
+        Data.IconType = Node->UpgradeType;
+        Data.bWeaponIcon = Node->Kind == ERogueMetaNodeKind::Weapon;
+        if(Node->Kind==ERogueMetaNodeKind::ArmorUnlock)Data.IconType=ERogueUpgradeType::ArmorCapacity;
+        if(Node->Kind==ERogueMetaNodeKind::BaseStat)
+        {
+            switch(Node->Stat)
+            {
+            case ERogueMetaStat::AttackPower:Data.IconType=ERogueUpgradeType::AttackPower;break;
+            case ERogueMetaStat::MaxHealth:Data.IconType=ERogueUpgradeType::MaxHealth;break;
+            case ERogueMetaStat::ArmorCapacity:Data.IconType=ERogueUpgradeType::ArmorCapacity;break;
+            case ERogueMetaStat::MoveSpeed:Data.IconType=ERogueUpgradeType::MoveSpeed;break;
+            case ERogueMetaStat::PickupRadius:Data.IconType=ERogueUpgradeType::PickupRadius;break;
+            case ERogueMetaStat::HealthRegen:Data.IconType=ERogueUpgradeType::Recovery;break;
+            case ERogueMetaStat::AttackSpeed:Data.IconType=ERogueUpgradeType::AttackSpeed;break;
+            case ERogueMetaStat::ExperienceGain:Data.IconType=ERogueUpgradeType::ExperienceGain;break;
+            default:break;
+            }
+        }
 		Data.Title = Node->Title;
 		Data.Description = Node->Description;
 		Data.CurrentRank = Definition->GetNodeRank(Snapshot, Node->NodeId);

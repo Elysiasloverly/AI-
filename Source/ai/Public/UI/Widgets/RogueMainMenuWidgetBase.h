@@ -11,7 +11,7 @@ class UTextBlock;
 /**
  * 开始菜单基类。
  *
- * 分工：C++ 只按名字绑定 6 个按钮并转交 HUD；配色、字体、排版、动画都在 WBP_MainMenu 里改。
+ * 分工：C++ 只按名字绑定 6 个按钮并转交 HUD；配色、字体、排版保存在 WBP_MainMenu；通用轻动效由 RogueMenuMotionExtension 呈现。
  * 按钮改名字会静默失效（BindWidgetOptional），改样式不会。
  */
 UCLASS(Abstract, Blueprintable)

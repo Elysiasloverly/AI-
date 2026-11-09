@@ -157,6 +157,66 @@ bool URogueProgressionSubsystem::ResetProgressionInSlotForDebug(const FString& S
 	return true;
 }
 
+namespace
+{
+bool MaximizeDebugUnlocks(URogueProgressionSaveGame& Candidate, const URogueUpgradeTreeDefinition& Definition, FText& OutError)
+{
+	FRogueProgressionSnapshot Requested;
+	for (const auto& Node : Definition.GetNodes())
+	{
+		if (Node.NodeId.IsNone() || Requested.NodeRanks.Contains(Node.NodeId))
+		{
+			OutError = FText::FromString(TEXT("升级树存在空白或重复的节点 ID，存档未变更。"));
+			return false;
+		}
+		Requested.NodeRanks.Add(Node.NodeId, Definition.GetMaximumRank(Node));
+	}
+	const auto Clean = Definition.SanitizeSnapshot(Requested);
+	for (const auto& Node : Definition.GetNodes())
+	{
+		if (Definition.GetNodeRank(Clean, Node.NodeId) != Definition.GetMaximumRank(Node))
+		{
+			OutError = FText::Format(FText::FromString(TEXT("节点 {0} 无法按当前前置条件解锁，存档未变更。")), FText::FromName(Node.NodeId));
+			return false;
+		}
+	}
+	Candidate.Progression = Clean;
+	return true;
+}
+}
+
+bool URogueProgressionSubsystem::UnlockAllForDebug(FText& OutError)
+{
+	OutError = FText::GetEmpty();
+	if (!Profile || !bSaveWritable)
+	{
+		OutError = SaveError.IsEmpty() ? FText::FromString(TEXT("玩家存档尚未就绪或不可写。")) : SaveError;
+		return false;
+	}
+	URogueProgressionSaveGame* Candidate = DuplicateObject<URogueProgressionSaveGame>(Profile, this);
+	if (!MaximizeDebugUnlocks(*Candidate, *GetDefinition(), OutError)) return false;
+	if (CommitCandidate(Candidate)) return true;
+	OutError = SaveError;
+	return false;
+}
+
+bool URogueProgressionSubsystem::UnlockAllInSlotForDebug(const FString& Slot, int32 UserIndex,
+	const URogueUpgradeTreeDefinition* Definition, FText& OutError)
+{
+	OutError = FText::GetEmpty();
+	if (Slot.IsEmpty() || !Definition)
+	{
+		OutError = FText::FromString(TEXT("存档槽或升级树配置无效。"));
+		return false;
+	}
+	bool bWritable = false;
+	URogueProgressionSaveGame* Candidate = LoadProfileFromSlot(Slot, UserIndex, Definition, bWritable, OutError);
+	if (!Candidate || !bWritable || !MaximizeDebugUnlocks(*Candidate, *Definition, OutError)) return false;
+	if (SaveProfileToSlot(Candidate, Slot, UserIndex)) return true;
+	OutError = FText::FromString(TEXT("全部解锁写入失败，原存档未提交变更。"));
+	return false;
+}
+
 bool URogueProgressionSubsystem::SetIceBricksForDebug(int32 NewCount, FText& OutError)
 {
 	OutError = FText::GetEmpty();
@@ -217,14 +277,16 @@ bool URogueProgressionSubsystem::FlushPendingBossRewards(float DeltaSeconds)
 	{
 		if (!Candidate->AddBossReward(Pending.Key, Pending.Value)) { return true; }
 	}
-	if (CommitCandidate(Candidate))
-	{
-		PendingBossRewards.Reset();
+	const int32 CommittedAmount = Candidate->IceBricks - Profile->IceBricks;
+    if (CommitCandidate(Candidate))
+    {
+        PendingBossRewards.Reset();
 		OnProgressionChanged.Broadcast();
 		FTSTicker::GetCoreTicker().RemoveTicker(RewardRetryHandle);
 		RewardRetryHandle.Reset();
-		return false;
-	}
+        if (CommittedAmount > 0) OnBossRewardCommitted.Broadcast(CommittedAmount);
+        return false;
+    }
 	return true;
 }
 

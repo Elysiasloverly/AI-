@@ -27,4 +27,5 @@ public:
     float HeightTolerance=160;
 private:
     float Timer=0;
+    bool bVisualsRetired=true;
 };

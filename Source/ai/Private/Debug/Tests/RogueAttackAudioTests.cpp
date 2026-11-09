@@ -34,7 +34,7 @@ struct FRogueAttackAudioTestAccess
         auto& Entry = Config->Enemies.AddDefaulted_GetRef(); Entry.EnemyClass = E->GetClass(); return Entry.AttackAudio;
     }
     static const FRogueAttackAudioSettings& Resolved(ARogueEnemy* E) { return E->GetWorld()->GetSubsystem<URogueCombatAudioSubsystem>()->GetEnemyAttackSettings(E->GetClass()); }
-    static void Receive(ARogueEnemy* E, uint32 Generation) { E->Multicast_AttackAudio_Implementation(E->GetActorLocation(), Generation); }
+    static void Receive(ARogueEnemy* E, uint32 Generation) { E->Multicast_AttackFeedback_Implementation(E->GetActorLocation(), Generation); }
 };
 
 namespace RogueAttackAudioTests

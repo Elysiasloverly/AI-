@@ -1,8 +1,11 @@
 #include "Enemies/Visuals/RogueEnemyEffectVisual.h"
+#include "Combat/Visuals/RogueGroundEffectFade.h"
 #include "Components/SceneComponent.h"
 #include "Components/DecalComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
+#include "GameFramework/PlayerController.h"
+#include "Camera/PlayerCameraManager.h"
 ARogueEnemyEffectVisual::ARogueEnemyEffectVisual()
 {
     PrimaryActorTick.bCanEverTick=false;bReplicates=false;
@@ -14,6 +17,16 @@ void ARogueEnemyEffectVisual::BeginPlay()
     Super::BeginPlay();SetActorEnableCollision(false);
     for (auto* Mesh:TInlineComponentArray<UStaticMeshComponent*>(this))
     { Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);Mesh->SetGenerateOverlapEvents(false);Mesh->SetSimulatePhysics(false); }
+}
+void ARogueEnemyEffectVisual::HideVisual()
+{
+    ARogueGroundEffectFade::CaptureActor(this);
+    SetActorHiddenInGame(true);
+}
+void ARogueEnemyEffectVisual::EndPlay(const EEndPlayReason::Type Reason)
+{
+    if (Reason==EEndPlayReason::Destroyed) ARogueGroundEffectFade::CaptureActor(this);
+    Super::EndPlay(Reason);
 }
 UStaticMeshComponent* ARogueEnemyEffectVisual::GetMain()
 {
@@ -57,5 +70,13 @@ void ARogueEnemyEffectVisual::ConfigureMarker(FVector Center,float Radius,float 
     ConfigureCircle(Center,Radius);
     for (auto* Mesh:TInlineComponentArray<UStaticMeshComponent*>(this))
         if (Mesh->ComponentHasTag(MarkerMeshTag))
-        { FVector P=Mesh->GetRelativeLocation();P.Z=Top-Center.Z;Mesh->SetRelativeLocation(P); }
+        {
+            FVector P=Mesh->GetRelativeLocation();P.Z=Top-Center.Z;Mesh->SetRelativeLocation(P);
+            if(bFaceMarkerToCamera)
+                if(auto* PC=GetWorld()->GetFirstPlayerController();PC&&PC->PlayerCameraManager)
+                {
+                    const FRotator Facing=(PC->PlayerCameraManager->GetCameraLocation()-Mesh->GetComponentLocation()).Rotation();
+                    Mesh->SetWorldRotation(Facing.Quaternion()*FRotator(90,0,0).Quaternion());
+                }
+        }
 }

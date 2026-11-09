@@ -1,11 +1,10 @@
-#include "Framework/RogueGameMode.h"
+﻿#include "Framework/RogueGameMode.h"
 #include "Debug/RogueSelfTest.h"
 #include "AbilitySystem/RogueGameplayTags.h"
 #include "AbilitySystem/RogueAbilitySystemLibrary.h"
 #include "Shared/RogueTypes.h"
 #include "AbilitySystem/RogueAttributeSet.h"
 
-#include "World/RogueArena.h"
 #include "Player/RogueCharacter.h"
 #include "Player/RoguePlayerState.h"
 #include "Player/RoguePlayerController.h"
@@ -73,7 +72,14 @@ void ARogueGameMode::HandleEnemyKilled(ARogueEnemy* Enemy, AActor* Killer)
 
 	if (IsValid(Enemy))
 	{
-		AwardEnemyCurrency(Enemy, ResolveRewardCharacter(Killer, Enemy));
+        ARogueCharacter* CreditedCharacter=ResolveRewardCharacter(Killer, Enemy);
+        if(auto* State=GetGameState<ARogueGameState>())
+        {
+            FRogueDefeatVisualEvent Event;Event.Location=Enemy->GetActorLocation();Event.EffectClass=Enemy->DefeatEffectClass;
+            Event.Size=Enemy->DefeatEffectSize;Event.bBoss=Enemy->IsBoss();Event.CreditedPlayer=CreditedCharacter?CreditedCharacter->GetPlayerState():nullptr;
+            State->QueueDefeatFeedback(Event);
+        }
+		AwardEnemyCurrency(Enemy, CreditedCharacter);
 		SpawnExperienceReward(Enemy, Tracker, Pools);
 
 		if (Enemy->IsBoss())
@@ -189,6 +195,27 @@ void ARogueGameMode::StartUpgradeSelection(ARogueCharacter* Character)
 	QueueUpgradeSelections(1, Character);
 }
 
+void ARogueGameMode::ToggleUpgradeSelectionForPlayer(ARoguePlayerState* PlayerState)
+{
+    if(!HasAuthority()||!IsValid(PlayerState)||PlayerState->GetWorld()!=GetWorld())return;
+    auto* Character=PlayerState->GetPawn<ARogueCharacter>();
+    if(PlayerState->IsAwaitingUpgradeChoice())
+    {
+        PlayerState->SuspendUpgradeSelection();
+        if(Character)Character->SetUpgradeSelectionInput(false);
+        return;
+    }
+    if(RunState.bGameOver||!Character||!Character->IsAlive()||!PlayerState->IsProgressionReady()
+        ||PlayerState->IsShopOpen()||PlayerState->IsPauseMenuOpen()||PlayerState->GetPendingUpgradeCount()<=0)return;
+    if(!PlayerState->GetPendingUpgrades().IsEmpty())
+    {
+        // 重新打开仍是同一组卡，只更新提交凭据，防止旧点击误消费新一次界面。
+        PlayerState->OpenUpgradeSelection(PlayerState->GetPendingUpgrades());
+        Character->SetUpgradeSelectionInput(true);
+    }
+    else OpenNextUpgradeSelectionForPlayer(PlayerState);
+}
+
 void ARogueGameMode::TryOpenShop(ARogueCharacter* Character)
 {
 	if (RunState.bGameOver || !IsValid(Character) || Character->IsDead())
@@ -202,12 +229,17 @@ void ARogueGameMode::TryOpenShop(ARogueCharacter* Character)
 		return;
 	}
 
+	if (const ARogueShopTerminal* Terminal = LevelShopTerminal.Get(); Terminal && !Terminal->CanInteract(*Character))
+	{
+		return;
+	}
+
 	// ── 每玩家一份商店 ──
 	// 商店运行态挂在玩家自己的 PlayerState 上：商品列表、刷新价格、自动刷新计时、
 	// 各升级的已购次数都是独立的。旧实现是 GameMode 上一个共享 ShopSystem，
 	// 联机下所有玩家抢同一批货，而且"谁买的"还会算错人。
 	FRogueShopSystem& Shop = PlayerState->GetShopRuntime();
-	if (Shop.IsOpen())
+	if (PlayerState->IsAwaitingUpgradeChoice()||Shop.IsOpen())
 	{
 		return;
 	}
@@ -223,6 +255,7 @@ void ARogueGameMode::TryOpenShop(ARogueCharacter* Character)
 		return;
 	}
 
+	bWaveShopWasOpened = true;
 	// 此处可更新监听服本机输入；远端玩家仍由客户端 HUD 收到商店镜像后推导。
 	// 关店时需结合其他菜单状态决定输入模式，见 CloseShop。
 	Character->SetMenuInteractionInput(true);
@@ -243,6 +276,7 @@ void ARogueGameMode::CloseShop(ARogueCharacter* Requester)
 
 	PlayerState->GetShopRuntime().CloseShop();
 	PushShopSnapshotForPlayer(PlayerState);
+	TickWaveShop();
 
 	// 光标与输入模式由本地 HUD::UpdateInteractionInputMode 结合全部菜单/生命周期状态推导。
 	// 关店后仍可能有其他 UI 需要输入，因此此服务端入口只更新商店状态。
@@ -275,6 +309,7 @@ void ARogueGameMode::TryBuyShopOffer(int32 OfferIndex, const FGuid& QuoteId, int
 	{
 		// 升级施加给**购买者**（旧实现固定给 CachedCharacter，联机下会把玩家 2 的购买算到玩家 1 头上）
 		Purchaser->ApplyUpgrade(PurchasedUpgrade);
+        PlayerState->NotifyCardAcquiredForPresentation(PurchasedUpgrade.Type, QuoteId);
 		// 购买会改变"已购"标记与刷新价格，立刻同步
 	}
 	// 旧报价被拒绝也发送当前快照，让界面恢复到可操作的最新报价。
@@ -357,6 +392,7 @@ void ARogueGameMode::HandlePlayerUpgradeSelected(ARoguePlayerState* PlayerState,
 	}
 
 	Character->ApplyUpgrade(SelectedUpgrade);
+    PlayerState->NotifyCardAcquiredForPresentation(SelectedUpgrade.Type, SelectedUpgrade.SelectionId);
 
 	// 这个玩家还有排队的选择 → 继续给他开下一轮
 	if (PlayerState->GetQueuedUpgradeSelections() > 0)
@@ -369,7 +405,7 @@ void ARogueGameMode::HandlePlayerUpgradeSelected(ARoguePlayerState* PlayerState,
 	Character->SetUpgradeSelectionInput(false);
 
 	// 不暂停游戏：联机下暂停是全局的，一个玩家在选卡不该冻住其他人。
-	// 世界继续跑意味着选卡时要自己找安全位置 —— 这是刻意的玩法张力。
+	// 选卡与商店界面都不提供免伤，其他玩家也照常战斗。
 }
 
 bool ARogueGameMode::IsAwaitingUpgradeChoice() const
@@ -408,11 +444,8 @@ void ARogueGameMode::QueueUpgradeSelections(int32 Count, ARogueCharacter* Charac
 		return;
 	}
 
+    // 只累计奖励：有待选次数并不代表正在选卡，不切换输入模式。
 	PlayerState->QueueUpgradeSelections(Count);
-	if (!PlayerState->IsAwaitingUpgradeChoice())
-	{
-		OpenNextUpgradeSelectionForPlayer(PlayerState);
-	}
 }
 
 void ARogueGameMode::OpenNextUpgradeSelectionForPlayer(ARoguePlayerState* PlayerState)
@@ -422,12 +455,12 @@ void ARogueGameMode::OpenNextUpgradeSelectionForPlayer(ARoguePlayerState* Player
 	{
 		if (PlayerState != nullptr)
 		{
-			PlayerState->CloseUpgradeSelection();
+			PlayerState->SuspendUpgradeSelection();
 		}
 		return;
 	}
 
-	if (!PlayerState->ConsumeQueuedSelection())
+	if (PlayerState->GetQueuedUpgradeSelections()<=0)
 	{
 		PlayerState->CloseUpgradeSelection();
 		Character->SetUpgradeSelectionInput(false);
@@ -444,6 +477,8 @@ void ARogueGameMode::OpenNextUpgradeSelectionForPlayer(ARoguePlayerState* Player
 		return;
 	}
 
+    // 有可显示的选项后才把奖励从队列移入当前选择，空卡池不会吞掉次数。
+    if(!PlayerState->ConsumeQueuedSelection())return;
 	PlayerState->OpenUpgradeSelection(Options);
 	Character->SetUpgradeSelectionInput(true);
 	// 不暂停（见 HandlePlayerUpgradeSelected 的说明）

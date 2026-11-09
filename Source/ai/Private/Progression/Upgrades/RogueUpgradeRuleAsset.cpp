@@ -1,4 +1,5 @@
 #include "Progression/Upgrades/RogueUpgradeRuleAsset.h"
+#include "Combat/Weapons/RogueWeaponCatalog.h"
 
 URogueUpgradeRuleAsset::URogueUpgradeRuleAsset()
 {
@@ -7,49 +8,21 @@ URogueUpgradeRuleAsset::URogueUpgradeRuleAsset()
 
 void URogueUpgradeRuleAsset::ResetToDefaultRules()
 {
-	BaseUpgradeTypes =
-	{
-		ERogueUpgradeType::MaxHealth,
-		ERogueUpgradeType::ArmorCapacity,
-		ERogueUpgradeType::MoveSpeed,
-		ERogueUpgradeType::DashCooldown,
-		ERogueUpgradeType::AttackPower,
-		ERogueUpgradeType::AttackSpeed,
-		ERogueUpgradeType::PickupRadius,
-		ERogueUpgradeType::Recovery,
-		ERogueUpgradeType::AttackRange,
-		ERogueUpgradeType::ProjectileSpeed,
-		ERogueUpgradeType::ProjectileCount,
-		ERogueUpgradeType::Armor,
-		ERogueUpgradeType::ExperienceGain
-	};
+	BaseUpgradeTypes = {ERogueUpgradeType::MaxHealth,		ERogueUpgradeType::ArmorCapacity,
+						ERogueUpgradeType::MoveSpeed,		ERogueUpgradeType::DashCooldown,
+						ERogueUpgradeType::AttackPower,		ERogueUpgradeType::AttackSpeed,
+						ERogueUpgradeType::PickupRadius,	ERogueUpgradeType::Recovery,
+						ERogueUpgradeType::AttackRange,		ERogueUpgradeType::ProjectileSpeed,
+						ERogueUpgradeType::ProjectileCount, ERogueUpgradeType::Armor,
+						ERogueUpgradeType::ExperienceGain};
 
-	DefaultWeaponUpgradeTypes =
-	{
-		ERogueUpgradeType::ScytheCount,
-		ERogueUpgradeType::RocketCount,
-		ERogueUpgradeType::LaserCount,
-		ERogueUpgradeType::HellTowerCount,
-		ERogueUpgradeType::MortarCount,
-		ERogueUpgradeType::TalismanCount
-	};
+	DefaultWeaponUpgradeTypes = {ERogueUpgradeType::ScytheCount, ERogueUpgradeType::RocketCount,
+								 ERogueUpgradeType::LaserCount,	 ERogueUpgradeType::HellTowerCount,
+								 ERogueUpgradeType::MortarCount, ERogueUpgradeType::TalismanCount};
 
-	WeaponUpgradeRules =
-	{
-		{ ERogueWeaponUpgradeSource::Talisman, ERogueUpgradeType::TalismanCount },
-		{ ERogueWeaponUpgradeSource::Talisman, ERogueUpgradeType::TalismanPierce },
-		{ ERogueWeaponUpgradeSource::Talisman, ERogueUpgradeType::TalismanRepeat },
-		{ ERogueWeaponUpgradeSource::Projectile, ERogueUpgradeType::ProjectileBurst },
-		{ ERogueWeaponUpgradeSource::Rocket, ERogueUpgradeType::RocketBlastRadius },
-		{ ERogueWeaponUpgradeSource::HellTower, ERogueUpgradeType::HellTowerDamageRamp },
-
-		{ ERogueWeaponUpgradeSource::Scythe, ERogueUpgradeType::ScytheCount },
-		{ ERogueWeaponUpgradeSource::Scythe, ERogueUpgradeType::ScytheLifesteal },
-		{ ERogueWeaponUpgradeSource::Rocket, ERogueUpgradeType::RocketCount },
-		{ ERogueWeaponUpgradeSource::Laser, ERogueUpgradeType::LaserCount },
-		{ ERogueWeaponUpgradeSource::HellTower, ERogueUpgradeType::HellTowerCount },
-		{ ERogueWeaponUpgradeSource::Mortar, ERogueUpgradeType::MortarCount }
-	};
+	WeaponUpgradeRules.Reset();
+	for (const auto &Rule : RogueWeaponCatalog::GetDefaultUpgradeRules())
+		WeaponUpgradeRules.Add(Rule);
 
 	MinimumDashCooldown = 0.5f;
 }

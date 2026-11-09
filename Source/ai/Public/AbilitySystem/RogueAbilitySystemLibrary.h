@@ -18,5 +18,6 @@ namespace RogueAbilitySystem
 	 * @param OutDamageDealt 可选输出：本次实际扣除的护甲 + 生命总量（便于吸血/统计）。
 	 * @return GE 应用是否成功；不表示一定扣除了生命（可能全部由护甲/减伤吸收）。
 	 * 此路径未检查 CanBeDamaged，也不广播 OnTakeAnyDamage。 */
-	AI_API bool ApplyDamageToTarget(AActor* SourceActor, AActor* TargetActor, float DamageAmount, FGameplayTag SourceTag, float* OutDamageDealt = nullptr);
+    /** HitVisualStyle is optional cosmetic metadata (0..5); the damage calculation never reads it. */
+	AI_API bool ApplyDamageToTarget(AActor* SourceActor, AActor* TargetActor, float DamageAmount, FGameplayTag SourceTag, float* OutDamageDealt = nullptr, uint8 HitVisualStyle = 0);
 }

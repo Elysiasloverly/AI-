@@ -87,6 +87,9 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="敌人音效", meta=(DisplayName="各敌人攻击音效", TitleProperty="EnemyName"))
     TArray<FRogueEnemyAudioEntry> Enemies;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="界面音效", meta=(DisplayName="按钮交互")) FRogueButtonAudioSettings Buttons;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="退治反馈", meta=(DisplayName="普通击杀确认音", ToolTip="仅击杀者本机播放；密集击杀合并触发，留空静音。")) TObjectPtr<USoundBase> DefeatSound;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="退治反馈", meta=(DisplayName="Boss退治确认音")) TObjectPtr<USoundBase> BossDefeatSound;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="退治反馈", meta=(DisplayName="确认音量",ClampMin="0",ClampMax="1")) float DefeatVolume=.35f;
     const FRogueAttackAudioSettings* FindEnemyAudio(const UClass* Class) const;
     const FRogueAttackAudioSettings* FindWeaponAudio(const UClass* Class) const;
     const FRogueMusicTrack* FindTrack(ERogueMusicScene Scene) const;

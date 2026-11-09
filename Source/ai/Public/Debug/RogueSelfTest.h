@@ -3,7 +3,8 @@
 #include "CoreMinimal.h"
 
 /**
- * 开发自检开关（默认全关）。
+ * 开发自检开关（默认全关，仅 WITH_DEV_AUTOMATION_TESTS 编译真实实现）。
+ * Shipping 保留空查询接口，返回关闭状态，不注册自检 CVar。
  *
  * 公共查询接口供同一 ai 模块的不同职责代码（GameMode 的服务端自检、
  * Character 的每台机器自检）里读同一份状态，而 CVar 不能散在各个 .cpp 里各定义一份

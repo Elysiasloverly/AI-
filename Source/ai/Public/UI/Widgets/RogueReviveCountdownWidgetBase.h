@@ -5,6 +5,7 @@
 #include "RogueReviveCountdownWidgetBase.generated.h"
 
 class ARogueHUD;
+class UImage;
 
 /**
  * 复活倒计时界面基类（联机合作：默认等待 10 秒，实际时长由 DA_PlayerBalance.Revival 配置）。
@@ -22,6 +23,7 @@ class AI_API URogueReviveCountdownWidgetBase : public UUserWidget
 public:
 	/** 由 HUD 推送剩余秒数和可见性；隐藏后终止动画并强制收起。 */
 	void UpdateReviveCountdown(int32 SecondsRemaining, bool bVisible);
+	UFUNCTION(BlueprintCallable, Category="Rogue|Revive") void SetFrostSealProgress(float Progress);
 
 	/** HUD 创建菜单 widget 的统一入口（CreateRogueMenuWidget 会对每个 widget 调它）。
 	 *  倒计时界面不需要回指 HUD，这里保留空实现以复用同一套创建流程。 */
@@ -33,4 +35,9 @@ protected:
 	 *  不需要先 Break Struct —— 少一步、也不容易接错。 */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Rogue|Revive")
 	void OnReviveCountdownUpdated(int32 SecondsRemaining, bool bVisible);
+
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UImage> RevivalSeal;
+
+private:
+	float LastSealProgress = -1.f;
 };

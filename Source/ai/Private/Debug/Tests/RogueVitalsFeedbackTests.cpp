@@ -5,6 +5,7 @@
 #include "Components/TextBlock.h"
 #include "Components/SizeBox.h"
 #include "Components/VerticalBox.h"
+#include "Components/CanvasPanel.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "Misc/AutomationTest.h"
@@ -12,6 +13,13 @@
 
 struct FRogueVitalsFeedbackTestAccess
 {
+    static void UseReadableTextPalette(URogueVitalsWidgetBase* W)
+    {
+        W->DashReadyTextColor=FLinearColor(.02f,.22f,.28f,1);
+        W->DashStatusTextColor=FLinearColor(.09f,.14f,.19f,1);
+        W->RestoreFeedbackTextColor=FLinearColor(.02f,.24f,.10f,1);
+    }
+
     static void Step(URogueVitalsWidgetBase* W, float Delta) { W->NativeTick(FGeometry(), Delta); }
     static const FRogueVitalsFeedback& Health(URogueVitalsWidgetBase* W) { return W->HealthChange; }
     static const FRogueVitalsFeedback& Armor(URogueVitalsWidgetBase* W) { return W->ArmorChange; }
@@ -70,6 +78,7 @@ bool FRogueVitalsActualFeedbackTest::RunTest(const FString& Parameters)
 {
     using namespace RogueVitalsFeedbackTests;
     auto* W = Create(*this); if (!W) return false;
+    FAccess::UseReadableTextPalette(W);
     auto* HealthRow = Find<USizeBox>(W, TEXT("HealthRow"));
     auto* ArmorRow = Find<USizeBox>(W, TEXT("ArmorRow"));
     auto* HealthFlash = Find<UBorder>(W, TEXT("HealthFeedback"));
@@ -83,10 +92,21 @@ bool FRogueVitalsActualFeedbackTest::RunTest(const FString& Parameters)
         || !TestNotNull(TEXT("Armor row is an actual flow-layout SizeBox"), ArmorRow)
         || !TestNotNull(TEXT("Status panel remains in WBP"), Status)
         || !TestNotNull(TEXT("Health label remains bound"), HealthLabel)) return false;
-    TestTrue(TEXT("Armor row belongs to the shared vertical flow"), Cast<UVerticalBox>(ArmorRow->GetParent()) != nullptr);
+    TestTrue(TEXT("Armor and health share the centered layout container"), ArmorRow->GetParent()==HealthRow->GetParent() && Cast<UCanvasPanel>(ArmorRow->GetParent())!=nullptr);
     TestTrue(TEXT("Health uses scale fill to preserve its moving rounded end"), HealthBar->GetBarFillStyle() == EProgressBarFillStyle::Scale);
 
     const FWidgetTransform AuthoredTransform(FVector2D(2, -1), FVector2D(.975f, 1.025f), FVector2D::ZeroVector, 1.f);
+    {
+        auto* ColorWidget=Create(*this);if(!ColorWidget)return false;FAccess::UseReadableTextPalette(ColorWidget);
+        FRoguePlayerVitalsView ColorView;ColorView.bVisible=true;ColorView.bDashUsable=true;ColorView.bDashReady=true;
+        ColorView.CurrentHealth=ColorView.MaxHealth=100;ColorView.HealthPercent=1;
+        auto* DashText=Find<UTextBlock>(ColorWidget,TEXT("DashCooldownText"));
+        if(!TestNotNull(TEXT("Dash status text retained"),DashText))return false;
+        ColorWidget->UpdateVitals(ColorView);
+        TestTrue(TEXT("Ready text uses its authored palette"),DashText->GetColorAndOpacity().GetSpecifiedColor()==FLinearColor(.02f,.22f,.28f,1));
+        ColorView.bDashReady=false;ColorView.DashCooldownRemaining=2;ColorWidget->UpdateVitals(ColorView);
+        TestTrue(TEXT("Cooldown text uses its authored palette"),DashText->GetColorAndOpacity().GetSpecifiedColor()==FLinearColor(.09f,.14f,.19f,1));
+    }
     const FLinearColor AuthoredFlash(.48f, .4f, .32f, .7f);
     const FSlateColor AuthoredText(FLinearColor(.9f, .8f, .7f, 1.f));
     const FVector2D AuthoredNumberPosition(3, 2);
@@ -108,7 +128,10 @@ bool FRogueVitalsActualFeedbackTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("Change text rises without changing its layout slot"), HealthNumber->GetRenderTransform().Translation.Y < AuthoredNumberPosition.Y);
     TestTrue(TEXT("The row receives only a temporary transform"), HealthRow->GetRenderTransform() != AuthoredTransform);
     TestTrue(TEXT("Wave and wallet panel never receive the row emphasis"), Status->GetRenderTransform() == StatusTransform);
-    TestEqual(TEXT("Health text reports the actual value immediately"), HealthLabel->GetText().ToString(), FString(TEXT("生命 80 / 100")));
+    TestEqual(TEXT("The separated health caption stays stable"), HealthLabel->GetText().ToString(), FString(TEXT("生命")));
+    auto* HealthValue = Find<UTextBlock>(W, TEXT("HealthValueText"));
+    if (TestNotNull(TEXT("The actual WBP has a separate health value"), HealthValue))
+        TestEqual(TEXT("The health value updates before the animated bar settles"), HealthValue->GetText().ToString(), FString(TEXT("80 / 100")));
     V.CurrentHealth = 70; V.HealthPercent = .7f; W->UpdateVitals(V);
     TestEqual(TEXT("Continuous damage merges into one brief delta"), FAccess::Health(W).Amount, -30.f);
     TestEqual(TEXT("Presentation does not alter the supplied health"), W->GetCachedVitals().CurrentHealth, 70.f);
@@ -124,6 +147,7 @@ bool FRogueVitalsActualFeedbackTest::RunTest(const FString& Parameters)
     TestEqual(TEXT("Healing delta is positive and accurate"), FAccess::Health(W).Amount, 20.f);
     TestTrue(TEXT("Healing emphasizes the row without instantly jumping the bar"), HealthBar->GetPercent() > .7f && HealthBar->GetPercent() < .9f);
     TestTrue(TEXT("Healing color differs temporarily from the WBP text color"), HealthNumber->GetColorAndOpacity().GetSpecifiedColor() != AuthoredText.GetSpecifiedColor());
+    TestTrue(TEXT("Healing uses the configured readable text palette"),HealthNumber->GetColorAndOpacity().GetSpecifiedColor()==FLinearColor(.02f,.24f,.10f,1));
     V.CurrentHealth = 90.5f; V.HealthPercent = .905f; W->UpdateVitals(V);
     TestEqual(TEXT("Sub-threshold regeneration does not spam new numbers"), FAccess::Health(W).Amount, 20.f);
     Settle(W);
@@ -183,9 +207,13 @@ bool FRogueVitalsFeedbackResetTest::RunTest(const FString& Parameters)
     V.bHasArmor = false; V.MaxArmor = 0; V.CurrentArmor = 0; V.ArmorPercent = 0; W->UpdateVitals(V);
     TestTrue(TEXT("Locked armor removes the entire flow row and its gap"), ArmorRow->GetVisibility() == ESlateVisibility::Collapsed);
     TestFalse(TEXT("Removing armor capacity is not armor break"), FAccess::Armor(W).Active());
+    auto* ArmorUnavailable = Find<UTextBlock>(W, TEXT("ArmorUnavailableText"));
+    if (TestNotNull(TEXT("The saved HUD includes its no-armor caption"), ArmorUnavailable))
+        TestEqual(TEXT("No armor shows the muted caption instead of a numeric armor row"), ArmorUnavailable->GetVisibility(), ESlateVisibility::HitTestInvisible);
     V.bHasArmor = true; V.MaxArmor = 50; W->UpdateVitals(V);
     TestTrue(TEXT("Unlocked armor at zero still has a readable empty row"), ArmorRow->GetVisibility() != ESlateVisibility::Collapsed);
     TestFalse(TEXT("Adding armor capacity at zero does not trigger a break"), FAccess::Armor(W).Active());
+    if (ArmorUnavailable) TestEqual(TEXT("Unlocking armor removes the empty-state caption"), ArmorUnavailable->GetVisibility(), ESlateVisibility::Collapsed);
     return true;
 }
 
@@ -235,4 +263,52 @@ bool FRogueVitalsExperienceWrapTest::RunTest(const FString& Parameters)
     TestEqual(TEXT("Zero overflow produces an empty new level bar"), XP->GetPercent(), 0.f);
     return true;
 }
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueVitalsPermanentLevelLabel,
+    "Rogue.UI.VitalsFeedback.CurrentLevelPersistsAcrossUpgradeDownedAndNewRun", RogueVitalsFeedbackTests::Flags)
+bool FRogueVitalsPermanentLevelLabel::RunTest(const FString&)
+{
+    using namespace RogueVitalsFeedbackTests;
+    auto* W=Create(*this);auto* Other=Create(*this);if(!W||!Other)return false;
+    auto* Label=Find<UTextBlock>(W,TEXT("LevelText"));if(!TestNotNull(TEXT("Saved HUD includes the level binding"),Label))return false;
+    auto V=Baseline();Other->UpdateVitals(V);
+    for(int32 Level:{1,2,37}){V.Level=Level;W->UpdateVitals(V);Settle(W);TestEqual(TEXT("Persistent label follows the final authoritative level"),Label->GetText().ToString(),FString::Printf(TEXT("%d"),Level));}
+    V.bHasArmor=false;V.bDowned=true;W->UpdateVitals(V);TestEqual(TEXT("Downed and armor visibility never clear the level"),Label->GetText().ToString(),FString(TEXT("37")));
+    V=Baseline();W->UpdateVitals(V);TestEqual(TEXT("A new run resets the label"),Label->GetText().ToString(),FString(TEXT("1")));
+    TestEqual(TEXT("Another local HUD retains its own level"),Find<UTextBlock>(Other,TEXT("LevelText"))->GetText().ToString(),FString(TEXT("1")));
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRoguePendingUpgradeHintTest,
+    "Rogue.UI.VitalsFeedback.PendingUpgradeHintBreathesUntilSpent", RogueVitalsFeedbackTests::Flags)
+bool FRoguePendingUpgradeHintTest::RunTest(const FString&)
+{
+    using namespace RogueVitalsFeedbackTests;
+    auto* Widget = Create(*this);
+    if (!Widget) return false;
+    auto* Hint = Find<UTextBlock>(Widget, TEXT("PendingUpgradeHintText"));
+    if (!TestNotNull(TEXT("Saved WBP contains the optional upgrade reminder"), Hint)) return false;
+    auto View = Baseline();
+    Widget->UpdateVitals(View);
+    TestEqual(TEXT("No unspent upgrade means no reminder"), Hint->GetVisibility(), ESlateVisibility::Collapsed);
+    View.PendingUpgradeSelections = 2;
+    Widget->UpdateVitals(View);
+    TestEqual(TEXT("Available upgrades show a non-interactive reminder"), Hint->GetVisibility(), ESlateVisibility::HitTestInvisible);
+    TestTrue(TEXT("The reminder names the count and key"), Hint->GetText().ToString().Contains(TEXT("2")) && Hint->GetText().ToString().Contains(TEXT("Q")));
+    const float Bright = Hint->GetRenderOpacity();
+    FAccess::Step(Widget, .8f);
+    TestTrue(TEXT("An unchanged view still animates a gentle dim phase"), Hint->GetRenderOpacity() < Bright - .25f);
+    FAccess::Step(Widget, .9f);
+    TestTrue(TEXT("The pulse returns to a readable bright phase"), Hint->GetRenderOpacity() > .85f);
+    View.PendingUpgradeSelections = 0;
+    Widget->UpdateVitals(View);
+    TestEqual(TEXT("Spending the final upgrade immediately removes the reminder"), Hint->GetVisibility(), ESlateVisibility::Collapsed);
+    View.PendingUpgradeSelections = 1; View.bDowned = true;
+    Widget->UpdateVitals(View);
+    TestEqual(TEXT("A downed player is not prompted to open an unavailable menu"), Hint->GetVisibility(), ESlateVisibility::Collapsed);
+    View.bDowned = false;
+    Widget->UpdateVitals(View);
+    TestEqual(TEXT("Retained upgrades are prompted after revival"), Hint->GetVisibility(), ESlateVisibility::HitTestInvisible);
+    return true;
+}
+
 #endif

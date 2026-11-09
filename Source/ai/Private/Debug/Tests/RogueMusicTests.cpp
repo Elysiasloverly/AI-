@@ -33,8 +33,8 @@ bool FRogueCentralAudioTest::RunTest(const FString&)
     TestTrue(TEXT("Native enemy default plus existing blueprints are migrated"), Saved->Enemies.Num() >= 15);
     TestTrue(TEXT("Music and effects are separate child classes"), Saved->MusicClass && Saved->EffectsClass && Saved->MusicClass != Saved->EffectsClass);
     TestTrue(TEXT("Music and effects share the project master"), Saved->MusicClass->ParentClass == Saved->EffectsClass->ParentClass);
-    TestFalse(TEXT("Legacy weapon audio is no longer an editable second source"), FindFProperty<FProperty>(FRogueWeaponTableRow::StaticStruct(), TEXT("AttackAudio"))->HasAnyPropertyFlags(CPF_Edit));
-    TestFalse(TEXT("Legacy enemy audio is no longer an editable second source"), FindFProperty<FProperty>(ARogueEnemy::StaticClass(), TEXT("AttackAudio"))->HasAnyPropertyFlags(CPF_Edit));
+    TestNull(TEXT("Weapon table has no obsolete audio copy"), FindFProperty<FProperty>(FRogueWeaponTableRow::StaticStruct(), TEXT("AttackAudio")));
+    TestNull(TEXT("Enemy class has no obsolete audio copy"), FindFProperty<FProperty>(ARogueEnemy::StaticClass(), TEXT("AttackAudio")));
     auto* Config = DuplicateObject<URogueAudioConfig>(Saved, GetTransientPackage());
     auto* A = NewObject<USoundWave>(); auto* B = NewObject<USoundWave>();
     Config->Enemies.Reset();

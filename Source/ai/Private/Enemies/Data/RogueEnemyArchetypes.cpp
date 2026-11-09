@@ -412,7 +412,6 @@ namespace
 		FRogueEnemyBulletRingSettings Ring;
 		Ring.ProjectileCount = bIsBoss ? 24 : 16;
 		Ring.ProjectileSpeed = bIsBoss ? 880.0f : 760.0f;
-		Ring.ProjectileLifetime = 30.0f;
 		Ring.ProjectileScale = 0.32f;
 		Ring.DamageMultiplier = bIsBoss ? 0.34f : 0.28f;
 		Ring.HeightAboveGround = 50.0f;

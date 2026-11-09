@@ -2,9 +2,12 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "Combat/Weapons/RogueWeaponCombatSettings.h"
+#include "Combat/Visuals/RogueCombatAccentEffect.h"
 #include "RogueReturningTalisman.generated.h"
 
 class ARogueCharacter;
+class ARogueWeaponBase;
 class ARogueEnemy;
 class USceneComponent;
 class UStaticMeshComponent;
@@ -25,13 +28,23 @@ class AI_API ARogueReturningTalisman : public AActor
 {
     GENERATED_BODY()
 public:
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="外观|开火特效", meta=(DisplayName="开火闪光与碎光"))
+    FRogueCombatAccentSettings FireAccent;
+    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="外观|命中特效",meta=(DisplayName="命中特效风格"))
+    ERogueWeaponImpactStyle HitVisualStyle=ERogueWeaponImpactStyle::Default;
+
     ARogueReturningTalisman();
     virtual void Tick(float DeltaSeconds) override;
     virtual void BeginPlay() override;
+    virtual void EndPlay(const EEndPlayReason::Type Reason) override;
+    ARogueEnemy* GetCurrentTarget() const;
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
     void Configure(ARogueCharacter* Player, int32 Index, int32 Count, float Damage, float Range,
-        float Cooldown, int32 Targets, int32 HitsPerTarget);
-    bool TryLaunch();
+        float Cooldown, int32 Targets, int32 HitsPerTarget, const FRogueTalismanCombatSettings& Combat = FRogueTalismanCombatSettings(), ARogueWeaponBase* Weapon = nullptr);
+    UFUNCTION(BlueprintCallable,Category="灵符|动作") bool TryLaunch();
+    /** Empty slots keep the authored flight material. Only used while waiting in orbit. */
+    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="灵符|环绕",meta=(DisplayName="待命表现材质（按槽位）"))
+    TArray<TObjectPtr<UMaterialInterface>> OrbitMaterials;
 
     UFUNCTION(BlueprintPure, Category="灵符|状态") ERogueTalismanPhase GetFlightPhase() const { return Phase; }
     UFUNCTION(BlueprintPure, Category="灵符|状态") int32 GetSortieHitCount() const;
@@ -45,12 +58,12 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="灵符|环绕", meta=(DisplayName="环绕角速度", Units="deg/s")) float OrbitSpeed=75;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="灵符|环绕", meta=(DisplayName="待命尺寸倍率", ClampMin="0.05", ToolTip="只改变环绕时的大小；飞出去后恢复 Mesh 组件本身的缩放。")) float OrbitSizeMultiplier=1;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="灵符|飞行", meta=(DisplayName="飞行朝向修正", ToolTip="相对实际飞行方向的模型角度补偿，只影响外观。替换模型后可调俯仰、偏航、翻滚；保留 Mesh 组件的旋转和缩放。")) FRotator FlightRotationOffset=FRotator::ZeroRotator;
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="灵符|飞行", meta=(DisplayName="出击速度", ClampMin="100", Units="cm/s")) float FlightSpeed=1500;
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="灵符|飞行", meta=(DisplayName="返回速度", ClampMin="100", Units="cm/s")) float ReturnSpeed=1900;
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="灵符|飞行", meta=(DisplayName="穿刺后的越过距离", ClampMin="40", Units="cm")) float OvershootDistance=150;
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="灵符|飞行", meta=(DisplayName="伤害扫掠半径", ClampMin="1", Units="cm")) float HitRadius=28;
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="灵符|飞行", meta=(DisplayName="单次出击超时返回", ClampMin="1", Units="s")) float MaxSortieSeconds=30;
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="灵符|飞行", meta=(DisplayName="返回超时归位", ClampMin="0.25", Units="s", ToolTip="超过此时长仍未回到轨道则自动归位，避免极低速度或异常位置导致永久停火。")) float MaxReturnSeconds=8;
+    UPROPERTY() float FlightSpeed=1500;
+    UPROPERTY() float ReturnSpeed=1900;
+    UPROPERTY() float OvershootDistance=150;
+    UPROPERTY() float HitRadius=28;
+    UPROPERTY() float MaxSortieSeconds=30;
+    UPROPERTY() float MaxReturnSeconds=8;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="灵符|拖尾", meta=(DisplayName="启用飞行拖尾")) bool bEnableTrail=true;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="灵符|拖尾", meta=(DisplayName="拖尾材质")) TObjectPtr<UMaterialInterface> TrailMaterial;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="灵符|拖尾", meta=(DisplayName="拖尾宽度", ClampMin="0.2", Units="cm")) float TrailWidth=9;
@@ -71,6 +84,7 @@ private:
     UPROPERTY() TArray<TObjectPtr<USplineMeshComponent>> TrailSegments;
     TArray<FVictim> Victims;
     TSet<TWeakObjectPtr<ARogueEnemy>> HitThisPass;
+    TWeakObjectPtr<ARogueWeaponBase> TargetingWeapon;
     TWeakObjectPtr<ARogueEnemy> Target;
     FGuid TargetCycle;
     FVector LegEnd=FVector::ZeroVector;
@@ -83,6 +97,8 @@ private:
     float Damage=0, SeekRange=1800, Cooldown=1.3f, NextLaunchTime=0, SortieAge=0;
     int32 TargetBudget=1, HitBudget=1, SortieTargetBudget=1, SortieHitBudget=1;
     bool bVisualInitialized=false;
+    UPROPERTY(Transient) TArray<TObjectPtr<UMaterialInterface>> FlightMaterials;
+    bool bOrbitMaterialsApplied=false,bFlightForceDisableNanite=false;
 
     FVector OrbitLocation() const;
     bool IsUsable(const ARogueEnemy* Enemy, const FGuid& Cycle) const;

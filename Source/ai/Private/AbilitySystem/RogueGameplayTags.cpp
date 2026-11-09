@@ -12,6 +12,7 @@ namespace RogueGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG(Ability_Enemy_Attack,         "Ability.Enemy.Attack");
 
 	// ---- 状态 ----
+	UE_DEFINE_GAMEPLAY_TAG(State_BossDamageInversion, "State.Boss.DamageInversion");
 	UE_DEFINE_GAMEPLAY_TAG(State_Dead,                   "State.Dead");
 	UE_DEFINE_GAMEPLAY_TAG(State_Dashing,                "State.Dashing");
 	UE_DEFINE_GAMEPLAY_TAG(State_Invulnerable,           "State.Invulnerable");

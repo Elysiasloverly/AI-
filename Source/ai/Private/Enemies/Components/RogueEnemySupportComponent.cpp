@@ -15,15 +15,17 @@ void URogueEnemySupportComponent::GetLifetimeReplicatedProps(TArray<FLifetimePro
 { Super::GetLifetimeReplicatedProps(OutLifetimeProps);DOREPLIFETIME(URogueEnemySupportComponent,Link); }
 void URogueEnemySupportComponent::InitializeRuntime()
 {
+    bHasMovementDestination=false;
     Timer=0;MovementTarget.Reset();MovementCycle.Invalidate();SearchRemaining=SteeringRemaining=0;CachedMoveDirection=FVector::ZeroVector;bWasRetreating=false;
     auto* E=Cast<ARogueEnemy>(GetOwner());
     SetComponentTickEnabled(E&&RogueEnemyArchetypes::IsHealerType(E->GetEnemyType())&&!E->IsAvailableInPool());
 }
 void URogueEnemySupportComponent::ResetForPool()
 {
+    bHasMovementDestination=false;
     if (GetOwner()->HasAuthority()) SetTarget(nullptr);
     TargetCycle.Invalidate();Timer=0;MovementTarget.Reset();MovementCycle.Invalidate();SearchRemaining=SteeringRemaining=0;CachedMoveDirection=FVector::ZeroVector;bWasRetreating=false;
-    if (Circle) Circle->SetActorHiddenInGame(true);if (Beam) Beam->SetActorHiddenInGame(true);
+    if (Circle) Circle->HideVisual();if (Beam) Beam->HideVisual();
     SetComponentTickEnabled(false);
 }
 bool URogueEnemySupportComponent::IsSupportAlly(const ARogueEnemy* T) const
@@ -78,6 +80,16 @@ ARogueEnemyEffectVisual* URogueEnemySupportComponent::EnsureVisual(TObjectPtr<AR
     { FActorSpawnParameters P;P.Owner=GetOwner();P.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AlwaysSpawn;V=GetWorld()->SpawnActor<ARogueEnemyEffectVisual>(C,FTransform(),P); }
     return V;
 }
+const ARogueEnemy* URogueEnemySupportComponent::GetActiveHealingLinkTarget() const
+{
+    const auto* Healer = Cast<ARogueEnemy>(GetOwner());
+    const auto* Target = Link.Target.Get();
+    return Healer && Healer->GetEnemyType() == ERogueEnemyType::LinkHealer && IsValid(Target) &&
+        !Target->IsDead() && !Target->IsAvailableInPool() &&
+        Healer->GetPresentationGeneration() == Link.SourceGeneration &&
+        Target->GetPresentationGeneration() == Link.TargetGeneration ? Target : nullptr;
+}
+
 void URogueEnemySupportComponent::UpdateVisuals()
 {
     auto* E=Cast<ARogueEnemy>(GetOwner());
@@ -87,12 +99,9 @@ void URogueEnemySupportComponent::UpdateVisuals()
         if (auto* V=EnsureVisual(Circle,HealingCircleClass))
         { auto P=E->GetActorLocation();P.Z-=E->GetCapsuleComponent()->GetScaledCapsuleHalfHeight()-5;V->ConfigureCircle(P,E->GetCurrentArchetype().Healing.Sanitized().Radius); }
     }
-    const auto* T=Link.Target.Get();
-    const bool Active=E->GetEnemyType()==ERogueEnemyType::LinkHealer&&T&&!T->IsDead()&&!T->IsAvailableInPool()
-        &&E->GetPresentationGeneration()==Link.SourceGeneration&&T->GetPresentationGeneration()==Link.TargetGeneration;
-    if (Active)
+    if (const auto* T = GetActiveHealingLinkTarget())
     { if (auto* V=EnsureVisual(Beam,HealingLinkClass)) V->ConfigureBeam(E->GetActorLocation()+FVector(0,0,25),T->GetActorLocation()+FVector(0,0,25)); }
-    else if (Beam) Beam->SetActorHiddenInGame(true);
+    else if (Beam) Beam->HideVisual();
 }
 void URogueEnemySupportComponent::TickComponent(float D,ELevelTick Type,FActorComponentTickFunction* F)
 {

@@ -7,6 +7,7 @@
 #include "Progression/Shop/RogueShopSystem.h"
 #include "Progression/Meta/RogueProgressionTypes.h"
 #include "Player/RogueStagePlayerSnapshot.h"
+#include "Player/RogueUpgradePickView.h"
 #include "RoguePlayerState.generated.h"
 
 class URogueAbilitySystemComponent;
@@ -31,6 +32,12 @@ class AI_API ARoguePlayerState : public APlayerState, public IAbilitySystemInter
 
 public:
 	ARoguePlayerState();
+    /** 每玩家的菜单免伤状态由所属连接提交，伤害仍在服务端统一拦截。 */
+    UFUNCTION(Server, Reliable) void Server_SetPauseMenuOpen(bool bOpen);
+    bool IsPauseMenuOpen() const { return bPauseMenuOpen; }
+private:
+    UPROPERTY(Replicated) bool bPauseMenuOpen = false;
+public:
     virtual void CopyProperties(APlayerState* NewPlayerState) override;
     void PrepareStageTravel();
     void CancelStageTravel();
@@ -67,6 +74,9 @@ public:
 	void BeginProgressionHandshake();
 	void GrantBossIceBrick(const FGuid& RewardId, int32 Amount = 1);
 	int32 GetBossIceBricksEarnedThisRun() const { return BossIceBricksEarnedThisRun; }
+    void NotifyCardAcquiredForPresentation(ERogueUpgradeType Type, const FGuid& ReceiptId);
+    UFUNCTION(Client, Reliable)
+    void Client_NotifyCardAcquired(ERogueUpgradeType Type, const FGuid& ReceiptId, int32 PickCount, int32 DisplayCount);
 
 
 	// ===========================================================
@@ -83,14 +93,19 @@ public:
 
 	/** 本局已选择/购买某类升级的次数；用于 DT_UpgradeDefinitions.MaxPicks 过滤。 */
 	int32 GetUpgradePickCount(ERogueUpgradeType Type) const { return UpgradePickCounts.FindRef(Type); }
-	void RegisterUpgradePick(ERogueUpgradeType Type) { ++UpgradePickCounts.FindOrAdd(Type); }
+	void RegisterUpgradePick(ERogueUpgradeType Type);
+    const TArray<FRogueUpgradePickView>& GetUpgradePickViews() const { return UpgradePickViews; }
 
 	/** 服务端：写入本次待选卡牌并打开选择界面（会自动复制） */
 	void OpenUpgradeSelection(const TArray<FRogueUpgradeOption>& InOptions);
 
-	/** 服务端：关闭选择界面 */
+	/** 服务端：关闭并清空当前卡组。暂存选择请使用 SuspendUpgradeSelection。 */
 	void CloseUpgradeSelection();
 
+    /** 收起当前选择但保留同一组卡；Q 再次打开时不重新抽卡。 */
+    void SuspendUpgradeSelection();
+    int32 GetPendingUpgradeCount() const;
+    UFUNCTION(Server,Reliable) void Server_ToggleUpgradeSelection();
 	void QueueUpgradeSelections(int32 Count);
 	int32 GetQueuedUpgradeSelections() const { return QueuedUpgradeSelections; }
 
@@ -219,12 +234,16 @@ protected:
 	/** 本局每类升级已选次数；服务端过滤卡池用，跨无缝旅行随 CopyProperties 携带。 */
 	UPROPERTY(Transient)
 	TMap<ERogueUpgradeType, int32> UpgradePickCounts;
+    UPROPERTY(ReplicatedUsing=OnRep_UpgradePickViews) TArray<FRogueUpgradePickView> UpgradePickViews;
+    UFUNCTION() void OnRep_UpgradePickViews();
+    friend struct FRogueOwnedItemsTestAccess;
 
 	UPROPERTY(ReplicatedUsing = OnRep_PendingUpgrades)
 	bool bAwaitingUpgradeChoice = false;
 
-	/** 排队中的待选次数。纯服务端状态，客户端不需要知道，所以不复制。 */
-	int32 QueuedUpgradeSelections = 0;
+    /** 未生成卡牌的选择次数；仅复制给拥有者，用于本机 HUD 的待选数量。 */
+    UPROPERTY(Replicated)
+    int32 QueuedUpgradeSelections = 0;
 	FGuid SubmittedSelectionId;
 
 	// ---- 商店镜像（复制给拥有者）----

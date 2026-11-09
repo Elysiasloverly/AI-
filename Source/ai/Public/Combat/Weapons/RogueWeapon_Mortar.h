@@ -28,7 +28,7 @@ public:
 	virtual float GetEffectiveCooldown() const override;
 
 	/** 弹速只吃 50% 的弹速加成。 */
-	virtual float GetProjectileSpeedBonusScale() const override { return 0.5f; }
+	virtual float GetProjectileSpeedBonusScale() const override { return Config.ProjectileSpeedBonusScale; }
 
 	/** 基础爆炸半径 + MortarBlastRadius 加成 + AttackRange 加成×0.35。
 	 *  MortarExplosionRadius 不为正时回退到 ExplosionRadius。 */

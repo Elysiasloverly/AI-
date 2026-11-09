@@ -30,6 +30,11 @@ public:
 	void ActivatePooledProjectile(AActor* InOwner, APawn* InInstigator, const FVector& SpawnLocation, const FRotator& SpawnRotation, const FVector& InDirection, float InSpeed, float InDamage, bool bInBossShot, float InLifetime = 0.0f, float InVisualScale = 1.0f, bool bInSimpleVisual = false, const FRogueEnemyProjectileMotion& InMotion = FRogueEnemyProjectileMotion());
 	void DeactivateToPool();
 	bool IsAvailableInPool() const { return bPoolAvailable; }
+    bool IsUsingBatchedMovement() const { return bBatchedMovement; }
+
+    /** 有自定义移动需求时可关闭；复杂弹道和实现了 Event Tick 的蓝图自动使用原移动组件。 */
+    UPROPERTY(EditDefaultsOnly, Category="Rogue|Performance", meta=(DisplayName="直线弹幕集中更新"))
+    bool bAllowBatchedMovement = true;
 
 	/** 本次激活的视觉缩放（整圈弹幕会传 0.4 这类值）；蓝图可据此缩放自己的组件。 */
 	UFUNCTION(BlueprintPure, Category = "Rogue|Projectile")
@@ -45,9 +50,9 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Projectile", meta = (DisplayName = "命中特效缩放"))
 	FVector ImpactEffectScale = FVector(0.24f);
 
-	/** 未命中时的存活时间；调用方可用 InLifetime 覆盖。 */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Pooling", meta = (DisplayName = "未命中存活时间"))
-	float PooledLifetime = 30.0f;
+	/** 未命中时的存活时间；调用方可以缩短，敌方弹幕统一最多存活 15 秒。 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Pooling", meta = (DisplayName = "未命中存活时间", ClampMin = "0.1", ClampMax = "15", Units = "s"))
+	float PooledLifetime = 15.0f;
 
 	/** 本次激活的 Boss 标记；蓝图可据此换材质/特效。 */
 	UPROPERTY(BlueprintReadOnly, Category = "Rogue|Projectile")
@@ -63,6 +68,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+    virtual void EndPlay(const EEndPlayReason::Type Reason) override;
 
 	/** 激活完成、碰撞开启前触发；蓝图在这里设置外观。 */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Rogue|Projectile")
@@ -77,6 +83,12 @@ protected:
 	void OnProjectileCulled(bool bCulled);
 
 private:
+    friend class URogueEnemyBulletSubsystem;
+    bool CanBatchMovement() const;
+    void AdvanceBatchedMovement(float DeltaSeconds,TArray<FHitResult>& Hits);
+    bool bBatchedMovement=false;
+    uint64 BatchGeneration=0;
+
 	UFUNCTION()
 	void HandleOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
 

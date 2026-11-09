@@ -3,7 +3,7 @@
 #include "AbilitySystem/Tasks/RogueAbilityTask_Dash.h"
 #include "AbilitySystem/RogueAttributeSet.h"
 #include "AbilitySystem/GameplayEffects/RogueStateEffects.h"
-#include "Combat/Visuals/RogueImpactEffect.h"
+#include "Components/CapsuleComponent.h"
 #include "AbilitySystem/RogueGameplayTags.h"
 #include "Framework/RogueGameState.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -49,7 +49,7 @@ void URogueGameplayAbility_Dash::ActivateAbility(
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 
 	ARogueCharacter* Character = Cast<ARogueCharacter>(GetAvatarActorFromActorInfo());
-	if (Character == nullptr)
+	if (!IsValid(Character) || !Character->IsAlive())
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, /*bReplicateEndAbility=*/true, /*bWasCancelled=*/true);
 		return;
@@ -75,6 +75,14 @@ void URogueGameplayAbility_Dash::ActivateAbility(
 		return;
 	}
 
+	const float DashSpeed = AttributeSet->GetDashSpeed();
+	const float DashDuration = AttributeSet->GetDashDuration();
+	if (!FMath::IsFinite(DashSpeed) || DashSpeed <= 0.f || !FMath::IsFinite(DashDuration) || DashDuration <= 0.f)
+	{
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		return;
+	}
+
 	// CommitAbility 重新检查有效 Spec、冷却和代价，然后施加冷却/代价。
 	// 它不等于重新执行完整 CanActivateAbility，也不自动重查全部激活阻塞标签。
 	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
@@ -83,29 +91,12 @@ void URogueGameplayAbility_Dash::ActivateAbility(
 		return;
 	}
 
-	const float DashSpeed = AttributeSet->GetDashSpeed();
-	const float DashDuration = AttributeSet->GetDashDuration();
-
 	// 与旧实现一致：先停下当前移动、面向冲刺方向
 	if (UCharacterMovementComponent* Movement = Character->GetCharacterMovement())
 	{
 		Movement->StopMovementImmediately();
 	}
 	Character->SetActorRotation(DashDirection.Rotation());
-
-	// 仅权威端发送冲刺 Cue；拥有者本地激活不在此预播特效。
-	// 接收范围受载体 Actor 的网络相关性影响，瞬时 Cue 通道不保证所有客户端都收到。
-	// 预测去重需要客户端/服务端使用匹配预测键，不能把 Cue 当作通用重复事件去重器。
-	AActor* AvatarActor = GetAvatarActorFromActorInfo();
-	if (AvatarActor != nullptr && AvatarActor->HasAuthority())
-	{
-		ARogueGameState::PlayImpactEffect(
-			AvatarActor,
-			Character->GetActorLocation() + FVector(0.0f, 0.0f, 38.0f),
-			DashDirection.Rotation(),
-			ERogueImpactVisualStyle::Laser,
-			FVector(0.42f, 0.42f, 0.20f));
-	}
 
 	DashTask = URogueAbilityTask_Dash::Dash(this, DashDirection, DashSpeed, DashDuration);
 	if (DashTask == nullptr)
@@ -114,6 +105,13 @@ void URogueGameplayAbility_Dash::ActivateAbility(
 		return;
 	}
 
+    // Both endpoints are sent once by authority; the predicted ability does not duplicate them.
+    if (Character->HasAuthority())
+    {
+        const FVector Feet = Character->GetActorLocation() -
+            FVector(0, 0, Character->GetCapsuleComponent()->GetScaledCapsuleHalfHeight() - 20.f);
+        Character->Multicast_DashPresentation(true, Feet, DashDirection);
+    }
 	DashTask->OnDashFinished.AddDynamic(this, &URogueGameplayAbility_Dash::HandleDashFinished);
 	DashTask->ReadyForActivation();
 }
@@ -122,6 +120,13 @@ void URogueGameplayAbility_Dash::HandleDashFinished()
 {
 	if (IsActive())
 	{
+        if (auto* Character = Cast<ARogueCharacter>(GetAvatarActorFromActorInfo());
+            Character && Character->HasAuthority() && Character->IsAlive())
+        {
+            const FVector Feet = Character->GetActorLocation() -
+                FVector(0, 0, Character->GetCapsuleComponent()->GetScaledCapsuleHalfHeight() - 8.f);
+            Character->Multicast_DashPresentation(false, Feet, Character->GetActorForwardVector().GetSafeNormal2D());
+        }
 		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo,
 			/*bReplicateEndAbility=*/true, /*bWasCancelled=*/false);
 	}

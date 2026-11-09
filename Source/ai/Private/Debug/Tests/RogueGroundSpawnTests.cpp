@@ -1,4 +1,4 @@
-#if WITH_DEV_AUTOMATION_TESTS
+﻿#if WITH_DEV_AUTOMATION_TESTS
 
 #include "Combat/Pooling/RogueCombatPoolSubsystem.h"
 #include "Components/BoxComponent.h"
@@ -16,6 +16,7 @@
 #include "Player/RoguePlayerController.h"
 #include "Tests/AutomationCommon.h"
 #include "World/RogueEnemySpawnRegion.h"
+#include "World/RogueRangedSpawnPoint.h"
 #include "World/RogueShopTerminal.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SceneComponent.h"
@@ -165,6 +166,28 @@ bool FRogueGroundSpawnRejectionTest::RunTest(const FString& Parameters)
 	ARogueEnemy* Enemy = F.Spawn(*this);
 	if (Enemy) { F.CheckHeight(*this, Enemy, 0.0f); }
 	return Enemy != nullptr;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueGroundSpawnRockTopTest,
+    "Rogue.Gameplay.GroundSpawn.IsolatedWalkableRockTopFallsBackToFloor", RogueGroundSpawnTests::Flags)
+bool FRogueGroundSpawnRockTopTest::RunTest(const FString& Parameters)
+{
+    using namespace RogueGroundSpawnTests;
+    FFixture F;
+    if (!F.Initialize(*this)) { return false; }
+    F.Settings.SpawnRadius = 0.0f;
+    F.Settings.EnemySpawnMinimumDistance = 0.0f;
+    F.Configure();
+    F.Region->ConfigureGroundHeightRange(true, -1010, -800);
+    F.Box(FVector(0, 0, -20), FVector(20000, 20000, 20));
+    // A flat top inside the authored height band, wider than the entire enemy capsule.
+    F.Box(FVector(0, 0, 60), FVector(125, 125, 60));
+    ARogueEnemy* Enemy = F.Spawn(*this);
+    if (!Enemy) { return false; }
+    F.CheckHeight(*this, Enemy, 0.f);
+    TestTrue(TEXT("The blocked rock candidate is replaced with a floor location"),
+        Enemy->GetActorLocation().SizeSquared2D() > FMath::Square(125.f));
+    return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueGroundSpawnSlopeTest,
@@ -497,6 +520,184 @@ bool FRogueSpawnOutlineTransformTest::RunTest(const FString& Parameters)
     F.Region->OnConstruction(F.Region->GetActorTransform());
     TestEqual(TEXT("Rerunning construction preserves edited vertices"),F.Region->GetSpawnOutline()->GetNumberOfSplinePoints(),6);
     return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueGroundSpawnOccupiedTest,
+    "Rogue.Gameplay.GroundSpawn.OccupiedClearingWaitsForSpace", RogueGroundSpawnTests::Flags)
+bool FRogueGroundSpawnOccupiedTest::RunTest(const FString&)
+{
+    using namespace RogueGroundSpawnTests;
+    FFixture F;
+    if (!F.Initialize(*this)) { return false; }
+    F.Box(FVector(0, 0, -20), FVector(3000, 3000, 20));
+    F.Region->SetActorLocation(FVector(1500, 0, 1000));
+    F.Region->GetSpawnBounds()->SetBoxExtent(FVector(164, 164, 6000));
+    auto* Balance = NewObject<URogueGameBalanceAsset>(F.World);
+    Balance->Spawn.BaseEnemiesPerWave = 2;
+    Balance->Spawn.EnemiesPerWaveIncrement = 0;
+    F.Spawner->Configure(F.EnemyClass, {}, F.Settings, F.BossSettings, Balance, nullptr);
+
+    // The region samples the full box, including its 100 cm border. Allow repeated attempts at the small interior.
+    const auto SpawnInClearing = [&F]()
+    {
+        for (int32 Attempt = 0; Attempt < 16; ++Attempt)
+            if (F.Spawner->SpawnEnemy(F.State, F.Player, F.Region)) { return true; }
+        return false;
+    };
+    if (!TestTrue(TEXT("A single enemy fits in the small clearing"), SpawnInClearing())) { return false; }
+    ARogueEnemy* First = F.ActiveEnemy();
+    if (!TestNotNull(TEXT("The first enemy is active"), First)) { return false; }
+    TestFalse(TEXT("The active enemy takes up the small clearing"), SpawnInClearing());
+    First->DeactivateToPool();
+    TestTrue(TEXT("The failed attempt leaves the second spawn available"), SpawnInClearing());
+    return true;
+}
+
+
+namespace RogueGroundSpawnTests
+{
+    static URogueGameBalanceAsset* ForceType(FFixture& F, ERogueEnemyType Type)
+    {
+        auto* Balance = NewObject<URogueGameBalanceAsset>(F.Spawner);
+        Balance->EnemyWaveEntries.SetNum(1);
+        auto& Entry = Balance->EnemyWaveEntries[0];
+        Entry.EnemyType = Type; Entry.Weight = 1; Entry.MinWave = 1;
+        F.Spawner->Configure(F.EnemyClass, {}, F.Settings, F.BossSettings, Balance, nullptr);
+        return Balance;
+    }
+    static ARogueRangedSpawnPoint* Point(FFixture& F, const FVector& Location)
+    {
+        auto* Result = F.World->SpawnActor<ARogueRangedSpawnPoint>();
+        Result->SpawnRegion = F.Region;
+        Result->SetActorLocation(Location);
+        return Result;
+    }
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueFixedRangedRoundRobinTest,
+    "Rogue.Gameplay.FixedRangedSpawn.RotatesThroughAuthoredSites", RogueGroundSpawnTests::Flags)
+bool FRogueFixedRangedRoundRobinTest::RunTest(const FString& Parameters)
+{
+    using namespace RogueGroundSpawnTests;
+    FFixture F;
+    if (!F.Initialize(*this)) { return false; }
+    ForceType(F, ERogueEnemyType::SkyMoth);
+    F.Box(FVector(0,0,-20), FVector(20000,20000,20));
+    const FVector Sites[] = {FVector(1800,0,500),FVector(0,1800,500),FVector(-1800,0,500)};
+    for (const auto& Site : Sites) { Point(F, Site); }
+    TSet<ARogueEnemy*> Found;
+    for (int32 I=0; I<3; ++I)
+    {
+        if (!TestTrue(TEXT("Ranged spawn succeeds at a fixed site"), F.Spawner->SpawnEnemy(F.State,F.Player,F.Region))) return false;
+        for (TActorIterator<ARogueEnemy> It(F.World); It; ++It)
+            if (!It->IsAvailableInPool() && !Found.Contains(*It))
+            {
+                TestTrue(TEXT("Flying ranged spawn retains the authored XY"), FVector::DistSquared2D(It->GetActorLocation(),Sites[I])<1.f);
+                TestTrue(TEXT("The actual flying archetype is selected"), It->HasRangedAttack());
+                Found.Add(*It);
+            }
+    }
+    TestEqual(TEXT("Three successful spawns consume exactly three wave slots"),F.Spawner->GetSpawnedCountThisWave(),3);
+    return TestEqual(TEXT("Three distinct active enemies exist"),Found.Num(),3);
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueFixedRangedSafetyTest,
+    "Rogue.Gameplay.FixedRangedSpawn.DistantOrBlockedSitesFallBackNearby", RogueGroundSpawnTests::Flags)
+bool FRogueFixedRangedSafetyTest::RunTest(const FString& Parameters)
+{
+    using namespace RogueGroundSpawnTests;
+    FFixture F;
+    if (!F.Initialize(*this)) return false;
+    ForceType(F, ERogueEnemyType::SkyMoth);
+    F.Box(FVector(0,0,-20), FVector(20000,20000,20));
+    auto* P=Point(F,FVector(1800,0,500));P->bEnabled=false;
+    TestFalse(TEXT("Manually disabling every site still suppresses that region's ranged spawning"),F.Spawner->SpawnEnemy(F.State,F.Player,F.Region));
+    TestEqual(TEXT("A disabled attempt does not spend wave budget"),F.Spawner->GetSpawnedCountThisWave(),0);
+    P->bEnabled=true;
+    auto CheckNearby=[&](const TCHAR* Message)
+    {
+        if(!TestTrue(Message,F.Spawner->SpawnEnemy(F.State,F.Player,F.Region)))return;
+        auto* E=F.ActiveEnemy();if(!TestNotNull(TEXT("A nearby enemy exists"),E))return;
+        const float Distance=FVector::Dist2D(E->GetActorLocation(),F.Player->GetActorLocation());
+        TestTrue(TEXT("Fallback keeps the authored player safety distance"),Distance>=F.Settings.EnemySpawnMinimumDistance);
+        TestTrue(TEXT("Fallback stays inside the active combat ring"),Distance<=F.Settings.SpawnRadius*1.25f+1);
+        E->DeactivateToPool();
+    };
+    P->SetActorLocation(FVector(4500,0,500));
+    CheckNearby(TEXT("Far-end fixed site is replaced by a nearby spawn"));
+    P->SetActorLocation(FVector(200,0,500));
+    CheckNearby(TEXT("A site too close to the player uses another safe nearby position"));
+    P->SetActorLocation(FVector(1800,0,500));
+    F.Box(FVector(1800,0,200),FVector(100,100,200));
+    CheckNearby(TEXT("A blocked fixed site does not push spawning to the far side of the map"));
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueFixedRangedMeleeTest,
+    "Rogue.Gameplay.FixedRangedSpawn.ContactEnemiesKeepRegionSpawning", RogueGroundSpawnTests::Flags)
+bool FRogueFixedRangedMeleeTest::RunTest(const FString& Parameters)
+{
+    using namespace RogueGroundSpawnTests;
+    FFixture F;
+    if (!F.Initialize(*this)) return false;
+    ForceType(F,ERogueEnemyType::Rifleman);
+    F.Box(FVector(0,0,-20), FVector(20000,20000,20));
+    Point(F,FVector(2000,0,500))->bEnabled=false;
+    auto* E=F.Spawn(*this);
+    return E && TestFalse(TEXT("A contact-only enemy is not routed to ranged spawn points"),E->HasRangedAttack());
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueFixedRangedRegionTest,
+    "Rogue.Gameplay.FixedRangedSpawn.RegionBindingAndDestroyedPointLifetime", RogueGroundSpawnTests::Flags)
+bool FRogueFixedRangedRegionTest::RunTest(const FString& Parameters)
+{
+    using namespace RogueGroundSpawnTests;
+    FFixture F;
+    if (!F.Initialize(*this)) return false;
+    ForceType(F,ERogueEnemyType::SkyMoth);
+    F.Box(FVector(0,0,-20), FVector(20000,20000,20));
+    auto* P=Point(F,FVector(2000,0,500));
+    P->SpawnRegion=F.World->SpawnActor<ARogueEnemySpawnRegion>();P->bEnabled=false;
+    TestTrue(TEXT("Other-region disabled points cannot block this region"),F.Spawner->SpawnEnemy(F.State,F.Player,F.Region));
+    if (auto* E=F.ActiveEnemy()) E->DeactivateToPool();
+    P->Destroy();
+    return TestTrue(TEXT("Destroyed points unregister and legacy custom maps remain functional"),F.Spawner->SpawnEnemy(F.State,F.Player,F.Region));
+}
+
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueFixedRangedClosestSitesTest,
+    "Rogue.Gameplay.FixedRangedSpawn.OnlyThreeClosestSitesAreActive",RogueGroundSpawnTests::Flags)
+bool FRogueFixedRangedClosestSitesTest::RunTest(const FString&)
+{
+    using namespace RogueGroundSpawnTests;FFixture F;if(!F.Initialize(*this))return false;
+    ForceType(F,ERogueEnemyType::SkyMoth);F.Box(FVector(0,0,-20),FVector(20000,20000,20));
+    // Register the distant site first: registration order must not win over player proximity.
+    Point(F,FVector(-1800,0,500));
+    const FVector Sites[]={FVector(700,0,500),FVector(0,1000,500),FVector(-1300,0,500)};
+    for(const auto& Site:Sites)Point(F,Site);
+    for(int32 I=0;I<6;++I)
+    {
+        if(!TestTrue(TEXT("A local fixed site is used"),F.Spawner->SpawnEnemy(F.State,F.Player,F.Region)))return false;
+        auto* E=F.ActiveEnemy();if(!E)return false;
+        TestTrue(TEXT("The farthest registered site is inactive"),FVector::DistSquared2D(E->GetActorLocation(),Sites[I%3])<1);
+        E->DeactivateToPool();
+    }
+    return true;
+}
+
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueStationarySpawnNearPlayerTest,
+    "Rogue.Gameplay.FixedRangedSpawn.StationaryEnemyUsesCloseCombatRing",RogueGroundSpawnTests::Flags)
+bool FRogueStationarySpawnNearPlayerTest::RunTest(const FString&)
+{
+    using namespace RogueGroundSpawnTests;FFixture F;if(!F.Initialize(*this))return false;
+    ForceType(F,ERogueEnemyType::ShockPillar);F.Box(FVector(0,0,-20),FVector(20000,20000,20));
+    Point(F,FVector(4000,0,500));
+    auto* E=F.Spawn(*this);if(!E)return false;
+    const float Distance=FVector::Dist2D(E->GetActorLocation(),F.Player->GetActorLocation());
+    TestTrue(TEXT("The stationary enemy remains outside the player safety radius"),Distance>=F.Settings.EnemySpawnMinimumDistance);
+    TestTrue(TEXT("The stationary enemy spawns nearby instead of at the remote fixed point"),Distance<700);
+    return TestTrue(TEXT("Closer placement preserves the stationary archetype"),E->GetMovementModel()==ERogueEnemyMovementModel::Stationary);
 }
 
 #endif

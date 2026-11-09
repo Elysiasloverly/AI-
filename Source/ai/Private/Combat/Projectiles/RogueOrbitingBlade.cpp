@@ -22,7 +22,7 @@ ARogueOrbitingBlade::ARogueOrbitingBlade()
 	PrimaryActorTick.TickInterval = 0.0f;
 
 	Collision = CreateDefaultSubobject<USphereComponent>(TEXT("Collision"));
-	Collision->InitSphereRadius(VisualConfig.CollisionRadius);
+	Collision->InitSphereRadius(46.f);
 	Collision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 	Collision->SetCollisionObjectType(ECC_WorldDynamic);
 	Collision->SetCollisionResponseToAllChannels(ECR_Ignore);
@@ -223,8 +223,11 @@ void ARogueOrbitingBlade::DeactivateToPool()
 	ApplySizeMultiplier(1.0f);
 }
 
-void ARogueOrbitingBlade::ConfigureBlade(AActor* InOwnerActor, int32 InBladeIndex, int32 InBladeCount, float InOrbitRadius, float InRotationSpeed, float InDamage, float InSharedOrbitAngle, float InSizeMultiplier)
+void ARogueOrbitingBlade::ConfigureBlade(AActor* InOwnerActor, int32 InBladeIndex, int32 InBladeCount, float InOrbitRadius, float InRotationSpeed, float InDamage, float InSharedOrbitAngle, float InSizeMultiplier, float InHitRadius, float InHitCooldown)
 {
+    const float NewRadius=FMath::Max(1.f,InHitRadius);
+    if (!FMath::IsNearlyEqual(BaseCollisionRadius,NewRadius)) { BaseCollisionRadius=NewRadius; SizeMultiplier=-1.f; }
+    HitCooldown=FMath::Max(.01f,InHitCooldown);
 	OwnerActor = InOwnerActor;
 	BladeIndex = InBladeIndex;
 	BladeCount = FMath::Max(1, InBladeCount);
@@ -284,12 +287,13 @@ void ARogueOrbitingBlade::ApplyContactDamage()
 			continue;
 		}
 
-		HitCooldowns.Add(Enemy, VisualConfig.HitCooldown);
-		ARogueImpactEffect::SpawnImpactEffect(GetWorld(), Enemy->GetActorLocation() + FVector(0.0f, 0.0f, 45.0f), GetActorRotation(), ERogueImpactVisualStyle::Spark, VisualConfig.ImpactEffectScale, VisualConfig.ImpactEffectLifetime, this);
+		HitCooldowns.Add(Enemy, HitCooldown);
+        if(HitVisualStyle==ERogueWeaponImpactStyle::Default)
+            ARogueImpactEffect::SpawnImpactEffect(GetWorld(), Enemy->GetActorLocation() + FVector(0.0f, 0.0f, 45.0f), GetActorRotation(), ERogueImpactVisualStyle::Spark, VisualConfig.ImpactEffectScale, VisualConfig.ImpactEffectLifetime, this);
 		// 环绕刀片是近身伤害，Tag 用 Damage.Source.Melee
 		float DamageDealt = 0.0f;
 		const bool bDamageApplied = RogueAbilitySystem::ApplyDamageToTarget(
-			OwnerActor.Get(), Enemy, Damage, RogueGameplayTags::Damage_Source_Melee, &DamageDealt);
+			OwnerActor.Get(), Enemy, Damage, RogueGameplayTags::Damage_Source_Melee, &DamageDealt,uint8(HitVisualStyle));
 
 		// 吸血按实际扣除的护甲 + 生命计算；多把刀片各结算各的。
 		if (bDamageApplied && DamageDealt > 0.0f)

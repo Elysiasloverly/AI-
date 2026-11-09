@@ -1,0 +1,9 @@
+float radial=smoothstep(.02,.20,UV.x)*(1-smoothstep(.96,1,UV.x));
+float behind=1-UV.y;
+float travelled=1-smoothstep(Visible,Visible+.045,behind);
+float decay=pow(saturate(1-behind),1.6);
+float edgeBand=1-smoothstep(.014,.055,abs(UV.x-.89));
+float innerBand=(1-smoothstep(.008,.025,abs(UV.x-.66)))*.25;
+float phase=Echo>.5?pow(1-Progress,2)*.7:1-.3*smoothstep(.78,1,Progress);
+float3 c=lerp(float3(.025,.28,.8),float3(.68,1.18,1.58),edgeBand);
+return float4(c*Energy,radial*decay*travelled*(.32+.55*edgeBand+innerBand)*phase*Opacity);

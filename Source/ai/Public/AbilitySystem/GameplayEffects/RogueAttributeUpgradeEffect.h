@@ -259,6 +259,46 @@ public:
 
 /** 升级枚举到效果类的映射；目标属性由对应子类配置。
  * 未映射的枚举返回 nullptr，调用方须报告并处理配置缺失。 */
+UCLASS()
+class AI_API URogueUpgradeEffect_FrostBladeCount:public URogueAttributeUpgradeEffect
+{
+    GENERATED_BODY()
+public:
+    URogueUpgradeEffect_FrostBladeCount();
+};
+
+UCLASS()
+class AI_API URogueUpgradeEffect_FrostBladeSize:public URogueAttributeUpgradeEffect
+{
+    GENERATED_BODY()
+public:
+    URogueUpgradeEffect_FrostBladeSize();
+};
+
+UCLASS()
+class AI_API URogueUpgradeEffect_FrostBladeWave:public URogueAttributeUpgradeEffect
+{
+    GENERATED_BODY()
+public:
+    URogueUpgradeEffect_FrostBladeWave();
+};
+
+UCLASS()
+class AI_API URogueUpgradeEffect_FrostBladeWaveCount:public URogueAttributeUpgradeEffect
+{
+    GENERATED_BODY()
+public:
+    URogueUpgradeEffect_FrostBladeWaveCount();
+};
+
+UCLASS()
+class AI_API URogueUpgradeEffect_FrostBladeWaveSize:public URogueAttributeUpgradeEffect
+{
+    GENERATED_BODY()
+public:
+    URogueUpgradeEffect_FrostBladeWaveSize();
+};
+
 namespace RogueUpgradeEffectMap
 {
 	AI_API TSubclassOf<UGameplayEffect> GetEffectClass(ERogueUpgradeType UpgradeType);

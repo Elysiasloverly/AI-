@@ -1,11 +1,10 @@
-#include "Framework/RogueGameMode.h"
+﻿#include "Framework/RogueGameMode.h"
 #include "Debug/RogueSelfTest.h"
 #include "AbilitySystem/RogueGameplayTags.h"
 #include "AbilitySystem/RogueAbilitySystemLibrary.h"
 #include "Shared/RogueTypes.h"
 #include "AbilitySystem/RogueAttributeSet.h"
 
-#include "World/RogueArena.h"
 #include "Player/RogueCharacter.h"
 #include "Player/RoguePlayerState.h"
 #include "Player/RoguePlayerController.h"
@@ -134,7 +133,7 @@ void ARogueGameMode::NotifyPlayerDied(ARogueCharacter* DeadCharacter)
 	}
 	if (ARoguePlayerState* State = DeadCharacter->GetPlayerState<ARoguePlayerState>())
 	{
-		State->ResetUpgradeState();
+		State->SuspendUpgradeSelection();
 		State->GetShopRuntime().CloseShop();
 		State->ApplyShopSnapshot(false, TArray<FRogueShopOffer>(), 0, 0.0f);
 		State->ForceNetUpdate();
@@ -269,9 +268,8 @@ void ARogueGameMode::HandleRestartRequest(ARoguePlayerState* Requester)
 	const FString MapShortName = UGameplayStatics::GetCurrentLevelName(this, true);
 	const FString MapFolder = FPackageName::GetLongPackagePath(GetWorld()->GetOutermost()->GetName());
 	const FString CurrentLevel = MapFolder / MapShortName;
-    const FString LevelName = (CurrentLevel == StageSettings.NightMap.ToSoftObjectPath().GetLongPackageName()
-        || CurrentLevel == StageSettings.DayMap.ToSoftObjectPath().GetLongPackageName())
-        ? StageSettings.DayMap.ToSoftObjectPath().GetLongPackageName() : CurrentLevel;
+    const FString LevelName = (StageSettings.ContainsMap(CurrentLevel,true)||StageSettings.ContainsMap(CurrentLevel,false))
+        ? StageSettings.ChooseMap(false) : CurrentLevel;
 
 	if (LevelName.IsEmpty())
 	{

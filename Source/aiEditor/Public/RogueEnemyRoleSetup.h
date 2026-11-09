@@ -4,6 +4,7 @@
 #include "RogueEnemyRoleSetup.generated.h"
 class UBlueprint;
 class UMaterialInterface;
+class UStaticMesh;
 UCLASS()
 class URogueEnemyRoleSetup : public UBlueprintFunctionLibrary
 {
@@ -19,4 +20,7 @@ public:
     static bool NormalizeBodySize(UBlueprint* Blueprint,FName BodyName,float Height);
     UFUNCTION(BlueprintCallable,Category="Rogue|Editor|Enemies")
     static bool BuildHealer(UBlueprint* Blueprint,bool bSingle);
+    /** Creates/updates one owned cosmetic SCS node; never edits inherited body meshes. */
+    UFUNCTION(BlueprintCallable,Category="Rogue|Editor|Enemies")
+    static bool SetRoleAccessory(UBlueprint* Blueprint,FName Name,UStaticMesh* Mesh,UMaterialInterface* Material,FTransform Transform);
 };

@@ -1,4 +1,5 @@
-#include "Framework/RogueGameState.h"
+﻿#include "Framework/RogueGameState.h"
+#include "Enemies/Components/RogueBossSkillComponent.h"
 #include "Enemies/RogueEnemy.h"
 #include "Combat/Targeting/RogueEnemyTrackerSubsystem.h"
 
@@ -23,6 +24,7 @@ void ARogueGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
 
 	// COND_None：整局状态所有客户端都要看，不是某个玩家私有
 	DOREPLIFETIME(ARogueGameState, BossHealthView);
+	DOREPLIFETIME(ARogueGameState, EnemyLocatorView);
 	DOREPLIFETIME(ARogueGameState, BattleStage);
 	DOREPLIFETIME_CONDITION(ARogueGameState, CurrentWave, COND_None);
 	DOREPLIFETIME_CONDITION(ARogueGameState, EnemiesDefeated, COND_None);
@@ -147,10 +149,18 @@ void ARogueGameState::RefreshBossHealthView()
     {
         Next.bVisible = true;
         Next.SpawnId = Selected->GetSpawnCycleId();
+        Next.EnemyType = Selected->GetEnemyType();
         Next.MaxHealth = Selected->GetMaxHealth();
         Next.CurrentHealth = FMath::Clamp(Selected->GetCurrentHealth(), 0.f, Next.MaxHealth);
+        if (const auto* Skills=Selected->FindComponentByClass<URogueBossSkillComponent>())
+        {
+            Next.Skills=Skills->GetSelectedSkills();
+            Next.SkillPhase=Skills->GetSkillState().Phase;
+            if (Next.SkillPhase!=ERogueBossSkillPhase::Idle) Next.ActiveSkill=Skills->GetSkillState().Skill.RowName;
+        }
     }
     const bool bVisibilityChanged = Next.bVisible != BossHealthView.bVisible || Next.SpawnId != BossHealthView.SpawnId;
-    BossHealthView = Next;
-    if (bVisibilityChanged) { ForceNetUpdate(); }
+    const bool bSkillChanged=Next.ActiveSkill!=BossHealthView.ActiveSkill || Next.SkillPhase!=BossHealthView.SkillPhase;
+    BossHealthView = MoveTemp(Next);
+    if (bVisibilityChanged || bSkillChanged) { ForceNetUpdate(); }
 }

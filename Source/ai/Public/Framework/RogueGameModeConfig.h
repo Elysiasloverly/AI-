@@ -86,20 +86,11 @@ struct AI_API FRogueSpawnSettings
 	UPROPERTY(EditAnywhere, Category = "Spawning")
 	float SpawnInterval = 0.88f;
 
-    /** 仅兼容旧资产；不再参与波次推进。 */
-	UPROPERTY()
-	float WaveDuration = 25.0f;
 
-	/** 旧资产兼容字段：全场存活限制已移除，不显示、不参与刷怪计算。 */
-	UPROPERTY()
-	int32 MaxAliveEnemies = 40;
 
 	UPROPERTY(EditAnywhere, Category = "Spawning")
 	float EnemySpawnMinimumDistance = 1100.0f;
 
-	/** 旧资产兼容字段，不再参与计算；边缘留白在关卡刷怪框上配置。 */
-	UPROPERTY()
-	float ArenaSpawnPadding = 220.0f;
 
 	UPROPERTY(EditAnywhere, Category = "Spawning|Ground", meta = (DisplayName = "地面射线向上起点距离", ToolTip = "从参照玩家高度向上偏移，再裁剪到关卡刷怪框内，向下寻找地面。", ClampMin = "0", Units = "cm"))
 	float GroundTraceHeight = 2000.0f;

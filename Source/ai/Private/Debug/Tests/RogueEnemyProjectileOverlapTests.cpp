@@ -5,7 +5,10 @@
 #include "AbilitySystem/RogueAttributeSet.h"
 #include "Combat/Pooling/RogueCombatPoolSubsystem.h"
 #include "Combat/Projectiles/RogueEnemyProjectile.h"
+#include "Combat/Projectiles/RogueEnemyBulletSubsystem.h"
 #include "Components/BoxComponent.h"
+#include "Components/SphereComponent.h"
+#include "Combat/RogueCombatCollision.h"
 #include "Components/CapsuleComponent.h"
 #include "Enemies/RogueEnemy.h"
 #include "Engine/World.h"
@@ -145,7 +148,13 @@ bool FRogueEnemyAllBulletBlueprintOverlapTest::RunTest(const FString& Parameters
         // Ordinary visuals, including classes also used for rings, must obey the same team rule.
         Bullet->ActivatePooledProjectile(F.Shooter, F.Shooter, FVector(100, 0, 150), FRotator::ZeroRotator,
             FVector::ForwardVector, 900, 7, false);
-        F.Step(.5f);
+        auto* HitSphere=Cast<USphereComponent>(Bullet->GetRootComponent());
+        TestEqual(TEXT("Saved BP uses dedicated projectile channel"),HitSphere->GetCollisionObjectType(),RogueCombatCollision::EnemyProjectileChannel);
+        TestEqual(TEXT("Friend ignores enemy projectile before overlap dispatch"),F.Friend->GetCapsuleComponent()->GetCollisionResponseToChannel(RogueCombatCollision::EnemyProjectileChannel),ECR_Ignore);
+        F.Step(.24f); // Still geometrically inside the friendly capsule.
+        TArray<AActor*> FriendOverlaps;HitSphere->GetOverlappingActors(FriendOverlaps,ARogueEnemy::StaticClass());
+        TestEqual(TEXT("No friendly overlap pairs are maintained"),FriendOverlaps.Num(),0);
+        F.Step(.26f);
         TestFalse(*FString::Printf(TEXT("%s passes the friendly capsule"), Suffix), Bullet->IsAvailableInPool());
         TestTrue(TEXT("Movement was not stopped by a friend"), Bullet->GetActorLocation().X > 450);
         TestEqual(TEXT("Passing friend is not friendly fire"), F.Friend->GetCurrentHealth(), FriendHP);
@@ -184,6 +193,116 @@ bool FRogueEnemyBulletWallTest::RunTest(const FString& Parameters)
     F.Step(.4f);
     TestTrue(TEXT("Scene wall consumes the bullet"), Bullet->IsAvailableInPool());
     TestEqual(TEXT("The wall protects the player behind it"), F.Player->GetRogueAttributeSet()->GetHealth(), HP);
+    return true;
+}
+
+
+// Paired engine/batch checks exercise the same physics scene rather than a math-only replacement.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueBatchBulletOrderedHitTest,
+    "Rogue.Gameplay.EnemyBulletBatch.FastSweepKeepsPlayerAndWallOrdering",RogueEnemyProjectileOverlapTests::Flags)
+bool FRogueBatchBulletOrderedHitTest::RunTest(const FString&)
+{
+    using namespace RogueEnemyProjectileOverlapTests;
+    FTestConsoleVariable Mode(TEXT("Rogue.Projectiles.BatchEnemyMovement"));
+    for(int Path=0;Path<2;++Path)for(int WallFirst=0;WallFirst<2;++WallFirst)
+    {
+        Mode.Set(Path?TEXT("1"):TEXT("0"));FFixture F;if(!F.Initialize(*this))return false;
+        auto* A=F.World->SpawnActor<AActor>();auto* Wall=NewObject<UBoxComponent>(A);A->SetRootComponent(Wall);
+        Wall->SetBoxExtent(FVector(5,100,150));Wall->SetCollisionObjectType(ECC_WorldStatic);
+        Wall->SetCollisionResponseToAllChannels(ECR_Block);Wall->SetCollisionEnabled(ECollisionEnabled::QueryOnly);Wall->RegisterComponent();
+        A->SetActorLocation(FVector(WallFirst?500:1400,0,150));
+        auto* B=F.Projectile(ARogueEnemyProjectile::StaticClass(),FVector(100,0,150));
+        B->ActivatePooledProjectile(F.Shooter,F.Shooter,FVector(100,0,150),FRotator::ZeroRotator,FVector::ForwardVector,12000,7,false);
+        TestEqual(TEXT("Requested path actually selected"),B->IsUsingBatchedMovement(),Path==1);
+        F.TestWorld.TickTestWorld(.15f); // This segment crosses both surfaces within a single frame.
+        TestTrue(TEXT("The nearest valid obstacle consumes the bullet"),B->IsAvailableInPool());
+        TestEqual(TEXT("Player is hit exactly once only when ahead of wall"),F.Player->GetRogueAttributeSet()->GetHealth(),WallFirst?1000.f:993.f);
+    }
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueBatchBulletPoolGenerationTest,
+    "Rogue.Gameplay.EnemyBulletBatch.SameFramePoolReuseAndDestroyedEntries",RogueEnemyProjectileOverlapTests::Flags)
+bool FRogueBatchBulletPoolGenerationTest::RunTest(const FString&)
+{
+    using namespace RogueEnemyProjectileOverlapTests;FTestConsoleVariable Mode(TEXT("Rogue.Projectiles.BatchEnemyMovement"));Mode.Set(TEXT("1"));
+    FFixture F;if(!F.Initialize(*this))return false;F.Player->SetActorEnableCollision(false);
+    auto* B=F.Projectile(ARogueEnemyProjectile::StaticClass(),FVector(100,500,150));
+    B->ActivatePooledProjectile(F.Shooter,F.Shooter,FVector(100,500,150),FRotator::ZeroRotator,FVector::ForwardVector,500,7,false);
+    B->DeactivateToPool();B->DeactivateToPool();
+    B->ActivatePooledProjectile(F.Shooter,F.Shooter,FVector(100,500,150),FRotator::ZeroRotator,FVector::ForwardVector,500,7,false);
+    auto* Batch=F.World->GetSubsystem<URogueEnemyBulletSubsystem>();
+    Batch->Tick(.2f);
+    TestTrue(TEXT("Old generation does not move new occupant a second time"),B->GetActorLocation().Equals(FVector(200,500,150),.01f));
+    TestEqual(TEXT("Stale generation entries removed"),Batch->GetTrackedCount(),1);
+    B->Destroy();Batch->Tick(.1f);
+    TestEqual(TEXT("Destroyed actor cannot remain in scheduler"),Batch->GetTrackedCount(),0);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueBatchBulletCollisionPolicyTest,
+    "Rogue.Gameplay.EnemyBulletBatch.NoCollisionAndOverlapOptOutMatchComponentPath",RogueEnemyProjectileOverlapTests::Flags)
+bool FRogueBatchBulletCollisionPolicyTest::RunTest(const FString&)
+{
+    using namespace RogueEnemyProjectileOverlapTests;FTestConsoleVariable Mode(TEXT("Rogue.Projectiles.BatchEnemyMovement"));
+    for(int Path=0;Path<2;++Path)for(int DisableActor=0;DisableActor<2;++DisableActor)
+    {
+        Mode.Set(Path?TEXT("1"):TEXT("0"));FFixture F;if(!F.Initialize(*this))return false;
+        if(DisableActor)F.Player->SetActorEnableCollision(false);else F.Player->GetCapsuleComponent()->SetGenerateOverlapEvents(false);
+        auto* B=F.Projectile(ARogueEnemyProjectile::StaticClass(),FVector(100,0,150));
+        B->ActivatePooledProjectile(F.Shooter,F.Shooter,FVector(100,0,150),FRotator::ZeroRotator,FVector::ForwardVector,3000,7,false);
+        F.Step(.5f);
+        TestFalse(TEXT("A player that opted out of collision never consumes bullet"),B->IsAvailableInPool());
+        TestEqual(TEXT("A player without active overlap receives no damage"),F.Player->GetRogueAttributeSet()->GetHealth(),1000.f);
+    }
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueBatchBulletRadiusTest,
+    "Rogue.Gameplay.EnemyBulletBatch.ScaledSphereStillHitsOffAxisPlayer",RogueEnemyProjectileOverlapTests::Flags)
+bool FRogueBatchBulletRadiusTest::RunTest(const FString&)
+{
+    using namespace RogueEnemyProjectileOverlapTests;FTestConsoleVariable Mode(TEXT("Rogue.Projectiles.BatchEnemyMovement"));
+    for(int Path=0;Path<2;++Path)
+    {
+        Mode.Set(Path?TEXT("1"):TEXT("0"));FFixture F;if(!F.Initialize(*this))return false;
+        auto* B=F.Projectile(ARogueEnemyProjectile::StaticClass(),FVector(100,80,150));
+        B->ActivatePooledProjectile(F.Shooter,F.Shooter,FVector(100,80,150),FRotator::ZeroRotator,FVector::ForwardVector,3000,7,false,30,3);
+        F.Step(.5f);
+        TestTrue(TEXT("Actual scaled collision radius is used by both paths"),B->IsAvailableInPool());
+        TestEqual(TEXT("Off-axis capsule hit applies configured damage"),F.Player->GetRogueAttributeSet()->GetHealth(),993.f);
+    }
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueBatchBulletFallbackTest,
+    "Rogue.Gameplay.EnemyBulletBatch.SpecialMotionFallsBackAndReuseCanBatch",RogueEnemyProjectileOverlapTests::Flags)
+bool FRogueBatchBulletFallbackTest::RunTest(const FString&)
+{
+    using namespace RogueEnemyProjectileOverlapTests;FTestConsoleVariable Mode(TEXT("Rogue.Projectiles.BatchEnemyMovement"));Mode.Set(TEXT("1"));
+    FFixture F;if(!F.Initialize(*this))return false;
+    auto* B=F.Projectile(ARogueEnemyProjectile::StaticClass(),FVector(100,500,150));
+    auto* Movement=B->FindComponentByClass<UProjectileMovementComponent>();
+    const FVector P(100,500,150);
+    B->bAllowBatchedMovement=false;
+    B->ActivatePooledProjectile(F.Shooter,F.Shooter,P,FRotator::ZeroRotator,FVector::ForwardVector,500,7,false);
+    TestFalse(TEXT("Blueprint may explicitly keep its component simulation"),B->IsUsingBatchedMovement());B->DeactivateToPool();B->bAllowBatchedMovement=true;
+    Movement->bSimulationEnabled=false;
+    B->ActivatePooledProjectile(F.Shooter,F.Shooter,P,FRotator::ZeroRotator,FVector::ForwardVector,500,7,false);
+    TestFalse(TEXT("Disabled simulation is never replaced by moving batch"),B->IsUsingBatchedMovement());B->DeactivateToPool();Movement->bSimulationEnabled=true;
+    Movement->ProjectileGravityScale=1;
+    B->ActivatePooledProjectile(F.Shooter,F.Shooter,P,FRotator::ZeroRotator,FVector::ForwardVector,500,7,false);
+    TestFalse(TEXT("Gravity retains original simulation"),B->IsUsingBatchedMovement());TestTrue(TEXT("Fallback component ticks"),Movement->IsComponentTickEnabled());B->DeactivateToPool();Movement->ProjectileGravityScale=0;
+    Movement->bShouldBounce=true;
+    B->ActivatePooledProjectile(F.Shooter,F.Shooter,P,FRotator::ZeroRotator,FVector::ForwardVector,500,7,false);
+    TestFalse(TEXT("Bounce retains original simulation"),B->IsUsingBatchedMovement());B->DeactivateToPool();Movement->bShouldBounce=false;
+    FRogueEnemyProjectileMotion Motion;Motion.WarningSeconds=.8f;
+    B->ActivatePooledProjectile(F.Shooter,F.Shooter,P,FRotator::ZeroRotator,FVector::ForwardVector,500,7,false,30,1,false,Motion);
+    TestFalse(TEXT("Warning retains original phase timing"),B->IsUsingBatchedMovement());B->DeactivateToPool();
+    B->ActivatePooledProjectile(F.Shooter,F.Shooter,P,FRotator::ZeroRotator,FVector::ForwardVector,500,7,false);
+    TestTrue(TEXT("Reused ordinary bullet can enter batch"),B->IsUsingBatchedMovement());
+    TestFalse(TEXT("Batched bullet has no movement component tick"),Movement->IsComponentTickEnabled());
+    TestFalse(TEXT("No individual Actor tick is scheduled"),B->IsActorTickEnabled());
     return true;
 }
 

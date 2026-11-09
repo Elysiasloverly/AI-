@@ -1,4 +1,6 @@
 #include "Player/RogueCharacter.h"
+
+#if WITH_DEV_AUTOMATION_TESTS
 #include "AbilitySystem/RogueAttributeSet.h"
 #include "Debug/RogueSelfTest.h"
 
@@ -181,3 +183,96 @@ void ARogueCharacter::TickWeaponFireReport(float DeltaSeconds)
 			Weapon->GetAbilityCooldown(), Weapon->GetEffectiveCount(), Weapon->GetEffectiveDamage());
 	}
 }
+// 记录本机控制角色，值变化时最多八组；一次日志不能证明所有联机时序正确。
+void ARogueCharacter::LogWeaponStateForSelfTest()
+{
+	if (IsLocallyControlled() && RogueSelfTest::IsWeaponUpgradeChainEnabled() && WeaponBonusLogCount < 8)
+	{
+		// 注意这里**不是"只打一次"**：客户端第一帧通常还没收到复制过来的属性值，
+		// 只打一次可能看到尚未同步的初值；值变化时再记录（最多八组），
+		// 日志里就能看出 0 → 真值 的变化过程，从而区分"没复制"和"还没到"。
+		if (const ARoguePlayerState* RoguePS = GetPlayerState<ARoguePlayerState>())
+		{
+			const URogueAttributeSet* WeaponSet = RoguePS->GetAttributeSet();
+			if (WeaponSet != nullptr)
+			{
+				// 同时记录生命/护甲、五项通用加成与角色快照，帮助定位两条数值路径的差异。
+				const FString Snapshot = FString::Printf(
+					TEXT("生命=%.1f/%.1f 护甲=%.1f/%.1f | 属性加成: 伤害=%.2f 攻速=%.2f 范围=%.2f 弹速=%.2f 数量=%.2f | 快照(武器实际读): 伤害=%.2f 攻速=%.2f 范围=%.2f 弹速=%.2f 数量=%.2f"),
+					WeaponSet->GetHealth(), WeaponSet->GetMaxHealth(),
+					WeaponSet->GetArmor(), WeaponSet->GetMaxArmor(),
+					WeaponSet->GetAttackPowerBonus(), WeaponSet->GetAttackSpeedBonus(),
+					WeaponSet->GetAttackRangeBonus(), WeaponSet->GetProjectileSpeedBonus(),
+					WeaponSet->GetProjectileCountBonus(),
+					GetWeaponBonusSnapshot().AttackPower, GetWeaponBonusSnapshot().AttackSpeed,
+					GetWeaponBonusSnapshot().AttackRange, GetWeaponBonusSnapshot().ProjectileSpeed,
+					GetWeaponBonusSnapshot().ProjectileCount);
+
+				if (WeaponBonusLogCount == 0 || Snapshot != LastLoggedSelfTestSignature)
+				{
+					++WeaponBonusLogCount;
+					LastLoggedSelfTestSignature = Snapshot;
+					// 带上玩家名帮助匹配日志；还需确认对应玩家身份、测试阶段和时间，避免比较不同角色。
+					const FString SelfTestPlayerName = RoguePS->GetPlayerName();
+					UE_LOG(LogTemp, Log, TEXT("[SelfTest] 本机(%s) 玩家=%s #%d %s（世界时间 %.2f）"),
+						HasAuthority() ? TEXT("服务端") : TEXT("客户端"),
+						*SelfTestPlayerName,
+						WeaponBonusLogCount, *Snapshot,
+						GetWorld() != nullptr ? GetWorld()->GetTimeSeconds() : 0.0f);
+
+					// 再确认"客户端读到的那套集"与 PlayerState 上登记的是同一个对象
+					//（排除"引擎在客户端另建了一个集实例"这种可能）
+					if (const URogueAbilitySystemComponent* ASC = RoguePS->GetRogueAbilitySystemComponent())
+					{
+						const TArray<UAttributeSet*>& Sets = ASC->GetSpawnedAttributes();
+						const bool bSameObject = Sets.Num() > 0 && Sets[0] == RoguePS->GetAttributeSet();
+						UE_LOG(LogTemp, Log, TEXT("[SelfTest]   ASC 登记 %d 套集，[0] 与 PlayerState->GetAttributeSet() 同一对象=%s"),
+							Sets.Num(), bSameObject ? TEXT("是") : TEXT("否"));
+					}
+
+					// 本机武器算出来的**生效值**（这是最终要给玩家看的东西）。
+					// 各端武器实例在本地初始化；日志仅用于对照同一玩家同一阶段的读取结果。
+					// 与服务端同玩家、同阶段对比可检查本次读取结果，不代表所有状态与时序都已覆盖。
+					for (const ARogueWeaponBase* Weapon : Weapons)
+					{
+						if (!IsValid(Weapon))
+						{
+							continue;
+						}
+						UE_LOG(LogTemp, Log, TEXT("[SelfTest]   武器 %-26s 数量=%d 伤害=%.2f 冷却=%.2f 范围=%.1f"),
+							*Weapon->GetClass()->GetName(),
+							Weapon->GetEffectiveCount(), Weapon->GetEffectiveDamage(),
+							Weapon->GetEffectiveCooldown(), Weapon->GetEffectiveRange());
+					}
+
+					// 关键诊断：**BaseValue 与 CurrentValue 分开看**。
+					// 访问器读取 CurrentValue；分别打印 BaseValue/CurrentValue 并对照护甲，
+					// 便于研究基值、聚合修饰器和复制通知路径；单次差异本身不足以确定故障原因。
+					UE_LOG(LogTemp, Log, TEXT("[SelfTest]   原始结构体：伤害加成(Base=%.2f Cur=%.2f) 护甲(Base=%.2f Cur=%.2f)"),
+						WeaponSet->AttackPowerBonus.GetBaseValue(), WeaponSet->AttackPowerBonus.GetCurrentValue(),
+						WeaponSet->Armor.GetBaseValue(), WeaponSet->Armor.GetCurrentValue());
+
+					// 再查"这两个属性在本机的复制注册状态"。
+					// CPF_Net 与 RepIndex 可辅助检查反射层复制声明；
+					// 生命周期注册、对象复制通道与条件仍需另外核验，不能只凭索引判断已发送或收到。
+					{
+						const FProperty* ArmorProp = FindFProperty<FProperty>(URogueAttributeSet::StaticClass(), GET_MEMBER_NAME_CHECKED(URogueAttributeSet, Armor));
+						const FProperty* BonusProp = FindFProperty<FProperty>(URogueAttributeSet::StaticClass(), GET_MEMBER_NAME_CHECKED(URogueAttributeSet, AttackPowerBonus));
+						UE_LOG(LogTemp, Log, TEXT("[SelfTest]   复制注册：Armor 有CPF_Net=%d RepIndex=%d ；AttackPowerBonus 有CPF_Net=%d RepIndex=%d （%d 表示未注册）"),
+							(ArmorProp != nullptr && ArmorProp->HasAnyPropertyFlags(CPF_Net)) ? 1 : 0,
+							ArmorProp != nullptr ? static_cast<int32>(ArmorProp->RepIndex) : -2,
+							(BonusProp != nullptr && BonusProp->HasAnyPropertyFlags(CPF_Net)) ? 1 : 0,
+							BonusProp != nullptr ? static_cast<int32>(BonusProp->RepIndex) : -2,
+							static_cast<int32>(INDEX_NONE));
+					}
+				}
+			}
+		}
+	}
+}
+
+#else
+void ARogueCharacter::LogWeaponStateForSelfTest() {}
+void ARogueCharacter::TickWeaponFireReport(float DeltaSeconds)
+{  }
+#endif

@@ -3,6 +3,22 @@
 #include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
 #include "UI/RogueHUD.h"
+#include "UI/Widgets/RogueDashRingWidget.h"
+#include "Blueprint/WidgetLayoutLibrary.h"
+#include "Components/CanvasPanelSlot.h"
+#include "GameFramework/PlayerController.h"
+#include "GameFramework/Pawn.h"
+
+namespace
+{
+bool IsDashRecharging(const FRoguePlayerVitalsView& View)
+{
+    // 只有有实际剩余时间的充能才显示，满条、纯阻挡标签和不可用状态不占视野。
+    return View.bVisible && !View.bDowned && View.bDashUsable && !View.bDashReady
+        && View.DashCooldownDuration > KINDA_SMALL_NUMBER && View.DashCooldownRemaining > 0.f
+        && View.DashCooldownPercent < 1.f;
+}
+}
 
 void URogueVitalsWidgetBase::SetOwningRogueHUD(ARogueHUD* InOwningHUD){OwningHUD=InOwningHUD;}
 
@@ -84,17 +100,56 @@ void URogueVitalsWidgetBase::UpdateVitals(const FRoguePlayerVitalsView& InView)
     else if(bExperienceWrapPending)ExperienceWrapTarget=InView.ExperiencePercent;
     else if(InView.ExperiencePercent<CachedView.ExperiencePercent)ExperienceAnimation.Snap(InView.ExperiencePercent);
     else ExperienceAnimation.SetTarget(InView.ExperiencePercent,0);
+    if (!bHasView || CachedView.PendingUpgradeSelections <= 0 || InView.PendingUpgradeSelections <= 0)
+        PendingUpgradePulseTime = 0.f;
     bHasView=true;CachedView=InView;
     SetVisibility(InView.bVisible?ESlateVisibility::HitTestInvisible:ESlateVisibility::Collapsed);
     const ESlateVisibility ArmorVisibility=InView.bHasArmor?ESlateVisibility::HitTestInvisible:ESlateVisibility::Collapsed;
     if(ArmorRow)ArmorRow->SetVisibility(ArmorVisibility);
     if(ArmorBar)ArmorBar->SetVisibility(ArmorVisibility);
     if(ArmorDamageBar)ArmorDamageBar->SetVisibility(ArmorVisibility);
-    if(HealthText)HealthText->SetText(FText::FromString(FString::Printf(TEXT("生命 %.0f / %.0f"),InView.CurrentHealth,InView.MaxHealth)));
-    if(ArmorText){ArmorText->SetText(FText::FromString(FString::Printf(TEXT("护甲 %.0f / %.0f"),InView.CurrentArmor,InView.MaxArmor)));ArmorText->SetVisibility(ArmorVisibility);}
-    if(ExperienceText)ExperienceText->SetText(FText::FromString(FString::Printf(TEXT("经验 %d / %d"),InView.Experience,InView.ExperienceToNextLevel)));
+    auto UpdateAttributeText = [](UTextBlock* Label, UTextBlock* Value, const TCHAR* Caption, float Current, float Maximum)
+    {
+        const FString Numbers = FString::Printf(TEXT("%.0f / %.0f"), Current, Maximum);
+        if (Label) Label->SetText(FText::FromString(Value ? FString(Caption) : FString(Caption) + TEXT(" ") + Numbers));
+        if (Value) Value->SetText(FText::FromString(Numbers));
+    };
+    UpdateAttributeText(HealthText, HealthValueText, TEXT("生命"), InView.CurrentHealth, InView.MaxHealth);
+    UpdateAttributeText(ArmorText, ArmorValueText, TEXT("护甲"), InView.CurrentArmor, InView.MaxArmor);
+    if (ArmorText) ArmorText->SetVisibility(ArmorVisibility);
+    if (ArmorValueText) ArmorValueText->SetVisibility(ArmorVisibility);
+    if (ArmorUnavailableText) ArmorUnavailableText->SetVisibility(InView.bVisible && !InView.bHasArmor && !InView.bDowned
+        ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+    if(LevelText)
+    {
+        // 分离标题的紧凑布局只写等级数字；其他自定义 WBP 继续使用完整标签。
+        const int32 Level=FMath::Max(1,InView.Level);
+        LevelText->SetText(GetWidgetFromName(TEXT("LevelCaption")) ? FText::AsNumber(Level) :
+            FText::FromString(FString::Printf(TEXT("等级 %d"),Level)));
+    }
+    if(PendingUpgradesText)
+    {
+        const int32 Count=FMath::Max(0,InView.PendingUpgradeSelections);
+        PendingUpgradesText->SetText(FText::FromString(Count>99?TEXT("待选 99+"):FString::Printf(TEXT("待选 %d"),Count)));
+        PendingUpgradesText->SetRenderOpacity(Count>0?1.f:.45f);
+    }
+    const FString ExperienceNumbers = FString::Printf(TEXT("%d / %d"), InView.Experience, InView.ExperienceToNextLevel);
+    if (ExperienceText) ExperienceText->SetText(FText::FromString(ExperienceValueText ? TEXT("经验") : TEXT("经验 ") + ExperienceNumbers));
+    if (ExperienceValueText) ExperienceValueText->SetText(FText::FromString(ExperienceNumbers));
     if(WaveText)WaveText->SetText(FText::FromString(FString::Printf(TEXT("第 %d 波"),InView.CurrentWave)));
     if(GoldText)GoldText->SetText(FText::FromString(FString::Printf(TEXT("金币 %d"),InView.Money)));
+    if (RemainingEnemiesText)
+    {
+        const bool bLastFew = InView.RemainingEnemies > 0 && InView.RemainingEnemies <= 5;
+        RemainingEnemiesText->SetText(FText::FromString(FString::Printf(TEXT("敌人剩余 %d"), InView.RemainingEnemies)));
+        RemainingEnemiesText->SetColorAndOpacity(bLastFew ? FLinearColor(1.f,.76f,.28f) : FLinearColor(.78f,.84f,.91f));
+    }
+    if (PendingUpgradeHintText)
+    {
+        const int32 Count = FMath::Max(0, CachedView.PendingUpgradeSelections);
+        PendingUpgradeHintText->SetText(FText::FromString(FString::Printf(TEXT("有 %d 次升级可选 · 按 Q 打开"), Count)));
+    }
+    ApplyPendingUpgradeHint();
     ApplyAnimatedBars();OnVitalsUpdated(CachedView);ApplyFeedback();ApplyDashView();
 }
 
@@ -102,6 +157,13 @@ void URogueVitalsWidgetBase::ApplyDashView()
 {
     const bool bUsable = CachedView.bDashUsable && !CachedView.bDowned;
     const bool bReady = bUsable && CachedView.bDashReady;
+    if (PlayerDashRing)
+    {
+        PlayerDashRing->SetCooldown(CachedView.DashCooldownPercent, bReady, bUsable);
+        if (!IsDashRecharging(CachedView)) PlayerDashRing->SetVisibility(ESlateVisibility::Collapsed);
+        // 保存旧绑定以兼容自定义 WBP；使用圆弧时不同时显示原长条。
+        if (DashCooldownRow) DashCooldownRow->SetVisibility(ESlateVisibility::Collapsed);
+    }
     if (DashCooldownRow) DashCooldownRow->SetRenderOpacity(bUsable ? 1.f : .5f);
     if (DashCooldownBar)
     {
@@ -120,7 +182,7 @@ void URogueVitalsWidgetBase::ApplyDashView()
         }
         else Status = CachedView.bDashing ? TEXT("冲刺中") : TEXT("冲刺准备中");
         DashCooldownText->SetText(FText::FromString(Status));
-        DashCooldownText->SetColorAndOpacity(bReady ? DashReadyColor : FLinearColor(.76f, .81f, .87f, 1.f));
+        DashCooldownText->SetColorAndOpacity(bReady ? DashReadyTextColor : DashStatusTextColor);
     }
 }
 
@@ -156,7 +218,54 @@ void URogueVitalsWidgetBase::NativeTick(const FGeometry& Geometry,float DeltaSec
     else ExperienceAnimation.Step(Delta,ExperienceInterpolationSpeed,0);
     HealthChange.Step(Delta);ArmorChange.Step(Delta);ExperienceChange.Step(Delta);
     FeedbackClock=FMath::Fmod(FeedbackClock+Delta,16.f);
+    const float PulsePeriod = FMath::Max(.5f, PendingUpgradePulsePeriod);
+    PendingUpgradePulseTime = FMath::Fmod(PendingUpgradePulseTime + Delta, PulsePeriod);
+    ApplyPendingUpgradeHint();
+    UpdateDashRingPosition(Geometry, Delta);
     ApplyAnimatedBars();ApplyFeedback();
+}
+
+void URogueVitalsWidgetBase::ApplyPendingUpgradeHint()
+{
+    if (!PendingUpgradeHintText) return;
+    const bool bShow = CachedView.bVisible && !CachedView.bDowned && CachedView.PendingUpgradeSelections > 0;
+    PendingUpgradeHintText->SetVisibility(bShow ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+    if (!bShow) return;
+    const float Phase = PendingUpgradePulseTime / FMath::Max(.5f, PendingUpgradePulsePeriod);
+    const float Brightness = .5f + .5f * FMath::Cos(Phase * 2.f * PI);
+    PendingUpgradeHintText->SetRenderOpacity(FMath::Lerp(FMath::Clamp(PendingUpgradeMinimumOpacity, .1f, 1.f), 1.f, Brightness));
+}
+
+void URogueVitalsWidgetBase::UpdateDashRingPosition(const FGeometry& Geometry, float DeltaSeconds)
+{
+    if (!PlayerDashRing) return;
+    if (!IsDashRecharging(CachedView))
+    {
+        PlayerDashRing->SetVisibility(ESlateVisibility::Collapsed);
+        return;
+    }
+    auto* Owner = GetOwningPlayer();
+    auto* Pawn = Owner ? Owner->GetPawn() : nullptr;
+    auto* RingSlot = Cast<UCanvasPanelSlot>(PlayerDashRing->Slot);
+    FVector2D ScreenPosition;
+    const bool bCanProject = Owner && Owner->IsLocalController() && IsValid(Pawn) && RingSlot && !CachedView.bDowned
+        && UWidgetLayoutLibrary::ProjectWorldLocationToWidgetPosition(Owner,
+            Pawn->GetActorLocation() + FVector(0.f, 0.f, DashRingWorldHeightOffset), ScreenPosition, true);
+    if (!bCanProject) { PlayerDashRing->SetVisibility(ESlateVisibility::Collapsed); return; }
+    // 投影已经去掉 DPI；先转绝对坐标再转入状态 WBP，避免不同窗口和分屏视口发生偏移。
+    const FGeometry PlayerScreen = UWidgetLayoutLibrary::GetPlayerScreenWidgetGeometry(Owner);
+    const FVector2D LocalPosition = Geometry.AbsoluteToLocal(PlayerScreen.LocalToAbsolute(ScreenPosition));
+    FVector2D RingSize = PlayerDashRing->GetDesiredSize();
+    if (RingSize.IsNearlyZero()) RingSize = RingSlot->GetSize();
+    const FVector2D Position = LocalPosition + DashRingScreenOffset - RingSize * .5f;
+    const FVector2D Bounds = Geometry.GetLocalSize();
+    const bool bOnScreen = LocalPosition.X >= 0.f && LocalPosition.Y >= 0.f && LocalPosition.X <= Bounds.X && LocalPosition.Y <= Bounds.Y;
+    PlayerDashRing->SetVisibility(bOnScreen ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+    if (bOnScreen)
+    {
+        if (!RingSlot->GetPosition().Equals(Position, .05f)) RingSlot->SetPosition(Position);
+        PlayerDashRing->AdvancePresentation(DeltaSeconds);
+    }
 }
 
 void URogueVitalsWidgetBase::ApplyAnimatedBars()
@@ -192,7 +301,7 @@ void URogueVitalsWidgetBase::ApplyFeedback()
             Number->SetRenderTranslation(NumberBase+FVector2D(0,bChanging?-ChangeNumberRise*FMath::SmoothStep(0.f,1.f,Change.Progress()):0));
             Number->SetRenderOpacity(bChanging&&bShowChangeNumbers?Change.Opacity():0);
             FSlateColor Color=NumberColor;
-            if(bRestore)Color=FSlateColor(FLinearColor(.45f,1,.7f,1));
+            if(bRestore)Color=FSlateColor(RestoreFeedbackTextColor);
             Number->SetColorAndOpacity(Color);
             if(bChanging)
             {

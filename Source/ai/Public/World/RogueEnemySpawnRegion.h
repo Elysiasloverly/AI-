@@ -7,6 +7,13 @@
 class UBoxComponent;
 class USplineComponent;
 
+USTRUCT(BlueprintType)
+struct AI_API FRogueSpawnExclusion
+{
+    GENERATED_BODY()
+    UPROPERTY(EditAnywhere,BlueprintReadWrite) TArray<FVector2D> Points;
+};
+
 /** 关卡内的刷怪边界。框内还需有可站立地面和足够空间；框本身不参与碰撞。 */
 UCLASS(Blueprintable, meta = (DisplayName = "怪物刷新区域"))
 class AI_API ARogueEnemySpawnRegion : public AActor
@@ -32,9 +39,15 @@ public:
     bool ContainsCapsule(const FVector& Center, float Radius, float HalfHeight) const;
     bool ClipGroundTrace(const FVector& Candidate, float UpDistance, float DownDistance, FVector& OutStart, FVector& OutEnd) const;
     FVector GetRandomCandidate() const;
+    UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="刷怪区域|轮廓",meta=(DisplayName="排除水面或内孔（世界坐标）"))
+    TArray<FRogueSpawnExclusion> ExcludedAreas;
     void GetWorldCorners(TArray<FVector>& OutCorners) const;
 private:
     bool CollectValidOutline(TArray<FVector2D>& OutVertices) const;
+    // Dense island outlines are static during play. Only repeat the quadratic self-intersection check after XY points change.
+    mutable TArray<FVector2D> LastValidatedOutline;
+    mutable bool bHasValidatedOutline=false;
+    mutable bool bLastOutlineValid=false;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "刷怪区域|轮廓", meta = (AllowPrivateAccess = "true", DisplayName = "可编辑刷怪轮廓"))
     TObjectPtr<USplineComponent> SpawnOutline;
     UPROPERTY(EditAnywhere, Category = "刷怪区域|轮廓", meta = (DisplayName = "使用不规则刷怪轮廓", ToolTip = "启用后，XY 只在 SpawnOutline 的闭合直线多边形内生成。选择轮廓组件拖动顶点贴合空地；支持凹多边形，不允许边线自相交。外框及地面高度限制仍然生效。"))

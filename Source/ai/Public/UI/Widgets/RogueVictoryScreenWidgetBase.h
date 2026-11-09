@@ -1,6 +1,7 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "UI/Widgets/RoguePanelReveal.h"
 #include "Framework/RogueRunResult.h"
 #include "RogueVictoryScreenWidgetBase.generated.h"
 class ARogueHUD;
@@ -17,6 +18,7 @@ public:
     void UpdateVictoryView(const FRogueRunResult& Result);
     UFUNCTION(BlueprintCallable, Category="Rogue|Victory") void RequestReturnToMainMenu();
 protected:
+    virtual void NativeTick(const FGeometry& G,float Delta) override;
     virtual void NativeConstruct() override;
     UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UButton> MainMenuButton;
     UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> WaveText;
@@ -24,6 +26,8 @@ protected:
     UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> KillsText;
     UFUNCTION(BlueprintImplementableEvent, Category="Rogue|Victory") void OnVictoryViewUpdated(const FRogueRunResult& Result);
 private:
+    friend struct FRogueArtCompletionTestAccess;
+    FRoguePanelReveal Reveal;
     TWeakObjectPtr<ARogueHUD> OwningHUD;
     bool bReturning=false;
 };

@@ -36,6 +36,9 @@ public:
 	UFUNCTION(BlueprintCallable, CallInEditor, Category = "调试|进度", meta = (DisplayName = "重置本地解锁进度（保留冰砖）", ToolTip = "清除所选本地玩家已购买的武器、专属卡和基础属性等级，并立即保存。保留冰砖余额及 Boss 奖励记录；不修改节点配置。沿用冰砖调试中的玩家索引和 PIE 窗口编号。", DevelopmentOnly))
 	void ResetDebugProgression();
 
+	UFUNCTION(BlueprintCallable, CallInEditor, Category="调试|进度", meta=(DisplayName="一键解锁全部升级树", ToolTip="将所选本地存档的所有升级树节点升满并立即保存。保留冰砖和已领取的 Boss 奖励记录。沿用当前的本地玩家索引和 PIE 窗口编号，下局生效。", DevelopmentOnly))
+	void UnlockAllDebugProgression();
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "升级树", meta = (DisplayName = "全部升级节点"))
 	TArray<FRogueUpgradeTreeNode> Nodes;
 

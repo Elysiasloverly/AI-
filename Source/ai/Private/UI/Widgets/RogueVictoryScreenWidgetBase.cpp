@@ -13,6 +13,7 @@ void URogueVictoryScreenWidgetBase::NativeConstruct()
 void URogueVictoryScreenWidgetBase::UpdateVictoryView(const FRogueRunResult& Result)
 {
     const bool bVisible=Result.Outcome==ERogueRunOutcome::Victory;
+    Reveal.SetVisible(this,bVisible);
     if (bVisible)
     {
         if (WaveText) WaveText->SetText(FText::AsNumber(Result.Wave));
@@ -34,3 +35,6 @@ void URogueVictoryScreenWidgetBase::RequestReturnToMainMenu()
         HUD->RequestReturnToMainMenuAfterDeath();
     }
 }
+
+void URogueVictoryScreenWidgetBase::NativeTick(const FGeometry& G,float DT)
+{Super::NativeTick(G,DT);Reveal.Tick(this,DT);}

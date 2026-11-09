@@ -1,5 +1,6 @@
 // 武器系统基类 —— 通用辅助函数实现
 #include "Combat/Weapons/RogueWeaponBase.h"
+#include "Player/RoguePlayerMotionComponent.h"
 
 #include "Engine/World.h"
 
@@ -15,6 +16,8 @@
 #include "Combat/Projectiles/RogueOrbitingBlade.h"
 #include "Combat/Projectiles/RogueProjectile.h"
 #include "Combat/Projectiles/RogueRocketProjectile.h"
+#include "Combat/Projectiles/RogueReturningTalisman.h"
+#include "Combat/Projectiles/RogueFrostBlade.h"
 #include "Camera/CameraComponent.h"
 #include "Audio/RogueCombatAudioSubsystem.h"
 
@@ -44,6 +47,8 @@ void ARogueWeaponBase::InitializeWeapon(ARogueCharacter* InOwnerCharacter, const
 
 void ARogueWeaponBase::OnOwnerDied()
 {
+    if (auto* Tracker = GetWorld() ? GetWorld()->GetSubsystem<URogueEnemyTrackerSubsystem>() : nullptr)
+    { Tracker->ReleaseWeaponTargets(this); }
 	AttackAudioState.Reset();
     LastFireAccentTime=-1.e30;
 }
@@ -87,6 +92,7 @@ int32 ARogueWeaponBase::GetEffectiveCount() const
 	{
 		switch (GetCountUpgradeType())
 		{
+		case ERogueUpgradeType::FrostBladeCount: WeaponSpecificBonus=FMath::RoundToInt(Bonuses.FrostBladeCount);break;
 		case ERogueUpgradeType::TalismanCount: WeaponSpecificBonus = FMath::RoundToInt(Bonuses.TalismanCount); break;
 		case ERogueUpgradeType::ScytheCount:    WeaponSpecificBonus = FMath::RoundToInt(Bonuses.ScytheCount); break;
 		case ERogueUpgradeType::RocketCount:    WeaponSpecificBonus = FMath::RoundToInt(Bonuses.RocketCount); break;
@@ -107,6 +113,7 @@ int32 ARogueWeaponBase::GetEffectiveCount() const
 	}
 
 	// 数量上限：**数据表配置，-1 = 不限制**
+    if(GetCountUpgradeType()==ERogueUpgradeType::FrostBladeCount)return Config.MaxCount==0?0:1;
 	const int32 Combined = FMath::Max(1, Config.Count + WeaponSpecificBonus);
 	return Config.MaxCount >= 0 ? FMath::Min(Combined, Config.MaxCount) : Combined;
 }
@@ -232,8 +239,15 @@ bool ARogueWeaponBase::IsHeavyCombat() const
 	return Tracker != nullptr && Tracker->ShouldCullCombatEffects();
 }
 
-void ARogueWeaponBase::SpawnLaserBeam(const FVector& Start, const FVector& End, bool bInfernoStyle, bool bImpactEffect, float Lifetime, bool bPlayAttackSound)
+const ARogueLaserBeam* ARogueWeaponBase::GetBeamVisualDefaults() const
 {
+    return Config.BeamClass ? Config.BeamClass.GetDefaultObject() : GetDefault<ARogueLaserBeam>();
+}
+
+void ARogueWeaponBase::SpawnLaserBeam(const FVector& Start, const FVector& End, bool bInfernoStyle, bool bImpactEffect, float Lifetime, bool bPlayAttackSound, const FRogueBeamLockCosmetic& Lock)
+{
+    Lifetime=Lifetime<0 ? FMath::Max(.01f,GetBeamVisualDefaults()->PulseLifetime) : Lifetime;
+
 	URogueCombatPoolSubsystem* Pools = GetWorld() ? GetWorld()->GetSubsystem<URogueCombatPoolSubsystem>() : nullptr;
 	if (Pools == nullptr || OwnerCharacter == nullptr)
 	{
@@ -254,9 +268,12 @@ void ARogueWeaponBase::SpawnLaserBeam(const FVector& Start, const FVector& End, 
 	Fire.Start = Start;
 	Fire.End = End;
 	Fire.Param = Lifetime;
+    Fire.Lock = Lock;
 	Fire.bAlternateStyle = bInfernoStyle;
 	Fire.bPlayAttackSound = bPlayAttackSound && Beam != nullptr;
-    Fire.bPlayFireAccent = bPlayAttackSound && Beam != nullptr;
+    // A confirmed attack still animates its icon when the beam VFX pool has no free slot.
+    Fire.bPlayFireAccent = bPlayAttackSound;
+    if(OwnerCharacter->IsAuthoritySide())UpdateCosmeticLock(Fire);
 	BroadcastCosmeticFire(Fire);
 }
 
@@ -275,15 +292,32 @@ void ARogueWeaponBase::BroadcastCosmeticFire(const FRogueWeaponCosmeticFire& Fir
 	if (Fire.bPlayAttackSound) { const_cast<ARogueWeaponBase*>(this)->PlayAttackAudio(Fire.Start); }
 }
 
+const FRogueCombatAccentSettings& ARogueWeaponBase::GetFireAccentSettings() const
+{
+    switch(GetCountUpgradeType())
+    {
+    case ERogueUpgradeType::ProjectileCount: return (Config.ProjectileClass ? Config.ProjectileClass.GetDefaultObject() : GetDefault<ARogueProjectile>())->FireAccent;
+    case ERogueUpgradeType::ScytheCount: return (Config.BladeClass ? Config.BladeClass.GetDefaultObject() : GetDefault<ARogueOrbitingBlade>())->FireAccent;
+    case ERogueUpgradeType::RocketCount: return (Config.RocketClass ? Config.RocketClass.GetDefaultObject() : GetDefault<ARogueRocketProjectile>())->FireAccent;
+    case ERogueUpgradeType::MortarCount:
+        if (Config.MortarProjectileClass) { return Config.MortarProjectileClass.GetDefaultObject()->FireAccent; }
+        return (Config.RocketClass ? Config.RocketClass.GetDefaultObject() : GetDefault<ARogueMortarProjectile>())->FireAccent;
+    case ERogueUpgradeType::FrostBladeCount: return (Config.FrostBladeClass ? Config.FrostBladeClass.GetDefaultObject() : GetDefault<ARogueFrostBlade>())->FireAccent;
+    case ERogueUpgradeType::TalismanCount: return (Config.TalismanClass ? Config.TalismanClass.GetDefaultObject() : GetDefault<ARogueReturningTalisman>())->FireAccent;
+    default: return (Config.BeamClass ? Config.BeamClass.GetDefaultObject() : GetDefault<ARogueLaserBeam>())->FireAccent;
+    }
+}
+
 void ARogueWeaponBase::PlayFireAccent(const FRogueWeaponCosmeticFire& Fire)
 {
     if(!Fire.bPlayFireAccent || !OwnerCharacter || !OwnerCharacter->IsAlive() || !GetWorld())return;
     const double Now=GetWorld()->GetTimeSeconds();
-    if(Now-LastFireAccentTime<FMath::Max(.02f,Config.FireAccent.MinimumInterval))return;
+    if(Now-LastFireAccentTime<FMath::Max(.02f,GetFireAccentSettings().MinimumInterval))return;
     FVector Direction=FVector(Fire.Direction);
     if(!FVector(Fire.End).IsNearlyZero())Direction=FVector(Fire.End)-FVector(Fire.Start);
     if(auto* Pool=GetWorld()->GetSubsystem<URogueCombatPoolSubsystem>())
-        if(Pool->PlayCombatAccent(Config.FireAccent,Fire.Start,Direction,false))LastFireAccentTime=Now;
+        if(Pool->PlayCombatAccent(GetFireAccentSettings(),Fire.Start,Direction,false))
+        {LastFireAccentTime=Now;if(auto* Motion=OwnerCharacter->FindComponentByClass<URoguePlayerMotionComponent>())Motion->PlayCastCue();}
 }
 
 void ARogueWeaponBase::PlayAttackAudio(const FVector& Location)
@@ -308,4 +342,17 @@ void ARogueWeaponBase::PlayCosmeticBeam(const FRogueWeaponCosmeticFire& Fire)
 	// 这里生成的 Beam 只负责好看：它不索敌、不结算伤害
 	// （伤害在服务端那一发里早就算完了）。
 	SpawnLaserBeam(Fire.Start, Fire.End, Fire.bAlternateStyle, /*bImpactEffect=*/true, Fire.Param);
+}
+
+ARogueEnemy* ARogueWeaponBase::SelectDistributedTarget(const TArray<ARogueEnemy*>& Candidates,
+    const TArray<ARogueEnemy*>& VolleyTargets) const
+{
+    auto* Tracker = GetWorld() ? GetWorld()->GetSubsystem<URogueEnemyTrackerSubsystem>() : nullptr;
+    return Tracker ? Tracker->SelectWeaponTarget(const_cast<ARogueWeaponBase*>(this), Candidates, nullptr, VolleyTargets) : nullptr;
+}
+
+void ARogueWeaponBase::ReserveProjectileTarget(AActor* Projectile, ARogueEnemy* Enemy) const
+{
+    if (auto* Tracker = GetWorld() ? GetWorld()->GetSubsystem<URogueEnemyTrackerSubsystem>() : nullptr)
+    { Tracker->ReserveWeaponTarget(const_cast<ARogueWeaponBase*>(this), Projectile, Enemy); }
 }

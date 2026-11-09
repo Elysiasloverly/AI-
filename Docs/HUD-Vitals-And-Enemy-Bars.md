@@ -1,31 +1,29 @@
 # HUD 状态条与敌人血条（WBP）
 
+更新：2026-11-09。当前玩家状态栏尺寸、等级居中、上方升级提示与角色旁冲刺圆弧见 [状态栏维护](Centered-Vitals-Polish.md)。[2026-11-04 战斗 HUD 精修](Battle-HUD-Polish-2026-11-04.md) 保留当时的样式记录。
+
 生命 / 护甲 / 经验条和敌人血条的外观已经从 `ARogueHUD` 的原生 `DrawRect` 拆到 UMG：
 
 - **C++ 负责**：选可见对象、算百分比、投影屏幕坐标、对象池与脏检查；
 - **WBP 负责**：颜色、字体、动画、Boss 样式；进度条与文字由 C++ 通过 `BindWidgetOptional` 直接写入；
-- 两边通过两个视图结构体通信，C++ 不引用任何 Slate 组件。
+- 玩法结果通过视图结构体传给界面；多数控件使用 UMG 绑定，角色旁冲刺圆弧由原生 `URogueDashRingWidget` / Slate 矢量绘制。
 
-## 一键生成占位 WBP
+## 当前日常维护入口
 
-不想手建时，用编辑器脚本生成两个可直接运行的占位资产：
+直接编辑保存的 `/Game/UMG/HUD/WBP_PlayerVitals`。状态栏底部居中、设计尺寸 620×144；冲刺冷却在角色右侧，待选升级提示在状态栏上方。等级框只有标题与数字。
 
-```bat
-"C:\Program Files\Epic Games\UE_5.5\Engine\Binaries\Win64\UnrealEditor-Cmd.exe" ^
-  "F:\AI_WorkSpeace\baka\Baka.uproject" ^
-  -run=pythonscript -script="F:\AI_WorkSpeace\baka\Tools\create_hud_widgets.py" ^
-  -unattended -nopause -nullrhi -nosplash
-```
+验证使用 `Tools/UI/manage_ui.py` 的默认模式：只在内存中编译检查并写入报告，不保存资产。命令与显式重建的区别见 [UI 工具说明](../Tools/UI/README.md)。
 
-- 产物：`/Game/UMG/HUD/WBP_PlayerVitals`、`/Game/UMG/HUD/WBP_EnemyHealthBar`；
-- `WBP_PlayerVitals` 包含：左上角 `WaveText` / `GoldText`，左下角 `HealthBar` / `ArmorBar` / `ExperienceBar` 与对应的 `HealthText` / `ArmorText` / `ExperienceText`；由 C++ 的可选绑定直接更新，所以不写事件图也能动；
-- 文字统一使用项目复合字体 `/Game/UMG/Fonts/F_DroidMono_CJK`（DroidSansMono 为主，中文回退 DroidSansFallback）；在 WBP 里改字体时请保留这个字体对象，否则中文可能变成方框；
-- 敌人血条为 `FillBar`，由 C++ 的可选绑定直接更新；
-- 重复执行会清空并重建控件树，不会重复创建资产；
-- 依赖：`Baka.uproject` 已启用 `PythonScriptPlugin` 与 `EditorScriptingUtilities`（仅 Editor），并新增 `aiEditor` 编辑器模块；控件树由 `URogueWidgetBuilder` 用 C++ 建，因为 Python 读不到 `WidgetTree`（protected）；
-- 生成后可直接在设计器里改颜色、字体、动画；C++ 只按名字绑定，不关心外观。
+| 绑定 | 当前用途 |
+|---|---|
+| LevelBadgeContent / LevelCaption / LevelText | 框内共同居中的等级标题与数字 |
+| HealthText / HealthValueText、ArmorText / ArmorValueText | 属性名称与读数分开；数值由 ScaleBox 约束显示范围 |
+| ArmorUnavailableText | 无护甲时的淡灰说明 |
+| ExperienceText / ExperienceValueText / ExperienceBar | 底部经验行 |
+| PendingUpgradeHintText | 淡蓝色待选次数 / Q 提示；不再使用等级下方重复计数 |
+| PlayerDashRing | 角色旁圆弧，读取现有 GAS 冷却并投影跟随 |
 
-脚本以 `[HUDWidgets]` 前缀写入当次运行日志（默认 `Saved/Logs/ai.log`）；日志会滚动，历史记录可能已被清理。
+`Tools/create_hud_widgets.py`、原生 `BuildPlayerVitals` 生成的是早期占位布局，会覆盖人工样式。当前排版制作入口为 `RefineCompactVitals`；它也只供明确重排并备份后执行，不应在运行时或每次打开编辑器时调用。
 
 ## 类与数据
 
@@ -57,8 +55,8 @@ HUD::Tick / DrawHUD
 1. Content Browser 里建 `/Game/UMG/HUD/`（已存在则跳过）。
 2. 右键 → **User Interface → Widget Blueprint**，命名 `WBP_PlayerVitals`。
 3. 打开后 **Class Settings → Parent Class** 选 `RogueVitalsWidgetBase`。
-4. 设计器里放三条 `ProgressBar`（命名 `HealthBar` / `ArmorBar` / `ExperienceBar`），放在左下角；根 Canvas Panel 会自动铺满屏幕。
-5. 左上角放两个 `TextBlock`（命名 `WaveText` / `GoldText`）；三条状态条旁放 `HealthText` / `ArmorText` / `ExperienceText`。C++ 会直接更新命名绑定，不写事件图也能显示。
+4. 设计器里放三条 `ProgressBar`（命名 `HealthBar` / `ArmorBar` / `ExperienceBar`），放在底部居中的状态区；根 Canvas Panel 铺满屏幕，角色旁圆弧位于同一全屏层。
+5. 左上角放 `WaveText` / `GoldText`。属性名使用 `HealthText` / `ArmorText` / `ExperienceText`，另加对应 `HealthValueText` / `ArmorValueText` / `ExperienceValueText` 显示数值；未添加可选数值绑定的旧 WBP 仍会输出完整一行。等级标题和数字放在同一个居中容器。
 6. 事件图：右键 → **Add Event → OnVitalsUpdated**，可追加动画/样式；数据字段包括 `HealthPercent` / `ArmorPercent` / `ExperiencePercent`、`CurrentHealth` / `MaxHealth`、`CurrentArmor` / `MaxArmor`、`Experience` / `ExperienceToNextLevel`、`CurrentWave`、`Money`。
 7. 保存。HUD 会默认加载 `/Game/UMG/HUD/WBP_PlayerVitals`；也可以在建好后到 `BP_RogueHUD` 的 **VitalsWidgetClass** 手动指定。
 
@@ -91,7 +89,7 @@ HUD::Tick / DrawHUD
 - **节流**：0.35s 窗口内累计成一条（`PendingHealingNumber`），窗口到期由 Tick 补弹；
   和敌人伤害数字一样，避免多段回复刷屏。
 - **不弹的情况**：首次属性同步（出生/进场）、`0 → 满血` 的整段补满（复活/重连初始化）。
-- **显示**：绿色 `(0.35, 1.0, 0.5)`，文本 `+N`（不足 1 显示 +1），生命周期 0.9s，
+- **显示**：绿色 `(0.35, 1.0, 0.5)`，文本 `+N`（不足 1 保留小数），生命周期 0.9s，
   位置在胶囊顶部再上移 34cm，带 ±16cm 随机偏移。
 - **联机**：`SyncAttributeMirrors` 在各端都会跑，客户端据复制后的生命变化弹字；
   专用服务器没有本地 HUD，`RogueCombatFeedback::AddHealingNumber` 会自然跳过。
@@ -107,14 +105,14 @@ HUD::Tick / DrawHUD
 - [ ] 200 敌人压测时血条数量不超过上限，帧时无明显退化。
 - [ ] 双人模式下每个窗口只显示自己玩家的状态条。
 
-## 冲刺冷却条（2026-10-24）
+## 冲刺冷却圆弧（2026-11-09）
 
-`/Game/UMG/HUD/WBP_PlayerVitals` 的 `VitalsRows` 中增加 `DashCooldownRow`，位于经验条下方。
+当前 `/Game/UMG/HUD/WBP_PlayerVitals` 使用角色旁的 `PlayerDashRing`，旧 `DashCooldownRow` 留作自定义 WBP 兼容绑定，在当前布局中收起。
 
-- `DashCooldownBar`：冷却开始时为空，随实际冷却恢复填满；就绪时亮蓝。
-- `DashCooldownText`：显示剩余秒数或“冲刺就绪”；濒死时显示“冲刺不可用”并置灰。
-- 在 WBP 设计器中调整尺寸、字体和进度条笔刷；保留上面的绑定名称即可。就绪/冷却/不可用颜色在类默认值的“Rogue → 冲刺提示”中修改。
-- HUD 经 `RogueVitalsView::UpdateDashState` 读取本地角色 ASC 的冲刺能力、状态标签和当前冷却 GE 的实际剩余时间/总时长。没有额外计时器，不改动冲刺规则；联机时各客户端读取自己的预测/复制效果。
-- 下一次冷却属性发生变化时，不会改变正在计时的 GE 总时长；清除冷却或更换角色后重新读取当前状态，避免旧进度残留。护甲条隐藏时，冲刺条仍然保留。
+- HUD 经 `RogueVitalsView::UpdateDashState` 读取本地角色 ASC 的冲刺能力、状态标签和冷却 GE 的实际剩余时间与总时长。圆弧不维护另一套计时器。
+- 仅在可用、未濒死且有实际剩余冷却时间时显示，随充能填满；充满立即隐藏。只有阻挡标签而没有实际冷却计时，也不会留下空圆弧。
+- 显示更新和每帧投影共用同一充能条件，避免定位逻辑重新显示满条。没有本地角色或投影失败时收起。
+- 在 WBP 设计器的 `PlayerDashRing` 调半径、弧度、粗细与冷却颜色，在类默认值调屏幕与世界高度偏移；详见 [状态栏维护](Centered-Vitals-Polish.md)。
+- 清除冷却或更换角色后重新读取状态，护甲是否解锁不影响冲刺显示。
 
-本次资产更新使用 `RogueUIThemeBuilder.add_dash_cooldown_to_vitals` 追加控件，保留现有生命、护甲、经验控件和事件图。不要为增加冲刺条重新运行早期的整树生成脚本。
+不要重新运行旧整树生成脚本来改动圆弧，以免覆盖已保存的生命、护甲、等级和经验布局。

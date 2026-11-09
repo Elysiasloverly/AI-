@@ -53,8 +53,13 @@ void ARogueMortarProjectile::ActivatePooledMortar(
 	const FVector& InTargetLocation,
 	float InDamage,
 	float InExplosionRadius,
-	float InLaunchSpeed)
+	float InLaunchSpeed, const FRogueProjectileCombatSettings& Combat, const FRogueMortarFlightSettings& Flight)
 {
+    MortarArcParam=FMath::Clamp(Flight.ArcParam,0.f,1.f);
+    MortarGravityScale=FMath::Max(.01f,Flight.GravityScale);
+    MinimumLaunchSpeed=FMath::Max(1.f,Flight.MinimumLaunchSpeed);
+    MinimumFlightTime=FMath::Max(.01f,Flight.MinimumFlightTime);
+    MaximumFlightTime=FMath::Max(MinimumFlightTime,Flight.MaximumFlightTime);
 	const FVector ArcTargetLocation = InTargetLocation + FVector(0.0f, 0.0f, 12.0f);
 	const FVector TargetOffset = ArcTargetLocation - SpawnLocation;
 	const FVector HorizontalOffset(TargetOffset.X, TargetOffset.Y, 0.0f);
@@ -89,7 +94,7 @@ void ARogueMortarProjectile::ActivatePooledMortar(
 	const FVector LaunchVelocity = HorizontalDirection * HorizontalSpeed + FVector(0.0f, 0.0f, VerticalSpeed);
 	const float LaunchSpeed = FMath::Max(MinimumLaunchSpeed, LaunchVelocity.Size());
 
-	ActivatePooledRocket(InOwner, InInstigator, SpawnLocation, LaunchVelocity.Rotation(), LaunchVelocity.GetSafeNormal(), LaunchSpeed, InDamage, InExplosionRadius);
+	ActivatePooledRocket(InOwner, InInstigator, SpawnLocation, LaunchVelocity.Rotation(), LaunchVelocity.GetSafeNormal(), LaunchSpeed, InDamage, InExplosionRadius, Combat);
 
 	if (ProjectileMovement != nullptr)
 	{

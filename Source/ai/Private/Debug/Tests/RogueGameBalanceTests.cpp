@@ -7,10 +7,8 @@
 #include "Misc/AutomationTest.h"
 #include "Misc/CommandLine.h"
 #include "Misc/FileHelper.h"
-#include "Misc/PackageName.h"
 #include "Misc/Parse.h"
 #include "Misc/Paths.h"
-#include "UObject/Package.h"
 #include "UObject/StrongObjectPtr.h"
 #include "UObject/UObjectGlobals.h"
 #include "UObject/UnrealType.h"
@@ -27,135 +25,72 @@ namespace RogueGameBalanceTests
 		ERogueEnemyType::Ringcaster
 	};
 
-	struct FIntOverride { const TCHAR* Name; int32 Value; };
-	struct FFloatOverride { const TCHAR* Name; float Value; };
-
-	bool SetLegacyInt(FAutomationTestBase& Test, URogueGameBalanceAsset* Asset, const TCHAR* Name, int32 Value)
+	// 覆盖乱序批次、零/负上限、分母边界及缺失敌人类型；直接写当前分组字段。
+	URogueGameBalanceAsset* MakeRuleFixture(int32 Variant)
 	{
-		FIntProperty* Property = FindFProperty<FIntProperty>(Asset->GetClass(), Name);
-		if (!Test.TestNotNull(FString::Printf(TEXT("Legacy integer property %s remains readable for migration"), Name), Property)) { return false; }
-		Property->SetPropertyValue_InContainer(Asset, Value);
-		return true;
-	}
-
-	bool SetLegacyFloat(FAutomationTestBase& Test, URogueGameBalanceAsset* Asset, const TCHAR* Name, float Value)
-	{
-		FFloatProperty* Property = FindFProperty<FFloatProperty>(Asset->GetClass(), Name);
-		if (!Test.TestNotNull(FString::Printf(TEXT("Legacy float property %s remains readable for migration"), Name), Property)) { return false; }
-		Property->SetPropertyValue_InContainer(Asset, Value);
-		return true;
-	}
-
-	void RouteLegacyPostLoad(URogueGameBalanceAsset* Asset)
-	{
-		// Route PostLoad after a fixture's legacy values and package version have been supplied.
-		Asset->SetFlags(RF_NeedPostLoad);
-		Asset->ConditionalPostLoad();
-	}
-
-	URogueGameBalanceAsset* MakeLegacyFixture(FAutomationTestBase& Test, int32 Variant)
-	{
-		// Load a real pre-migration package under a unique name so its linker supplies the old version.
-		// NewObject alone reports the registered CURRENT version and cannot simulate a legacy load.
-		FString LegacyFilename;
-		if (!FParse::Value(FCommandLine::Get(), TEXT("RogueBalanceLegacyPackage="), LegacyFilename))
-		{
-			LegacyFilename = FPaths::ConvertRelativePathToFull(FPaths::Combine(FPaths::ProjectDir(),
-				TEXT("Source/ai/Private/Debug/Tests/Fixtures/DA_GameBalance.uasset")));
-		}
-		if (!IFileManager::Get().FileExists(*LegacyFilename))
-		{
-			Test.AddError(TEXT("The legacy game balance fixture is missing from Source/ai/Private/Debug/Tests/Fixtures."));
-			return nullptr;
-		}
-		const FGuid LayoutVersion(0x7813CF72, 0x2EBB4E2A, 0xA614905F, 0xC30A8DD1);
-		const FString BackupMount(TEXT("/RogueBalanceLegacyBackup/"));
-		FString BackupDirectory = FPaths::ConvertRelativePathToFull(FPaths::GetPath(LegacyFilename));
-		FPaths::NormalizeDirectoryName(BackupDirectory);
-		BackupDirectory += TEXT("/");
-		static FString MountedBackupDirectory;
-		if (MountedBackupDirectory != BackupDirectory)
-		{
-			if (!MountedBackupDirectory.IsEmpty()) { FPackageName::UnRegisterMountPoint(BackupMount, MountedBackupDirectory); }
-			FPackageName::RegisterMountPoint(BackupMount, BackupDirectory);
-			MountedBackupDirectory = BackupDirectory;
-		}
-		const FString BackupPackageName = BackupMount + FPaths::GetBaseFilename(LegacyFilename);
-		const FString PackageName = FString::Printf(TEXT("/Temp/RogueGameBalanceLegacy_%s"), *FGuid::NewGuid().ToString(EGuidFormats::Digits));
-		UPackage* LegacyPackage = LoadPackage(CreatePackage(*PackageName), *BackupPackageName, LOAD_None);
-		if (!Test.TestNotNull(TEXT("The backed-up legacy package loads into its own package"), LegacyPackage)) { return nullptr; }
-		LegacyPackage->SetFlags(RF_Transient);
-		URogueGameBalanceAsset* Asset = FindObject<URogueGameBalanceAsset>(LegacyPackage, TEXT("DA_GameBalance"));
-		if (!Test.TestNotNull(TEXT("The backed-up package contains DA_GameBalance"), Asset)) { return nullptr; }
-		if (!Test.TestTrue(TEXT("The fixture package predates the grouped layout"), Asset->GetLinkerCustomVersion(LayoutVersion) < 1)) { return nullptr; }
-		const FIntOverride IntOverrides[] =
-		{
-			{ TEXT("BossAliveMinMaxEnemies"), 9 }, { TEXT("BossAliveMaxEnemyReduction"), 6 },
-			{ TEXT("MaxAliveEnemiesPerWave"), 3 }, { TEXT("MaxAliveEnemiesHardLimit"), 43 },
-			{ TEXT("DoubleSpawnWave"), 7 }, { TEXT("DoubleSpawnSlack"), 11 },
-			{ TEXT("TripleSpawnWave"), 3 }, { TEXT("TripleSpawnSlack"), 2 },
-			{ TEXT("EarlyWaveSlowdownEndWave"), 6 },
-			{ TEXT("BaseExperienceReward"), 4 }, { TEXT("ExperienceRewardWaveDivisor"), 3 }, { TEXT("MaxExperienceReward"), 8 },
-			{ TEXT("MidGameHealthStartWave"), 12 }, { TEXT("LateGameHealthStartWave"), 4 },
-			{ TEXT("BossExperiencePerWave"), 6 }, { TEXT("MinBossExperienceReward"), 17 }, { TEXT("MaxBossExperienceReward"), 67 },
-			{ TEXT("LateEliteBossStartWave"), 9 },
-			{ TEXT("EnemyCurrencyBaseReward"), 3 }, { TEXT("EnemyCurrencyWaveDivisor"), 4 }, { TEXT("MaxEnemyCurrencyReward"), 9 },
-			{ TEXT("BossCurrencyBaseReward"), 21 }, { TEXT("BossCurrencyPerWave"), 3 }, { TEXT("MaxBossCurrencyReward"), 77 },
-			{ TEXT("ShopOfferCount"), 9 }, { TEXT("ShopOfferCost"), 31 }, { TEXT("ShopRefreshCost"), 19 }
-		};
-		const FFloatOverride FloatOverrides[] =
-		{
-			{ TEXT("DifficultyScalePerWave"), 0.13f }, { TEXT("MaxDifficultyScale"), 3.7f },
-			{ TEXT("EarlyWaveSpawnMultiplierAtWaveOne"), 1.6f }, { TEXT("EarlyWaveSpawnMultiplierAtEnd"), 0.85f },
-			{ TEXT("MinimumSpawnDelay"), 0.27f },
-			{ TEXT("BaseEnemyHealth"), 48.5f }, { TEXT("EnemyHealthPerWave"), 6.25f },
-			{ TEXT("BaseEnemySpeed"), 198.5f }, { TEXT("EnemySpeedPerWave"), 5.75f },
-			{ TEXT("BaseEnemyDamage"), 11.25f }, { TEXT("EnemyDamagePerWave"), 0.875f },
-			{ TEXT("MidGameHealthPerWave"), 0.125f }, { TEXT("MidGameHealthCap"), 0.0f },
-			{ TEXT("LateGameHealthPerWave"), 0.0375f }, { TEXT("LateGameHealthCap"), -0.5f },
-			{ TEXT("MaxEnemyHealth"), 675.5f },
-			{ TEXT("BaseBossHealth"), 777.5f }, { TEXT("BossHealthPerWave"), 83.25f },
-			{ TEXT("BaseBossSpeed"), 313.5f }, { TEXT("BossSpeedPerWave"), 6.25f },
-			{ TEXT("BaseBossDamage"), 27.5f }, { TEXT("BossDamagePerWave"), 3.125f },
-			{ TEXT("EarlyEliteBossHealthMultiplier"), 1.27f }, { TEXT("LateEliteBossHealthMultiplier"), 2.13f },
-			{ TEXT("EarlyEliteBossDamageMultiplier"), 0.83f }, { TEXT("LateEliteBossDamageMultiplier"), 1.45f },
-			{ TEXT("EliteBossSpeedMultiplier"), 1.07f }, { TEXT("ShopAutoRefreshInterval"), 83.0f }
-		};
-		bool bValid = true;
-		for (const FIntOverride& Override : IntOverrides) { bValid &= SetLegacyInt(Test, Asset, Override.Name, Override.Value); }
-		for (const FFloatOverride& Override : FloatOverrides) { bValid &= SetLegacyFloat(Test, Asset, Override.Name, Override.Value); }
-
+		URogueGameBalanceAsset* Asset = NewObject<URogueGameBalanceAsset>();
+		Asset->Spawn.EarlyWaves.EndWave = 6;
+		Asset->Rewards.EnemyExperience.BaseAmount = 4;
+		Asset->Rewards.EnemyExperience.WaveInterval = 3;
+		Asset->Rewards.EnemyExperience.MaximumAmount = 8;
+		Asset->Rewards.BossExperience.PerWave = 6;
+		Asset->Rewards.BossExperience.MinimumAmount = 17;
+		Asset->Rewards.BossExperience.MaximumAmount = 67;
+		Asset->BossStats.LateStageStartWave = 9;
+		Asset->Rewards.EnemyGold.BaseAmount = 3;
+		Asset->Rewards.EnemyGold.WaveInterval = 4;
+		Asset->Rewards.EnemyGold.MaximumAmount = 9;
+		Asset->Rewards.BossGold.BaseAmount = 21;
+		Asset->Rewards.BossGold.PerWave = 3;
+		Asset->Rewards.BossGold.MaximumAmount = 77;
+		Asset->Shop.OfferCount = 9;
+		Asset->Shop.OfferCost = 31;
+		Asset->Shop.RefreshCost = 19;
+		Asset->Spawn.AccelerationPerWave = 0.13f;
+		Asset->Spawn.MaxAcceleration = 3.7f;
+		Asset->Spawn.EarlyWaves.FirstWaveIntervalMultiplier = 1.6f;
+		Asset->Spawn.EarlyWaves.LastWaveIntervalMultiplier = 0.85f;
+		Asset->Spawn.MinimumInterval = 0.27f;
+		Asset->EnemyStats.Health.BaseValue = 48.5f;
+		Asset->EnemyStats.Health.PerWave = 6.25f;
+		Asset->EnemyStats.Speed.BaseValue = 198.5f;
+		Asset->EnemyStats.Speed.PerWave = 5.75f;
+		Asset->EnemyStats.Damage.BaseValue = 11.25f;
+		Asset->EnemyStats.Damage.PerWave = 0.875f;
+		Asset->EnemyStats.MaxHealth = 675.5f;
+		Asset->BossStats.Health.BaseValue = 777.5f;
+		Asset->BossStats.Health.PerWave = 83.25f;
+		Asset->BossStats.Speed.BaseValue = 313.5f;
+		Asset->BossStats.Speed.PerWave = 6.25f;
+		Asset->BossStats.Damage.BaseValue = 27.5f;
+		Asset->BossStats.Damage.PerWave = 3.125f;
+		Asset->BossStats.EarlyStage.HealthMultiplier = 1.27f;
+		Asset->BossStats.LateStage.HealthMultiplier = 2.13f;
+		Asset->BossStats.EarlyStage.DamageMultiplier = 0.83f;
+		Asset->BossStats.LateStage.DamageMultiplier = 1.45f;
+		Asset->BossStats.SpeedMultiplier = 1.07f;
+		Asset->Shop.AutoRefreshInterval = 83.0f;
+		Asset->Spawn.BatchRules = {{7, 2}, {3, 3}};
+		Asset->EnemyStats.HealthGrowthStages = {{12, 0.125f, 0.0f}, {4, 0.0375f, -0.5f}};
 		if (Variant == 1)
 		{
-			bValid &= SetLegacyInt(Test, Asset, TEXT("MaxAliveEnemiesPerWave"), 0);
-			bValid &= SetLegacyInt(Test, Asset, TEXT("MaxAliveEnemiesHardLimit"), 0);
-			bValid &= SetLegacyInt(Test, Asset, TEXT("ExperienceRewardWaveDivisor"), 0);
-			bValid &= SetLegacyInt(Test, Asset, TEXT("EnemyCurrencyWaveDivisor"), -3);
-			bValid &= SetLegacyInt(Test, Asset, TEXT("MidGameHealthStartWave"), 10);
-			bValid &= SetLegacyInt(Test, Asset, TEXT("LateGameHealthStartWave"), 2);
-			bValid &= SetLegacyFloat(Test, Asset, TEXT("MidGameHealthCap"), -1.0f);
-			bValid &= SetLegacyFloat(Test, Asset, TEXT("LateGameHealthCap"), 0.0f);
-			bValid &= SetLegacyFloat(Test, Asset, TEXT("MaxEnemyHealth"), -1.0f);
-			bValid &= SetLegacyInt(Test, Asset, TEXT("LateEliteBossStartWave"), 0);
-			bValid &= SetLegacyInt(Test, Asset, TEXT("ShopOfferCount"), 0);
-			bValid &= SetLegacyInt(Test, Asset, TEXT("ShopOfferCost"), -3);
-			bValid &= SetLegacyInt(Test, Asset, TEXT("ShopRefreshCost"), -4);
-			bValid &= SetLegacyFloat(Test, Asset, TEXT("ShopAutoRefreshInterval"), 0.0f);
+			Asset->Rewards.EnemyExperience.WaveInterval = 0;
+			Asset->Rewards.EnemyGold.WaveInterval = -3;
+			Asset->EnemyStats.MaxHealth = -1.0f;
+			Asset->BossStats.LateStageStartWave = 0;
+			Asset->Shop.OfferCount = 0;
+			Asset->Shop.OfferCost = -3;
+			Asset->Shop.RefreshCost = -4;
+			Asset->Shop.AutoRefreshInterval = 0.0f;
+			Asset->EnemyStats.HealthGrowthStages = {{10, 0.125f, -1.0f}, {2, 0.0375f, 0.0f}};
 		}
 		else if (Variant == 2)
 		{
-			bValid &= SetLegacyInt(Test, Asset, TEXT("MaxAliveEnemiesHardLimit"), 5);
-			bValid &= SetLegacyInt(Test, Asset, TEXT("BossAliveMinMaxEnemies"), 19);
-			bValid &= SetLegacyInt(Test, Asset, TEXT("DoubleSpawnWave"), 4);
-			bValid &= SetLegacyInt(Test, Asset, TEXT("TripleSpawnWave"), 10);
-			bValid &= SetLegacyInt(Test, Asset, TEXT("DoubleSpawnSlack"), 0);
-			bValid &= SetLegacyInt(Test, Asset, TEXT("TripleSpawnSlack"), 1);
-			bValid &= SetLegacyFloat(Test, Asset, TEXT("MaxEnemyHealth"), 0.0f);
-			bValid &= SetLegacyFloat(Test, Asset, TEXT("MidGameHealthCap"), 0.25f);
-			bValid &= SetLegacyFloat(Test, Asset, TEXT("LateGameHealthCap"), 0.15f);
-			bValid &= SetLegacyInt(Test, Asset, TEXT("LateEliteBossStartWave"), 5);
+			Asset->EnemyStats.MaxHealth = 0.0f;
+			Asset->BossStats.LateStageStartWave = 5;
+			Asset->Spawn.BatchRules = {{4, 2}, {10, 3}};
+			Asset->EnemyStats.HealthGrowthStages = {{12, 0.125f, 0.25f}, {4, 0.0375f, 0.15f}};
 		}
-		if (!bValid) { return nullptr; }
 
 		// Include repeated weighted entries, non-sorted start waves, type overrides, and fallback types.
 		Asset->EnemyWaveEntries.Reset();
@@ -177,7 +112,6 @@ namespace RogueGameBalanceTests
 		}
 		Asset->EnemyWaveEntries.Add({ 8, ERogueEnemyType::Rifleman, 5 });
 		Asset->EnemyWaveEntries.Add({ 2, ERogueEnemyType::Marksman, 4 });
-		RouteLegacyPostLoad(Asset);
 		return Asset;
 	}
 
@@ -248,10 +182,9 @@ bool FRogueGameBalanceSnapshotTest::RunTest(const FString& Parameters)
 		TEXT("/Game/Data/Core/DA_GameBalance.DA_GameBalance")));
 	if (!TestNotNull(TEXT("The real DA_GameBalance loads from its current path"), Actual.Get())) { return false; }
 	TStrongObjectPtr<URogueGameBalanceAsset> NativeDefaults(NewObject<URogueGameBalanceAsset>());
-	RogueGameBalanceTests::RouteLegacyPostLoad(NativeDefaults.Get());
-	TStrongObjectPtr<URogueGameBalanceAsset> Custom(RogueGameBalanceTests::MakeLegacyFixture(*this, 0));
-	TStrongObjectPtr<URogueGameBalanceAsset> Uncapped(RogueGameBalanceTests::MakeLegacyFixture(*this, 1));
-	TStrongObjectPtr<URogueGameBalanceAsset> ZeroCaps(RogueGameBalanceTests::MakeLegacyFixture(*this, 2));
+	TStrongObjectPtr<URogueGameBalanceAsset> Custom(RogueGameBalanceTests::MakeRuleFixture(0));
+	TStrongObjectPtr<URogueGameBalanceAsset> Uncapped(RogueGameBalanceTests::MakeRuleFixture(1));
+	TStrongObjectPtr<URogueGameBalanceAsset> ZeroCaps(RogueGameBalanceTests::MakeRuleFixture(2));
 	if (!Custom.IsValid() || !Uncapped.IsValid() || !ZeroCaps.IsValid()) { return false; }
 
 	FString Snapshot(TEXT("RogueGameBalanceSnapshotV1\n"));
@@ -314,11 +247,20 @@ bool FRogueGameBalanceSemanticsTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Boss rewards do not receive the ordinary type experience bonus"),
 		RogueGameModeRules::BuildBossProfile(1, ERogueEnemyType::Juggernaut).ExperienceReward, 30);
 	TestEqual(TEXT("Ordinary currency steps up at the divisor wave"), RogueGameModeRules::BuildCurrencyReward(6, false), 2);
+	URogueGameBalanceAsset* Gold = NewObject<URogueGameBalanceAsset>();
+	Gold->Rewards.EnemyGold = {3, 6, 8};
+	Gold->Rewards.EnemyGoldStepAmount = 2;
+	TestEqual(TEXT("Gold stays at the base before the first step"), RogueGameModeRules::BuildCurrencyReward(5, false, Gold), 3);
+	TestEqual(TEXT("Gold uses the configured step at wave six"), RogueGameModeRules::BuildCurrencyReward(6, false, Gold), 5);
+	TestEqual(TEXT("Gold adds another step at wave twelve"), RogueGameModeRules::BuildCurrencyReward(12, false, Gold), 7);
+	TestEqual(TEXT("Gold respects its cap"), RogueGameModeRules::BuildCurrencyReward(18, false, Gold), 8);
+	Gold->Rewards.EnemyGoldStepAmount = 0;
+	TestEqual(TEXT("A zero step keeps the base reward"), RogueGameModeRules::BuildCurrencyReward(90, false, Gold), 3);
 	TestEqual(TEXT("Boss currency includes its base plus the current wave"), RogueGameModeRules::BuildCurrencyReward(1, true), 15);
 
-	TStrongObjectPtr<URogueGameBalanceAsset> Custom(RogueGameBalanceTests::MakeLegacyFixture(*this, 0));
-	TStrongObjectPtr<URogueGameBalanceAsset> Uncapped(RogueGameBalanceTests::MakeLegacyFixture(*this, 1));
-	TStrongObjectPtr<URogueGameBalanceAsset> ZeroCaps(RogueGameBalanceTests::MakeLegacyFixture(*this, 2));
+	TStrongObjectPtr<URogueGameBalanceAsset> Custom(RogueGameBalanceTests::MakeRuleFixture(0));
+	TStrongObjectPtr<URogueGameBalanceAsset> Uncapped(RogueGameBalanceTests::MakeRuleFixture(1));
+	TStrongObjectPtr<URogueGameBalanceAsset> ZeroCaps(RogueGameBalanceTests::MakeRuleFixture(2));
 	if (!Custom.IsValid() || !Uncapped.IsValid() || !ZeroCaps.IsValid()) { return false; }
 	TestEqual(TEXT("Three-spawn rule can match before the two-spawn rule starts"),
 		RogueGameModeRules::BuildSpawnCadence(3, 1.0f, Custom.Get()).SpawnBatchSize, 3);
@@ -421,26 +363,24 @@ bool FRogueGroupedGameBalanceLayoutTest::RunTest(const FString& Parameters)
 		}
 	}
 	TestEqual(TEXT("Only current grouped top-level fields remain editable"), EditableFieldCount, static_cast<int32>(UE_ARRAY_COUNT(ExpectedCategories)));
-	TestEqual(TEXT("All 55 legacy scalar fields retain real deprecated property flags"), DeprecatedFieldCount, 55);
+	TestEqual(TEXT("Completed migration leaves no deprecated scalar properties"), DeprecatedFieldCount, 0);
     for (const TCHAR* Name : { TEXT("BaseMaxAliveEnemies"), TEXT("MaxAlivePerWave"), TEXT("MaxAliveLimit"), TEXT("BossAliveReduction"), TEXT("BossAliveMinimumLimit") })
     {
         const FProperty* Property = FindFProperty<FProperty>(FRogueSpawnBalanceSettings::StaticStruct(), Name);
-        if (TestNotNull(TEXT("Old fields load for asset compatibility"), Property))
-            TestFalse(FString(Name) + TEXT(" is not exposed as a working configuration"), Property->HasAnyPropertyFlags(CPF_Edit | CPF_BlueprintVisible));
+        TestNull(FString(Name) + TEXT(" is removed after migration"), Property);
     }
-    const FProperty* Slack = FindFProperty<FProperty>(FRogueSpawnBatchRule::StaticStruct(), TEXT("RequiredFreeSlots"));
-    if (TestNotNull(TEXT("Old batch slack remains loadable"), Slack))
-        TestFalse(TEXT("Global free-slot settings are hidden"), Slack->HasAnyPropertyFlags(CPF_Edit | CPF_BlueprintVisible));
+    TestNull(TEXT("Removed global slack cannot appear as a working option"),
+        FindFProperty<FProperty>(FRogueSpawnBatchRule::StaticStruct(), TEXT("RequiredFreeSlots")));
 	TSet<const UStruct*> Visited;
 	RogueGameBalanceTests::CheckEditableMetadata(*this, AssetClass, Visited);
 
 	TStrongObjectPtr<URogueGameBalanceAsset> Asset(NewObject<URogueGameBalanceAsset>());
-	Asset->Spawn.MaxAlivePerWave = 0;
-	Asset->Spawn.MaxAliveLimit = 0;
+
+
 	Asset->Spawn.BatchRules.Reset();
 	TestEqual(TEXT("An intentionally empty batch list attempts one enemy per spawn"),
 		RogueGameModeRules::BuildSpawnCadence(50, 1.0f, Asset.Get()).SpawnBatchSize, 1);
-	Asset->Spawn.BatchRules = { {1, 0, 5}, {1, 0, 2} };
+	Asset->Spawn.BatchRules = { {1, 5}, {1, 2} };
 	TestEqual(TEXT("The last matching batch rule wins even when its count is smaller"),
 		RogueGameModeRules::BuildSpawnCadence(50, 1.0f, Asset.Get()).SpawnBatchSize, 2);
 

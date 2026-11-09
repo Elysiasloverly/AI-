@@ -1,4 +1,4 @@
-#if WITH_DEV_AUTOMATION_TESTS
+﻿#if WITH_DEV_AUTOMATION_TESTS
 
 #include "AbilitySystemComponent.h"
 #include "Enemies/Data/RogueEnemyAssetPaths.h"
@@ -68,6 +68,7 @@ namespace RogueEnemySpawnLifecycleTests
             Player->GetAbilitySystemComponent()->CancelAllAbilities();
 
             Player->AddExperience(Player->GetExperienceToNextLevel());
+            State->Server_ToggleUpgradeSelection();
             return Test.TestTrue(TEXT("A real XP level-up leaves the player choosing an upgrade"),
                 State->IsAwaitingUpgradeChoice());
         }

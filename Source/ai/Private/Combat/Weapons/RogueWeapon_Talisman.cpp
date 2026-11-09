@@ -5,11 +5,11 @@
 
 int32 ARogueWeapon_Talisman::GetEffectiveTargetCount() const
 {
-    return 1+FMath::Max(0,FMath::RoundToInt(GetWeaponBonusValues().TalismanPierce));
+    return FMath::Max(1,Config.TalismanCombat.BaseTargetCount)+FMath::Max(0,FMath::RoundToInt(GetWeaponBonusValues().TalismanPierce));
 }
 int32 ARogueWeapon_Talisman::GetEffectiveHitsPerTarget() const
 {
-    return 1+FMath::Max(0,FMath::RoundToInt(GetWeaponBonusValues().TalismanRepeat));
+    return FMath::Max(1,Config.TalismanCombat.BaseHitsPerTarget)+FMath::Max(0,FMath::RoundToInt(GetWeaponBonusValues().TalismanRepeat));
 }
 void ARogueWeapon_Talisman::WeaponTick(float DeltaSeconds)
 {
@@ -33,7 +33,7 @@ void ARogueWeapon_Talisman::WeaponTick(float DeltaSeconds)
     for (int32 I=0;I<Talismans.Num();++I)
     {
         Talismans[I]->Configure(Player,I,Talismans.Num(),GetEffectiveDamage(),GetEffectiveRange(),
-            GetEffectiveCooldown(),GetEffectiveTargetCount(),GetEffectiveHitsPerTarget());
+            GetEffectiveCooldown(),GetEffectiveTargetCount(),GetEffectiveHitsPerTarget(),Config.TalismanCombat,this);
         if(Talismans[I]->TryLaunch())
         {
             if(!bLaunched){LaunchLocation=Talismans[I]->GetActorLocation();LaunchDirection=Talismans[I]->GetActorForwardVector();}

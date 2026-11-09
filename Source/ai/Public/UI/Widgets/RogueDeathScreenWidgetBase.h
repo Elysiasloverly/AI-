@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "UI/Widgets/RoguePanelReveal.h"
 #include "UI/Widgets/RogueMenuViewData.h"
 #include "RogueDeathScreenWidgetBase.generated.h"
 
@@ -27,12 +28,14 @@ public:
 	void RequestReturnToMainMenu();
 
 protected:
+    virtual void NativeTick(const FGeometry& G,float Delta) override;
 	virtual void NativeConstruct() override;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> MainMenuButton;
 	UFUNCTION(BlueprintImplementableEvent, Category = "Rogue|Death")
 	void OnDeathViewUpdated(const FRogueDeathViewData& InViewData);
 
 private:
+    FRoguePanelReveal Reveal;
 	TWeakObjectPtr<ARogueHUD> OwningRogueHUD;
 	bool bReturnToMenuRequested = false;
 };

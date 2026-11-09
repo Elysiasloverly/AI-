@@ -2,8 +2,11 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "Combat/Weapons/RogueWeaponCombatSettings.h"
+#include "Combat/Visuals/RogueCombatAccentEffect.h"
 #include "RogueLaserBeam.generated.h"
 
+class ARogueInfernoLockRing;
 class USceneComponent;
 class UStaticMeshComponent;
 class UMaterialInterface;
@@ -50,6 +53,21 @@ class AI_API ARogueLaserBeam : public AActor
 	GENERATED_BODY()
 
 public:
+    /** 只影响光束表现；真实伤害节拍由武器 DT 决定。 */
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="外观|光束节拍", meta=(DisplayName="瞬发光束显示时间", ClampMin="0.01", Units="s"))
+    float PulseLifetime=.1f;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="外观|光束节拍", meta=(DisplayName="持续光束刷新间隔", ClampMin="0.01", Units="s"))
+    float RefreshInterval=.16f;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="外观|光束节拍", meta=(DisplayName="持续光束寿命补偿", ClampMin="0", Units="s"))
+    float LifetimePadding=.03f;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="外观|光束节拍", meta=(DisplayName="高负载额外刷新间隔", ClampMin="0", Units="s"))
+    float HeavyCombatRefreshPenalty=.05f;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="外观|开火特效", meta=(DisplayName="开火闪光与碎光"))
+    FRogueCombatAccentSettings FireAccent;
+
+    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="外观|锁定圈",meta=(DisplayName="持续激光锁定圈蓝图"))
+    TSubclassOf<ARogueInfernoLockRing> InfernoLockRingClass;
+
 	ARogueLaserBeam();
 
 	void InitializeBeam(const FVector& StartLocation, const FVector& EndLocation, bool bUseInfernoStyle = false, bool bSpawnImpactEffect = true, float BeamLifetime = 0.10f);

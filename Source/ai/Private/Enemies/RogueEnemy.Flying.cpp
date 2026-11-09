@@ -88,7 +88,7 @@ void ARogueEnemy::StartFlyingAttack(ARogueCharacter* Target)
         }
         EmitFlyingVolley(Shots,0.0f);
     }
-    NotifyAttackAudio(GetActorLocation());
+    NotifyAttackFeedback(GetActorLocation());
 }
 
 void ARogueEnemy::TickFlyingAttack(float DeltaSeconds)

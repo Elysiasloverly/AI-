@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Shared/RogueTypes.h"
 #include "RogueMenuViewData.generated.h"
 
 USTRUCT(BlueprintType)
@@ -70,6 +71,7 @@ USTRUCT(BlueprintType)
 struct FRogueShopOfferViewData
 {
 	GENERATED_BODY()
+    UPROPERTY(BlueprintReadOnly) ERogueUpgradeType IconType = ERogueUpgradeType::AttackPower;
 
 	UPROPERTY(BlueprintReadOnly, Category="Shop") FGuid QuoteId;
 	UPROPERTY(BlueprintReadOnly, Category="Shop") int32 QuotedCost = 0;
@@ -121,6 +123,7 @@ USTRUCT(BlueprintType)
 struct FRogueUpgradeCardViewData
 {
 	GENERATED_BODY()
+    UPROPERTY(BlueprintReadOnly) ERogueUpgradeType IconType = ERogueUpgradeType::AttackPower;
 
 	UPROPERTY(BlueprintReadOnly, Category="Upgrade") FGuid SelectionId;
 	UPROPERTY(BlueprintReadOnly, Category="Upgrade") bool bCanSelect = false;

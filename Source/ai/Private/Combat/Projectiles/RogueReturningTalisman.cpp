@@ -1,4 +1,5 @@
 #include "Combat/Projectiles/RogueReturningTalisman.h"
+#include "Debug/RoguePerfStats.h"
 #include "AbilitySystem/RogueAbilitySystemLibrary.h"
 #include "AbilitySystem/RogueGameplayTags.h"
 #include "Combat/Targeting/RogueEnemyTrackerSubsystem.h"
@@ -13,6 +14,7 @@
 #include "GameFramework/GameStateBase.h"
 #include "Net/UnrealNetwork.h"
 #include "Player/RogueCharacter.h"
+#include "Combat/Weapons/RogueWeaponBase.h"
 #include "UObject/ConstructorHelpers.h"
 
 ARogueReturningTalisman::ARogueReturningTalisman()
@@ -34,6 +36,8 @@ ARogueReturningTalisman::ARogueReturningTalisman()
 void ARogueReturningTalisman::BeginPlay()
 {
     Super::BeginPlay();
+    for(auto* Material:Mesh->GetMaterials())FlightMaterials.Add(Material);
+    bFlightForceDisableNanite=Mesh->bForceDisableNanite;
     if (GetNetMode()!=NM_DedicatedServer && bEnableTrail)
     {
         UStaticMesh* Cylinder=LoadObject<UStaticMesh>(nullptr,TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
@@ -59,10 +63,14 @@ void ARogueReturningTalisman::GetLifetimeReplicatedProps(TArray<FLifetimePropert
 }
 
 void ARogueReturningTalisman::Configure(ARogueCharacter* InPlayer,int32 Index,int32 Count,float InDamage,
-    float Range,float InCooldown,int32 Targets,int32 HitsPerTarget)
+    float Range,float InCooldown,int32 Targets,int32 HitsPerTarget,const FRogueTalismanCombatSettings& Combat, ARogueWeaponBase* Weapon)
 {
     if (!HasAuthority()) { return; }
     const bool bFirst=Player==nullptr;
+    TargetingWeapon=Weapon;
+    FlightSpeed=FMath::Max(100.f,Combat.FlightSpeed); ReturnSpeed=FMath::Max(100.f,Combat.ReturnSpeed);
+    OvershootDistance=FMath::Max(40.f,Combat.OvershootDistance); HitRadius=FMath::Max(1.f,Combat.HitRadius);
+    MaxSortieSeconds=FMath::Max(1.f,Combat.MaxSortieSeconds); MaxReturnSeconds=FMath::Max(.25f,Combat.MaxReturnSeconds);
     Player=InPlayer; SlotIndex=Index; SlotCount=FMath::Max(1,Count);
     Damage=FMath::Max(0.f,InDamage); SeekRange=FMath::Max(1.f,Range); Cooldown=FMath::Max(.05f,InCooldown);
     TargetBudget=FMath::Max(1,Targets); HitBudget=FMath::Max(1,HitsPerTarget);
@@ -95,17 +103,19 @@ ARogueEnemy* ARogueReturningTalisman::FindNextTarget() const
     if (!Tracker || !Player) { return nullptr; }
     TArray<ARogueEnemy*> Candidates;
     Tracker->CollectEnemiesInRange(Player->GetActorLocation(),SeekRange,Candidates,0,true);
-    for (ARogueEnemy* Enemy:Candidates)
+    Candidates.RemoveAll([this](ARogueEnemy* Enemy)
     {
-        if (!IsUsable(Enemy,Enemy->GetSpawnCycleId())) { continue; }
-        if (!Victims.ContainsByPredicate([Enemy](const FVictim& V){return V.Enemy==Enemy && V.Cycle==Enemy->GetSpawnCycleId();})) { return Enemy; }
-    }
-    return nullptr;
+        return !IsUsable(Enemy,Enemy->GetSpawnCycleId()) || Victims.ContainsByPredicate(
+            [Enemy](const FVictim& V){return V.Enemy==Enemy && V.Cycle==Enemy->GetSpawnCycleId();});
+    });
+    return Tracker->SelectWeaponTarget(TargetingWeapon.Get(), Candidates, this);
 }
 
 void ARogueReturningTalisman::StartPass(ARogueEnemy* Enemy)
 {
     Target=Enemy; TargetCycle=Enemy->GetSpawnCycleId(); HitThisPass.Reset();
+    if (auto* Tracker=GetWorld()->GetSubsystem<URogueEnemyTrackerSubsystem>())
+    { Tracker->ReserveWeaponTarget(TargetingWeapon.Get(),this,Enemy); }
     FVector Direction=(Enemy->GetActorLocation()-GetActorLocation()).GetSafeNormal();
     if (Direction.IsNearlyZero()) { Direction=GetActorForwardVector(); }
     PassDirection=Direction;
@@ -125,16 +135,18 @@ bool ARogueReturningTalisman::TryLaunch()
 
 void ARogueReturningTalisman::BeginReturn()
 {
+    if (auto* Tracker=GetWorld()->GetSubsystem<URogueEnemyTrackerSubsystem>()) { Tracker->ReleaseWeaponTarget(this); }
     Phase=ERogueTalismanPhase::Returning; ReturnAge=0; PreviousReturnHome=OrbitLocation(); Target.Reset(); HitThisPass.Reset(); ForceNetUpdate();
 }
 
 void ARogueReturningTalisman::SweepDamage(const FVector& Start,const FVector& End)
 {
+    CSV_SCOPED_TIMING_STAT(RoguePerf, TalismanSweep);
     auto* Tracker=GetWorld()->GetSubsystem<URogueEnemyTrackerSubsystem>();
     if (!Tracker || !HasAuthority() || !Player || !Player->IsAlive()) { return; }
     TArray<ARogueEnemy*> Candidates;
     // 预筛选使用空间索引，实际相交检查是飞行线段与敌人胶囊间的最短距离。
-    Tracker->CollectEnemiesInRange((Start+End)*.5f,FVector::Distance(Start,End)*.5f+FMath::Max(1.f,HitRadius)+300,Candidates);
+    Tracker->CollectEnemiesInRange((Start+End)*.5f,FVector::Distance(Start,End)*.5f+FMath::Max(1.f,HitRadius)+300,Candidates,0,false);
     Candidates.Sort([&](const ARogueEnemy& A,const ARogueEnemy& B)
     {return FVector::DistSquared(Start,A.GetActorLocation())<FVector::DistSquared(Start,B.GetActorLocation());});
     for (ARogueEnemy* Enemy:Candidates)
@@ -155,7 +167,7 @@ void ARogueReturningTalisman::SweepDamage(const FVector& Start,const FVector& En
         }
         // 即便此次被无敌阻挡，也消耗这次实际穿过的机会，不能停在同一位置反复提交伤害。
         ++Record->Hits; HitThisPass.Add(Enemy);
-        RogueAbilitySystem::ApplyDamageToTarget(Player,Enemy,Damage,RogueGameplayTags::Damage_Source_Projectile);
+        RogueAbilitySystem::ApplyDamageToTarget(Player,Enemy,Damage,RogueGameplayTags::Damage_Source_Projectile,nullptr,uint8(HitVisualStyle));
     }
 }
 
@@ -205,7 +217,7 @@ void ARogueReturningTalisman::Tick(float DeltaSeconds)
             if (Phase==ERogueTalismanPhase::Returning)
             {
                 const FVector Old=GetActorLocation(), Home=OrbitLocation();
-                // 抵消玩家位移和轨道移动，再按蓝图速度缩短相对距离，低速也能追上。
+                // 抵消玩家位移和轨道移动，再按武器表速度缩短相对距离，低速也能追上。
                 ReturnAge+=DeltaSeconds;
                 const FVector Carried=Old+(Home-PreviousReturnHome); PreviousReturnHome=Home;
                 const bool bTimedOut=ReturnAge>=FMath::Max(.25f,MaxReturnSeconds);
@@ -222,7 +234,16 @@ void ARogueReturningTalisman::Tick(float DeltaSeconds)
 
 void ARogueReturningTalisman::UpdatePresentation(float DeltaSeconds)
 {
+    CSV_SCOPED_TIMING_STAT(RoguePerf, TalismanPresentation);
     if (GetNetMode()==NM_DedicatedServer) { return; }
+    const bool bStandby=Phase==ERogueTalismanPhase::Orbiting&&!OrbitMaterials.IsEmpty();
+    if(bStandby!=bOrbitMaterialsApplied)
+    {
+        for(int32 I=0;I<FlightMaterials.Num();++I)
+            Mesh->SetMaterial(I,bStandby&&OrbitMaterials.IsValidIndex(I)&&OrbitMaterials[I]?OrbitMaterials[I].Get():FlightMaterials[I].Get());
+        Mesh->SetForceDisableNanite(bStandby||bFlightForceDisableNanite);bOrbitMaterialsApplied=bStandby;
+    }
+    if(bStandby)Mesh->SetCustomPrimitiveDataVector3(12,Player->GetActorLocation());
     FVector DisplayLocation=GetActorLocation();
     if (Phase==ERogueTalismanPhase::Orbiting) { DisplayLocation=OrbitLocation(); }
     else if (!HasAuthority() && bVisualInitialized)
@@ -242,11 +263,13 @@ void ARogueReturningTalisman::UpdatePresentation(float DeltaSeconds)
     VisualRoot->SetRelativeScale3D(FVector(Phase==ERogueTalismanPhase::Orbiting?FMath::Max(.05f,OrbitSizeMultiplier):1.f));
     if (LastVisualPhase!=Phase)
     {
-        // 出击转返航时延续尾迹；只有出入环绕状态才清理，防止横跨环绕位置拉出直线。
-        if (Phase==ERogueTalismanPhase::Orbiting || LastVisualPhase==ERogueTalismanPhase::Orbiting) { TrailPoints.Reset(); }
+        // Returning trails stay in world space and age out; only a new launch
+        // resets history so it cannot bridge across the waiting orbit.
+        if (LastVisualPhase==ERogueTalismanPhase::Orbiting) { TrailPoints.Reset(); }
         LastVisualPhase=Phase;
     }
-    const float Lifetime=FMath::Clamp(TrailLifetime,.03f,1.f);
+    // 始终使用蓝图配置的拖尾时间；昼夜和敌人密度不再额外缩短或收细尾迹。
+    const float Lifetime = FMath::Clamp(TrailLifetime, .03f, 1.f);
     for (auto& Point:TrailPoints) { Point.Age+=DeltaSeconds; }
     TrailPoints.RemoveAll([Lifetime](const FTrailPoint& P){return P.Age>Lifetime;});
     // 按时间均匀取历史点。逐帧取样再截断会使高帧率下的拖尾明显变短。
@@ -258,16 +281,28 @@ void ARogueReturningTalisman::UpdatePresentation(float DeltaSeconds)
     for (int32 I=0;I<TrailSegments.Num();++I)
     {
         USplineMeshComponent* Segment=TrailSegments[I];
-        const bool bVisible=bEnableTrail && Phase!=ERogueTalismanPhase::Orbiting && I<TrailPoints.Num();
+        const bool bVisible=bEnableTrail && I<TrailPoints.Num() && (Phase!=ERogueTalismanPhase::Orbiting||I>0);
         Segment->SetVisibility(bVisible);
         if (!bVisible) { continue; }
         const FVector Start=GetActorTransform().InverseTransformPosition(I==0?DisplayLocation:TrailPoints[I-1].Location);
         const FVector End=GetActorTransform().InverseTransformPosition(TrailPoints[I].Location);
         const FVector Tangent=End-Start;
-        const float Width=FMath::Max(.2f,TrailWidth)/100.f;
+        const float Width = FMath::Max(.2f, TrailWidth) / 100.f;
         const float A=Width*(I==0?1.f:1.f-TrailPoints[I-1].Age/Lifetime);
         const float B=Width*(1.f-TrailPoints[I].Age/Lifetime);
         Segment->SetStartScale(FVector2D(A),false); Segment->SetEndScale(FVector2D(B),false);
         Segment->SetStartAndEnd(Start,Tangent,End,Tangent,true);
     }
+}
+
+ARogueEnemy* ARogueReturningTalisman::GetCurrentTarget() const
+{
+    return IsUsable(Target.Get(),TargetCycle) ? Target.Get() : nullptr;
+}
+
+void ARogueReturningTalisman::EndPlay(const EEndPlayReason::Type Reason)
+{
+    if (auto* Tracker=GetWorld() ? GetWorld()->GetSubsystem<URogueEnemyTrackerSubsystem>() : nullptr)
+    { Tracker->ReleaseWeaponTarget(this); }
+    Super::EndPlay(Reason);
 }

@@ -17,6 +17,8 @@ class ARogueImpactEffect;
 class ARogueLaserBeam;
 class ARogueOrbitingBlade;
 class ARogueCombatAccentEffect;
+class ARogueIceFlameField;
+struct FRogueIceFlameCombatSettings;
 struct FRogueCombatAccentSettings;
 
 UCLASS()
@@ -61,6 +63,9 @@ public:
     UFUNCTION(BlueprintCallable,Category="Rogue|特效")
     ARogueCombatAccentEffect* PlayCombatAccent(const FRogueCombatAccentSettings& Settings,const FVector& Location,const FVector& Direction,bool bImpact);
 
+    /** 权威地面区域：同一玩家落在同一小块地面时刷新，空闲实例复用；不限制真实伤害区域数量。 */
+    ARogueIceFlameField* SpawnIceFlameField(TSubclassOf<ARogueIceFlameField> Class,AActor* Source,const FVector& Location,const FVector& Normal,float Radius,float DPS,const FRogueIceFlameCombatSettings& Settings);
+
 	/** 打印池大小、峰值与运行时生成尝试数（含失败）。
 	 *  在日志中搜索 [Pool]；增加预热前先检查占用率、类配置与内存成本。 */
 	UFUNCTION(BlueprintCallable, Category = "Rogue|Pool")
@@ -70,4 +75,5 @@ private:
 	UPROPERTY()
 	FRogueCombatPools CombatPools;
     UPROPERTY() TArray<TObjectPtr<ARogueCombatAccentEffect>> AccentPool;
+    UPROPERTY() TArray<TObjectPtr<ARogueIceFlameField>> IceFlamePool;
 };

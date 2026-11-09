@@ -94,14 +94,12 @@ void ARogueWeapon_Mortar::FireMortarVolley(const TArray<ARogueEnemy*>& Enemies)
 	const int32 HalfCount = EffectiveCount / 2;
 	const FVector LateralDirection = GetOwnerCameraRightVector();
 
+    TArray<ARogueEnemy*> VolleyTargets;
 	bool bAudioTagged = false;
 	for (int32 MortarIndex = 0; MortarIndex < EffectiveCount; ++MortarIndex)
 	{
-		ARogueEnemy* TargetEnemy = Enemies[MortarIndex % Enemies.Num()];
-		if (!IsValid(TargetEnemy))
-		{
-			continue;
-		}
+        ARogueEnemy* TargetEnemy=SelectDistributedTarget(Enemies,VolleyTargets);
+        if (!TargetEnemy) { break; }
 
 		const FVector TargetLocation = TargetEnemy->GetActorLocation() + FVector(0.0f, 0.0f, 6.0f);
 		FVector Direction = (TargetLocation - LaunchOrigin).GetSafeNormal();
@@ -129,6 +127,7 @@ void ARogueWeapon_Mortar::FireMortarVolley(const TArray<ARogueEnemy*>& Enemies)
 			? Pools->AcquireRocketProjectile(RocketClassToSpawn, OwnerChar, OwnerChar, SpawnLocation, Direction.Rotation())
 			: GetWorld()->SpawnActor<ARogueRocketProjectile>(RocketClassToSpawn, SpawnLocation, Direction.Rotation());
 
+        if (Projectile) { ReserveProjectileTarget(Projectile,TargetEnemy); VolleyTargets.Add(TargetEnemy); }
 		if (ARogueMortarProjectile* MortarProjectile = Cast<ARogueMortarProjectile>(Projectile))
 		{
 			MortarProjectile->ActivatePooledMortar(
@@ -138,7 +137,7 @@ void ARogueWeapon_Mortar::FireMortarVolley(const TArray<ARogueEnemy*>& Enemies)
 				TargetLocation,
 				GetEffectiveDamage(),
 				GetExplosionRadius(),
-				GetProjectileSpeed());
+				GetProjectileSpeed(), Config.ProjectileCombat, Config.MortarFlight);
 		}
 		else if (Projectile != nullptr)
 		{
@@ -158,7 +157,7 @@ void ARogueWeapon_Mortar::FireMortarVolley(const TArray<ARogueEnemy*>& Enemies)
 				Direction,
 				FinalProjectileSpeed,
 				GetEffectiveDamage(),
-				GetExplosionRadius());
+				GetExplosionRadius(), Config.ProjectileCombat);
 		}
 
 		if (Projectile != nullptr)
@@ -225,7 +224,7 @@ void ARogueWeapon_Mortar::PlayCosmeticFire(const FRogueWeaponCosmeticFire& Fire)
 			Fire.End,
 			/*InDamage=*/0.0f,
 			Fire.Param,
-			Fire.Speed);
+			Fire.Speed, Config.ProjectileCombat, Config.MortarFlight);
 	}
 	else
 	{
@@ -237,6 +236,6 @@ void ARogueWeapon_Mortar::PlayCosmeticFire(const FRogueWeaponCosmeticFire& Fire)
 			Fire.Direction,
 			Fire.Speed,
 			/*InDamage=*/0.0f,
-			Fire.Param);
+			Fire.Param, Config.ProjectileCombat);
 	}
 }

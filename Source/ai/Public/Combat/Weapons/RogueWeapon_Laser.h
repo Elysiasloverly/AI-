@@ -36,5 +36,5 @@ public:
 
 private:
 	void FireLaserBurst(const TArray<ARogueEnemy*>& Enemies);
-	void FireLaserRefractionChain(ARogueEnemy* InitialTarget, const FVector& InitialImpactLocation, float InitialDamage);
+	void FireLaserRefractionChain(ARogueEnemy* InitialTarget, const FVector& InitialImpactLocation, float InitialDamage, TArray<ARogueEnemy*>& VolleyTargets);
 };

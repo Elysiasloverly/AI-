@@ -1,11 +1,12 @@
 #include "Framework/RogueGameMode.h"
+
+#if WITH_DEV_AUTOMATION_TESTS
 #include "Debug/RogueSelfTest.h"
 #include "AbilitySystem/RogueGameplayTags.h"
 #include "AbilitySystem/RogueAbilitySystemLibrary.h"
 #include "Shared/RogueTypes.h"
 #include "AbilitySystem/RogueAttributeSet.h"
 
-#include "World/RogueArena.h"
 #include "Player/RogueCharacter.h"
 #include "Player/RoguePlayerState.h"
 #include "Player/RoguePlayerController.h"
@@ -204,7 +205,7 @@ void ARogueGameMode::RunWeaponUpgradeSelfTest()
 		{ ERogueUpgradeType::ProjectileSpeed, 200.0f, TEXT("弹速+200") },
 		{ ERogueUpgradeType::ProjectileCount,   1.0f, TEXT("冰符·寒弹数量+1") },
 		{ ERogueUpgradeType::ScytheCount,       1.0f, TEXT("银刃数量+1") },
-		{ ERogueUpgradeType::RocketCount,       1.0f, TEXT("焰符·火丸数量+1") },
+		{ ERogueUpgradeType::RocketCount,       1.0f, TEXT("冰焰·陨星数量+1") },
 		{ ERogueUpgradeType::LaserCount,        1.0f, TEXT("星符·流光数量+1") },
 		{ ERogueUpgradeType::HellTowerCount,    1.0f, TEXT("焰符·灼光数量+1") },
 		{ ERogueUpgradeType::MortarCount,       1.0f, TEXT("冰符·霜玉数量+1") },
@@ -588,3 +589,20 @@ void ARogueGameMode::ProbeEnemyStress(ARogueCharacter* Target, int32 Count)
 	UE_LOG(LogTemp, Log, TEXT("[SelfTest] 压测：已刷 %d/%d 只敌人（攻速很硬、伤害 0），后续报告里的『敌人=N』与『平均帧时』就是 200+ 场景的数据"),
 		Spawned, Count);
 }
+
+#else
+void ARogueGameMode::RunWeaponUpgradeSelfTest()
+{  }
+
+void ARogueGameMode::ProbeDeathAndRevive(ARogueCharacter* Target)
+{  }
+
+void ARogueGameMode::ProbeContactAttack(ARogueCharacter* Target)
+{  }
+
+void ARogueGameMode::ProbeShockPillarBarrage(ARogueCharacter* Target)
+{  }
+
+void ARogueGameMode::ProbeEnemyStress(ARogueCharacter* Target, int32 Count)
+{  }
+#endif

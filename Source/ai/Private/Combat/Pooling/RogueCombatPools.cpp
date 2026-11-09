@@ -1,4 +1,5 @@
 #include "Combat/Pooling/RogueCombatPools.h"
+#include "Debug/RoguePerfStats.h"
 
 #include "Combat/Visuals/RogueImpactEffect.h"
 #include "Combat/Visuals/RogueLaserBeam.h"
@@ -56,6 +57,7 @@ namespace
 		const FVector& SpawnLocation,
 		const FRotator& SpawnRotation)
 	{
+    CSV_SCOPED_TIMING_STAT(RoguePerf, PoolAcquire);
 		if (World == nullptr || ActorClass == nullptr)
 		{
 			return nullptr;
@@ -315,7 +317,7 @@ void FRogueCombatPools::LogPoolDiagnostics()
 	Report(TEXT("敌人"),         EnemyPool.Num(),              EnemyPoolRuntime);
 	Report(TEXT("冰符·寒弹"),         PlayerProjectilePool.Num(),   PlayerProjectilePoolRuntime);
 	Report(TEXT("敌方弹体"),     EnemyProjectilePool.Num(),    EnemyProjectilePoolRuntime);
-	Report(TEXT("焰符·火丸/冰符·霜玉"), RocketProjectilePool.Num(),   RocketProjectilePoolRuntime);
+	Report(TEXT("冰焰·陨星/冰符·霜玉"), RocketProjectilePool.Num(),   RocketProjectilePoolRuntime);
 	Report(TEXT("经验球"),       ExperiencePickupPool.Num(),   ExperiencePickupPoolRuntime);
 	Report(TEXT("命中特效"),     ImpactEffectPool.Num(),       ImpactEffectPoolRuntime);
 	Report(TEXT("星符·流光/焰符·灼光"), LaserBeamPool.Num(),          LaserBeamPoolRuntime);

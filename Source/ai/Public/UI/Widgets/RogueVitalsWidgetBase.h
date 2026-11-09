@@ -11,6 +11,7 @@ class ARogueHUD;
 class UProgressBar;
 class UTextBlock;
 class UBorder;
+class URogueDashRingWidget;
 
 /**
  * 本地玩家状态条基类（生命 / 护甲 / 经验）。
@@ -39,6 +40,26 @@ public:
 	const FRoguePlayerVitalsView& GetCachedVitals() const { return CachedView; }
 
 protected:
+    UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> PendingUpgradesText;
+    UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> PendingUpgradeHintText;
+    UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<URogueDashRingWidget> PlayerDashRing;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Rogue|升级提示", meta=(DisplayName="呼吸周期",ClampMin="0.5",Units="s"))
+    float PendingUpgradePulsePeriod = 1.8f;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Rogue|升级提示", meta=(DisplayName="最低透明度",ClampMin="0.1",ClampMax="1"))
+    float PendingUpgradeMinimumOpacity = .35f;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Rogue|角色旁冲刺条", meta=(DisplayName="屏幕偏移",ToolTip="UI 坐标，X 为正时位于角色右侧；不随角色朝向旋转。"))
+    FVector2D DashRingScreenOffset = FVector2D(24.f, 0.f);
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Rogue|角色旁冲刺条", meta=(DisplayName="世界高度偏移",Units="cm"))
+    float DashRingWorldHeightOffset = 20.f;
+    /** 本机玩家当前等级；样式保留在 WBP，不复用会淡出的升级提示。 */
+    UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> LevelText;
+    UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> RemainingEnemiesText;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Rogue|界面配色", meta=(DisplayName="冲刺就绪文字颜色"))
+    FLinearColor DashReadyTextColor = FLinearColor(.38f,.82f,.96f,1.f);
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Rogue|界面配色", meta=(DisplayName="冲刺状态文字颜色",ToolTip="冷却、不可用等状态的文字颜色，与进度条独立。"))
+    FLinearColor DashStatusTextColor = FLinearColor(.76f,.81f,.87f,1.f);
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Rogue|界面配色", meta=(DisplayName="回血数字颜色"))
+    FLinearColor RestoreFeedbackTextColor = FLinearColor(.45f,1.f,.7f,1.f);
     UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Rogue|冲刺提示", meta=(DisplayName="冲刺就绪颜色"))
     FLinearColor DashReadyColor = FLinearColor(.38f, .82f, .96f, 1.f);
     UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Rogue|冲刺提示", meta=(DisplayName="冲刺冷却颜色"))
@@ -109,6 +130,11 @@ protected:
 	/** 可选文字：沿用占位 WBP 的命名绑定，C++ 直接填数值。 */
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> HealthText;
+    /** 可选分离数值绑定。存在时原 Text 仅显示名称；旧 WBP 仍显示完整的一行。 */
+    UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> HealthValueText;
+    UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> ArmorValueText;
+    UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> ArmorUnavailableText;
+    UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UTextBlock> ExperienceValueText;
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> ArmorText;
@@ -142,6 +168,9 @@ private:
     float ExperienceWrapRemaining=0, ExperienceWrapTarget=0, ExperienceWrapFrom=0, ExperienceFullHoldRemaining=0, FeedbackClock=0;
     void ApplyAnimatedBars();
     void ApplyDashView();
+    void UpdateDashRingPosition(const FGeometry& Geometry, float DeltaSeconds);
+    void ApplyPendingUpgradeHint();
+    float PendingUpgradePulseTime = 0.f;
     void ApplyFeedback();
     void ResetFeedback();
     void CacheFeedbackBase();

@@ -23,6 +23,6 @@ bool ARogueEnemy::StartSkyfallAttack(ARogueCharacter* Target)
     auto* Shot=GetWorld()->SpawnActor<ARogueEnemySkyfallProjectile>(Class,Launch,FRotator::ZeroRotator,P);
     if (!Shot) return false;
     Shot->InitializeAttack(this,Launch,Ground,S,GetEnemyProjectileClass(),ContactDamage);
-    NotifyAttackAudio(GetActorLocation());
+    NotifyAttackFeedback(GetActorLocation());
     return true;
 }

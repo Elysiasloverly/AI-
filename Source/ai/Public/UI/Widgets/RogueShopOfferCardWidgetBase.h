@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Blueprint/UserWidget.h"
+#include "UI/Widgets/RogueCardMotionWidgetBase.h"
 #include "UI/Widgets/RogueMenuViewData.h"
 #include "RogueShopOfferCardWidgetBase.generated.h"
 
@@ -11,7 +11,7 @@ class UButton;
 class UTextBlock;
 
 UCLASS(Abstract, Blueprintable)
-class AI_API URogueShopOfferCardWidgetBase : public UUserWidget
+class AI_API URogueShopOfferCardWidgetBase : public URogueCardMotionWidgetBase
 {
 	GENERATED_BODY()
 
@@ -31,6 +31,7 @@ public:
 	int32 GetOfferIndex() const { return OfferIndex; }
 
 protected:
+    virtual UButton* GetMotionButton()const override{return Button_Offer.Get();}
     UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Rogue|样式") FLinearColor NormalCardTint = FLinearColor::White;
     UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Rogue|样式") FLinearColor PurchasedCardTint = FLinearColor(.65f,.67f,.72f,1);
     UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category="Rogue|样式") FLinearColor UnaffordableCardTint = FLinearColor(1,.78f,.78f,1);

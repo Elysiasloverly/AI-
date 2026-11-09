@@ -1,7 +1,8 @@
-
+﻿
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Engine/NetSerialization.h"
 #include "GameFramework/Character.h"
 #include "Engine/EngineTypes.h"
 #include "Player/RoguePlayerLifeState.h"
@@ -24,11 +25,13 @@ class ARogueEnemy;
 class ARogueHUD;
 class ARogueRocketProjectile;
 class ARogueShopTerminal;
+class ARogueRevivalBurst;
 class UCameraComponent;
 class USpringArmComponent;
 class UDataTable;
 class URogueCharacterVisualComponent;
 class URogueFloatingComponent;
+class URoguePlayerMotionComponent;
 class URogueTurnSmoothingComponent;
 class URogueShieldOrbitComponent;
 class URoguePlayerBalanceAsset;
@@ -145,7 +148,7 @@ public:
     void FinalizeForVictory();
 
 	// ---- 武器加成的跨端快照 ----
-	// 属性集保存权威加成；升级生效后立即刷新 13 项快照，GameMode 每帧补充同步，武器统一读取快照。
+	// 属性集保存权威加成；升级生效后立即刷新 武器加成快照，GameMode 每帧补充同步，武器统一读取快照。
 	// 快照作为当前实现的独立复制通道，并不意味着 PlayerState 或 AttributeSet 天生不能复制。
 
 	/** 服务端：把当前加成值推进快照（脏检查，变化才赋值）。 */
@@ -204,9 +207,13 @@ public:
 	UFUNCTION(NetMulticast, Unreliable)
 	void Multicast_WeaponCosmetics(const TArray<FRogueWeaponCosmeticBatchEntry>& Fires);
 
+    UFUNCTION(NetMulticast, Unreliable)
+    void Multicast_DashPresentation(bool bStarting, FVector_NetQuantize Position, FVector_NetQuantizeNormal Direction);
+
 	/** 服务端内部入口：把这一发表现塞进**本帧待发表**（供 ARogueWeaponBase 调用）。
 	 *  真正的发送在 TickWeapons 末尾的 FlushWeaponCosmetics() —— 每帧至多一条 RPC。 */
 	void BroadcastWeaponCosmetic(const ARogueWeaponBase* Weapon, const FRogueWeaponCosmeticFire& Fire);
+    void NotifyOwnedWeaponAttack(ERogueUpgradeType Type);
 
 	/** 把本帧攒下的武器表现合成一条 RPC 发出去（服务端）。 */
 	void FlushWeaponCosmetics();
@@ -345,6 +352,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual bool CanJumpInternal_Implementation() const override;
 
 private:
 	void MoveForward(float Value);
@@ -353,10 +361,9 @@ private:
 	void PitchCamera(float Value);
 	void ZoomCamera(float Value);
 	void TogglePauseMenu();
+    UFUNCTION(BlueprintCallable,Category="Player|Input") void ToggleUpgradeSelection();
 	void Interact();
 	void Dash();
-	void StartJump();
-	void StopJump();
 	void ChooseUpgradeOne();
 	void ChooseUpgradeTwo();
 	void ChooseUpgradeThree();
@@ -364,7 +371,7 @@ private:
 	// ---- 输入绑定 ----
 	// 本角色动作通过 Enhanced Input 绑定，未保留 legacy 回退分支。
 
-	/** 解析输入资产、登记映射上下文、绑定 10 个动作。
+	/** 解析输入资产、登记映射上下文、绑定 9 个动作。
 	 *
 	 *  资产缺失时打 Error 并**不绑定任何输入** —— 不做"能用几个算几个"的部分绑定，
 	 *  也不再有回退路径：半套输入（移动正常但冲刺没反应）比彻底没有更难排查。
@@ -377,8 +384,6 @@ private:
 	void HandleLookInput(const FInputActionValue& Value);
 	void HandleZoomInput(const FInputActionValue& Value);
 	void HandleDashInput();
-	void HandleJumpStarted();
-	void HandleJumpStopped();
 
 	void HandleDash(float DeltaSeconds);
 	void ApplyBalanceAsset();
@@ -424,13 +429,16 @@ private:
 	 *  为什么需要它：开火已经搬进能力了，光看"数值对不对"证明不了循环真的在跑 ——
 	 *  需结合目标数、激活状态与同玩家日志分析；两端计数不要求逐发相等。 */
 	void TickWeaponFireReport(float DeltaSeconds);
+	void LogWeaponStateForSelfTest();
 
+#if WITH_DEV_AUTOMATION_TESTS
 	float WeaponFireReportNextTime = 0.0f;
 	int32 WeaponFireReportCount = 0;
 
 	/** 报告窗口内的帧时采样（用来算"最近 10 秒平均帧时"）。 */
 	float FireReportAccumulatedTime = 0.0f;
 	int32 FireReportFrameCount = 0;
+#endif
 
 	void LevelUp();
 
@@ -476,6 +484,10 @@ private:
     UPROPERTY(VisibleAnywhere,Category="外观",meta=(DisplayName="转向平滑组件"))
     TObjectPtr<URogueTurnSmoothingComponent> TurnSmoothing;
 
+    /** Keep the native subobject referenced so Blueprint-specific motion/effect defaults serialize. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="外观", meta=(DisplayName="施法与冲刺动作组件", AllowPrivateAccess="true"))
+    TObjectPtr<URoguePlayerMotionComponent> PlayerVisualMotion;
+
 	/** 纯表现的三个护盾模型；网格、半径和速度在此组件的细节面板配置。 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "外观", meta = (DisplayName = "护盾环绕组件", AllowPrivateAccess = "true"))
 	TObjectPtr<URogueShieldOrbitComponent> ShieldOrbit;
@@ -488,17 +500,8 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "Combat")
 	TObjectPtr<UDataTable> WeaponDataTable;
 
-	/** 武器子类列表 —— 旧资源仍按顺序使用，缺失项会由代码默认武器补齐 */
-	UPROPERTY(EditDefaultsOnly, Category = "Combat")
-	TArray<TSubclassOf<ARogueWeaponBase>> WeaponClasses;
 
-	/** 当 DataTable / WeaponClasses 里还没正式接入迫击炮时，代码兜底生成用的武器类 */
-	UPROPERTY(EditDefaultsOnly, Category = "Combat|Fallback")
-	TSubclassOf<ARogueWeaponBase> DefaultMortarWeaponClass;
 
-	/** 当 DataTable 里还没正式填入迫击炮弹体时，代码兜底生成用的迫击炮弹体类 */
-	UPROPERTY(EditDefaultsOnly, Category = "Combat|Fallback")
-	TSubclassOf<ARogueRocketProjectile> DefaultMortarProjectileClass;
 
 	/** 运行时生成的武器 Actor 实例 */
 	UPROPERTY()
@@ -571,40 +574,17 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "Mobility")
 	float DashSpeed = 4200.0f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "跳跃")
-	float JumpZVelocity = 680.0f;
-
-	UPROPERTY(EditDefaultsOnly, Category = "跳跃")
+	UPROPERTY(EditDefaultsOnly, Category = "Mobility")
 	float AirControl = 0.55f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "跳跃")
+	UPROPERTY(EditDefaultsOnly, Category = "Mobility")
 	float GravityScale = 1.8f;
 
 	/** 下落阶段额外乘的重力倍率。 */
-	UPROPERTY(EditDefaultsOnly, Category = "跳跃")
+	UPROPERTY(EditDefaultsOnly, Category = "Mobility")
 	float FallGravityMultiplier = 1.45f;
 
-	/** 提前松键时保留的上升速度比例。 */
-	UPROPERTY(EditDefaultsOnly, Category = "跳跃")
-	float JumpCutMultiplier = 0.45f;
-
-	/** 落地前按跳的输入缓冲窗口。 */
-	UPROPERTY(EditDefaultsOnly, Category = "跳跃")
-	float JumpBufferSeconds = 0.12f;
-
-	/** 离开地面后的起跳宽限时间。 */
-	UPROPERTY(EditDefaultsOnly, Category = "跳跃")
-	float CoyoteTimeSeconds = 0.10f;
-
-	UPROPERTY(EditDefaultsOnly, Category = "跳跃")
-	int32 JumpMaxCountConfig = 1;
-
-	/** 每帧维护土狼时间、跳跃输入缓冲和下落重力。 */
-	void UpdateJumpFeel(float DeltaSeconds);
-
-	float JumpBufferRemaining = 0.0f;
-	float CoyoteTimeRemaining = 0.0f;
-	bool bJumpedSinceGrounded = false;
+	void UpdateFallingGravity();
 
 	// ---- 输入（Enhanced Input）----
 	// 未指定引用时从 /Game/Input/IMC_Default 与 /Game/Input/IA/IA_* 加载。
@@ -618,9 +598,9 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "Input") TSoftObjectPtr<UInputAction> LookAction;
 	UPROPERTY(EditDefaultsOnly, Category = "Input") TSoftObjectPtr<UInputAction> ZoomAction;
 	UPROPERTY(EditDefaultsOnly, Category = "Input") TSoftObjectPtr<UInputAction> DashAction;
-	UPROPERTY(EditDefaultsOnly, Category = "Input") TSoftObjectPtr<UInputAction> JumpAction;
 	UPROPERTY(EditDefaultsOnly, Category = "Input") TSoftObjectPtr<UInputAction> InteractAction;
 	UPROPERTY(EditDefaultsOnly, Category = "Input") TSoftObjectPtr<UInputAction> TogglePauseMenuAction;
+    UPROPERTY(EditDefaultsOnly,Category="Input",meta=(DisplayName="打开升级选卡输入")) TSoftObjectPtr<UInputAction> OpenUpgradeSelectionAction;
 	UPROPERTY(EditDefaultsOnly, Category = "Input") TSoftObjectPtr<UInputAction> ChooseUpgrade1Action;
 	UPROPERTY(EditDefaultsOnly, Category = "Input") TSoftObjectPtr<UInputAction> ChooseUpgrade2Action;
 	UPROPERTY(EditDefaultsOnly, Category = "Input") TSoftObjectPtr<UInputAction> ChooseUpgrade3Action;
@@ -677,9 +657,6 @@ private:
 	UFUNCTION()
 	void OnRep_LifeState();
 
-	/** 旧蓝图序列化值，仅保留用于迁移检查；实际保护时间由 DA_PlayerBalance.Revival 决定。 */
-	UPROPERTY()
-	float ReviveInvulnerableSeconds = 1.5f;
 
 	/** 唯一的复活驱动：服务端一次性世界定时器，不依赖 Pawn Tick。 */
 	FTimerHandle ReviveTimerHandle;
@@ -688,6 +665,11 @@ private:
 	bool bActorCollisionBeforeDowned = true;
 	TArray<FRoguePlayerCollisionSnapshot> DownedCollisionSnapshots;
 	FTransform ReviveSpawnTransform;
+
+	UPROPERTY(EditDefaultsOnly, Category="表现|复活", meta=(DisplayName="复活冰晶特效蓝图"))
+	TSubclassOf<ARogueRevivalBurst> RevivalBurstClass;
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_ShowRevivalBurst(FVector_NetQuantize GroundLocation);
 
 	void ApplyLifeStateEffects();
 	void StartReviveTimer();
@@ -702,6 +684,7 @@ public:
 	/** 只用于显示，零秒时仍等待服务端 Alive 确认，不在客户端触发复活。 */
 	UFUNCTION(BlueprintPure)
 	float GetReviveSecondsRemaining() const;
+	float GetReviveWaitDuration() const;
 	bool IsRevivePending() const;
 	void TryReviveIfExpired();
 
@@ -709,6 +692,8 @@ private:
 	/** 开发自检：武器加成的打印次数与上次打印时的值签名（默认关，见 Debug/RogueSelfTest.h）。
 	 *  用"值变化才打"而不是"只打一次"：客户端首帧还没收到复制过来的属性值，
 	 *  只打一次会看到全 0 并误判成"属性没复制"。 */
+#if WITH_DEV_AUTOMATION_TESTS
 	int32 WeaponBonusLogCount = 0;
 	FString LastLoggedSelfTestSignature;
+#endif
 };

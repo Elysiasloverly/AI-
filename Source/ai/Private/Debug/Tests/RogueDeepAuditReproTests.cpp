@@ -112,7 +112,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueAuditSlowReturn,"Rogue.Audit.Talisman.Slo
 bool FRogueAuditSlowReturn::RunTest(const FString&)
 {
     RogueDeepAudit::FFixture F;if(!F.Init())return false;F.Enemy(FVector(650,0,200));auto* C=F.W->SpawnActor<ARogueReturningTalisman>();
-    C->bEnableTrail=false;C->ReturnSpeed=100;C->OrbitRadius=180;C->OrbitSpeed=75;C->MaxSortieSeconds=1;C->Configure(F.P,0,1,10,2000,1,1,1);if(!C->TryLaunch())return false;
+    FRogueTalismanCombatSettings Combat;Combat.ReturnSpeed=100;Combat.MaxSortieSeconds=1;
+    C->bEnableTrail=false;C->OrbitRadius=180;C->OrbitSpeed=75;C->Configure(F.P,0,1,10,2000,1,1,1,Combat);if(!C->TryLaunch())return false;
     F.Step(15.f);AddInfo(FString::Printf(TEXT("After 15 seconds: phase=%d, hits=%d, valid authored return speed=100, orbit tangential speed=235.6"),int(C->GetFlightPhase()),C->GetSortieHitCount()));
     TestTrue(TEXT("Valid return settings must eventually rejoin orbit or recover"),C->GetFlightPhase()==ERogueTalismanPhase::Orbiting);C->Destroy();return true;
 }

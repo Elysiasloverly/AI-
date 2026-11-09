@@ -121,14 +121,16 @@ struct AI_API FRogueEnemyBulletRingSettings
 {
 	GENERATED_BODY()
 
+	static constexpr float MaxProjectileLifetime = 15.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "环形弹幕", meta = (DisplayName = "每圈子弹数量", ClampMin = "8", ClampMax = "128"))
 	int32 ProjectileCount = 48;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "环形弹幕", meta = (DisplayName = "子弹速度（厘米/秒）", ClampMin = "100", ClampMax = "3000"))
 	float ProjectileSpeed = 720.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "环形弹幕", meta = (DisplayName = "最长飞行时间（秒）", ClampMin = "0.1", ClampMax = "30"))
-	float ProjectileLifetime = 30.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "环形弹幕", meta = (DisplayName = "最长飞行时间（秒）", ClampMin = "0.1", ClampMax = "15"))
+	float ProjectileLifetime = MaxProjectileLifetime;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "环形弹幕", meta = (DisplayName = "碰撞与特效大小倍率", ToolTip = "影响碰撞球、灯光、拖尾偏移和命中特效；模型网格大小以蓝图组件的缩放为准。", ClampMin = "0.1", ClampMax = "1"))
 	float ProjectileScale = 0.4f;
@@ -145,7 +147,8 @@ struct AI_API FRogueEnemyBulletRingSettings
 		FRogueEnemyBulletRingSettings Result = *this;
 		Result.ProjectileCount = FMath::Clamp(ProjectileCount, 8, 128);
 		Result.ProjectileSpeed = FMath::Clamp(ProjectileSpeed, 100.0f, 3000.0f);
-		Result.ProjectileLifetime = FMath::Clamp(ProjectileLifetime, 0.1f, 30.0f);
+		Result.ProjectileLifetime = FMath::Clamp(
+			FMath::IsFinite(ProjectileLifetime) ? ProjectileLifetime : MaxProjectileLifetime, 0.1f, MaxProjectileLifetime);
 		Result.ProjectileScale = FMath::Clamp(ProjectileScale, 0.1f, 1.0f);
 		Result.DamageMultiplier = FMath::Max(DamageMultiplier, 0.0f);
 		Result.HeightAboveGround = FMath::Clamp(HeightAboveGround, 20.0f, 200.0f);

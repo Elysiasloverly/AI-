@@ -1,0 +1,39 @@
+{
+  "mode": "built-in image_gen",
+  "assets": [
+    {
+      "key": "stone",
+      "path": "C:\\Users\\Elysia\\.codex\\generated_images\\01a13125-3e60-7880-99c8-c87b91946e0f\\exec-afa5a348-757f-4793-9f5a-808611b6de7f.png"
+    },
+    {
+      "key": "hit",
+      "path": "C:\\Users\\Elysia\\.codex\\generated_images\\01a13125-3e60-7880-99c8-c87b91946e0f\\exec-0f3b1161-6390-4e95-a43d-d7a368c1910d.png"
+    },
+    {
+      "key": "seal",
+      "path": "C:\\Users\\Elysia\\.codex\\generated_images\\01a13125-3e60-7880-99c8-c87b91946e0f\\exec-0d93b299-e66e-48ce-81ea-bc3bded94f99.png"
+    }
+  ],
+  "prompts": [
+    {
+      "key": "stone",
+      "prompt": "Use case: stylized-concept. Asset type: production-ready seamless base-color texture for hand-painted Japanese fantasy shrine stone, used on already-modeled paving slabs in a Touhou-inspired chibi action game. A flat, orthographic, evenly lit square surface of pale warm ivory-grey mineral stone, soft broad watercolor tonal variation, subtle brushed gouache pigment, clear painterly game-art style with large quiet color shapes. Continuous edge-to-edge material, perfectly tileable on all four edges. No tile layout or borders or joints: geometry already supplies the paving joints. No cracks, pebbles, moss, plants, objects, symbols, text, perspective, baked shadows, shiny spots, photorealistic grit, speckles, high frequency noise, vignette or dark edges. Predominantly light neutral grey, very low contrast, restrained paper-like painterly finish. Square 2048x2048 texture, opaque background.",
+      "transparent": false
+    },
+    {
+      "key": "hit",
+      "prompt": "Use case: stylized-concept. Asset type: standalone game VFX sprite on an ACTUAL transparent background, neutral white grayscale mask to be color-tinted by an Unreal material. One centered compact Japanese fantasy spell hit burst: brilliant ivory four-point star with a few short asymmetrical brushlike rays and exactly four small torn ofuda paper shards flying outward, sharp core, delicately feathered outer alpha. Clean hand-painted anime / Touhou danmaku game VFX, bold readable silhouette at 64 pixels, circular balanced composition occupying 75% of square canvas with ample empty transparent margin. White and light grey only; no coloured background, no black background, no checkerboard, no floor, no lettering, no broad opaque smoke cloud, no many tiny speckles, no border. Deliver square sprite with genuine RGBA transparency.",
+      "transparent": true
+    },
+    {
+      "key": "seal",
+      "prompt": "Use case: stylized-concept. Asset type: standalone overhead ground magic-seal game texture with ACTUAL transparent background. One centered circular hand-brushed Japanese shrine ritual seal, elegant restrained concentric fine rings, six small folded ofuda motifs spaced around the ring, a delicate stylized snowflake/lotus compass at the center, small abstract brush marks. Thin luminous ivory strokes ONLY, monochrome white mask for tinting in engine. Clean Touhou-inspired spellcard and shrine visual language, readable symmetrical structure, refined hand-painted ink line variation. The interior and exterior are both transparent, at least 70 percent of the canvas transparent. Seal occupies 80 percent of the square canvas, generous transparent border, no background, no checkerboard, no lettering, no real religious text, no large filled disc, no glow spilling to the image edges. Flat orthographic top view, square RGBA texture.",
+      "transparent": true
+    }
+  ],
+  "project_textures": {
+    "stone": "/Game/GameAssets/ArtDirection/Textures/T_PaintedStone",
+    "hit": "/Game/GameAssets/ArtDirection/Textures/T_OfudaHit",
+    "seal": "/Game/GameAssets/ArtDirection/Textures/T_ShrineSeal"
+  }
+}

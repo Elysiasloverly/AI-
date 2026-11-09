@@ -1,5 +1,6 @@
 #include "Debug/RogueSelfTest.h"
 
+#if WITH_DEV_AUTOMATION_TESTS
 #include "HAL/IConsoleManager.h"
 
 namespace
@@ -38,3 +39,9 @@ bool RogueSelfTest::AreEnemyAttackAbilitiesDisabled()
 {
 	return CVarSelfTestDisableEnemyAttackAbilities.GetValueOnGameThread() != 0;
 }
+
+#else
+bool RogueSelfTest::IsWeaponUpgradeChainEnabled(){return false;}
+int32 RogueSelfTest::GetEnemyStressCount(){return 0;}
+bool RogueSelfTest::AreEnemyAttackAbilitiesDisabled(){return false;}
+#endif

@@ -35,6 +35,14 @@ public:
 	void CollectEnemiesInRange(const FVector& Origin, float Range, TArray<ARogueEnemy*>& OutEnemies, int32 MaxResults = 0, bool bSortByDistance = true);
 	ARogueExperiencePickup* FindPickupMergeTarget(const FVector& Origin, float MaxDistance) const;
 
+    /** 同一玩家的同一种武器共用 Weapon 键；优先选择分配次数较少的目标，同负载保留候选顺序。 */
+    ARogueEnemy* SelectWeaponTarget(AActor* Weapon, const TArray<ARogueEnemy*>& Candidates,
+        const AActor* Requester = nullptr, const TArray<ARogueEnemy*>& VolleyTargets = {});
+    void ReserveWeaponTarget(AActor* Weapon, AActor* Requester, ARogueEnemy* Enemy);
+    void ReleaseWeaponTarget(AActor* Requester);
+    void ReleaseWeaponTargets(AActor* Weapon);
+    ARogueEnemy* GetWeaponTarget(const AActor* Requester) const;
+
 	// ---- 查询接口 ----
 	const TArray<TWeakObjectPtr<ARogueEnemy>>& GetActiveEnemies() const { return EnemyTracker.GetActiveEnemies(); }
 	int32 GetActiveEnemyCount() const { return EnemyTracker.GetActiveEnemyCount(); }
@@ -48,6 +56,15 @@ public:
 	bool ShouldCullCombatEffects() const;
 
 private:
+    struct FWeaponTargetReservation
+    {
+        TWeakObjectPtr<ARogueEnemy> Enemy;
+        FGuid SpawnCycle;
+    };
+    using FWeaponReservations = TMap<TWeakObjectPtr<AActor>, FWeaponTargetReservation>;
+    TMap<TWeakObjectPtr<AActor>, FWeaponReservations> WeaponTargets;
+    TMap<TWeakObjectPtr<AActor>, TWeakObjectPtr<AActor>> ReservingWeapons;
+    void PruneWeaponTargets(FWeaponReservations& Reservations);
 	FRogueEnemyTracker EnemyTracker;
 	FRogueRuntimePerformanceSettings PerformanceSettings;
 };

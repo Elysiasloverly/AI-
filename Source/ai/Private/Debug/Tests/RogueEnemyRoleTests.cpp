@@ -1,4 +1,5 @@
 #if WITH_DEV_AUTOMATION_TESTS
+#include "RogueTestWorld.h"
 #include "Misc/AutomationTest.h"
 #include "Enemies/Data/RogueEnemyAssetPaths.h"
 #include "RogueEnemyHealingTestAccess.h"
@@ -21,6 +22,7 @@
 #include "AbilitySystem/RogueAttributeSet.h"
 #include "AbilitySystem/RogueGameplayTags.h"
 #include "Enemies/RogueEnemy.h"
+#include "Enemies/Components/RogueEnemyObstacleMovementComponent.h"
 #include "Progression/Upgrades/RogueUpgradeSystem.h"
 #include "Progression/Upgrades/RogueUpgradeRuleAsset.h"
 #include "Progression/Upgrades/RogueUpgradeDefinitionAsset.h"
@@ -49,10 +51,7 @@ namespace RogueRoleTests
         FTestWorldWrapper Test;UWorld* World=nullptr;
         bool Init()
         {
-            if (!Test.CreateTestWorld(EWorldType::Game)) return false;
-            World=Test.GetTestWorld();World->GetWorldSettings()->DefaultGameMode=ARogueGameMode::StaticClass();
-            if (!Test.BeginPlayInTestWorld()) return false;
-            World->GetAuthGameMode()->SetActorTickEnabled(false);return true;
+            return RogueTestWorld::Begin(Test, World);
         }
         ARogueEnemy* Enemy(ERogueEnemyType Type,FVector P=FVector(0,0,72),float HP=1000,bool Boss=false,UClass* C=ARogueEnemy::StaticClass())
         {
@@ -63,7 +62,7 @@ namespace RogueRoleTests
         }
         ARogueCharacter* Player(FVector P)
         {
-            auto* PC=World->SpawnActor<ARoguePlayerController>();PC->GetPlayerState<ARoguePlayerState>()->SetProgressionSnapshotForRun(FRogueProgressionSnapshot());
+            auto* PC = RogueTestWorld::SpawnFreshController(World);
             FActorSpawnParameters S;S.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
             auto* A=World->SpawnActorDeferred<ARogueCharacter>(ARogueCharacter::StaticClass(),FTransform(P),nullptr,nullptr,ESpawnActorCollisionHandlingMethod::AlwaysSpawn);A->AutoPossessPlayer=EAutoReceiveInput::Disabled;A->FinishSpawning(FTransform(P));PC->Possess(A);
             A->SetActorTickEnabled(false);A->GetCharacterMovement()->SetComponentTickEnabled(false);A->GetAbilitySystemComponent()->CancelAllAbilities();return A;
@@ -158,12 +157,13 @@ bool FRoleHazardTest::RunTest(const FString&)
     TArray<ARogueCharacter*,TInlineAllocator<4>> Seen;RoguePlayerQuery::CollectAlivePlayers(F.World,Seen);
     FGameplayTagContainer Tags;A->GetAbilitySystemComponent()->GetOwnedGameplayTags(Tags);
     AddInfo(FString::Printf(TEXT("Hazard diag: Seen=%d Enabled=%d Authority=%d SourceGAS=%.1f Armor=%.1f Reduction=%.3f Tags=%s"),Seen.Num(),H->bEnabled,E->HasAuthority(),E->GetRogueAttributeSet()->GetHealth(),A->GetRogueAttributeSet()->GetArmor(),A->GetRogueAttributeSet()->GetDamageReductionPercent(),*Tags.ToString()));
+    const float BeforeA=A->GetCurrentHealth(),BeforeB=B->GetCurrentHealth();
     H->TickComponent(.01f,LEVELTICK_All,nullptr);
-    TestEqual(TEXT("First player damaged"),A->GetRogueAttributeSet()->GetHealth(),96.f);TestEqual(TEXT("Second player damaged"),B->GetRogueAttributeSet()->GetHealth(),96.f);
+    TestEqual(TEXT("First player damaged"),A->GetRogueAttributeSet()->GetHealth(),BeforeA-4.f);TestEqual(TEXT("Second player damaged"),B->GetRogueAttributeSet()->GetHealth(),BeforeB-4.f);
     B->SetActorLocation(FVector(0,180,96));TestFalse(TEXT("Short axis outside"),H->IsPlayerInside(B));
     M->SetRelativeRotation(FRotator(0,90,0));TestTrue(TEXT("Rotation changes real area"),H->IsPlayerInside(B));
     M->SetRelativeScale3D(FVector(1,1,.1));TestFalse(TEXT("Smaller authored mesh shrinks damage zone"),H->IsPlayerInside(A));
-    E->DeactivateToPool();H->TickComponent(1,LEVELTICK_All,nullptr);TestEqual(TEXT("No pool damage"),A->GetRogueAttributeSet()->GetHealth(),96.f);
+    E->DeactivateToPool();H->TickComponent(1,LEVELTICK_All,nullptr);TestEqual(TEXT("No pool damage"),A->GetRogueAttributeSet()->GetHealth(),BeforeA-4.f);
     return true;
 }
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRoleIntroductionTest,"Rogue.Gameplay.EnemyRoles.IntroductionUsesRealSpawnerAndFlightHeight",RogueRoleTests::Flags)
@@ -252,22 +252,32 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHealerObstacleTest,"Rogue.Gameplay.EnemyRoles.
 bool FHealerObstacleTest::RunTest(const FString&)
 {
     using namespace RogueRoleTests;FFixture F;if (!F.Init()) return false;
-    F.Player(FVector(-2000,0,96));auto* E=F.Enemy(ERogueEnemyType::AuraHealer,FVector(0,0,90));
+    auto* Floor=F.World->SpawnActor<AActor>();auto* Ground=NewObject<UBoxComponent>(Floor);Floor->SetRootComponent(Ground);
+    Ground->SetBoxExtent(FVector(3000,3000,50));Ground->SetCollisionObjectType(ECC_WorldStatic);Ground->SetCollisionResponseToAllChannels(ECR_Block);Ground->RegisterComponent();Floor->SetActorLocation(FVector(0,0,-50));
+    F.Player(FVector(-2000,0,96));auto* E=F.Enemy(ERogueEnemyType::AuraHealer,FVector(0,0,74));
     E->InitializeEnemy({ERogueEnemyType::AuraHealer,1000,200,0,0,false});
-    auto* Weak=F.Enemy(ERogueEnemyType::Rifleman,FVector(1000,0,90));Weak->GetRogueAttributeSet()->SetHealth(200);
+    auto* Weak=F.Enemy(ERogueEnemyType::Rifleman,FVector(1000,0,74));Weak->GetRogueAttributeSet()->SetHealth(200);
     auto* Wall=F.World->SpawnActor<AActor>();auto* Box=NewObject<UBoxComponent>(Wall);Wall->SetRootComponent(Box);
-    Box->SetBoxExtent(FVector(20,60,30));Box->SetCollisionObjectType(ECC_WorldStatic);Box->SetCollisionResponseToAllChannels(ECR_Block);Box->RegisterComponent();Wall->SetActorLocation(FVector(150,0,30));
-    const FVector Direction=E->CalculateArchetypeMovement(.5f);
-    TestTrue(TEXT("Wall requires a lateral route"),!Direction.IsNearlyZero()&&FMath::Abs(Direction.Y)>.3f);
-    E->Tick(.2f);TestTrue(TEXT("Walking movement receives lateral steering input"),!E->GetPendingMovementInputVector().IsNearlyZero());
+    Box->SetBoxExtent(FVector(20,60,100));Box->SetCollisionObjectType(ECC_WorldStatic);Box->SetCollisionResponseToAllChannels(ECR_Block);Box->RegisterComponent();Wall->SetActorLocation(FVector(150,0,100));
+    bool Reached=false;
+    for(int32 I=0;I<1200;++I)
+    {
+        E->Tick(1.f/60);F.Test.TickTestWorld(1.f/60);
+        if(E->GetActorLocation().X>300&&Weak->GetCurrentHealth()>200){Reached=true;break;}
+    }
+    TestTrue(TEXT("Healer physically passes the small building and heals its ally"),Reached);
     return true;
 }
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAllBulletLifetimeTest,"Rogue.Gameplay.EnemyRoles.PlayerEnemyRocketMortarExpireAt30Seconds",RogueRoleTests::Flags)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAllBulletLifetimeTest,"Rogue.Gameplay.EnemyRoles.EnemyBarrageExpiresAt15SecondsPlayerProjectilesAt30",RogueRoleTests::Flags)
 bool FAllBulletLifetimeTest::RunTest(const FString&)
 {
     using namespace RogueRoleTests;FFixture F;if (!F.Init()) return false;
     auto* Player=F.Player(FVector(0,0,96));auto* Source=F.Enemy(ERogueEnemyType::Rifleman);
-    auto* Cold=F.World->SpawnActor<ARogueProjectile>();auto* Enemy=F.World->SpawnActor<ARogueEnemyProjectile>();
+    auto* Cold = F.World->SpawnActor<ARogueProjectile>();
+    UClass* EnemyClass = LoadClass<ARogueEnemyProjectile>(nullptr,
+        TEXT("/Game/BP/Enemy/Common/BP_EnemyProjectile.BP_EnemyProjectile_C"));
+    if (!TestNotNull(TEXT("Actual enemy projectile blueprint loads"), EnemyClass)) { return false; }
+    auto* Enemy = F.World->SpawnActor<ARogueEnemyProjectile>(EnemyClass);
     auto* Rocket=F.World->SpawnActor<ARogueRocketProjectile>();auto* Mortar=F.World->SpawnActor<ARogueMortarProjectile>();
     const FVector P(15000,0,600);
     Cold->ActivatePooledProjectile(Player,Player,P,FRotator::ZeroRotator,FVector::ForwardVector,100,0);
@@ -275,10 +285,22 @@ bool FAllBulletLifetimeTest::RunTest(const FString&)
     Rocket->ActivatePooledRocket(Player,Player,P+FVector(0,1000,0),FRotator::ZeroRotator,FVector::ForwardVector,100,0,50);
     Mortar->ActivatePooledMortar(Player,Player,P+FVector(0,1500,0),P+FVector(800,1500,0),0,50,700);
     for (auto* A:{static_cast<AActor*>(Cold),static_cast<AActor*>(Enemy),static_cast<AActor*>(Rocket),static_cast<AActor*>(Mortar)}) A->GetComponentByClass<UProjectileMovementComponent>()->SetComponentTickEnabled(false);
-    Cold->Tick(29);Enemy->Tick(29);Rocket->Tick(29);Mortar->Tick(29);
-    TestTrue(TEXT("All four projectile families survive 29 seconds"),!Cold->IsAvailableInPool()&&!Enemy->IsAvailableInPool()&&!Rocket->IsAvailableInPool()&&!Mortar->IsAvailableInPool());
-    Cold->Tick(1.1f);Enemy->Tick(1.1f);Rocket->Tick(1.1f);Mortar->Tick(1.1f);
-    TestTrue(TEXT("All four projectile families return after 30 seconds"),Cold->IsAvailableInPool()&&Enemy->IsAvailableInPool()&&Rocket->IsAvailableInPool()&&Mortar->IsAvailableInPool());
+    Enemy->Tick(14.9f);
+    TestFalse(TEXT("Default enemy bullet survives until shortly before 15 seconds"), Enemy->IsAvailableInPool());
+    Enemy->Tick(.2f);
+    TestTrue(TEXT("Default enemy bullet returns after 15 seconds"), Enemy->IsAvailableInPool());
+
+    Enemy->ActivatePooledProjectile(Source, Source, P + FVector(0,500,0), FRotator::ZeroRotator,
+        FVector::ForwardVector, 100, 0, false, 30.f, 1.f, true);
+    Enemy->Tick(14.9f);
+    TestFalse(TEXT("Explicit ring bullet remains visible before the lifetime cap"), Enemy->IsAvailableInPool());
+    Enemy->Tick(.2f);
+    TestTrue(TEXT("Legacy 30-second ring is capped at 15 seconds"), Enemy->IsAvailableInPool());
+
+    Cold->Tick(29); Rocket->Tick(29); Mortar->Tick(29);
+    TestTrue(TEXT("Player projectiles survive 29 seconds"), !Cold->IsAvailableInPool() && !Rocket->IsAvailableInPool() && !Mortar->IsAvailableInPool());
+    Cold->Tick(1.1f); Rocket->Tick(1.1f); Mortar->Tick(1.1f);
+    TestTrue(TEXT("Player projectiles return after 30 seconds"), Cold->IsAvailableInPool() && Rocket->IsAvailableInPool() && Mortar->IsAvailableInPool());
     return true;
 }
 
@@ -472,7 +494,6 @@ bool FOpeningOffenseTest::RunTest(const FString&)
         {
             Offense|=O.Type==ERogueUpgradeType::ProjectileCount||O.Type==ERogueUpgradeType::AttackPower||O.Type==ERogueUpgradeType::AttackSpeed;
             TestFalse(TEXT("No duplicates"),Seen.Contains(O.Type));Seen.Add(O.Type);
-            TestFalse(TEXT("Locked burst never granted"),O.Type==ERogueUpgradeType::ProjectileBurst);
             TestFalse(TEXT("Locked laser never granted"),O.Type==ERogueUpgradeType::LaserCount);
         }
         TestTrue(TEXT("Every early roll contains immediate offense"),Offense);

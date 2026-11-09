@@ -2,8 +2,33 @@
 
 先按需要选择当前结构与数据流文档，再查系统细节和历史取舍。C++ 已按玩法职责整理，历史文档中的 `Core/`、`Subsystems/` 或旧类文件路径请以 [Class-Organization.md](Class-Organization.md) 为准。
 
+## 当前维护入口（2026-11-09）
+
+- [近期修改整合](Recent-Changes-2026-11-09.md)：地图、武器与 Boss、商店、界面、美术和验证范围。
+- [维护与扩展指南](Maintenance-Extension-Guide.md)：修改入口、八种武器接线、Q 主动选卡、伤害边界、波次/商店、地图与定向验证。
+- [状态栏与冲刺圆弧](Centered-Vitals-Polish.md)：等级共同居中、独立数值、淡蓝升级提示、圆弧与 WBP 修改位置。
+- [Q 主动选卡](Manual-Upgrade-Selection.md)：累计、收起保留、防重放、个人复制与旅行。
+- [远程怪就近固定点](Fixed-Ranged-Spawn-Points.md)、[敌人绕障与卡住恢复](Enemy-Obstacle-Movement.md)。
+- [教程维护](Tutorial-Maintenance.md)：源码与资产保存值核对，JSON、WBP、玩家指南同步。
+
 | 想知道什么 | 看这里 |
 |---|---|
+| 当前项目各系统如何关联 | [Project-Architecture.md](Project-Architecture.md)：总览、核心对象、战斗数据流、成长与联机、生命周期和目录图 |
+| 从当前代码学习 C++、UE、GAS 与联机 | [Code-Reading-Guide.md](Code-Reading-Guide.md)：阅读顺序、生命周期、调用链与交付练习 |
+| 2026-11-05 可读性重构改了什么 | [Readable-Refactor.md](Readable-Refactor.md)：职责拆分、旧字段迁移、工具入口和注释约定 |
+| 冰刀美术精修与新增武器接线有哪些漏项 | [Frost-Blade-Art-And-Sync-Audit.md](Frost-Blade-Art-And-Sync-Audit.md)：图标、反馈时机、受击协议、音效、商店与切图验证 |
+| 冰刀·霜月如何改模型、横斩、剑波和永久解锁 | [Frost-Moon-Blade.md](Frost-Moon-Blade.md)：BP 外观、DT 战斗值、四张专属卡与联机行为 |
+| 红色持续激光的锁定缩圈如何调整 | [Inferno-Lock-2026-11-04.md](Inferno-Lock-2026-11-04.md)：特效蓝图、参数、多人合并及清理 |
+| 武器与升级卡图标、右下角收藏栏、数量叠加和攻击跳动怎么改 | [Owned-Items-HUD.md](Owned-Items-HUD.md)：WBP、图集、玩家归属与切图保留 |
+| 经验结晶、Boss 符印、商店中文牌签与卡片动效怎么改 | [Art-Detail-2026-11-03.md](Art-Detail-2026-11-03.md)：本轮模型、标记、预警、卡片、飘字和地图微调 |
+| 冰面、石坪、森林地表与昼夜光影怎么改 | [Art-Ground-Light-2026-11-03.md](Art-Ground-Light-2026-11-03.md)：地面实例参数、灯光数值、保存核对和性能快照 |
+| 治疗怪、飞行怪的配饰与模型动作怎么改 | [Art-Enemy-Motion-2026-11-03.md](Art-Enemy-Motion-2026-11-03.md)：蓝图组件、动作参数、回池恢复与攻击反馈 |
+| 五种武器命中与消散效果怎么改 | [Art-Weapon-Impact-2026-11-03.md](Art-Weapon-Impact-2026-11-03.md)：特效蓝图、风格预设、密度预算与受击快照同步 |
+| 敌人消散、退治连锁提示和确认音怎么改 | [Art-Feedback-2026-11-03.md](Art-Feedback-2026-11-03.md)：本轮击杀反馈、WBP 与蓝图入口、联机归属、性能检查 |
+| 本轮全项目美术精修改了什么、后面怎么继续改 | [Art-Refinement-2026-11-03.md](Art-Refinement-2026-11-03.md)：弹幕层次、拖尾、治疗、地图细节、主菜单与按钮状态 |
+| 绘本场景、昼夜配色与自制环境/战斗特效怎么改 | [Art-Direction.md](Art-Direction.md)：统一材质、花瓣微光、符纸命中、蓝图参数和性能约束 |
+| 新地图看不到怪、输入与细碎碰撞如何检查 | [New-Map-Gameplay-Fix.md](New-Map-Gameplay-Fix.md)：世界设置 GameMode、敌人蓝图映射、独立碰撞及真实游玩验证 |
+| 五种主题的十张昼夜地图如何随机选、刷怪与加空气墙 | [Map-Collection.md](Map-Collection.md)：地图清单、DA_GameBalance 地图池、出生点、商店、边界和打包配置 |
 | 一个类在哪里，新增类应该放哪 | [Class-Organization.md](Class-Organization.md)：目录职责、实现拆分、独立 Widget 基类与蓝图兼容约定 |
 | 编辑器里的美术资产放在哪里 | [Content-Organization.md](Content-Organization.md)：美术主目录、素材包保留方式及玩法资产位置 |
 | 游戏蓝图在哪、实验蓝图放哪 | [Blueprint-Organization.md](Blueprint-Organization.md)：`/Game/BP` 目录职责与常用入口 |
@@ -34,14 +59,16 @@
 | 哪些资源是旧副本、哪些可以清理 | [Asset-Audit-Report.md](Asset-Audit-Report.md)：重定向器、断链、重复素材包与无用资产清单（只读审计，未删除） |
 | 怎么打包、为什么打包后没输入 | [Packaging.md](Packaging.md)：BuildCookRun 命令、必须强制 Cook 的目录、C1056 处理与体积构成 |
 | 如何创建、搜索、加入房间并准备开局 | [Multiplayer-Lobby.md](Multiplayer-Lobby.md)：局域网搜房、IP 连接、房主权限与 WBP 样式入口 |
+| 新中文字体、主菜单和轻动效怎么改 | [UI-Typography-And-Menu.md](UI-Typography-And-Menu.md)：字体、背景、字号与交互反馈 |
 | 开始菜单在哪个 map、按钮怎么改 | [Main-Menu.md](Main-Menu.md)：主菜单关卡、WBP、按钮行为、设置复用与打包注意 |
 | 其它架构图与历史规划 | [CurrentAllSystemsArchitecture.md](CurrentAllSystemsArchitecture.md)、[GAS-Full-Coverage-Plan.md](GAS-Full-Coverage-Plan.md)、[Optimal-Portfolio-Plan.md](Optimal-Portfolio-Plan.md)、[OptimizedArchitecture.md](OptimizedArchitecture.md)：保留各阶段设计背景，当前行为以源码为准 |
+| 战斗 HUD 新样式与材质怎么改 | [Battle-HUD-Polish-2026-11-04.md](Battle-HUD-Polish-2026-11-04.md)：状态条、Boss 条、题签与退治反馈 |
 
 推荐先读 `Class-Organization.md` 找文件，再读 `Project-Structure.md` 理解运行时关系。维护时结合扩展指南理解接线，避免把新逻辑继续堆回 GameMode、Character 或 HUD。
 
-除明确标注为“历史”的文档外，当前结构、路径与接口以仓库源码为准（2026-10 核对）；历史文档只用于解释当时的取舍。
+维护入口与以上近期专题已更新至 2026-11-09；其余带日期文档保留对应阶段的核对范围，不能把旧尺寸、默认值或测试结论直接当作当前配置。当前结构与行为以源码和实际加载资产为准。
 
-当前升级效果使用 22 种 Infinite GE 子类按目标叠层，能力授予支持 AbilitySet；旧计划中的单一升级 ExecutionCalculation 和硬编码授予描述属于迁移历史。文档保留历史上下文，不表示这些旧实现仍存在。
+当前升级效果使用各类型对应的 Infinite GE 子类按目标叠层，能力授予支持 AbilitySet；旧计划中的单一升级 ExecutionCalculation 和硬编码授予描述属于迁移历史。文档保留历史上下文，不表示这些旧实现仍存在。
 
 ## 死亡与复活
 
@@ -63,7 +90,7 @@
 
 ## 昼夜流程与玩家教程（2026-10-30）
 
-- [白昼、黑夜与百波通关](Battle-Day-Night.md)：35 / 50 / 85 三次切图，进入第 100 波通关。
+- [白昼、黑夜与百波通关](Battle-Day-Night.md)：每 20 波交替昼夜，20 / 40 / 60 / 80 四次切图，打完第 100 波的终局 Boss 与敌人后通关。
 - [神社调查手帖](Player-Guide.md)：与 WBP 教程同步的六章玩家指南。
 - [教程维护说明](Tutorial-Maintenance.md)：事实核对、WBP 结构与更新方式。
 

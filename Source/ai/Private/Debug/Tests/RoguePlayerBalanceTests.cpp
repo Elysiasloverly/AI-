@@ -108,6 +108,23 @@ namespace RoguePlayerBalanceTests
 	};
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRoguePlayerJumpDisabledTest,
+	"Rogue.Gameplay.PlayerBalance.JumpDisabled", RoguePlayerBalanceTests::Flags)
+
+bool FRoguePlayerJumpDisabledTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	RoguePlayerBalanceTests::FFixture Fixture;
+	if (!Fixture.Initialize(*this)) { return false; }
+
+	ARogueCharacter* Pawn = Fixture.Pawns[0];
+	TestEqual(TEXT("Player starts with no jumps"), Pawn->JumpMaxCount, 0);
+	Pawn->JumpMaxCount = 1;
+	Pawn->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+	TestFalse(TEXT("A legacy Blueprint jump-count override cannot re-enable jumping"), Pawn->CanJump());
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRoguePlayerConfiguredInitializationTest,
 	"Rogue.Gameplay.PlayerBalance.ConfiguredInitialization", RoguePlayerBalanceTests::Flags)
 

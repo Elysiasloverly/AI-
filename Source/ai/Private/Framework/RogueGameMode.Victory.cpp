@@ -10,16 +10,18 @@
 #include "Combat/Projectiles/RogueRocketProjectile.h"
 #include "Combat/Projectiles/RogueMortarProjectile.h"
 #include "Combat/Projectiles/RogueEnemyProjectile.h"
+#include "Combat/Projectiles/RogueBossAttackActor.h"
 #include "Combat/Projectiles/RogueEnemySkyfallProjectile.h"
 #include "Combat/Visuals/RogueLaserBeam.h"
 #include "Combat/Projectiles/RogueOrbitingBlade.h"
 #include "World/RogueExperiencePickup.h"
+#include "World/RogueShopTerminal.h"
 #include "EngineUtils.h"
 
 bool ARogueGameMode::CompleteRunIfVictoryReached()
 {
     if (!HasAuthority() || RunState.bGameOver || RunState.CurrentWave < VictoryWave) return false;
-    // 先关权威闸门，再清理战斗；不触发敌人死亡奖励，100 波不再生成敌人或 Boss。
+    // 最终波清场后关闭权威闸门；回收残余弹体与特效不重复结算奖励。
     RunState.CurrentWave = VictoryWave;
     RunState.bVictory = RunState.bGameOver = true;
     RunState.bBossAlive = false;
@@ -43,13 +45,14 @@ void ARogueGameMode::RetireCombatActors()
 {
     RunState.SpawnTimer = 0;
     if (auto* Spawns = GetWorld()->GetSubsystem<URogueSpawnSubsystem>()) Spawns->SetSpawningSuspended(true);
+    if (ARogueShopTerminal* Terminal = LevelShopTerminal.Get()) { Terminal->Destroy(); }
     TArray<AActor*> Retire;
     for (TActorIterator<AActor> It(GetWorld()); It; ++It)
     {
         AActor* A=*It;
         if (A->IsA<ARogueWeaponBase>() || A->IsA<ARogueEnemy>() || A->IsA<ARogueProjectile>()
             || A->IsA<ARogueRocketProjectile>() || A->IsA<ARogueMortarProjectile>()
-            || A->IsA<ARogueEnemySkyfallProjectile>() || A->IsA<ARogueEnemyProjectile>() || A->IsA<ARogueLaserBeam>()
+            || A->IsA<ARogueBossAttackActor>() || A->IsA<ARogueEnemySkyfallProjectile>() || A->IsA<ARogueEnemyProjectile>() || A->IsA<ARogueLaserBeam>()
             || A->IsA<ARogueReturningTalisman>() || A->IsA<ARogueOrbitingBlade>() || A->IsA<ARogueExperiencePickup>()) Retire.Add(A);
     }
     for (AActor* A:Retire) if (IsValid(A)) A->Destroy();

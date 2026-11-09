@@ -10,6 +10,7 @@
 
 FVector URogueEnemySupportComponent::CalculateSupportMovement(float DeltaSeconds)
 {
+    bHasMovementDestination=false;
     auto* Enemy=Cast<ARogueEnemy>(GetOwner());
     if (!Enemy||!Enemy->HasAuthority()||Enemy->IsDead()||Enemy->IsAvailableInPool()) return FVector::ZeroVector;
     const auto Settings=Movement.Sanitized();
@@ -90,8 +91,10 @@ FVector URogueEnemySupportComponent::CalculateSupportMovement(float DeltaSeconds
     const float SafetyDistance=IsWoundedAlly(MovementTarget.Get())?FMath::Min(Settings.RetreatDistance,Healing.Radius*.55f):Settings.RetreatDistance;
     const bool Retreat=PlayerDistance<SafetyDistance;
     float GoalDistance=Settings.ProbeDistance;
+    FVector DestinationGoal=Origin;
     FVector Goal=FVector::ZeroVector;
-    if (Retreat) Goal=(Origin-Nearest->GetActorLocation()).GetSafeNormal2D();
+    if (Retreat)
+    { Goal=(Origin-Nearest->GetActorLocation()).GetSafeNormal2D();DestinationGoal=Origin+Goal*Settings.PreferredPlayerDistance; }
     else if (auto* Ally=MovementTarget.Get())
     {
         ARogueCharacter* Threat=RoguePlayerQuery::FindNearestAlivePlayer(GetWorld(),Ally->GetActorLocation());
@@ -140,45 +143,19 @@ FVector URogueEnemySupportComponent::CalculateSupportMovement(float DeltaSeconds
                 :FMath::Clamp(Settings.FollowDistance*.25f,35.f,100.f);
             if (GoalDistance>Tolerance||(Wounded&&!CanHeal(Ally))) Goal=(Destination-Origin).GetSafeNormal2D();
         }
+        DestinationGoal=Destination;
     }
     else if (Nearest&&PlayerDistance<Settings.PreferredPlayerDistance)
-        Goal=(Origin-Nearest->GetActorLocation()).GetSafeNormal2D();
+    { Goal=(Origin-Nearest->GetActorLocation()).GetSafeNormal2D();DestinationGoal=Origin+Goal*Settings.PreferredPlayerDistance; }
     if (Goal.IsNearlyZero())
     {
         if (!Retreat) { CachedMoveDirection=FVector::ZeroVector;SteeringRemaining=0;return CachedMoveDirection; }
         Goal=Enemy->GetActorForwardVector().GetSafeNormal2D();
     }
-    SteeringRemaining-=Delta;
-    if (Retreat!=bWasRetreating) SteeringRemaining=0;
-    bWasRetreating=Retreat;
-    if (SteeringRemaining>0) return CachedMoveDirection;
-    SteeringRemaining=.12f;
-
-    // 仅用现有碰撞做短程绕障，不依赖地图新增NavMesh；查询忽略友方Pawn。
-    const auto* Capsule=Enemy->GetCapsuleComponent();
-    const float Radius=Capsule->GetScaledCapsuleRadius()*.9f;
-    const auto Shape=FCollisionShape::MakeCapsule(Radius,FMath::Max(Radius,Capsule->GetScaledCapsuleHalfHeight()-6));
-    FCollisionQueryParams Query(SCENE_QUERY_STAT(HealerSteering),false,Enemy);
-    // 玩家距离由威胁评分处理，忽略其胶囊，允许从已经重叠的位置逃离。
-    for (auto* Player:Players) Query.AddIgnoredActor(Player);
-    const FVector ProbeOrigin=Origin+FVector(0,0,4);
-    const float Probe=FMath::Clamp(GoalDistance,12.f,Settings.ProbeDistance);
-    float BestValue=-FLT_MAX;CachedMoveDirection=FVector::ZeroVector;
-    const float Side=Enemy->GetUniqueID()%2?1.f:-1.f;
-    for (float Angle:{0.f,30.f,-30.f,60.f,-60.f,90.f,-90.f,120.f,-120.f,150.f,-150.f,180.f})
-    {
-        const FVector Direction=Goal.RotateAngleAxis(Angle*Side,FVector::UpVector);
-        const FVector Next=Origin+Direction*Probe;
-        const float NextDistance=NearestDistance(Next);
-        if (!Retreat&&NextDistance<SafetyDistance) continue;
-        FHitResult Hit;
-        if (GetWorld()->SweepSingleByChannel(Hit,ProbeOrigin,ProbeOrigin+Direction*Probe,FQuat::Identity,ECC_Pawn,Shape,Query)
-            &&Hit.ImpactNormal.Z<Enemy->GetCharacterMovement()->GetWalkableFloorZ()) continue;
-        const float Improvement=Players.Num()?(NextDistance-PlayerDistance)/Probe:0.f;
-        const float Value=Retreat?Improvement*10+FVector::DotProduct(Direction,Goal)*.1f
-            :FVector::DotProduct(Direction,Goal)*2+Improvement*.15f;
-        if (Value>BestValue) { BestValue=Value;CachedMoveDirection=Direction; }
-        if (!Retreat&&FMath::IsNearlyZero(Angle)) break;
-    }
-    return CachedMoveDirection;
+    // Keep the healer's actual destination; common obstacle routing owns detour persistence.
+    // Short independent ray fans used to alternate direction or stop at long building walls.
+    MovementDestination=DestinationGoal;
+    bHasMovementDestination=true;
+    CachedMoveDirection=Goal;
+    return Goal;
 }

@@ -1,9 +1,11 @@
 #include "Player/RogueShieldOrbitComponent.h"
+#include "Combat/Pooling/RogueCombatPoolSubsystem.h"
 
 #include "AbilitySystem/RogueAttributeSet.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/CollisionProfile.h"
 #include "Engine/World.h"
+#include "Engine/StaticMesh.h"
 #include "Player/RogueCharacter.h"
 
 URogueShieldOrbitComponent::URogueShieldOrbitComponent()
@@ -68,15 +70,45 @@ void URogueShieldOrbitComponent::RefreshShieldVisuals()
 		&& !MeshScale.ContainsNaN() && !MeshRotation.ContainsNaN();
 	const bool bShow = IsActive() && bOrbitEnabled && bHasShield && IsValid(ShieldMesh) && bValidLayout
 		&& OwnerCharacter->IsAlive() && !OwnerCharacter->IsHidden() && OrbitMeshes.Num() == 3;
+    // Spawn from each crystal before hiding it. Initialization and manual visibility changes do not count as a break.
+    if (bShieldVisible && !bHasShield && Attributes && Attributes->GetMaxArmor() > 0.f &&
+        FMath::IsFinite(Attributes->GetArmor()) && Attributes->GetArmor() <= 0.f && LastArmor > 0.f)
+    {
+        if (auto* Pool = GetWorld()->GetSubsystem<URogueCombatPoolSubsystem>())
+        {
+            for (const UStaticMeshComponent* Crystal : OrbitMeshes)
+            {
+                if (!IsValid(Crystal)) continue;
+                const FVector Position = Crystal->GetComponentLocation();
+                const FVector Outward = (Position - OwnerCharacter->GetActorLocation()).GetSafeNormal2D();
+                Pool->PlayCombatAccent(ShieldBreak, Position, Outward, true);
+            }
+        }
+    }
 	SetShieldVisible(bShow);
-	if (!bShow) { return; }
+	if (!bShow) { LastArmor=Attributes?Attributes->GetArmor():-1.f;return; }
+    const float Armor=Attributes->GetArmor();
+    if(LastArmor>0.f&&Armor<LastArmor-KINDA_SMALL_NUMBER)DamagePulseTime=GetWorld()->GetTimeSeconds();
+    LastArmor=Armor;
 
 	const FVector Center = OwnerCharacter->GetActorLocation() + FVector(0, 0, HeightOffset);
 	for (int32 Index = 0; Index < OrbitMeshes.Num(); ++Index)
 	{
 		UStaticMeshComponent* Mesh = OrbitMeshes[Index];
 		if (!IsValid(Mesh)) { continue; }
-		if (Mesh->GetStaticMesh() != ShieldMesh) { Mesh->SetStaticMesh(ShieldMesh); }
+        if(Mesh->GetStaticMesh()!=ShieldMesh){Mesh->SetStaticMesh(ShieldMesh);Mesh->EmptyOverrideMaterials();}
+        const bool bOverrides=!ShieldMaterialOverrides.IsEmpty();Mesh->SetForceDisableNanite(bOverrides);
+        for(int32 Slot=0;Slot<Mesh->GetNumMaterials();++Slot)
+        {
+            UMaterialInterface* Material=ShieldMaterialOverrides.IsValidIndex(Slot)&&ShieldMaterialOverrides[Slot]
+                ?ShieldMaterialOverrides[Slot].Get():ShieldMesh->GetMaterial(Slot);
+            if(Mesh->GetMaterial(Slot)!=Material)Mesh->SetMaterial(Slot,Material);
+        }
+        // Local renderer data only. Shared materials, no MID, RPC, or extra Tick.
+        Mesh->SetCustomPrimitiveDataVector3(12,OwnerCharacter->GetActorLocation());
+        Mesh->SetCustomPrimitiveDataFloat(15,AppearanceStartTime);
+        Mesh->SetCustomPrimitiveDataFloat(16,DamagePulseTime);
+        Mesh->SetCustomPrimitiveDataFloat(17,FMath::Clamp(Armor/Attributes->GetMaxArmor(),0.f,1.f));
 		const double Angle = OrbitAngleDegrees + Index * 120.0;
 		const double Radians = FMath::DegreesToRadians(Angle);
 		const double Radius = FMath::Max(0.0f, OrbitRadius);
@@ -90,6 +122,7 @@ void URogueShieldOrbitComponent::SetShieldVisible(bool bVisible)
 {
 	if (bShieldVisible == bVisible) { return; }
 	bShieldVisible = bVisible;
+    if(bVisible){AppearanceStartTime=GetWorld()->GetTimeSeconds();DamagePulseTime=-10000.f;}
 	for (UStaticMeshComponent* Mesh : OrbitMeshes)
 	{
 		if (IsValid(Mesh)) { Mesh->SetVisibility(bVisible); }

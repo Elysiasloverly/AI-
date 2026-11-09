@@ -1,5 +1,7 @@
 # 地图场景、刷怪区域与商店摆放
 
+> 2026-11-02：当前为主菜单加五主题十张战斗地图，按 Day/Night 两个池随机选图。当前路径和边界说明以 [Map-Collection.md](Map-Collection.md) 为准；下文早期摆放记录可作背景参考。
+
 白天与夜晚战斗地图现位于 `/Game/Map/Battle_Day` 和 `/Game/Map/Battle_Night`，默认入口沿用夜景。两张地图场景与玩法配置相同，白天副本仅调整环境灯光。详见 [昼夜地图](Battle-Day-Night.md)。
 
 ## 当前入口

@@ -1,5 +1,8 @@
-#include "UI/Widgets/RogueUpgradeTreeNodeWidgetBase.h"
+﻿#include "UI/Widgets/RogueUpgradeTreeNodeWidgetBase.h"
 #include "Audio/RogueMusicSubsystem.h"
+#include "UI/RoguePresentationTheme.h"
+#include "Components/Image.h"
+#include "RogueMenuWidgetHelpers.h"
 
 #include "Components/Border.h"
 #include "Components/Button.h"
@@ -27,6 +30,8 @@ void URogueUpgradeTreeNodeWidgetBase::SetViewData(const FRogueUpgradeTreeNodeVie
 
 void URogueUpgradeTreeNodeWidgetBase::ApplyViewData()
 {
+    if(auto* Icon=Cast<UImage>(GetWidgetFromName(TEXT("ArtIcon"))))
+    {auto* M=PresentationTheme?(ViewData.bWeaponIcon?PresentationTheme->GetWeaponIcon(ViewData.IconType):PresentationTheme->GetCardIcon(ViewData.IconType)):nullptr;if(M)Icon->SetBrushFromMaterial(M);Icon->SetVisibility(M?ESlateVisibility::HitTestInvisible:ESlateVisibility::Hidden);}
 	if (TitleText != nullptr) TitleText->SetText(ViewData.Title);
 	if (DescriptionText != nullptr) DescriptionText->SetText(ViewData.Description);
 	if (CostText != nullptr) CostText->SetText(ViewData.Cost);
@@ -51,6 +56,8 @@ void URogueUpgradeTreeNodeWidgetBase::ApplyViewData()
 		default: break;
 		}
 		StateBorder->SetBrushColor(Color);
+        const float InkState = ViewData.State == ERogueUpgradeTreeNodeState::Maxed ? 2.f : (ViewData.bCanPurchase ? 1.f : 0.f);
+        RogueMenuWidgetHelpers::SetCardSeal(this, InkState);
 	}
 	OnViewDataChanged(ViewData);
 }

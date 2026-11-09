@@ -1,0 +1,27 @@
+[
+  {
+    "name": "SM_HealerLotusSeal",
+    "vertices": 104,
+    "triangles": 156
+  },
+  {
+    "name": "SM_HealerNeedleSeal",
+    "vertices": 56,
+    "triangles": 84
+  },
+  {
+    "name": "SM_MoonMothPaperWings",
+    "vertices": 64,
+    "triangles": 104
+  },
+  {
+    "name": "SM_WindReaverPaperFans",
+    "vertices": 64,
+    "triangles": 96
+  },
+  {
+    "name": "SM_StarLanternPaperCage",
+    "vertices": 102,
+    "triangles": 156
+  }
+]

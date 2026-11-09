@@ -4,6 +4,7 @@
 #include "AbilitySystem/RogueGameplayTags.h"
 #include "Net/UnrealNetwork.h"
 #include "GameplayEffectExtension.h"
+#include "Player/RogueCharacter.h"
 
 namespace
 {
@@ -57,6 +58,12 @@ void URogueAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, TalismanCountBonus, COND_None);
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, TalismanPierceBonus, COND_None);
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, TalismanRepeatBonus, COND_None);
+    DOREPLIFETIME_CONDITION(URogueAttributeSet,FrostBladeCountBonus,COND_None);
+    DOREPLIFETIME_CONDITION(URogueAttributeSet,FrostBladeSizeBonus,COND_None);
+    DOREPLIFETIME_CONDITION(URogueAttributeSet,FrostBladeWaveBonus,COND_None);
+    DOREPLIFETIME_CONDITION(URogueAttributeSet,FrostBladeWaveCountBonus,COND_None);
+    DOREPLIFETIME_CONDITION(URogueAttributeSet,FrostBladeWaveSizeBonus,COND_None);
+
 
 
 	DOREPLIFETIME_CONDITION(URogueAttributeSet, MoveSpeed,            COND_None);
@@ -92,6 +99,12 @@ float URogueAttributeSet::GetWeaponBonusCapFor(const FGameplayAttribute& Attribu
 	if (Attribute == GetTalismanCountBonusAttribute()) { return WeaponBonusCaps.TalismanCount; }
 	if (Attribute == GetTalismanPierceBonusAttribute()) { return WeaponBonusCaps.TalismanPierce; }
 	if (Attribute == GetTalismanRepeatBonusAttribute()) { return WeaponBonusCaps.TalismanRepeat; }
+    if(Attribute==GetFrostBladeCountBonusAttribute())return WeaponBonusCaps.FrostBladeCount;
+    if(Attribute==GetFrostBladeSizeBonusAttribute())return WeaponBonusCaps.FrostBladeSize;
+    if(Attribute==GetFrostBladeWaveBonusAttribute())return WeaponBonusCaps.FrostBladeWave;
+    if(Attribute==GetFrostBladeWaveCountBonusAttribute())return WeaponBonusCaps.FrostBladeWaveCount;
+    if(Attribute==GetFrostBladeWaveSizeBonusAttribute())return WeaponBonusCaps.FrostBladeWaveSize;
+
 	if (Attribute == GetScytheSizeBonusAttribute())        { return WeaponBonusCaps.ScytheSize; }
 	if (Attribute == GetScytheLifestealBonusAttribute())   { return WeaponBonusCaps.ScytheLifesteal; }
 
@@ -121,6 +134,11 @@ void URogueAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute,
 			|| Attribute == GetTalismanCountBonusAttribute()
 			|| Attribute == GetTalismanPierceBonusAttribute()
 			|| Attribute == GetTalismanRepeatBonusAttribute()
+            || Attribute==GetFrostBladeCountBonusAttribute()
+            || Attribute==GetFrostBladeSizeBonusAttribute()
+            || Attribute==GetFrostBladeWaveBonusAttribute()
+            || Attribute==GetFrostBladeWaveCountBonusAttribute()
+            || Attribute==GetFrostBladeWaveSizeBonusAttribute()
 		|| Attribute == GetRocketBlastRadiusBonusAttribute()
 		|| Attribute == GetHellTowerDamageRampBonusAttribute()
 		|| Attribute == GetScytheLifestealBonusAttribute())
@@ -146,11 +164,15 @@ void URogueAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute,
 			|| Attribute == GetTalismanCountBonusAttribute()
 			|| Attribute == GetTalismanPierceBonusAttribute()
 			|| Attribute == GetTalismanRepeatBonusAttribute()
+            || Attribute==GetFrostBladeCountBonusAttribute()
+            || Attribute==GetFrostBladeWaveBonusAttribute()
+            || Attribute==GetFrostBladeWaveCountBonusAttribute()
 			|| Attribute == GetLaserRefractionBonusAttribute())
 		{
 			NewValue = FMath::RoundToFloat(NewValue);
 		}
 
+    if(Attribute==GetFrostBladeCountBonusAttribute()||Attribute==GetFrostBladeWaveBonusAttribute())NewValue=FMath::Min(NewValue,1.f);
 		// 吸血比例最多 100%，防止高等级叠加后回复量超过实际伤害。
 		if (Attribute == GetScytheLifestealBonusAttribute())
 		{
@@ -213,9 +235,10 @@ void URogueAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallb
 	{
 		return;
 	}
+    // SetHealth/SetArmor below write base attributes and their delegates may have
+    // no GEModData. Keep the originating Spec available during those callbacks.
+    TGuardValue<const FGameplayEffectSpec*> DamageContext(ExecutingDamageSpec,&Data.EffectSpec);
 
-	// 记录击杀者：死亡 GE 自己不知道"谁打死的"，而死亡后的掉落/击杀计数需要它。
-	LastDamageCauser = Data.EffectSpec.GetContext().GetEffectCauser();
 
 	// 本项目常规 GAS 伤害在此结算。直接改 Health 的其他路径不会自动经过此伤害链。
 	const float LocalDamage = GetDamage();
@@ -225,6 +248,16 @@ void URogueAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallb
 	{
 		return;
 	}
+
+    const auto& Context=Data.EffectSpec.GetContext();
+    // 转化发生在护甲及减伤之前，不留下普通受击、击杀归属或死亡事件。
+    if (GetHealth()>0.f && Data.Target.HasMatchingGameplayTag(RogueGameplayTags::State_BossDamageInversion)
+        && (Cast<ARogueCharacter>(Context.GetOriginalInstigator()) || Cast<ARogueCharacter>(Context.GetEffectCauser())))
+    {
+        SetHealth(FMath::Min(GetMaxHealth(),GetHealth()+LocalDamage));
+        return;
+    }
+    LastDamageCauser=Context.GetEffectCauser();
 
 	const float MitigatedDamage = LocalDamage * (1.0f - FMath::Clamp(GetDamageReductionPercent(), 0.0f, 1.0f));
 	float RemainingDamage = MitigatedDamage;

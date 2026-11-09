@@ -1,4 +1,5 @@
-#include "Player/RoguePlayerController.h"
+﻿#include "Player/RoguePlayerController.h"
+#include "Player/RoguePlayerState.h"
 
 void ARoguePlayerController::OnPossess(APawn* InPawn)
 {
@@ -19,6 +20,7 @@ void ARoguePlayerController::OnUnPossess()
 		}
 	}
 
+	if (auto* State=GetPlayerState<ARoguePlayerState>()) {State->Server_SetPauseMenuOpen(false);State->SuspendUpgradeSelection();}
 	Super::OnUnPossess();
 }
 

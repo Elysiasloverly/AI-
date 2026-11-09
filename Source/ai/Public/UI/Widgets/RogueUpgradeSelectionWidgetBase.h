@@ -18,6 +18,8 @@ class AI_API URogueUpgradeSelectionWidgetBase : public UUserWidget
 public:
 	void SetOwningRogueHUD(ARogueHUD* InOwningHUD);
 	void UpdateUpgradeSelectionView(const FRogueUpgradeSelectionViewData& InViewData);
+    const UWidget* GetUpgradeCard(int32 Index) const
+    { return ManagedUpgradeCardWidgets.IsValidIndex(Index) ? ManagedUpgradeCardWidgets[Index].Get() : nullptr; }
 
 	UFUNCTION(BlueprintPure, Category = "Rogue|Upgrade")
 	ARogueHUD* GetOwningRogueHUDObject() const { return OwningRogueHUD.Get(); }

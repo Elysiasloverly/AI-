@@ -60,7 +60,7 @@ public:
 	float GetCooldownRemainingForSelfTest() const;
 
 protected:
-	/** 冷却效果类（六把武器共用同一个 GE，时长走 SetByCaller）。 */
+	/** 冷却效果类（自动攻击共用同一个 GE，时长走 SetByCaller）。 */
 	TSubclassOf<UGameplayEffect> GetWeaponCooldownEffectClass() const;
 
 	/** 把"这一发开完了"写成一冷却：施加带时长的冷却 GE，时长 = 武器算出来的生效冷却。 */

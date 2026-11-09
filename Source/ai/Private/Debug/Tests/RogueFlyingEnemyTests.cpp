@@ -19,6 +19,9 @@
 #include "Player/RoguePlayerState.h"
 #include "Combat/Projectiles/RogueEnemyProjectile.h"
 #include "Combat/Projectiles/RogueProjectile.h"
+#include "Combat/Targeting/RogueEnemyTrackerSubsystem.h"
+#include "Combat/Weapons/RogueWeapon_Projectile.h"
+#include "Engine/DataTable.h"
 
 namespace RogueFlyingTests
 {
@@ -52,7 +55,11 @@ namespace RogueFlyingTests
             auto* Enemy=World->SpawnActor<ARogueEnemy>(Class,Position,FRotator::ZeroRotator,P);
             Enemy->ActivatePooledEnemy(nullptr,Position,FRotator::ZeroRotator);
             FRogueEnemyProfile Profile; Profile.EnemyType=Types[Variant]; Profile.Health=200; Profile.Speed=0; Profile.Damage=10;
-            Enemy->InitializeEnemy(Profile); Enemy->Tick(0.01f); return Enemy;
+            Enemy->InitializeEnemy(Profile);
+            // 本夹具显式调用 ExecuteRangedAttack 验证一轮弹幕；暂停自动发起，
+            // 避免随机初始冷却在手动 Tick 推进齐射时再启动下一轮。
+            Enemy->SetRangedAttackCooldown(60.0f);
+            Enemy->Tick(0.01f); return Enemy;
         }
         void Step(float Seconds)
         { for (int32 I=0;I<FMath::CeilToInt(Seconds/0.01f);++I) { Test.TickTestWorld(0.01f); } }
@@ -93,6 +100,19 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFlyingHeightTest,"Rogue.Gameplay.FlyingEnemies
 bool FFlyingHeightTest::RunTest(const FString&)
 {
     using namespace RogueFlyingTests; FFixture F; if (!F.Init()) { return false; }
+    const auto* Table = LoadObject<UDataTable>(nullptr, TEXT("/Game/Data/Weapons/DT_WeaponConfig.DT_WeaponConfig"));
+    if (!TestNotNull(TEXT("Actual weapon table loads"), Table)) { return false; }
+    const auto* Row = Table->FindRow<FRogueWeaponTableRow>(TEXT("Projectile"), TEXT("FlyingEnemyTest"));
+    if (!TestNotNull(TEXT("The cold projectile row exists"), Row) ||
+        !TestNotNull(TEXT("The real projectile Blueprint is configured"), Row->ProjectileClass.Get())) { return false; }
+    FRogueWeaponTableRow Config = *Row;
+    Config.Count = 1;
+    Config.bEnableTrajectoryDeviation = false;
+    Config.bEnableSpeedRandomization = false;
+    auto* Weapon = F.World->SpawnActor<ARogueWeapon_Projectile>();
+    Weapon->InitializeWeapon(F.Player, Config);
+    auto* Tracker = F.World->GetSubsystem<URogueEnemyTrackerSubsystem>();
+
     for (int32 I=0;I<3;++I)
     {
         auto* E=F.Enemy(I,FVector(1400,0,72)); if (!TestNotNull(TEXT("Actual flying BP"),E)) { return false; }
@@ -104,14 +124,25 @@ bool FFlyingHeightTest::RunTest(const FString&)
         E->DeactivateToPool(); E->ActivatePooledEnemy(nullptr,FVector(1400,0,372),FRotator::ZeroRotator);
         FRogueEnemyProfile P; P.EnemyType=Types[I]; P.Health=200; E->InitializeEnemy(P);
         TestEqual(TEXT("Reactivation resets altitude instead of accumulating"),E->GetActorLocation().Z,372.0+Flight.HoverHeight);
-        E->DeactivateToPool(); E->ActivatePooledEnemy(nullptr,FVector(1400,0,72),FRotator::ZeroRotator); E->InitializeEnemy(P);
         E->SetActorTickEnabled(false);
-        auto* Bullet=F.World->SpawnActor<ARogueProjectile>();
-        Bullet->ActivatePooledProjectile(F.Player,F.Player,FVector(800,0,121),FRotator::ZeroRotator,FVector::ForwardVector,1800,10);
-        F.Step(0.45f);
-        TestEqual(TEXT("Ground-level cold bullet hits airborne capsule"),E->GetCurrentHealth(),190.f);
+        Tracker->RegisterEnemy(E);
+        TArray<ARogueEnemy*> Targets;
+        Weapon->CollectFireTargets(Targets);
+        if (!TestTrue(TEXT("The cold weapon actually locks the elevated target"), Targets.Contains(E))) { return false; }
+        Weapon->FireAtTargets(Targets);
+        F.Step(1.f);
+        TestTrue(TEXT("The actual cold weapon damages a flying enemy far above the muzzle"), E->GetCurrentHealth() < P.Health);
         E->DeactivateToPool();
     }
+
+    const FVector PlayerLocation = F.Player->GetActorLocation();
+    auto* Overhead = F.Enemy(0, PlayerLocation + FVector(0, 0, 10));
+    if (!TestNotNull(TEXT("An overhead flyer exists"), Overhead)) { return false; }
+    Overhead->SetActorTickEnabled(false);
+    Tracker->RegisterEnemy(Overhead);
+    Weapon->FireAtTargets({Overhead});
+    F.Step(.15f);
+    TestTrue(TEXT("A shot at an enemy directly overhead still hits"), Overhead->GetCurrentHealth() < Overhead->GetMaxHealth());
     return true;
 }
 
@@ -127,7 +158,9 @@ bool FMothAttackTest::RunTest(const FString&)
     for (int32 I=0;I<5;++I) { E->Tick(0.2f); }
     TestEqual(TEXT("Six twin volleys"),F.Bullets().Num(),12);
     for (auto* B:F.Bullets()) { B->DeactivateToPool(); }
-    E->ExecuteRangedAttack(); E->DeactivateToPool(); E->Tick(1.f);
+    E->ExecuteRangedAttack();
+    TestEqual(TEXT("A new explicit attack emits its first twin volley before cancellation"),F.Bullets().Num(),2);
+    E->DeactivateToPool(); E->Tick(1.f);
     TestEqual(TEXT("Pool cancellation stops pending volleys"),F.Bullets().Num(),2);
     return true;
 }

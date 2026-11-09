@@ -15,12 +15,12 @@ namespace RogueMetaDefinitions
 	{
 		return Type == ERogueUpgradeType::ProjectileCount || Type == ERogueUpgradeType::ScytheCount
 			|| Type == ERogueUpgradeType::RocketCount || Type == ERogueUpgradeType::LaserCount
-			|| Type == ERogueUpgradeType::HellTowerCount || Type == ERogueUpgradeType::MortarCount || Type == ERogueUpgradeType::TalismanCount;
+			|| Type == ERogueUpgradeType::HellTowerCount || Type == ERogueUpgradeType::MortarCount || Type == ERogueUpgradeType::TalismanCount || Type==ERogueUpgradeType::FrostBladeCount;
 	}
 
 	bool IsDedicatedType(ERogueUpgradeType Type)
 	{
-		return Type == ERogueUpgradeType::TalismanPierce || Type == ERogueUpgradeType::TalismanRepeat || Type == ERogueUpgradeType::ProjectileBurst || Type == ERogueUpgradeType::RocketBlastRadius
+		return Type==ERogueUpgradeType::FrostBladeSize || Type==ERogueUpgradeType::FrostBladeWave || Type==ERogueUpgradeType::FrostBladeWaveCount || Type==ERogueUpgradeType::FrostBladeWaveSize || Type == ERogueUpgradeType::TalismanPierce || Type == ERogueUpgradeType::TalismanRepeat || Type == ERogueUpgradeType::ProjectileBurst || Type == ERogueUpgradeType::RocketBlastRadius
 			|| Type == ERogueUpgradeType::HellTowerDamageRamp || Type == ERogueUpgradeType::ScytheSize || Type == ERogueUpgradeType::ScytheLifesteal
 			|| Type == ERogueUpgradeType::LaserRefraction || Type == ERogueUpgradeType::MortarBlastRadius;
 	}
@@ -56,7 +56,7 @@ void URogueUpgradeTreeDefinition::ResetToDefaults()
 	struct FWeapon { const TCHAR* Id; const TCHAR* Name; ERogueUpgradeType Type; const TCHAR* Description; const TCHAR* CardDescription; const TCHAR* CardTitle; };
 	const FWeapon Weapons[] = {
 		{ TEXT("Scythe"), TEXT("银刃"), ERogueUpgradeType::ScytheCount, TEXT("银色刀刃环绕自身旋转，切割靠近的敌人。\n解锁后加入获取卡池，本局抽到才装备。"), TEXT("开放银刃数量升级；本局持有银刃后，每选一次增加 1 把环绕刀刃。"), TEXT("银刃环阵") },
-		{ TEXT("Rocket"), TEXT("焰符·火丸"), ERogueUpgradeType::RocketCount, TEXT("向敌人发射橙红火球，命中后爆炸，造成范围伤害。\n解锁后加入获取卡池，本局抽到才装备。"), TEXT("开放火丸数量升级；本局持有焰符·火丸后，每选一次每轮齐射增加 1 发火球。"), TEXT("火丸齐射") },
+		{ TEXT("Rocket"), TEXT("冰焰·陨星"), ERogueUpgradeType::RocketCount, TEXT("从高空召唤冰焰球斜向砸落并爆炸；地面留下蓝焰，减速敌人并持续造成少量伤害。\n解锁后加入获取卡池，本局抽到才装备。"), TEXT("开放陨星数量升级；本局持有冰焰·陨星后，每选一次每轮额外召唤 1 颗冰焰球。"), TEXT("陨星齐落") },
 		{ TEXT("Laser"), TEXT("星符·流光"), ERogueUpgradeType::LaserCount, TEXT("向敌人发射蓝白激光；星尘折射可追加跳转目标。\n解锁后加入获取卡池，本局抽到才装备。"), TEXT("开放流光数量升级；本局持有星符·流光后，每选一次每轮增加 1 束激光。"), TEXT("流光齐射") },
 		{ TEXT("HellTower"), TEXT("焰符·灼光"), ERogueUpgradeType::HellTowerCount, TEXT("金橙色火焰光束持续锁定敌人，连续命中同一目标时每跳伤害递增。\n解锁后加入获取卡池，本局抽到才装备。"), TEXT("开放灼光数量升级；本局持有焰符·灼光后，每选一次可同时锁定的不同敌人增加 1 名。"), TEXT("灼光分流") },
 		{ TEXT("Mortar"), TEXT("冰符·霜玉"), ERogueUpgradeType::MortarCount, TEXT("沿抛物线投出冰蓝球体，轰击敌人所在区域，落地爆炸。\n解锁后加入获取卡池，本局抽到才装备。"), TEXT("开放霜玉数量升级；本局持有冰符·霜玉后，每选一次每轮增加 1 枚抛射冰球。"), TEXT("霜玉连投") }
@@ -82,9 +82,12 @@ void URogueUpgradeTreeDefinition::ResetToDefaults()
 	Add(TEXT("Card.MortarBlastRadius"), TEXT("霜玉扩散"), TEXT("开放此专属卡；本局抽到后：\n霜玉爆炸半径 +100 厘米，扩大落点周围的伤害区域。"),
 		ERogueMetaNodeKind::UpgradeCard, ERogueUpgradeType::MortarBlastRadius, 1650, 260, TEXT("Card.MortarCount"));
 
-	Add(TEXT("Card.ProjectileBurst"), TEXT("冰符连诵"), TEXT("开放此专属卡；本局抽到后：\n寒弹每轮攻击额外连射 1 次，每次发出完整弹幕；首次选取从单发变为 2 连发。"),
+	FRogueUpgradeTreeNode& ProjectileBurst = Add(TEXT("Card.ProjectileBurst"), TEXT("冰符连诵"),
+		TEXT("初始开放；本局每选一次，寒弹每轮攻击额外连射 1 次，每次发出完整弹幕。首次选取从单发变为 2 连发。"),
 		ERogueMetaNodeKind::UpgradeCard, ERogueUpgradeType::ProjectileBurst, 0, 0, TEXT("Card.ProjectileCount"));
-	Add(TEXT("Card.RocketBlastRadius"), TEXT("火丸扩散"), TEXT("开放此专属卡；本局抽到后：\n火丸爆炸半径 +90 厘米，扩大火球命中后的伤害覆盖。"),
+	ProjectileBurst.bInitiallyUnlocked = true;
+	ProjectileBurst.Cost = 0;
+	Add(TEXT("Card.RocketBlastRadius"), TEXT("冰焰扩散"), TEXT("开放此专属卡；本局抽到后：\n冰焰球爆炸半径 +90 厘米，同时增大球体、焰尾与地面蓝焰的影响范围。"),
 		ERogueMetaNodeKind::UpgradeCard, ERogueUpgradeType::RocketBlastRadius, 0, 0, TEXT("Card.RocketCount"));
 	Add(TEXT("Card.HellTowerDamageRamp"), TEXT("焰心递燃"), TEXT("开放此专属卡；本局抽到后：\n灼光每跳伤害递增值 +0.1；连续锁定同一目标越久，伤害增长越快。"),
 		ERogueMetaNodeKind::UpgradeCard, ERogueUpgradeType::HellTowerDamageRamp, 0, 0, TEXT("Card.HellTowerCount"));
@@ -93,6 +96,12 @@ void URogueUpgradeTreeDefinition::ResetToDefaults()
 	Add(TEXT("Card.TalismanCount"),TEXT("归心符阵"),TEXT("开放数量卡；本局已持有灵符后，每选一次增加 1 张环绕灵符，分别自动出击。"),ERogueMetaNodeKind::UpgradeCard,ERogueUpgradeType::TalismanCount,1980,520,TEXT("Weapon.Talisman"));
 	Add(TEXT("Card.TalismanPierce"),TEXT("灵符贯阵"),TEXT("开放此专属卡；本局每选一次，每张灵符单次出击可穿刺的不同敌人数 +1。"),ERogueMetaNodeKind::UpgradeCard,ERogueUpgradeType::TalismanPierce,1980,260,TEXT("Card.TalismanCount"));
 	Add(TEXT("Card.TalismanRepeat"),TEXT("灵符重奏"),TEXT("开放此专属卡；本局每选一次，每张灵符对每名敌人的穿刺次数 +1，飞出后往返追刺再归位。"),ERogueMetaNodeKind::UpgradeCard,ERogueUpgradeType::TalismanRepeat,1980,0,TEXT("Card.TalismanPierce"));
+
+    Add(TEXT("Weapon.FrostBlade"),TEXT("冰刀·霜月"),TEXT("永久解锁后每局自动装备一把，悬于身后，自动横斩附近敌群后归位。刀越大，扇形范围与伤害越高，基础攻击加成也生效。"),ERogueMetaNodeKind::Weapon,ERogueUpgradeType::FrostBladeCount,2310,780);
+    Add(TEXT("Card.FrostBladeSize"),TEXT("霜刃延展"),TEXT("开放霜刃延展卡：按卡牌配置增加冰刀尺寸，横斩范围与伤害随尺寸提高，基础攻击加成也参与放大。"),ERogueMetaNodeKind::UpgradeCard,ERogueUpgradeType::FrostBladeSize,2310,520,TEXT("Weapon.FrostBlade"));
+    Add(TEXT("Card.FrostBladeWave"),TEXT("霜月出鞘"),TEXT("开放此专属卡；冰刀横斩时向前放出一道低伤害的浅弯月剑气；穿透敌人，碰地图或30秒后消失。"),ERogueMetaNodeKind::UpgradeCard,ERogueUpgradeType::FrostBladeWave,2310,260,TEXT("Card.FrostBladeSize"));
+    Add(TEXT("Card.FrostBladeWaveCount"),TEXT("霜月重叠"),TEXT("开放此专属卡；每次横斩额外发出1道剑气，向前呈小角度扇形散开。"),ERogueMetaNodeKind::UpgradeCard,ERogueUpgradeType::FrostBladeWaveCount,2310,0,TEXT("Card.FrostBladeWave"));
+    Add(TEXT("Card.FrostBladeWaveSize"),TEXT("霜月盈空"),TEXT("开放此专属卡；剑气外观和命中范围增加基础尺寸的20%，不改变伤害与寿命。"),ERogueMetaNodeKind::UpgradeCard,ERogueUpgradeType::FrostBladeWaveSize,2310,-260,TEXT("Card.FrostBladeWaveCount"));
 
 	FRogueUpgradeTreeNode& Armor = Add(TEXT("Armor.Unlock"), TEXT("解锁护甲"), TEXT("永久启用玩家配置中的基础护甲，并开放护甲容量、减伤相关卡及基础护甲升级。"),
 		ERogueMetaNodeKind::ArmorUnlock, ERogueUpgradeType::ArmorCapacity, 660, 780);
@@ -231,6 +240,7 @@ bool URogueUpgradeTreeDefinition::IsWeaponUnlocked(const FRogueProgressionSnapsh
 bool URogueUpgradeTreeDefinition::IsUpgradeAvailable(const FRogueProgressionSnapshot& Snapshot, ERogueUpgradeType Type,
 	bool bWeaponAlreadyOwned) const
 {
+    if(Type==ERogueUpgradeType::FrostBladeCount)return false; // Automatically equipped from the owner's permanent unlock.
 	if (Type == ERogueUpgradeType::ProjectileCount) { return true; }
 	if (Type == ERogueUpgradeType::Armor || Type == ERogueUpgradeType::ArmorCapacity) { return IsArmorUnlocked(Snapshot); }
 	if (RogueMetaDefinitions::IsQuantityType(Type) && !bWeaponAlreadyOwned) { return IsWeaponUnlocked(Snapshot, Type); }
@@ -339,6 +349,31 @@ void URogueUpgradeTreeDefinition::ApplyDebugIceBricks()
 	}
 	DebugIceBrickStatus = bSuccess
 		? FText::FromString(FString::Printf(TEXT("已将 %s 的冰砖设置为 %d，原解锁进度和奖励记录已保留。"), *Slot, DebugCurrentIceBricks))
+		: Error;
+#endif
+}
+
+void URogueUpgradeTreeDefinition::UnlockAllDebugProgression()
+{
+#if WITH_EDITOR
+	FText Error;
+	FString Slot;
+	int32 UserIndex = 0;
+	bool bHasGameWorld = false;
+	bool bSuccess = false;
+	if (auto* Live = FindDebugProgression(DebugPIEInstance, DebugLocalPlayerIndex, bHasGameWorld, Error))
+	{
+		Slot = Live->GetSaveSlotName();
+		bSuccess = Live->UnlockAllForDebug(Error);
+		if (bSuccess) DebugCurrentIceBricks = Live->GetIceBricks();
+	}
+	else if (!bHasGameWorld && URogueProgressionSubsystem::ResolveSaveLocation(DebugLocalPlayerIndex, Slot, UserIndex, Error))
+	{
+		bSuccess = URogueProgressionSubsystem::UnlockAllInSlotForDebug(Slot, UserIndex, GetDefaultDefinition(), Error);
+		if (bSuccess) RefreshDebugIceBricks();
+	}
+	DebugIceBrickStatus = bSuccess
+		? FText::FromString(FString::Printf(TEXT("%s 的全部节点已升满，冰砖 %d。永久属性和联机卡池从下一局生效。"), *Slot, DebugCurrentIceBricks))
 		: Error;
 #endif
 }

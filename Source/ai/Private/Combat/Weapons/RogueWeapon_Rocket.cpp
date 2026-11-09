@@ -1,4 +1,4 @@
-// 火箭武器 —— 齐射逻辑
+// 冰焰·陨星：目标上空召唤，斜向坠落，命中后范围爆炸。
 #include "Combat/Weapons/RogueWeapon_Rocket.h"
 #include "AbilitySystem/Abilities/RogueWeaponAbility.h"
 #include "AbilitySystem/RogueAttributeSet.h"
@@ -17,8 +17,8 @@ ARogueWeapon_Rocket::ARogueWeapon_Rocket()
 
 void ARogueWeapon_Rocket::CollectFireTargets(TArray<ARogueEnemy*>& OutTargets) const
 {
-	// 当前策略：射程额外放宽 700，取 `max(12, 数量×3)` 个候选，
-	// 然后按顺序分给每一发火箭（见 FireRocketVolley 的 `RocketIndex % Enemies.Num()`）。
+	// 索敌额外范围由武器表决定，先取 max(12, 数量×3) 个距离候选。
+	// 齐射同时考虑本轮与在途弹体的目标分配，优先选择空闲敌人。
 	CollectEnemiesInRange(GetEffectiveRange() + GetConfig().RocketSeekRangeBonus, OutTargets, FMath::Max(12, GetEffectiveCount() * 3));
 }
 
@@ -60,26 +60,27 @@ void ARogueWeapon_Rocket::FireRocketVolley(const TArray<ARogueEnemy*>& Enemies)
 		return;
 	}
 
-	const FVector LaunchOrigin = OwnerChar->GetActorLocation() + FVector(0.0f, 0.0f, 80.0f);
+    const float ExplosionRadius = GetExplosionRadius();
+    const float VisualScale = ExplosionRadius / FMath::Max(1.f, Config.ExplosionRadius);
 	const int32 EffectiveCount = GetEffectiveCount();
 	URogueCombatPoolSubsystem* Pools = GetWorld() ? GetWorld()->GetSubsystem<URogueCombatPoolSubsystem>() : nullptr;
 
+    TArray<ARogueEnemy*> VolleyTargets;
 	bool bAudioTagged = false;
 	for (int32 RocketIndex = 0; RocketIndex < EffectiveCount; ++RocketIndex)
 	{
-		if (!Enemies.IsValidIndex(RocketIndex % Enemies.Num()) || !IsValid(Enemies[RocketIndex % Enemies.Num()]))
-		{
-			continue;
-		}
+        ARogueEnemy* TargetEnemy=SelectDistributedTarget(Enemies,VolleyTargets);
+        if (!TargetEnemy) { break; }
+        const FVector TargetLocation = TargetEnemy->GetActorLocation();
+        FVector Approach = (TargetLocation - OwnerChar->GetActorLocation()).GetSafeNormal2D();
+        if (Approach.IsNearlyZero()) { Approach = OwnerChar->GetActorForwardVector().GetSafeNormal2D(); }
+        if (Approach.IsNearlyZero()) { Approach = FVector::ForwardVector; }
 
-		ARogueEnemy* TargetEnemy = Enemies[RocketIndex % Enemies.Num()];
-		FVector Direction = (TargetEnemy->GetActorLocation() - LaunchOrigin).GetSafeNormal();
-
-		// 弹道随机平面偏转
+		// 随机的是召唤方位，随后重新指向目标；不会把下坠方向偏离落点。
 		if (Config.bEnableTrajectoryDeviation && Config.TrajectoryDeviationMaxAngle > 0.0f)
 		{
 			const float RandomDeviation = FMath::FRandRange(-Config.TrajectoryDeviationMaxAngle, Config.TrajectoryDeviationMaxAngle);
-			Direction = Direction.RotateAngleAxis(RandomDeviation, FVector::UpVector).GetSafeNormal();
+			Approach = Approach.RotateAngleAxis(RandomDeviation, FVector::UpVector);
 		}
 
 		// 弹速随机增幅
@@ -90,7 +91,10 @@ void ARogueWeapon_Rocket::FireRocketVolley(const TArray<ARogueEnemy*>& Enemies)
 			FinalRocketSpeed = FMath::Max(FinalRocketSpeed, 0.0f);
 		}
 
-		const FVector SpawnLocation = LaunchOrigin + Direction * 90.0f + FVector(0.0f, 0.0f, RocketIndex * 8.0f);
+        const FVector SpawnLocation = TargetLocation
+            + FVector::UpVector * FMath::Max(1.f, Config.RocketFall.SummonHeight)
+            - Approach * FMath::Max(1.f, Config.RocketFall.HorizontalOffset);
+        const FVector Direction = (TargetLocation - SpawnLocation).GetSafeNormal();
 
 		UClass* RocketClassToSpawn = Config.RocketClass ? Config.RocketClass.Get() : ARogueRocketProjectile::StaticClass();
 		ARogueRocketProjectile* Rocket = Pools != nullptr
@@ -98,12 +102,13 @@ void ARogueWeapon_Rocket::FireRocketVolley(const TArray<ARogueEnemy*>& Enemies)
 			: GetWorld()->SpawnActor<ARogueRocketProjectile>(RocketClassToSpawn, SpawnLocation, Direction.Rotation());
 		if (Rocket != nullptr)
 		{
-			Rocket->ActivatePooledRocket(OwnerChar, OwnerChar, SpawnLocation, Direction.Rotation(), Direction, FinalRocketSpeed, GetEffectiveDamage(), GetExplosionRadius());
+            ReserveProjectileTarget(Rocket,TargetEnemy);
+            VolleyTargets.Add(TargetEnemy);
+			Rocket->ActivatePooledRocket(OwnerChar, OwnerChar, SpawnLocation, Direction.Rotation(), Direction, FinalRocketSpeed, GetEffectiveDamage(), ExplosionRadius, Config.ProjectileCombat);
+            Rocket->SetExplosionVisualScale(VisualScale);
+            Rocket->ConfigureGroundFlame(Config.IceFlame);
 
-			// 权威那一发已经生成，再把"画出来需要什么"广播给队友。
-			// 逐发广播：偏转角与弹速随机是每发单独掷的；客户端调用它是空操作。
-			// Param 传爆炸半径 —— 队友那台机器上爆炸特效的大小是按半径算的
-			// （见 ARogueRocketProjectile::Explode），不传的话队友看到的爆炸会偏小。
+            // 下坠路径、爆炸半径和模型倍率均使用服务端这一发的结果，客户端不重复随机。
 			FRogueWeaponCosmeticFire Fire;
 			Fire.bPlayAttackSound = !bAudioTagged;
             Fire.bPlayFireAccent = !bAudioTagged;
@@ -111,7 +116,8 @@ void ARogueWeapon_Rocket::FireRocketVolley(const TArray<ARogueEnemy*>& Enemies)
 			Fire.Start = SpawnLocation;
 			Fire.Direction = Direction;
 			Fire.Speed = FinalRocketSpeed;
-			Fire.Param = GetExplosionRadius();
+			Fire.Param = ExplosionRadius;
+            Fire.ProjectileVisualScale = VisualScale;
 			BroadcastCosmeticFire(Fire);
 		}
 	}
@@ -119,9 +125,7 @@ void ARogueWeapon_Rocket::FireRocketVolley(const TArray<ARogueEnemy*>& Enemies)
 
 void ARogueWeapon_Rocket::PlayCosmeticFire(const FRogueWeaponCosmeticFire& Fire)
 {
-	// 只在"既非服务端、也非本人"的机器上被调用（见 Multicast_WeaponCosmetic）。
-	// 与 ARogueEnemy::Multicast_SpawnCosmeticProjectile 同形：
-	// 同一个池函数、同一套参数，只把伤害换成 0；权威伤害在服务端爆炸时结算。
+    // 客户端补画服务端确认的下坠弹体；伤害为 0，权威伤害只由服务端结算。
 	if (GetWorld() == nullptr)
 	{
 		return;
@@ -148,5 +152,6 @@ void ARogueWeapon_Rocket::PlayCosmeticFire(const FRogueWeaponCosmeticFire& Fire)
 	}
 
 	Rocket->ActivatePooledRocket(
-		OwnerChar, OwnerChar, Fire.Start, Fire.Direction.Rotation(), Fire.Direction, Fire.Speed, /*InDamage=*/0.0f, Fire.Param);
+		OwnerChar, OwnerChar, Fire.Start, Fire.Direction.Rotation(), Fire.Direction, Fire.Speed, /*InDamage=*/0.0f, Fire.Param, Config.ProjectileCombat);
+    Rocket->SetExplosionVisualScale(Fire.ProjectileVisualScale);
 }

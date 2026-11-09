@@ -1,0 +1,4 @@
+newmtl Paper
+Kd .8 .8 .8
+newmtl Trim
+Kd .2 .3 .4

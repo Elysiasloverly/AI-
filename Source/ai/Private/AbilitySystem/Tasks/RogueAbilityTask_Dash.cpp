@@ -27,18 +27,10 @@ void URogueAbilityTask_Dash::Activate()
 {
 	Super::Activate();
 
-	// 参数非法时只结束任务；这里不广播完成，也不自动结束所属能力。
-	if (DashSpeed <= 0.0f || TimeRemaining <= 0.0f || DashDirection.IsNearlyZero())
+	if (DashSpeed <= 0.0f || TimeRemaining <= 0.0f || DashDirection.IsNearlyZero() || !IsValid(GetAvatarActor()))
 	{
+		OnDashFinished.Broadcast();
 		EndTask();
-		return;
-	}
-
-	// Avatar 未就位时只 EndTask；调用方若需清理能力，必须另行处理该失败路径。
-	if (GetAvatarActor() == nullptr)
-	{
-		EndTask();
-		return;
 	}
 }
 
@@ -49,6 +41,7 @@ void URogueAbilityTask_Dash::TickTask(float DeltaTime)
 	AActor* Avatar = GetAvatarActor();
 	if (!IsValid(Avatar))
 	{
+		OnDashFinished.Broadcast();
 		EndTask();
 		return;
 	}

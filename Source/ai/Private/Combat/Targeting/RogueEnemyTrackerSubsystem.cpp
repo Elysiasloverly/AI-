@@ -1,13 +1,24 @@
-// 敌人追踪子系统 —— 实现
 #include "Combat/Targeting/RogueEnemyTrackerSubsystem.h"
+#include "Debug/RoguePerfStats.h"
+// 敌人追踪子系统 —— 实现
 
 #include "Enemies/RogueEnemy.h"
 #include "World/RogueExperiencePickup.h"
 
 void URogueEnemyTrackerSubsystem::Tick(float DeltaTime)
 {
+    CSV_SCOPED_TIMING_STAT(RoguePerf, TargetMaintenance);
 	Super::Tick(DeltaTime);
 	EnemyTracker.TickMaintenance(DeltaTime, PerformanceSettings);
+    for (auto It = WeaponTargets.CreateIterator(); It; ++It)
+    {
+        PruneWeaponTargets(It.Value());
+        if (!It.Key().IsValid() || It.Key()->IsActorBeingDestroyed() || It.Value().IsEmpty())
+        {
+            for (const auto& Entry : It.Value()) { ReservingWeapons.Remove(Entry.Key); }
+            It.RemoveCurrent();
+        }
+    }
 }
 
 TStatId URogueEnemyTrackerSubsystem::GetStatId() const
@@ -91,4 +102,98 @@ int32 URogueEnemyTrackerSubsystem::GetActiveEnemyCountOfType(ERogueEnemyType Ene
 	}
 
 	return Count;
+}
+
+
+namespace
+{
+bool IsWeaponTargetAlive(const ARogueEnemy* Enemy)
+{
+    return IsValid(Enemy) && !Enemy->IsActorBeingDestroyed() && !Enemy->IsDead()
+        && !Enemy->IsAvailableInPool() && Enemy->GetCurrentHealth() > 0.f;
+}
+}
+
+void URogueEnemyTrackerSubsystem::PruneWeaponTargets(FWeaponReservations& Reservations)
+{
+    for (auto It = Reservations.CreateIterator(); It; ++It)
+    {
+        const ARogueEnemy* Enemy = It.Value().Enemy.Get();
+        if (!It.Key().IsValid() || It.Key()->IsActorBeingDestroyed() || !IsWeaponTargetAlive(Enemy)
+            || Enemy->GetSpawnCycleId() != It.Value().SpawnCycle)
+        {
+            ReservingWeapons.Remove(It.Key());
+            It.RemoveCurrent();
+        }
+    }
+}
+
+ARogueEnemy* URogueEnemyTrackerSubsystem::SelectWeaponTarget(AActor* Weapon,
+    const TArray<ARogueEnemy*>& Candidates, const AActor* Requester, const TArray<ARogueEnemy*>& VolleyTargets)
+{
+    CSV_SCOPED_TIMING_STAT(RoguePerf, TargetSelect);
+    TMap<ARogueEnemy*, int32> Loads;
+    if (FWeaponReservations* Reservations = WeaponTargets.Find(Weapon))
+    {
+        PruneWeaponTargets(*Reservations);
+        for (const auto& Entry : *Reservations)
+        {
+            if (Entry.Key.Get() != Requester) { ++Loads.FindOrAdd(Entry.Value.Enemy.Get()); }
+        }
+    }
+    for (ARogueEnemy* Enemy : VolleyTargets)
+    {
+        if (IsWeaponTargetAlive(Enemy)) { ++Loads.FindOrAdd(Enemy); }
+    }
+    ARogueEnemy* Best = nullptr;
+    int32 BestLoad = MAX_int32;
+    for (ARogueEnemy* Enemy : Candidates)
+    {
+        if (!IsWeaponTargetAlive(Enemy)) { continue; }
+        const int32 Load = Loads.FindRef(Enemy);
+        if (Load < BestLoad)
+        {
+            Best = Enemy; BestLoad = Load;
+            if (Load == 0) { break; }
+        }
+    }
+    return Best;
+}
+
+void URogueEnemyTrackerSubsystem::ReserveWeaponTarget(AActor* Weapon, AActor* Requester, ARogueEnemy* Enemy)
+{
+    ReleaseWeaponTarget(Requester);
+    if (!IsValid(Weapon) || !IsValid(Requester) || !IsWeaponTargetAlive(Enemy)) { return; }
+    FWeaponTargetReservation Reservation; Reservation.Enemy = Enemy; Reservation.SpawnCycle = Enemy->GetSpawnCycleId();
+    WeaponTargets.FindOrAdd(Weapon).Add(Requester, Reservation);
+    ReservingWeapons.Add(Requester, Weapon);
+}
+
+void URogueEnemyTrackerSubsystem::ReleaseWeaponTarget(AActor* Requester)
+{
+    TWeakObjectPtr<AActor> Weapon;
+    if (!ReservingWeapons.RemoveAndCopyValue(Requester, Weapon)) { return; }
+    if (FWeaponReservations* Reservations = WeaponTargets.Find(Weapon))
+    {
+        Reservations->Remove(Requester);
+        if (Reservations->IsEmpty()) { WeaponTargets.Remove(Weapon); }
+    }
+}
+
+void URogueEnemyTrackerSubsystem::ReleaseWeaponTargets(AActor* Weapon)
+{
+    if (const FWeaponReservations* Reservations = WeaponTargets.Find(Weapon))
+    {
+        for (const auto& Entry : *Reservations) { ReservingWeapons.Remove(Entry.Key); }
+    }
+    WeaponTargets.Remove(Weapon);
+}
+
+ARogueEnemy* URogueEnemyTrackerSubsystem::GetWeaponTarget(const AActor* Requester) const
+{
+    const auto* Weapon = ReservingWeapons.Find(const_cast<AActor*>(Requester));
+    const auto* Reservations = Weapon ? WeaponTargets.Find(*Weapon) : nullptr;
+    const auto* Reservation = Reservations ? Reservations->Find(const_cast<AActor*>(Requester)) : nullptr;
+    ARogueEnemy* Enemy = Reservation ? Reservation->Enemy.Get() : nullptr;
+    return IsWeaponTargetAlive(Enemy) && Enemy->GetSpawnCycleId() == Reservation->SpawnCycle ? Enemy : nullptr;
 }

@@ -1,6 +1,10 @@
 # 界面样式、Boss 血条与平滑状态条
 
-更新于 2026-10-24。当前采用较克制的东方符卡风格：菜单为靛蓝月夜鸟居，卡牌为浅色和纸、细朱红边饰和淡阴阳符印；战斗状态条采用深色底，保证场景中的可读性。所有界面均保存为实际 WBP，可在设计器里继续修改。
+更新于 2026-11-04。主菜单现为浅色和纸、淡墨鸟居与樱枝，保留实时 3D 角色；卡牌使用浅纸、细朱红边饰和专属图标，战斗状态条采用羽化的半透明深靛底衬与浅色文字。新字体与菜单动效见 [字体与界面精修](UI-Typography-And-Menu.md)。所有界面保存为可编辑的 WBP。
+
+战斗状态条、Boss 条和退治题签的后续精修见 [战斗 HUD 视觉精修](Battle-HUD-Polish-2026-11-04.md)。
+
+选卡与商店后续精修见 [选卡与商店界面精修](Cards-And-Shop-Polish-2026-11-04.md)。
 
 ## 常用编辑位置
 
@@ -24,9 +28,11 @@
 
 ## 生成素材
 
+当前主菜单背景为 `/Game/GameAssets/ArtDirection/MenuStory/Textures/T_MenuStory`，原件与生成记录见 `ArtSource/MenuStory`。下列较早素材仍保留供复用。
+
 图片由内置 `image_gen` 生成功能生成，原始图片已复制入项目：
 
-- `Content/GameAssets/UI/Touhou/Source/touhou_shrine_night_calm_v2.png`：当前菜单背景，月夜鸟居与稀疏弹幕弧线。
+- `Content/GameAssets/UI/Touhou/Source/touhou_shrine_night_calm_v2.png`：保留的旧菜单背景，月夜鸟居与稀疏弹幕弧线。
 - `Content/GameAssets/UI/Touhou/Source/touhou_spell_seal_v2.png`：透明符印，只作小尺寸、低透明度的角落水印。
 - `Content/GameAssets/UI/Touhou/Source/touhou_background_minimal.png`：保留的上一版浅色淡墨背景。
 - `Content/GameAssets/UI/Touhou/Source/touhou_panel_paper.png`：浅色面板纸纹；UMG 只采样中央区域，不显示繁复边缘。

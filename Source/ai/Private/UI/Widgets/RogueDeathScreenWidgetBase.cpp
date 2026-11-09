@@ -15,6 +15,7 @@ void URogueDeathScreenWidgetBase::SetOwningRogueHUD(ARogueHUD* InOwningHUD)
 void URogueDeathScreenWidgetBase::UpdateDeathView(const FRogueDeathViewData& InViewData)
 {
 	OnDeathViewUpdated(InViewData);
+    Reveal.SetVisible(this,InViewData.bVisible);
 	if (!InViewData.bVisible)
 	{
 		StopAllAnimations();
@@ -70,3 +71,6 @@ void URogueDeathScreenWidgetBase::RequestReturnToMainMenu()
 		HUD->RequestReturnToMainMenuAfterDeath();
 	}
 }
+
+void URogueDeathScreenWidgetBase::NativeTick(const FGeometry& G,float DT)
+{Super::NativeTick(G,DT);Reveal.Tick(this,DT);}

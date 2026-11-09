@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Enemies/Data/RogueEnemyArchetypes.h"
@@ -15,9 +15,11 @@
 #include "Combat/Visuals/RogueCombatAccentEffect.h"
 #include "RogueEnemy.generated.h"
 
+class URogueBossSkillComponent;
 class URogueEnemyPresentationComponent;
 class URogueEnemySupportComponent;
 class URogueEnemyStationaryHazardComponent;
+class URogueEnemyObstacleMovementComponent;
 class UStaticMeshComponent;
 class UMaterialInterface;
 class URogueHitFlashComponent;
@@ -27,13 +29,12 @@ class UDataTable;
 class URogueAbilitySystemComponent;
 class URogueAttributeSet;
 class ARogueEnemyProjectile;
+class ARogueEnemyDefeatEffect;
 
-/**
- * 敌人基类 —— 使用 C++ Tick 中的原型驱动逻辑控制移动和攻击
- *
- * 蓝图子类继承此类后，可以：
- * - 重写 BlueprintNativeEvent 钩子来自定义初始化、受伤、死亡等行为
- * - 调用 Action 接口（MoveInDirection、FireProjectileAtPlayer 等）驱动行为
+/** 敌人统一入口。服务器选择目标、移动和激活攻击能力；客户端消费复制状态与表现事件。
+ * 生命周期/攻击/移动分文件实现；支持、绕障、外观分别由专用组件承担。
+ * 对象池复用不等于重新构造：Activate/Deactivate 必须清理本次生命周期的计时与目标。
+ * 子蓝图负责模型和表现，也可覆写 BlueprintNativeEvent 钩子。
  */
 UCLASS(Blueprintable, BlueprintType)
 class AI_API ARogueEnemy : public ACharacter, public IAbilitySystemInterface
@@ -42,6 +43,17 @@ class AI_API ARogueEnemy : public ACharacter, public IAbilitySystemInterface
 
 public:
 	ARogueEnemy();
+    /** Boss 插槽独立于普通攻击；普通个体不授予、不调度这些技能。 */
+    UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="敌人|组件",meta=(DisplayName="Boss技能插槽"))
+    TObjectPtr<URogueBossSkillComponent> BossSkills;
+    UFUNCTION(BlueprintPure,Category="Enemy|Combat") bool AreNormalAttacksSuppressed() const;
+    UFUNCTION(BlueprintPure,Category="Enemy|Combat") bool IsBossSkillBlockingMovement() const;
+    /** Only the independent local effect survives pooling; this class never delays enemy recycle. */
+    UPROPERTY(EditDefaultsOnly,BlueprintReadWrite,Category="Enemy|退治反馈",meta=(DisplayName="退治消散特效")) TSubclassOf<ARogueEnemyDefeatEffect> DefeatEffectClass;
+    UPROPERTY(EditDefaultsOnly,BlueprintReadWrite,Category="Enemy|退治反馈",meta=(DisplayName="退治特效大小",ClampMin=".25",ClampMax="4")) float DefeatEffectSize=1.f;
+
+    UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="Enemy|Movement")
+    TObjectPtr<URogueEnemyObstacleMovementComponent> ObstacleMovement;
 
 private:
 	FGuid SpawnCycleId = FGuid::NewGuid();
@@ -49,6 +61,7 @@ private:
 public:
 
 	virtual void Tick(float DeltaSeconds) override;
+    virtual void SetActorHiddenInGame(bool bNewHidden) override;
 
 	// ---- GAS ----
 	// 敌人持有自己的 ASC（OwnerActor = AvatarActor = this），构造时 ConfigureAsEnemy。
@@ -126,7 +139,10 @@ public:
 	ERogueEnemyType GetEnemyType() const { return EnemyType; }
 
 	UFUNCTION(BlueprintPure, Category = "Enemy|State")
-	float GetMoveSpeed() const { return MoveSpeed; }
+	float GetMoveSpeed() const;
+    /** 同时存在多个地面区域时只取最强减速；离开、超时、来源销毁或对象池复用后恢复。 */
+    void RefreshMovementSlow(AActor* Source,float Fraction,float Duration);
+    void ClearMovementSlow(AActor* Source);
     UFUNCTION(BlueprintPure,Category="Enemy|Combat") float GetAttackSpeedMultiplier() const { return FMath::Max(1.f,AttackSpeedMultiplier); }
     UFUNCTION(BlueprintPure,Category="Enemy|Flight") float GetSpawnGroundZ() const { return FlightGroundZ; }
     void SetSpawnGroundReference(const FVector& Location);
@@ -148,6 +164,8 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Enemy|State")
 	bool HasRangedAttack() const { return CurrentArchetype.Ranged.bUsesRangedAttack; }
+
+    const UDataTable* GetEnemyArchetypeTable() const { return EnemyArchetypeDataTable; }
 
 	UFUNCTION(BlueprintPure, Category = "Enemy|State")
 	ERogueEnemyMovementModel GetMovementModel() const { return CurrentArchetype.Movement.Model; }
@@ -203,6 +221,11 @@ public:
 	/** 沿指定方向移动（行为树 Task 调用） */
 	UFUNCTION(BlueprintCallable, Category = "Enemy|Action")
 	void MoveInDirection(const FVector& Direction, float SpeedMultiplier = 1.0f, float DeltaSeconds = 0.0f);
+
+    /** Goal-aware movement for custom BP behaviors; routes around scene collision on the server. */
+    UFUNCTION(BlueprintCallable,Category="Enemy|Action")
+    void MoveTowardsLocation(const FVector& Destination,float SpeedMultiplier=1.0f,float DeltaSeconds=0.0f);
+    void ApplyObstacleMovement(const FVector& Direction,const FVector& Destination,float SpeedMultiplier,float DeltaSeconds);
 
 	/** 执行接触伤害检测（行为树 Task/Service 调用） */
 	UFUNCTION(BlueprintCallable, Category = "Enemy|Action")
@@ -329,9 +352,6 @@ private:
     TWeakObjectPtr<ARogueCharacter> FlyingTarget;
 
 protected:
-	/** 仅供迁移旧资产；运行时由 DA_AudioConfig 按敌人类统一取值。 */
-	UPROPERTY(meta=(DeprecatedProperty, DeprecationMessage="请在 DA_AudioConfig 配置敌人音效"))
-	FRogueAttackAudioSettings AttackAudio;
 
 	/** 在 BP_EnemyBase 类默认值设置一次；子蓝图继承。清空可关闭闪白，不改模型原材质。 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "敌人|受击反馈", meta = (DisplayName = "受击材质"))
@@ -339,6 +359,8 @@ protected:
     /** BP_EnemyBase 配置一次，所有敌人子类继承；与原有闪白可独立开关。 */
     UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="敌人|受击反馈",meta=(DisplayName="受击火花与碎光"))
     FRogueCombatAccentSettings HitAccent;
+    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="敌人|受击反馈",meta=(DisplayName="按武器区分受击特效"))
+    TMap<ERogueWeaponImpactStyle,FRogueCombatAccentSettings> WeaponHitAccents;
     double LastHitAccentTime=-1.e30;
     uint32 LastHitAccentGeneration=MAX_uint32;
 
@@ -442,6 +464,8 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Stats")
 	float MoveSpeed = 260.0f;
+    struct FMovementSlow { float Fraction=0,Until=0; };
+    TMap<TWeakObjectPtr<AActor>,FMovementSlow> MovementSlows;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy|Stats")
 	float ContactDamage = 10.0f;
@@ -507,9 +531,10 @@ private:
     UFUNCTION() void OnRep_RuntimeProfile();
     void RefreshUtilityComponents();
 	friend struct FRogueAttackAudioTestAccess;
-	void NotifyAttackAudio(const FVector& Location);
+	/** One generation-checked cosmetic event fans out to independent audio and pose systems. */
+	void NotifyAttackFeedback(const FVector& Location);
 	UFUNCTION(NetMulticast, Unreliable)
-	void Multicast_AttackAudio(FVector_NetQuantize Location, uint32 Generation);
+	void Multicast_AttackFeedback(FVector_NetQuantize Location, uint32 Generation);
 	FRogueAttackAudioState AttackAudioState;
 	uint32 AttackAudioGeneration = 0;
     friend struct FRogueEnemyHealingTestAccess;
@@ -523,7 +548,7 @@ private:
 	UPROPERTY(ReplicatedUsing = OnRep_HitFeedback)
 	FRogueEnemyHitFeedback HitFeedback;
 	UFUNCTION() void OnRep_HitFeedback();
-	void RecordHitFeedback(float ActualDamage);
+	void RecordHitFeedback(float ActualDamage,uint8 VisualStyle=0);
 	void ConsumeReplicatedHitFeedback();
 	uint32 ObservedHitGeneration = 0;
 	uint32 ObservedHitSequence = 0;
@@ -531,6 +556,9 @@ private:
 
 	/** 基类默认行为 */
 	void HandleDefaultBehavior(float DeltaSeconds);
+	FVector SampleCrowdSteering();
+	FVector CachedCrowdSteering = FVector::ZeroVector;
+	double NextCrowdSampleTime = 0;
 
 	// ---- 攻击决策（AI 侧：只判断"要不要打"，打出去由能力做）----
 	//
@@ -541,6 +569,7 @@ private:
 
 	void FireRangedShot(ARogueCharacter* PlayerCharacter);
     bool StartSkyfallAttack(ARogueCharacter* Target);
+	friend class URogueBossAttackAbility;
 	bool SpawnBulletRing(const FVector& Center, float StartYaw, float SpawnRadius, const FRogueEnemyBulletRingSettings& Settings, float ProjectileDamage, TSubclassOf<ARogueEnemyProjectile> ProjectileClass);
 	void Die(AActor* Killer);
 	void ApplyEnemyStyle();
@@ -578,6 +607,9 @@ private:
 
 	/** 模型/配饰只显示，胶囊负责碰撞；补正旧蓝图的零重力配置。构造后与出池时应用。 */
 	void ConfigureGroundedCollision();
+    void SetMovementTickForPool(bool bActive);
+    bool bMovementTickSuspendedForPool = false;
+    bool bResumeMovementTickAfterPool = true;
 
 	// ---- 出池时复用的材质实例 ----
 	// 常量颜色/自发光参数的 MID 按敌人实例缓存，减少池复用时的重复 UObject 创建。

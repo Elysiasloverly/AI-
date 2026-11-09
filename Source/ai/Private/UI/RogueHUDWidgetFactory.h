@@ -1,5 +1,6 @@
-#pragma once
+﻿#pragma once
 #include "Blueprint/UserWidget.h"
+#include "UI/Widgets/RogueMenuMotionExtension.h"
 
 namespace RogueHUDWidgetFactory
 {
@@ -26,6 +27,7 @@ namespace RogueHUDWidgetFactory
 		}
 
 		Widget->SetOwningRogueHUD(OwningHUD);
+        URogueMenuMotionExtension::Attach(Widget);
 		Widget->AddToViewport(ZOrder);
 		Widget->SetVisibility(ESlateVisibility::Collapsed);
 		return Widget;

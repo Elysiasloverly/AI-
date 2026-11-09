@@ -160,3 +160,5 @@ Rifleman / Assault / Juggernaut / Orbiter / Skirmisher 以及地藏、亡灵的 
    （若 `DA_GameBalance.EnemyWaveEntries` 非空，以资产为准）。
 
 当前表共18行；新治疗类型不使用攻击专属块。首次开放波、权重和“首次开放波次保证登场”在 `DA_GameBalance.EnemyWaveEntries`，不在原型表。
+
+Boss 追加技能使用独立的 `BossSkills` 组件和 `DT_BossSkills`，配置入口、蓄力/连发/持续技能生命周期见 [Boss 技能插槽](Boss-Skill-Slots.md)。普通攻击仍使用本文原型配置。

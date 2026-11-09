@@ -2,6 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "Combat/Weapons/RogueWeaponCombatSettings.h"
+#include "Combat/Visuals/RogueCombatAccentEffect.h"
 #include "RogueProjectile.generated.h"
 
 class USphereComponent;
@@ -111,10 +113,17 @@ class AI_API ARogueProjectile : public AActor
 	GENERATED_BODY()
 
 public:
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="外观|开火特效", meta=(DisplayName="开火闪光与碎光"))
+    FRogueCombatAccentSettings FireAccent;
+    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="外观|命中特效",meta=(DisplayName="命中特效风格"))
+    ERogueWeaponImpactStyle HitVisualStyle=ERogueWeaponImpactStyle::Default;
+    UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="外观|命中特效",meta=(DisplayName="撞墙碎光"))
+    FRogueCombatAccentSettings WallImpactAccent;
+
 	ARogueProjectile();
 
 	virtual void Tick(float DeltaSeconds) override;
-	void ActivatePooledProjectile(AActor* InOwner, APawn* InInstigator, const FVector& SpawnLocation, const FRotator& SpawnRotation, const FVector& InDirection, float InSpeed, float InDamage);
+	void ActivatePooledProjectile(AActor* InOwner, APawn* InInstigator, const FVector& SpawnLocation, const FRotator& SpawnRotation, const FVector& InDirection, float InSpeed, float InDamage, const FRogueProjectileCombatSettings& Combat = FRogueProjectileCombatSettings());
 	void DeactivateToPool();
 	bool IsAvailableInPool() const { return bPoolAvailable; }
 
@@ -137,10 +146,10 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "Visual")
 	FRogueProjectileVisualConfig VisualConfig;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Visual")
+	UPROPERTY()
 	float CollisionRadius = 16.0f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Pooling")
+	UPROPERTY()
 	float PooledLifetime = 30.0f;
 
 	FVector TravelDirection = FVector::ForwardVector;

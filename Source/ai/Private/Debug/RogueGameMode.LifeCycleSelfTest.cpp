@@ -1,5 +1,7 @@
 #include "Framework/RogueGameMode.h"
 
+#if WITH_DEV_AUTOMATION_TESTS
+
 #include "AbilitySystem/RogueAbilitySystemComponent.h"
 #include "AbilitySystem/RogueAbilitySystemLibrary.h"
 #include "AbilitySystem/RogueAttributeSet.h"
@@ -378,3 +380,8 @@ bool ARogueGameMode::RunPlayerLifeCycleSelfTest()
 	}
 	return true;
 }
+
+#else
+bool ARogueGameMode::RunPlayerLifeCycleSelfTest()
+{ return false; }
+#endif

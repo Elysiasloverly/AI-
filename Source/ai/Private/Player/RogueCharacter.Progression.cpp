@@ -1,50 +1,17 @@
 #include "Player/RogueCharacter.h"
+#include "Kismet/GameplayStatics.h"
+#include "Engine/World.h"
 #include "AbilitySystem/RogueAttributeSet.h"
-#include "Debug/RogueSelfTest.h"
 
-#include "Combat/Weapons/RogueWeaponBase.h"
-#include "Combat/Weapons/RogueWeapon_Projectile.h"
-#include "Combat/Weapons/RogueWeapon_Scythe.h"
-#include "Combat/Weapons/RogueWeapon_Rocket.h"
-#include "Combat/Weapons/RogueWeapon_Laser.h"
-#include "Combat/Weapons/RogueWeapon_HellTower.h"
-#include "Combat/Weapons/RogueWeapon_Mortar.h"
-#include "Combat/Projectiles/RogueMortarProjectile.h"
-#include "Combat/Projectiles/RogueRocketProjectile.h"
-#include "Enemies/RogueEnemy.h"
 #include "Framework/RogueGameMode.h"
-#include "Framework/RogueGameState.h"
 #include "Player/RoguePlayerBalanceAsset.h"
 #include "Player/RoguePlayerState.h"
-#include "GameFramework/GameStateBase.h"
-#include "AbilitySystem/RogueAbilitySystemComponent.h"
-#include "AbilitySystem/RogueAbilitySystemLibrary.h"
-#include "AbilitySystem/Abilities/RogueWeaponAbility.h"
-#include "AbilitySystem/GameplayEffects/RogueStateEffects.h"
-#include "AbilitySystem/Abilities/RogueEnemyAttackAbility.h"
-#include "Combat/Targeting/RogueEnemyTrackerSubsystem.h"
-#include "AbilitySystem/GameplayEffects/RogueAttributeUpgradeEffect.h"
-#include "AbilitySystem/RogueGameplayTags.h"
 #include "World/RogueShopTerminal.h"
 #include "UI/RogueHUD.h"
-#include "Combat/Visuals/RogueImpactEffect.h"
-#include "Camera/CameraComponent.h"
-#include "Components/CapsuleComponent.h"
 #include "Components/InputComponent.h"
 // Enhanced Input：绑定与必需资产校验见 RogueCharacter.Input.cpp；缺失时不绑定本角色动作。
-#include "EnhancedInputComponent.h"
-#include "EnhancedInputSubsystems.h"
-#include "InputAction.h"
-#include "InputActionValue.h"
-#include "InputMappingContext.h"
-#include "Engine/DataTable.h"
-#include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Controller.h"
 #include "GameFramework/PlayerController.h"
-#include "GameFramework/SpringArmComponent.h"
-#include "Kismet/GameplayStatics.h"
-#include "Net/UnrealNetwork.h"
-#include "UObject/SoftObjectPath.h"
 
 
 void ARogueCharacter::AddExperience(int32 ExperienceAmount)
@@ -120,7 +87,7 @@ void ARogueCharacter::ClearNearbyShopTerminal(const ARogueShopTerminal* ShopTerm
 bool ARogueCharacter::GetShopPromptWorldLocation(FVector& OutLocation) const
 {
 	const ARogueShopTerminal* ShopTerminal = NearbyShopTerminal.Get();
-	if (!IsValid(ShopTerminal))
+	if (!IsValid(ShopTerminal) || !ShopTerminal->CanInteract(*this))
 	{
 		return false;
 	}
@@ -192,6 +159,12 @@ void ARogueCharacter::ApplyUpgrade(const FRogueUpgradeOption& Upgrade)
 	case ERogueUpgradeType::TalismanCount:
 	case ERogueUpgradeType::TalismanPierce:
 	case ERogueUpgradeType::TalismanRepeat:
+    case ERogueUpgradeType::FrostBladeCount:
+    case ERogueUpgradeType::FrostBladeSize:
+    case ERogueUpgradeType::FrostBladeWave:
+    case ERogueUpgradeType::FrostBladeWaveCount:
+    case ERogueUpgradeType::FrostBladeWaveSize:
+
 	case ERogueUpgradeType::ScytheSize:
 		ApplyUpgradeEffectViaGAS(Upgrade.Type, Upgrade.Magnitude);
 		break;

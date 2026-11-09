@@ -1,4 +1,4 @@
-#include "Player/RoguePlayerState.h"
+﻿#include "Player/RoguePlayerState.h"
 #include "Player/RogueCharacter.h"
 #include "AbilitySystem/RogueAbilitySystemComponent.h"
 #include "AbilitySystem/RogueAttributeSet.h"
@@ -7,7 +7,10 @@
 
 void ARoguePlayerState::PrepareStageTravel()
 {
-    if (!HasAuthority() || !IsBaseAttributesInitialized()) { return; }
+    if (!HasAuthority()) return;
+    Server_SetPauseMenuOpen(false);
+    SuspendUpgradeSelection();
+    if (!IsBaseAttributesInitialized()) return;
     if (const ARogueCharacter* Character = Cast<ARogueCharacter>(GetPawn()))
     {
         Character->CaptureStageGrowth(StageGrowth);
@@ -36,7 +39,8 @@ void ARoguePlayerState::CopyProperties(APlayerState* NewPlayerState)
     New->GrantedBossRewardIds = GrantedBossRewardIds;
     New->PendingUpgrades = PendingUpgrades;
     New->UpgradePickCounts = UpgradePickCounts;
-    New->bAwaitingUpgradeChoice = bAwaitingUpgradeChoice;
+    New->UpgradePickViews = UpgradePickViews;
+    New->bAwaitingUpgradeChoice = false; // 新地图保留奖励，仍由 Q 主动打开。
     New->QueuedUpgradeSelections = QueuedUpgradeSelections;
     New->ShopRuntime = ShopRuntime;
     New->ShopRuntime.CloseShop();

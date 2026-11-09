@@ -1,33 +1,22 @@
-#include "UI/RogueHUD.h"
-
-#include "Player/RogueCharacter.h"
-#include "Enemies/RogueEnemy.h"
-#include "Framework/RogueGameMode.h"
-#include "Framework/RogueGameState.h"
-#include "Player/RoguePlayerState.h"
-#include "UI/Widgets/RogueMenuWidgetBases.h"
-#include "UI/Widgets/RogueHUDViewData.h"
-#include "UI/Widgets/RogueVitalsWidgetBase.h"
-#include "UI/Widgets/RogueDamageFlashWidgetBase.h"
-#include "UI/Widgets/RogueEnemyHealthBarWidgetBase.h"
+﻿#include "UI/RogueHUD.h"
 #include "UI/Widgets/RogueMainMenuWidgetBase.h"
-#include "Networking/RogueRoomSubsystem.h"
 #include "UI/Widgets/RogueTutorialWidgetBase.h"
 #include "UI/Widgets/RogueUpgradeTreeWidgetBase.h"
-#include "Player/RogueDamageCameraShake.h"
-#include "Combat/Targeting/RogueEnemyTrackerSubsystem.h"
+#include "Framework/RogueBattleStage.h"
+#include "UI/Widgets/RogueMenuWidgetBases.h"
 #include "AudioDevice.h"
 #include "Camera/CameraShakeBase.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Engine/Canvas.h"
-#include "Engine/Engine.h"
+#include "Misc/ConfigCacheIni.h"
+#include "Engine/World.h"
+
+#include "Framework/RogueGameState.h"
+#include "Networking/RogueRoomSubsystem.h"
 #include "Engine/GameInstance.h"
-#include "Engine/Font.h"
-#include "GameFramework/GameUserSettings.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
-#include "Misc/ConfigCacheIni.h"
 
 
 #include "RogueHUDWidgetFactory.h"
@@ -147,8 +136,9 @@ void ARogueHUD::StartSinglePlayerGame()
 		return;
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("[Rogue] 主菜单：开始单人游戏 -> %s"), *SinglePlayerMapPath);
-	UGameplayStatics::OpenLevel(this, FName(*SinglePlayerMapPath));
+	const FString ChosenMap = RogueBattleMaps::ChooseInitialDay(SinglePlayerMapPath);
+    UE_LOG(LogTemp, Log, TEXT("[Rogue] 主菜单：开始单人游戏 -> %s"), *ChosenMap);
+    UGameplayStatics::OpenLevel(this, FName(*ChosenMap));
 }
 
 void ARogueHUD::OpenMainMenuSettings()
@@ -256,7 +246,7 @@ void ARogueHUD::RequestReturnToMainMenuAfterDeath()
 {
 	APlayerController* Controller = GetOwningPlayerController();
 	if (Controller == nullptr || !Controller->IsLocalController()) return;
-	PauseMenuPage = ERoguePauseMenuPage::None;
+	ClosePauseMenu();
 	UGameplayStatics::SetGamePaused(this, false);
 	// The engine leaves the current network session and returns to GameDefaultMap.
 	// A joining client leaves locally; a departing listen host closes its hosted game.

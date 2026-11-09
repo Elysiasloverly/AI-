@@ -1,0 +1,15 @@
+float2 p = (UV - .5) * 2;
+float r = length(p);
+float a = atan2(p.y, p.x);
+float f = 1 - smoothstep(.028, .082, abs(r - .75 - .016 * sin(a * 19)));
+float2 q = float2(p.x * .97 - p.y * .24, p.x * .24 + p.y * .97);
+float locked = (1 - smoothstep(.07, .14, abs(abs(q.x) + abs(q.y) - .38))) * step(abs(q.x), .39);
+float open = (1 - smoothstep(.05, .12, abs(q.x))) * step(abs(q.y), .43);
+open = max(open, (1 - smoothstep(.05, .12, abs(q.y))) * step(abs(q.x), .40));
+float first = length(q - (float2(-.29, .06) + float2(.20, .21) * saturate(dot(q - float2(-.29, .06), float2(.20, .21)) / .0841)));
+float second = length(q - (float2(-.09, .27) + float2(.46, -.51) * saturate(dot(q - float2(-.09, .27), float2(.46, -.51)) / .4717)));
+float done = 1 - smoothstep(.05, .11, min(first, second));
+float mark = State > 1.5 ? done : (State > .5 ? open : locked);
+float3 ink = State > 1.5 ? float3(.19, .38, .30) : (State > .5 ? float3(.55, .095, .12) : float3(.25, .28, .33));
+float grain = .80 + .20 * frac(sin(dot(floor(UV * 92), float2(71.7, 19.1))) * 43758.55);
+return float4(ink, max(f * .78, mark) * grain * (State > .5 ? .92 : .72));

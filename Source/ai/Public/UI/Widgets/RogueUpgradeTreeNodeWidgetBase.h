@@ -1,9 +1,11 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "Shared/RogueTypes.h"
 #include "RogueUpgradeTreeNodeWidgetBase.generated.h"
 
+class URoguePresentationTheme;
 class UBorder;
 class UButton;
 class UTextBlock;
@@ -23,6 +25,8 @@ struct AI_API FRogueUpgradeTreeNodeViewData
 {
 	GENERATED_BODY()
 	UPROPERTY(BlueprintReadOnly) FName NodeId;
+    UPROPERTY(BlueprintReadOnly) ERogueUpgradeType IconType = ERogueUpgradeType::AttackPower;
+    UPROPERTY(BlueprintReadOnly) bool bWeaponIcon = false;
 	UPROPERTY(BlueprintReadOnly) FText Title;
 	UPROPERTY(BlueprintReadOnly) FText Description;
 	UPROPERTY(BlueprintReadOnly) FText Cost;
@@ -43,6 +47,7 @@ class AI_API URogueUpgradeTreeNodeWidgetBase : public UUserWidget
 {
 	GENERATED_BODY()
 public:
+    UPROPERTY(EditDefaultsOnly,BlueprintReadWrite,Category="Rogue|美术") TObjectPtr<URoguePresentationTheme> PresentationTheme;
 	UFUNCTION(BlueprintCallable, Category = "Rogue|升级树")
 	void SetViewData(const FRogueUpgradeTreeNodeViewData& InViewData);
 

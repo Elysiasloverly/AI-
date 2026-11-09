@@ -1,4 +1,8 @@
-#include "Player/RoguePlayerState.h"
+﻿#include "Player/RoguePlayerState.h"
+#include "UI/RogueHUD.h"
+#include "UI/Widgets/RogueOwnedItemsWidget.h"
+#include "Combat/Weapons/RogueWeaponBase.h"
+#include "Combat/Weapons/RogueWeaponCatalog.h"
 
 #include "AbilitySystem/RogueAbilitySystemComponent.h"
 #include "AbilitySystem/RogueAbilitySet.h"
@@ -6,6 +10,7 @@
 #include "AbilitySystem/RogueAttributeSet.h"
 #include "AbilitySystem/Cues/RogueGameplayCue_Impact.h"
 #include "Framework/RogueGameMode.h"
+#include "Framework/RogueGameState.h"
 #include "GameFramework/GameStateBase.h"
 #include "Player/RogueCharacter.h"
 #include "Net/UnrealNetwork.h"
@@ -36,7 +41,11 @@ void ARoguePlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 	DOREPLIFETIME_CONDITION(ARoguePlayerState, bProgressionFailed, COND_OwnerOnly);
 	DOREPLIFETIME_CONDITION(ARoguePlayerState, BossIceBricksEarnedThisRun, COND_OwnerOnly);
 	DOREPLIFETIME_CONDITION(ARoguePlayerState, PendingUpgrades, COND_OwnerOnly);
+    DOREPLIFETIME_CONDITION(ARoguePlayerState, UpgradePickViews, COND_OwnerOnly);
 	DOREPLIFETIME_CONDITION(ARoguePlayerState, bAwaitingUpgradeChoice, COND_OwnerOnly);
+    DOREPLIFETIME_CONDITION(ARoguePlayerState, QueuedUpgradeSelections, COND_OwnerOnly);
+
+	DOREPLIFETIME_CONDITION(ARoguePlayerState, bPauseMenuOpen, COND_OwnerOnly);
 
 	// 商店镜像同样只发给拥有者（别人不需要看到你的商店界面状态）
 	DOREPLIFETIME_CONDITION(ARoguePlayerState, bShopOpen, COND_OwnerOnly);
@@ -117,11 +126,23 @@ float ARoguePlayerState::GetShopSecondsUntilRefresh() const
 	return FMath::Max(0.0f, ShopAutoRefreshDeadline - CurrentServerTime);
 }
 
+void ARoguePlayerState::Server_SetPauseMenuOpen_Implementation(bool bOpen)
+{
+    const auto* Character = GetPawn<ARogueCharacter>();
+    const auto* State = GetWorld() ? GetWorld()->GetGameState<ARogueGameState>() : nullptr;
+    bPauseMenuOpen = bOpen && Character && Character->IsAlive() && (!State || !State->IsGameOver());
+    UE_LOG(LogTemp,Log,TEXT("[RoguePause] Server State=%s Requested=%d Active=%d Pawn=%s Owner=%s"),*GetName(),bOpen,bPauseMenuOpen,*GetNameSafe(Character),*GetNameSafe(GetOwner()));
+    ForceNetUpdate();
+}
+
 void ARoguePlayerState::Server_RequestOpenShop_Implementation()
 {
-	if (ARogueGameMode* RogueGameMode = GetWorld() != nullptr ? GetWorld()->GetAuthGameMode<ARogueGameMode>() : nullptr)
+	ARogueCharacter* Character = GetPawn<ARogueCharacter>();
+	FVector ShopPrompt;
+	if (!Character || !Character->GetShopPromptWorldLocation(ShopPrompt)) { return; }
+	if (ARogueGameMode* RogueGameMode = GetWorld()->GetAuthGameMode<ARogueGameMode>())
 	{
-		RogueGameMode->TryOpenShop(Cast<ARogueCharacter>(GetPawn()));
+		RogueGameMode->TryOpenShop(Character);
 	}
 }
 
@@ -180,13 +201,33 @@ void ARoguePlayerState::CloseUpgradeSelection()
 
 	bAwaitingUpgradeChoice = false;
 	PendingUpgrades.Reset();
+    ForceNetUpdate();
+}
+
+int32 ARoguePlayerState::GetPendingUpgradeCount() const
+{
+    return int32(FMath::Min<int64>(MAX_int32,int64(QueuedUpgradeSelections)+(PendingUpgrades.IsEmpty()?0:1)));
+}
+
+void ARoguePlayerState::SuspendUpgradeSelection()
+{
+    if(!HasAuthority())return;
+    bAwaitingUpgradeChoice=false;
+    ForceNetUpdate();
+}
+
+void ARoguePlayerState::Server_ToggleUpgradeSelection_Implementation()
+{
+    if(auto* Mode=GetWorld()?GetWorld()->GetAuthGameMode<ARogueGameMode>():nullptr)
+        Mode->ToggleUpgradeSelectionForPlayer(this);
 }
 
 void ARoguePlayerState::QueueUpgradeSelections(int32 Count)
 {
 	if (HasAuthority() && Count > 0)
 	{
-		QueuedUpgradeSelections += Count;
+        QueuedUpgradeSelections=int32(FMath::Min<int64>(MAX_int32,int64(QueuedUpgradeSelections)+Count));
+        ForceNetUpdate();
 	}
 }
 
@@ -198,6 +239,7 @@ bool ARoguePlayerState::ConsumeQueuedSelection()
 	}
 
 	--QueuedUpgradeSelections;
+    ForceNetUpdate();
 	return true;
 }
 
@@ -234,8 +276,11 @@ void ARoguePlayerState::ResetUpgradeState()
 		return;
 	}
 
+	bPauseMenuOpen = false;
 	PendingUpgrades.Reset();
 	UpgradePickCounts.Reset();
+    UpgradePickViews.Reset();
+    ForceNetUpdate();
 	bAwaitingUpgradeChoice = false;
 	QueuedUpgradeSelections = 0;
 }
@@ -406,6 +451,8 @@ void ARoguePlayerState::BeginProgressionHandshake()
 		return;
 	}
 	APlayerController* Controller = Cast<APlayerController>(GetOwner());
+	
+	//主机||单机玩家快照走这里
 	if (Controller != nullptr && Controller->GetLocalPlayer() != nullptr)
 	{
 		const URogueProgressionSubsystem* Progression = Controller->GetLocalPlayer()->GetSubsystem<URogueProgressionSubsystem>();
@@ -417,6 +464,8 @@ void ARoguePlayerState::BeginProgressionHandshake()
 	}
 	// Native unit worlds have no local players or network connection. They can inject
 	// a profile before Possess; this fallback is deliberately not an RPC submission.
+	
+	//test
 	const UGameInstance* Instance = GetWorld()->GetGameInstance();
 	if (GetNetMode() == NM_Standalone && (Instance == nullptr || Instance->GetNumLocalPlayers() == 0)
 		&& (Controller == nullptr || Controller->GetNetConnection() == nullptr))
@@ -424,6 +473,7 @@ void ARoguePlayerState::BeginProgressionHandshake()
 		bProgressionReady = true;
 		return;
 	}
+	
 	const double Now = GetWorld()->GetTimeSeconds();
 	if (ProgressionHandshakeStarted < 0.0) { ProgressionHandshakeStarted = Now; }
 	if (Now - ProgressionHandshakeStarted >= FMath::Clamp(ProgressionHandshakeTimeout, 5.0f, 120.0f))
@@ -503,6 +553,34 @@ void ARoguePlayerState::GrantBossIceBrick(const FGuid& RewardId, int32 Amount)
 	}
 }
 
+void ARoguePlayerState::NotifyCardAcquiredForPresentation(ERogueUpgradeType Type, const FGuid& ReceiptId)
+{
+    if (!HasAuthority() || !ReceiptId.IsValid()) return;
+    const int32 Picks = GetUpgradePickCount(Type);
+    int32 DisplayCount = Picks;
+    if (RogueWeaponCatalog::IsWeaponQuantity(Type))
+    {
+        const auto* Character = Cast<ARogueCharacter>(GetPawn());
+        if (!Character) return;
+        const auto* Weapon = Character->GetWeapons().FindByPredicate([Type](const auto& Candidate)
+        {
+            return IsValid(Candidate) && Candidate->GetCountUpgradeType() == Type;
+        });
+        if (!Weapon) return;
+        DisplayCount = (*Weapon)->GetEffectiveCount();
+    }
+    Client_NotifyCardAcquired(Type, ReceiptId, Picks, DisplayCount);
+}
+
+void ARoguePlayerState::Client_NotifyCardAcquired_Implementation(
+    ERogueUpgradeType Type, const FGuid& ReceiptId, int32 PickCount, int32 DisplayCount)
+{
+    const auto* PC = Cast<APlayerController>(GetOwner());
+    const auto* HUD = PC && PC->IsLocalController() ? Cast<ARogueHUD>(PC->GetHUD()) : nullptr;
+    if (auto* Bar = HUD ? HUD->GetOwnedItemsWidget() : nullptr)
+        Bar->ConfirmCardAcquired(Type, ReceiptId, PickCount, DisplayCount);
+}
+
 void ARoguePlayerState::Client_GrantBossIceBrick_Implementation(const FGuid& RewardId, int32 Amount)
 {
 	PendingLocalBossRewards.Add(RewardId, FMath::Max(Amount, 0));
@@ -563,4 +641,19 @@ void ARoguePlayerState::FailProgressionHandshake()
 		if (OldPawn) { OldPawn->Destroy(); }
 		PC->ClientReturnToMainMenuWithTextReason(FText::FromString(TEXT("玩家升级树初始化超时，请返回主菜单后重新加入。你的本地进度没有被修改。")));
 	}
+}
+
+void ARoguePlayerState::RegisterUpgradePick(ERogueUpgradeType Type)
+{
+    if(!HasAuthority()||int32(Type)>=StaticEnum<ERogueUpgradeType>()->NumEnums()-1)return;
+    int32& Count=UpgradePickCounts.FindOrAdd(Type);if(Count==MAX_int32)return;++Count;
+    auto* View=UpgradePickViews.FindByPredicate([Type](const FRogueUpgradePickView& V){return V.Type==Type;});
+    if(!View){FRogueUpgradePickView New;New.Type=Type;UpgradePickViews.Add(New);View=&UpgradePickViews.Last();}
+    View->Count=Count;ForceNetUpdate();
+}
+void ARoguePlayerState::OnRep_UpgradePickViews()
+{
+    UpgradePickCounts.Reset();
+    for(const auto& View:UpgradePickViews)
+        if(View.Count>0&&int32(View.Type)<StaticEnum<ERogueUpgradeType>()->NumEnums()-1)UpgradePickCounts.Add(View.Type,View.Count);
 }

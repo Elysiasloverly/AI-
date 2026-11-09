@@ -1,0 +1,10 @@
+{
+  "date": "2026-11-03",
+  "tool": "image_gen.imagegen",
+  "prompt": "Game VFX production texture, one isolated softly swirling spirit-vapour puff for a Touhou-inspired chibi storybook game, transparent background. Grayscale white and very pale gray gouache/ink smoke with 3 loose curved wisps and a fading central hollow, no hard outline, beautifully feathered semitransparent alpha, organic layered watercolor gradients. Flat orthographic sprite only, face-on, fits in a square with generous transparent padding. No scene, no character, no text, no symbols, no sparkles, no starburst, no fire, no solid disk, no cast shadow, no baked coloured illumination. Designed to tint cyan or pale gold in a shader when a fairy enemy vanishes. Simple clear silhouette, soft vapor, light airy edges. True transparency preserving faint detail.",
+  "transparent_background": true,
+  "original": "C:/Users/Elysia/.codex/generated_images/01a13125-3e60-7880-99c8-c87b91946e0f/exec-7e7c176f-718e-4094-a933-c7c27a53e997.png",
+  "source": "ArtSource/Feedback/T_SpiritVapor_Source.png",
+  "asset": "/Game/GameAssets/ArtDirection/Feedback/Textures/T_SpiritVapor",
+  "processing": "Original transparent PNG copied; no raster repaint. UE import uses linear color."
+}

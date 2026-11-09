@@ -29,9 +29,6 @@ struct AI_API FRogueSpawnBatchRule
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "从第几波开始", ToolTip = "达到该波次时，本条规则生效；不再要求全场空余名额。", ClampMin = "1"))
 	int32 StartWave = 1;
 
-	/** 旧资产兼容字段：全场存活限制已移除，不显示、不参与刷怪计算。 */
-	UPROPERTY()
-	int32 RequiredFreeSlots = 0;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "每次尝试生成几只", ToolTip = "控制一次刷怪尝试的目标只数；本波累计名额、各类型限制和落点仍可能减少实际数量。多条满足时采用列表中最后一条。", ClampMin = "1"))
 	int32 BatchSize = 1;
@@ -66,24 +63,12 @@ struct AI_API FRogueSpawnBalanceSettings
     UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(DisplayName="每波普通怪总数封顶（0=不限）", ToolTip="限制每波累计总量；每类敌人的每波名额仍单独生效。所有可用类型的名额用完时提前停刷；白天与黑夜均等待清场后切波。", ClampMin="0"))
     int32 EnemiesPerWaveLimit = 0;
 
-	/** 旧资产兼容字段：全场存活限制已移除，不显示、不参与刷怪计算。 */
-	UPROPERTY()
-	int32 MaxAlivePerWave = 8;
 
-	/** 旧资产兼容字段：全场存活限制已移除，不显示、不参与刷怪计算。 */
-	UPROPERTY()
-	int32 MaxAliveLimit = 0;
 
-	/** 旧资产兼容字段：全场存活限制已移除，不显示、不参与刷怪计算。 */
-	UPROPERTY()
-	int32 BossAliveReduction = 12;
 
-	/** 旧资产兼容字段：全场存活限制已移除，不显示、不参与刷怪计算。 */
-	UPROPERTY()
-	int32 BossAliveMinimumLimit = 20;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "每次刷怪数量规则", ToolTip = "默认先尝试每次2只，再尝试每次3只；按列表顺序匹配，后面的匹配项覆盖前面。清空则每次尝试1只。", TitleProperty = "StartWave"))
-	TArray<FRogueSpawnBatchRule> BatchRules = { {5, 10, 2}, {10, 24, 3} };
+	TArray<FRogueSpawnBatchRule> BatchRules = { {5, 2}, {10, 3} };
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "每波刷怪加速增量", ToolTip = "间隔除以 1 + (波次 - 1) × 本值，再受加速上限限制。只改变刷怪速度，不增强敌人属性。", ClampMin = "0"))
 	float AccelerationPerWave = 0.21f;
@@ -105,13 +90,7 @@ struct AI_API FRogueSpawnBalanceSettings
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "基础刷怪间隔（秒）", ToolTip = "未应用波次加速和开局放缓前的基础刷怪间隔。", Units = "s", ClampMin = "0"))
 	float SpawnInterval = 0.88f;
 
-    // 仅保留旧包字段兼容；昼夜均清场切波，该旧字段不参与调度。
-	UPROPERTY()
-	float WaveDuration = 25.0f;
 
-	/** 旧资产兼容字段：全场存活限制已移除，不显示、不参与刷怪计算。 */
-	UPROPERTY()
-	int32 BaseMaxAliveEnemies = 40;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "与玩家最小生成距离", ToolTip = "生成点与玩家之间的最小水平距离。", Units = "cm", ClampMin = "0"))
 	float EnemySpawnMinimumDistance = 1100.0f;
@@ -227,10 +206,10 @@ struct AI_API FRogueSteppedReward
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "基础奖励", ToolTip = "最终基础奖励 = 基础奖励 + 波次 / 增加间隔，按整数除法计算，再限制在基础奖励和上限之间。"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "基础奖励", ToolTip = "奖励按波次分档增加，再限制在基础奖励和上限之间。普通敌人金币每档的增量在下方单独设置。"))
 	int32 BaseAmount = 1;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "每几波增加1点", ToolTip = "例如填6：第6波起多1点，第12波起多2点。运行时至少按1波计算。", ClampMin = "1"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "每隔几波增加", ToolTip = "例如填 6，第 6 波进入第一档，第 12 波进入第二档。运行时至少按 1 波计算。", ClampMin = "1"))
 	int32 WaveInterval = 1;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "基础奖励上限", ToolTip = "普通经验达到该上限后，仍会加上敌人类型的额外经验；金币没有这一项额外加成。"))
@@ -277,6 +256,9 @@ struct AI_API FRogueKillRewardSettings
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "普通敌人金币", ToolTip = "按击杀时的当前波次计算。"))
 	FRogueSteppedReward EnemyGold = {1, 6, 3};
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "普通敌人每档增加金币", ToolTip = "例如间隔 6 波、每档增加 2 金币，第 6 波多 2，第 12 波多 4，最高受普通敌人金币上限限制。填 0 时保持基础奖励。", ClampMin = "0"))
+	int32 EnemyGoldStepAmount = 1;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (DisplayName = "首领经验", ToolTip = "按首领出生波次确定。"))
 	FRogueBossExperienceReward BossExperience;
@@ -361,7 +343,6 @@ class AI_API URogueGameBalanceAsset : public UPrimaryDataAsset
 
 public:
 	virtual void Serialize(FArchive& Ar) override;
-	virtual void PostLoad() override;
 	/** 读取项目默认 DA_GameBalance；客户端/UI 也能拿到同一份数值。 */
 	UFUNCTION(BlueprintPure, Category = "Rogue|Balance")
 	static URogueGameBalanceAsset* GetDefaultGameBalance();
@@ -408,174 +389,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "07.运行时", meta = (DisplayName = "场景优化", ToolTip = "关卡环境优化开关与灯光参数。", ShowOnlyInnerProperties))
 	FRogueSceneOptimizationSettings Scene;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="08.昼夜阶段", meta=(DisplayName="昼夜切换", ToolTip="白天清场切波与休整切图、黑夜计时切波和攻击速度倍率。", ShowOnlyInnerProperties))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="08.昼夜阶段", meta=(DisplayName="昼夜切换", ToolTip="白天—黑夜—白天—黑夜；每阶段从对应地图池随机选图，清场休整后全员切换。", ShowOnlyInnerProperties))
 	FRogueBattleStageSettings BattleStage;
-
-private:
-	// 仅用于读取旧版资产。PostLoad 按自定义版本迁移，保存时弃用字段不再写入；编辑界面仅展示上方结构。
-	UPROPERTY()
-	int32 BossAliveMinMaxEnemies_DEPRECATED = 20;
-
-	UPROPERTY()
-	int32 BossAliveMaxEnemyReduction_DEPRECATED = 12;
-
-	UPROPERTY()
-	int32 MaxAliveEnemiesPerWave_DEPRECATED = 8;
-
-	UPROPERTY()
-	int32 MaxAliveEnemiesHardLimit_DEPRECATED = 0;
-
-	UPROPERTY()
-	int32 DoubleSpawnWave_DEPRECATED = 5;
-
-	UPROPERTY()
-	int32 DoubleSpawnSlack_DEPRECATED = 10;
-
-	UPROPERTY()
-	int32 TripleSpawnWave_DEPRECATED = 10;
-
-	UPROPERTY()
-	int32 TripleSpawnSlack_DEPRECATED = 24;
-
-	UPROPERTY()
-	float DifficultyScalePerWave_DEPRECATED = 0.21f;
-
-	UPROPERTY()
-	float MaxDifficultyScale_DEPRECATED = 4.8f;
-
-	UPROPERTY()
-	int32 EarlyWaveSlowdownEndWave_DEPRECATED = 4;
-
-	UPROPERTY()
-	float EarlyWaveSpawnMultiplierAtWaveOne_DEPRECATED = 1.35f;
-
-	UPROPERTY()
-	float EarlyWaveSpawnMultiplierAtEnd_DEPRECATED = 1.0f;
-
-	UPROPERTY()
-	float MinimumSpawnDelay_DEPRECATED = 0.20f;
-
-	UPROPERTY()
-	float BaseEnemyHealth_DEPRECATED = 35.0f;
-
-	UPROPERTY()
-	float EnemyHealthPerWave_DEPRECATED = 10.0f;
-
-	UPROPERTY()
-	float BaseEnemySpeed_DEPRECATED = 240.0f;
-
-	UPROPERTY()
-	float EnemySpeedPerWave_DEPRECATED = 12.0f;
-
-	UPROPERTY()
-	float BaseEnemyDamage_DEPRECATED = 8.0f;
-
-	UPROPERTY()
-	float EnemyDamagePerWave_DEPRECATED = 1.5f;
-
-	UPROPERTY()
-	int32 BaseExperienceReward_DEPRECATED = 1;
-
-	UPROPERTY()
-	int32 ExperienceRewardWaveDivisor_DEPRECATED = 2;
-
-	UPROPERTY()
-	int32 MaxExperienceReward_DEPRECATED = 5;
-
-	UPROPERTY()
-	int32 MidGameHealthStartWave_DEPRECATED = 8;
-
-	UPROPERTY()
-	float MidGameHealthPerWave_DEPRECATED = 0.08f;
-
-	UPROPERTY()
-	float MidGameHealthCap_DEPRECATED = 0.72f;
-
-	UPROPERTY()
-	int32 LateGameHealthStartWave_DEPRECATED = 16;
-
-	UPROPERTY()
-	float LateGameHealthPerWave_DEPRECATED = 0.05f;
-
-	UPROPERTY()
-	float LateGameHealthCap_DEPRECATED = 0.50f;
-
-	UPROPERTY()
-	float MaxEnemyHealth_DEPRECATED = -1.0f;
-
-	UPROPERTY()
-	float BaseBossHealth_DEPRECATED = 420.0f;
-
-	UPROPERTY()
-	float BossHealthPerWave_DEPRECATED = 140.0f;
-
-	UPROPERTY()
-	float BaseBossSpeed_DEPRECATED = 250.0f;
-
-	UPROPERTY()
-	float BossSpeedPerWave_DEPRECATED = 10.0f;
-
-	UPROPERTY()
-	float BaseBossDamage_DEPRECATED = 18.0f;
-
-	UPROPERTY()
-	float BossDamagePerWave_DEPRECATED = 2.6f;
-
-	UPROPERTY()
-	int32 BossExperiencePerWave_DEPRECATED = 4;
-
-	UPROPERTY()
-	int32 MinBossExperienceReward_DEPRECATED = 30;
-
-	UPROPERTY()
-	int32 MaxBossExperienceReward_DEPRECATED = 120;
-
-	UPROPERTY()
-	int32 LateEliteBossStartWave_DEPRECATED = 20;
-
-	UPROPERTY()
-	float EarlyEliteBossHealthMultiplier_DEPRECATED = 1.58f;
-
-	UPROPERTY()
-	float LateEliteBossHealthMultiplier_DEPRECATED = 1.72f;
-
-	UPROPERTY()
-	float EarlyEliteBossDamageMultiplier_DEPRECATED = 1.16f;
-
-	UPROPERTY()
-	float LateEliteBossDamageMultiplier_DEPRECATED = 1.24f;
-
-	UPROPERTY()
-	float EliteBossSpeedMultiplier_DEPRECATED = 1.05f;
-
-	UPROPERTY()
-	int32 EnemyCurrencyBaseReward_DEPRECATED = 1;
-
-	UPROPERTY()
-	int32 EnemyCurrencyWaveDivisor_DEPRECATED = 6;
-
-	UPROPERTY()
-	int32 MaxEnemyCurrencyReward_DEPRECATED = 3;
-
-	UPROPERTY()
-	int32 BossCurrencyBaseReward_DEPRECATED = 14;
-
-	UPROPERTY()
-	int32 BossCurrencyPerWave_DEPRECATED = 1;
-
-	UPROPERTY()
-	int32 MaxBossCurrencyReward_DEPRECATED = 28;
-
-	UPROPERTY()
-	int32 ShopOfferCount_DEPRECATED = 6;
-
-	UPROPERTY()
-	int32 ShopOfferCost_DEPRECATED = 22;
-
-	UPROPERTY()
-	int32 ShopRefreshCost_DEPRECATED = 14;
-
-	UPROPERTY()
-	float ShopAutoRefreshInterval_DEPRECATED = 60.0f;
 
 };

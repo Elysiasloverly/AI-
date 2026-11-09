@@ -19,6 +19,8 @@ class AI_API URogueAttributeSet : public UAttributeSet
 	GENERATED_BODY()
 
 public:
+    /** Non-owning context for synchronous damage delegates, restored after PostGameplayEffectExecute. */
+    const FGameplayEffectSpec* GetExecutingDamageSpec() const { return ExecutingDamageSpec; }
 	URogueAttributeSet();
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
@@ -222,7 +224,19 @@ public:
 	FGameplayAttributeData TalismanRepeatBonus;
 	ATTRIBUTE_ACCESSORS(URogueAttributeSet, TalismanRepeatBonus);
 
+    UPROPERTY(BlueprintReadOnly,Replicated,Category="Rogue|武器加成") FGameplayAttributeData FrostBladeCountBonus;
+    ATTRIBUTE_ACCESSORS(URogueAttributeSet,FrostBladeCountBonus);
+    UPROPERTY(BlueprintReadOnly,Replicated,Category="Rogue|武器加成") FGameplayAttributeData FrostBladeSizeBonus;
+    ATTRIBUTE_ACCESSORS(URogueAttributeSet,FrostBladeSizeBonus);
+    UPROPERTY(BlueprintReadOnly,Replicated,Category="Rogue|武器加成") FGameplayAttributeData FrostBladeWaveBonus;
+    ATTRIBUTE_ACCESSORS(URogueAttributeSet,FrostBladeWaveBonus);
+    UPROPERTY(BlueprintReadOnly,Replicated,Category="Rogue|武器加成") FGameplayAttributeData FrostBladeWaveCountBonus;
+    ATTRIBUTE_ACCESSORS(URogueAttributeSet,FrostBladeWaveCountBonus);
+    UPROPERTY(BlueprintReadOnly,Replicated,Category="Rogue|武器加成") FGameplayAttributeData FrostBladeWaveSizeBonus;
+    ATTRIBUTE_ACCESSORS(URogueAttributeSet,FrostBladeWaveSizeBonus);
+
 private:
+    const FGameplayEffectSpec* ExecutingDamageSpec=nullptr;
 	/** 血量归零时给自己施加死亡效果（授予 State.Dead）。幂等：已死则直接返回。 */
 	void TryApplyDeathEffect();
 

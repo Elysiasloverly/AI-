@@ -2,6 +2,7 @@
 #include "Combat/Visuals/RogueCombatAccentEffect.h"
 #include "Combat/Pooling/RogueCombatPoolSubsystem.h"
 #include "Combat/Weapons/RogueWeapon_Projectile.h"
+#include "Combat/Projectiles/RogueProjectile.h"
 #include "AbilitySystem/RogueAbilitySystemLibrary.h"
 #include "AbilitySystem/RogueGameplayTags.h"
 #include "AbilitySystem/RogueAttributeSet.h"
@@ -87,7 +88,7 @@ bool FRogueAccentFireTest::RunTest(const FString&)
     using namespace RogueAccentTests;FFixture F;if(!F.Init())return false;
     auto* PC=F.W->SpawnActor<ARoguePlayerController>();PC->GetPlayerState<ARoguePlayerState>()->SetProgressionSnapshotForRun({});
     FTransform Transform(FVector(0,0,300));auto* P=F.W->SpawnActorDeferred<ARogueCharacter>(ARogueCharacter::StaticClass(),Transform,nullptr,nullptr,ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
-    auto* Table=NewObject<UDataTable>(F.W);Table->RowStruct=FRogueWeaponTableRow::StaticStruct();FRogueWeaponTableRow Row;Row.WeaponClass=ARogueWeapon_Projectile::StaticClass();Row.Count=1;Row.FireAccent=F.Settings;Table->AddRow(TEXT("Projectile"),Row);
+    auto* Table=NewObject<UDataTable>(F.W);Table->RowStruct=FRogueWeaponTableRow::StaticStruct();FRogueWeaponTableRow Row;Row.WeaponClass=ARogueWeapon_Projectile::StaticClass();Row.Count=1;TGuardValue<FRogueCombatAccentSettings> AccentGuard(GetMutableDefault<ARogueProjectile>()->FireAccent,F.Settings);Table->AddRow(TEXT("Projectile"),Row);
     FindFProperty<FObjectProperty>(ARogueCharacter::StaticClass(),TEXT("WeaponDataTable"))->SetObjectPropertyValue_InContainer(P,Table);
     P->FinishSpawning(Transform);PC->Possess(P);P->SetActorTickEnabled(false);P->GetCharacterMovement()->SetComponentTickEnabled(false);P->GetAbilitySystemComponent()->CancelAllAbilities();
     auto* Weapon=P->FindWeapon<ARogueWeapon_Projectile>();if(!Weapon)return false;
@@ -96,6 +97,20 @@ bool FRogueAccentFireTest::RunTest(const FString&)
     P->Tick(.01f);TestEqual(TEXT("Server multicast does not replay local flash"),F.Active(),1);
     Weapon->PlayFireAccent(Fire);TestEqual(TEXT("Duplicate trigger in same frame is throttled"),F.Active(),1);
     F.Advance(.3f);TestEqual(TEXT("Flash naturally expires"),F.Active(),0);
-    Weapon->GetConfig().FireAccent.bEnabled=false;Weapon->PlayFireAccent(Fire);TestEqual(TEXT("Weapon config can disable flash without disabling fire"),F.Active(),0);return true;
+    GetMutableDefault<ARogueProjectile>()->FireAccent.bEnabled=false;Weapon->PlayFireAccent(Fire);TestEqual(TEXT("Projectile blueprint visual config can disable flash without disabling fire"),F.Active(),0);return true;
+}
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRogueHeavyAccentBudget,"Rogue.Presentation.Accents.HeavyBlastSurvivesSaturationWithoutGrowingBudget",RogueAccentTests::Flags)
+bool FRogueHeavyAccentBudget::RunTest(const FString&)
+{
+    using namespace RogueAccentTests;FFixture F;if(!F.Init())return false;
+    F.Settings.EffectClass=LoadClass<ARogueCombatAccentEffect>(nullptr,TEXT("/Game/BP/Effects/WeaponCast/BP_CastFrost.BP_CastFrost_C"));
+    for(int I=0;I<48;++I)if(!F.Spawn())return false;
+    TestEqual(TEXT("Normal pool reaches its established budget"),F.Active(),48);
+    TestNull(TEXT("Another minor effect is throttled"),F.Spawn());
+    F.Settings.EffectClass=LoadClass<ARogueCombatAccentEffect>(nullptr,TEXT("/Game/BP/Effects/WeaponCast/BP_BlastEmber.BP_BlastEmber_C"));
+    TestNotNull(TEXT("Heavy explosion remains visible in a saturated fight"),F.Spawn());
+    TestEqual(TEXT("Priority does not increase active count"),F.Active(),48);
+    F.Advance(.5f);TestEqual(TEXT("Priority recycling leaves no lingering effects"),F.Active(),0);
+    return true;
 }
 #endif

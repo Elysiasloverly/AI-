@@ -1,4 +1,4 @@
-// 敌人生成子系统 —— 管理敌人生成、波次推进与生成位置计算
+﻿// 敌人生成子系统 —— 管理敌人生成、波次推进与生成位置计算
 #pragma once
 
 #include "CoreMinimal.h"
@@ -9,6 +9,7 @@
 
 class ARogueEnemy;
 class ARogueEnemySpawnRegion;
+class ARogueRangedSpawnPoint;
 class ARogueCharacter;
 class URogueGameBalanceAsset;
 class URogueCombatPoolSubsystem;
@@ -33,6 +34,13 @@ public:
 		URogueGameBalanceAsset* InBalanceAsset,
 		UDataTable* InEnemyArchetypeTable = nullptr);
 
+    /** 点位在 BeginPlay/EndPlay 注册；避免每次刷怪遍历整张地图的 Actor。 */
+    void RegisterRangedSpawnPoint(ARogueRangedSpawnPoint* Point);
+    void UnregisterRangedSpawnPoint(ARogueRangedSpawnPoint* Point);
+    /** 与正式出生共用的地面/空间校验，也用于编辑器摆放点位。不会生成敌人。 */
+    bool ProjectSpawnSite(const ARogueEnemy* Enemy, const ARogueEnemySpawnRegion* Region,
+        const FVector& Candidate, FVector& OutLocation) const;
+
 	/** 每帧调度生成（由 GameMode 在 Tick 中调用） */
 	void TickSpawning(float DeltaSeconds, FRogueRunState& RunState, ARogueCharacter* Character, const ARogueEnemySpawnRegion* Region);
 
@@ -52,13 +60,25 @@ public:
     int32 GetSpawnedCountThisWave() const { return TotalSpawnedThisWave; }
 private:
     friend struct FRogueBattleStageTestAccess;
+    friend class URogueEditorAssetUtils;
     bool HasRemainingNormalWaveBudget(int32 Wave) const;
+    int32 ResolveNightMeleeTarget(int32 Wave) const;
+    bool IsNightMeleeType(ERogueEnemyType Type) const { return NightMeleeTypes.Contains(Type); }
+    bool bNightComposition = false;
+    int32 WaveMeleeTarget = 0;
+    int32 SpawnedMeleeThisWave = 0;
+    float NightMeleeSpeedScale = 1.f;
+    float NightMeleeDamageScale = 1.f;
+    TSet<ERogueEnemyType> NightMeleeTypes;
     int32 WaveEnemyBudget = 0;
     int32 TotalSpawnedThisWave = 0;
     bool bSpawningSuspended = false;
 	ARogueEnemy* SpawnConfiguredEnemy(const FRogueEnemyProfile& EnemyProfile, float DesiredDistance, float MinimumDistance, const ARogueEnemySpawnRegion* Region, ARogueCharacter* Character);
 	bool FindSpawnLocation(float DesiredDistance, float MinimumDistance, const ARogueEnemySpawnRegion* Region,
-		ARogueCharacter* Character, const ARogueEnemy* Enemy, FVector& OutLocation) const;
+		ARogueCharacter* Character, const ARogueEnemy* Enemy, bool bFlying, bool bFixedRanged, FVector& OutLocation);
+
+    TArray<TWeakObjectPtr<ARogueRangedSpawnPoint>> RangedSpawnPoints;
+    int32 NextRangedSpawnPoint = 0;
 
 	/** 向下寻找可站立且能阻挡胶囊的地面，按实际胶囊尺寸放置，并检查头顶及周围空间。 */
 	bool TryGroundSpawnLocation(const FVector& Candidate, const ARogueEnemy* Enemy,
