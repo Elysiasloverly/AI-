@@ -190,8 +190,7 @@ UnrealEditor.exe Baka.uproject <map> -game -nullrhi -log \
 
 ## 演示
 
-【自制肉鸽游戏《Baka！》（原《AI》）v2版 —— 添加了商店系统，增加了游戏难度】
-https://www.bilibili.com/video/BV1mbQGBkE1v
+[求职项目展示｜Baka！](https://www.bilibili.com/video/BV1qmWM61ETm/)
 
 ## 当前房间与永久成长入口（2026-10-22）
 
