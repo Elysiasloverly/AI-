@@ -1,5 +1,11 @@
 # Baka！
 
+## 演示
+
+[求职项目展示｜Baka！](https://www.bilibili.com/video/BV1qmWM61ETm/)
+
+## 项目简介
+
 项目对外名 **Baka！**（原 AI）；内部 C++ 模块仍叫 `ai`，避免蓝图/资产重定向。
 
 基于 **Unreal Engine 5.5** 开发的俯视角 Rogue-like 动作生存游戏，支持**联机合作**（濒死等待 / 自动复活 / 团灭结束）。
@@ -187,10 +193,6 @@ UnrealEditor.exe Baka.uproject <map> -game -nullrhi -log \
 | **历史：自研属性系统** | [Attribute-System-Migration.md](Docs/Attribute-System-Migration.md) — ⚠️ 描述的是已删除的系统，保留用于解释"为何转向 GAS" |
 
 ---
-
-## 演示
-
-[求职项目展示｜Baka！](https://www.bilibili.com/video/BV1qmWM61ETm/)
 
 ## 当前房间与永久成长入口（2026-10-22）
 
